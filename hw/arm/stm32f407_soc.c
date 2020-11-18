@@ -142,6 +142,8 @@ static void stm32f407_soc_initfn(Object *obj)
     }
 
     object_initialize_child(obj, "itm", &s->itm, TYPE_STM32F4XX_ITM);
+
+    object_initialize_child(obj,"crc",&s->crc, TYPE_STM32F2XX_CRC);
 }
 
 static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
@@ -344,6 +346,12 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         return;
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x40002800);
+
+    dev = DEVICE(&s->crc);
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->crc),errp))
+        return;
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, 0x40023000);
     // TODO - RTC wakeup exti
     // sysbus_connect_irq(SYS_BUS_DEVICE(rtc_dev), 0, qdev_get_gpio_in(exti_dev, 17));
     // // Alarm B
@@ -391,7 +399,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     // create_unimplemented_device("timer[10]",   0x40014400, 0x400);
     // create_unimplemented_device("timer[11]",   0x40014800, 0x400);
 
-    create_unimplemented_device("CRC",         0x40023000, 0x400);
+    // create_unimplemented_device("CRC",         0x40023000, 0x400);
     //create_unimplemented_device("Flash Int",   0x40023C00, 0x400);
     create_unimplemented_device("BKPSRAM",     0x40024000, 0x400);
     // create_unimplemented_device("DMA1",        0x40026000, 0x400);

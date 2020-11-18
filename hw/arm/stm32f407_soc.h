@@ -41,6 +41,7 @@
 #include "stm32f2xx_dma.h"
 #include "stm32f2xx_tim.h"
 #include "stm32f4xx_itm.h"
+#include "stm32f2xx_crc.h"
 #include "hw/arm/armv7m.h"
 #include "qom/object.h"
 
@@ -107,6 +108,8 @@ struct STM32F407State {
     f2xx_tim timers[STM_NUM_TIMERS];
 
     stm32f4xx_itm itm;
+
+    f2xx_crc crc;
 
     MemoryRegion sram;
     MemoryRegion flash;
