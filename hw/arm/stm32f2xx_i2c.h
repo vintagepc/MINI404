@@ -30,42 +30,42 @@
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
 
-#define STM_I2C_CR1_PE_BIT          0x00001
-#define STM_I2C_CR1_SMBUS_BIT       0x00002
-#define STM_I2C_CR1_SMBTYPE_BIT     0x00008
-#define STM_I2C_CR1_ENARB_BIT       0x00010
-#define STM_I2C_CR1_ENPEC_BIT       0x00020
-#define STM_I2C_CR1_ENGC_BIT        0x00040
-#define STM_I2C_CR1_NOSTRETCH_BIT   0x00080
-#define STM_I2C_CR1_START_BIT       0x00100
-#define STM_I2C_CR1_STOP_BIT        0x00200
-#define STM_I2C_CR1_ACK_BIT         0x00400
-#define STM_I2C_CR1_POS_BIT         0x00800
-#define STM_I2C_CR1_PEC_BIT         0x01000
-#define STM_I2C_CR1_ALERT_BIT       0x02000
-#define STM_I2C_CR1_SWRTS_BIT       0x08000
+#define R_I2C_CR1_PE_BIT          0x00001
+#define R_I2C_CR1_SMBUS_BIT       0x00002
+#define R_I2C_CR1_SMBTYPE_BIT     0x00008
+#define R_I2C_CR1_ENARB_BIT       0x00010
+#define R_I2C_CR1_ENPEC_BIT       0x00020
+#define R_I2C_CR1_ENGC_BIT        0x00040
+#define R_I2C_CR1_NOSTRETCH_BIT   0x00080
+#define R_I2C_CR1_START_BIT       0x00100
+#define R_I2C_CR1_STOP_BIT        0x00200
+#define R_I2C_CR1_ACK_BIT         0x00400
+#define R_I2C_CR1_POS_BIT         0x00800
+#define R_I2C_CR1_PEC_BIT         0x01000
+#define R_I2C_CR1_ALERT_BIT       0x02000
+#define R_I2C_CR1_SWRTS_BIT       0x08000
 
 
-#define STM_I2C_CR2_ITERREN_BIT     0x00100
-#define STM_I2C_CR2_ITEVTEN_BIT     0x00200
-#define STM_I2C_CR2_ITBUFEN_BIT     0x00400
-#define STM_I2C_CR2_DMAEN_BIT       0x00800
-#define STM_I2C_CR2_LAST_BIT        0x01000
+#define R_I2C_CR2_ITERREN_BIT     0x00100
+#define R_I2C_CR2_ITEVTEN_BIT     0x00200
+#define R_I2C_CR2_ITBUFEN_BIT     0x00400
+#define R_I2C_CR2_DMAEN_BIT       0x00800
+#define R_I2C_CR2_LAST_BIT        0x01000
 
-#define STM_I2C_SR1_SB_BIT          0x00001
-#define STM_I2C_SR1_ADDR_BIT        0x00002
-#define STM_I2C_SR1_BTF_BIT         0x00004
-#define STM_I2C_SR1_ADD10_BIT       0x00008
-#define STM_I2C_SR1_STOPF_BIT       0x00010
-#define STM_I2C_SR1_RxNE_BIT        0x00040
-#define STM_I2C_SR1_TxE_BIT         0x00080
-#define STM_I2C_SR1_BERR_BIT        0x00100
-#define STM_I2C_SR1_ARLO_BIT        0x00200
-#define STM_I2C_SR1_AF_BIT          0x00400
-#define STM_I2C_SR1_OVR_BIT         0x00800
-#define STM_I2C_SR1_PECERR_BIT      0x01000
-#define STM_I2C_SR1_TIMEOUT_BIT     0x04000
-#define STM_I2C_SR1_SMBALERT_BIT    0x08000
+#define R_I2C_SR1_SB_BIT          0x00001
+#define R_I2C_SR1_ADDR_BIT        0x00002
+#define R_I2C_SR1_BTF_BIT         0x00004
+#define R_I2C_SR1_ADD10_BIT       0x00008
+#define R_I2C_SR1_STOPF_BIT       0x00010
+#define R_I2C_SR1_RxNE_BIT        0x00040
+#define R_I2C_SR1_TxE_BIT         0x00080
+#define R_I2C_SR1_BERR_BIT        0x00100
+#define R_I2C_SR1_ARLO_BIT        0x00200
+#define R_I2C_SR1_AF_BIT          0x00400
+#define R_I2C_SR1_OVR_BIT         0x00800
+#define R_I2C_SR1_PECERR_BIT      0x01000
+#define R_I2C_SR1_TIMEOUT_BIT     0x04000
+#define R_I2C_SR1_SMBALERT_BIT    0x08000
 
 #define TYPE_STM32F2XX_I2C "stm32f2xx-i2c"
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XXI2CState, STM32F2XX_I2C)
@@ -92,9 +92,11 @@ struct STM32F2XXI2CState {
         uint16_t regs[9];
     };
 
+    uint8_t last_read;
+
     qemu_irq evt_irq;
     qemu_irq err_irq;
-
+    uint8_t slave_address;
     int32_t rx;
     int rx_full; 
     I2CBus *bus;

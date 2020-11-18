@@ -108,7 +108,16 @@ config NETDUINOPLUS2
     bool
     select STM32F205_SOC
     select STM32F405_SOC
+
+config BUDDYBOARD
+    bool
+    select STM32F205_SOC
+    select STM32F405_SOC
+    select STM32F407_SOC
     select SMBUS_EEPROM
+
+config STM32F407_SOC
+    bool
 
 config NSERIES
     bool

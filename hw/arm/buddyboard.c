@@ -76,8 +76,11 @@ static void buddy_init(MachineState *machine)
     }
     {
         bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
-        uint8_t *eeprom_buf = g_malloc0(64 * 1024);
-        smbus_eeprom_init_one(bus, 0xA6, eeprom_buf);
+        st25dv64k_init_one(bus, 0x53);
+        // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
+        // with a second instance at the SYSTEM address.
+        bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
+        st25dv64k_init_one(bus, 0x57);
     }
 
 };

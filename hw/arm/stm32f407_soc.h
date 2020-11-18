@@ -38,7 +38,7 @@
 #include "stm32f2xx_rtc.h"
 #include "stm32f2xx_flashint.h"
 #include "stm32f2xx_pwr.h"
-#include "smt32f2xx_dma.h"
+#include "stm32f2xx_dma.h"
 #include "stm32f2xx_tim.h"
 #include "stm32f4xx_itm.h"
 #include "hw/arm/armv7m.h"

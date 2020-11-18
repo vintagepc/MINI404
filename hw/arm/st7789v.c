@@ -79,7 +79,7 @@ struct st7789v_state {
     int32_t redraw;
     int32_t remap;
     uint32_t mode;
-    uint16_t framebuffer[DPY_ROWS * DPY_COLS];
+    uint32_t framebuffer[DPY_ROWS * DPY_COLS];
 };
 
 union st7789v_cmd { 
@@ -157,7 +157,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
             if (s->byte_msb)
              {       
                s->cmd_data[s->cmd_len] |= data; // Note data mode sends 8 bits only in the right order.
-                if (s->cmd_data[s->cmd_len]!=0) printf("param 0x%02x\n", s->cmd_data[s->cmd_len]);
+             //   if (s->cmd_data[s->cmd_len]!=0) printf("param 0x%02x\n", s->cmd_data[s->cmd_len]);
                 s->cmd_len++;
             } else {
                 s->cmd_data[s->cmd_len] = data << 8;
@@ -201,7 +201,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
                 s->col = s->col_start;
                 DATA(1);
             } else {// One of an unknown number of bytes.               
-                s->framebuffer[s->col + (s->row * DPY_COLS)] = s->cmd_data[1];
+                s->framebuffer[s->col + (s->row * DPY_COLS)] = s->cmd_data[0];
                 s->col++;
                 if (s->col>s->col_end)
                 {
@@ -213,6 +213,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
                     s->row = s->row_start;
                 }
                 s->cmd_len=0; // "remove" the data from the queue. We'll get more,
+                s->redraw = 1;
                 DATA(1);
             }
             break;
@@ -276,7 +277,7 @@ static void st7789v_update_display(void *opaque)
     st7789v_state *s = (st7789v_state *)opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
     uint8_t *dest;
-    uint8_t *src;
+    uint16_t *src;
     int x;
     int y;
     int i;
@@ -337,13 +338,14 @@ static void st7789v_update_display(void *opaque)
     }
     /* TODO: Implement row/column remapping.  */
     dest = surface_data(surface);
+    memcpy(dest, s->framebuffer, sizeof(uint32_t)*DPY_ROWS*DPY_COLS);
     // for ( line y = 0; y<height; y++)
     // {
     //     memcpy()
     // }
     // for (y = 0; y < height; y++) {
     //     line = y;
-    //     src = s->framebuffer + width * line;
+    //     src = s->framebuffer + (width * line);
     //     for (x = 0; x < height; x++) {
     //         int val;
     //         val = *src >> 4;

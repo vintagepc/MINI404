@@ -23,7 +23,7 @@
  * QEMU DMA controller device model
  */
 
-#include "smt32f2xx_dma.h"
+#include "stm32f2xx_dma.h"
 #include "qemu/log.h"
 
 //#define DEBUG_STM32F2XX_DMA
