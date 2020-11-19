@@ -118,6 +118,16 @@ OBJECT_DECLARE_SIMPLE_TYPE(st7789v_state, ST7789V)
 static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
 {
     st7789v_state *s = ST7789V(dev);
+    union color{
+        uint32_t full;
+        struct{
+            uint8_t b;
+            uint8_t g;
+            uint8_t r;
+            uint8_t a;
+        };
+    } color;
+    color.full = 0;
    // switch (s->mode) {
     // case ST7789V_DATA:
         // printf("data 0x%02x\n", data);
@@ -148,7 +158,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
             if (s->byte_msb)
             {
                s->cmd |= data << 8;
-                printf("cmd 0x%02x\n", s->cmd);
+                // printf("cmd 0x%02x\n", s->cmd);
             } else {
                 s->cmd = data;
             }
@@ -200,8 +210,12 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
                 s->row = s->row_start;
                 s->col = s->col_start;
                 DATA(1);
-            } else {// One of an unknown number of bytes.               
-                s->framebuffer[s->col + (s->row * DPY_COLS)] = s->cmd_data[0];
+            } else {// One of an unknown number of bytes.        
+                
+                color.r = (s->cmd_data[0] & 0xF800)>>8;
+                color.g = (s->cmd_data[0] & 0x7E0)>> 3;
+                color.b = (s->cmd_data[0] & 0x1F) << 3;
+                s->framebuffer[s->col + (s->row * DPY_COLS)] = color.full;
                 s->col++;
                 if (s->col>s->col_end)
                 {
@@ -291,51 +305,51 @@ static void st7789v_update_display(void *opaque)
     if (!s->redraw)
         return;
 
-    switch (surface_bits_per_pixel(surface)) {
-    case 0:
-        return;
-    case 15:
-        dest_width = 2;
-        break;
-    case 16:
-        dest_width = 2;
-        break;
-    case 24:
-        dest_width = 3;
-        break;
-    case 32:
-        dest_width = 4;
-        break;
-    default:
-        BADF("Bad color depth\n");
-        return;
-    }
-    p = colortab;
-    for (i = 0; i < 16; i++) {
-        int n;
-        colors[i] = p;
-        switch (surface_bits_per_pixel(surface)) {
-        case 15:
-            n = i * 2 + (i >> 3);
-            p[0] = n | (n << 5);
-            p[1] = (n << 2) | (n >> 3);
-            break;
-        case 16:
-            n = i * 2 + (i >> 3);
-            p[0] = n | (n << 6) | ((n << 1) & 0x20);
-            p[1] = (n << 3) | (n >> 2);
-            break;
-        case 24:
-        case 32:
-            n = (i << 4) | i;
-            p[0] = p[1] = p[2] = n;
-            break;
-        default:
-            BADF("Bad color depth\n");
-            return;
-        }
-        p += dest_width;
-    }
+    // switch (surface_bits_per_pixel(surface)) {
+    // case 0:
+    //     return;
+    // case 15:
+    //     dest_width = 2;
+    //     break;
+    // case 16:
+    //     dest_width = 2;
+    //     break;
+    // case 24:
+    //     dest_width = 3;
+    //     break;
+    // case 32:
+    //     dest_width = 4;
+    //     break;
+    // default:
+    //     BADF("Bad color depth\n");
+    //     return;
+    // }
+    // p = colortab;
+    // for (i = 0; i < 16; i++) {
+    //     int n;
+    //     colors[i] = p;
+    //     switch (surface_bits_per_pixel(surface)) {
+    //     case 15:
+    //         n = i * 2 + (i >> 3);
+    //         p[0] = n | (n << 5);
+    //         p[1] = (n << 2) | (n >> 3);
+    //         break;
+    //     case 16:
+    //         n = i * 2 + (i >> 3);
+    //         p[0] = n | (n << 6) | ((n << 1) & 0x20);
+    //         p[1] = (n << 3) | (n >> 2);
+    //         break;
+    //     case 24:
+    //     case 32:
+    //         n = (i << 4) | i;
+    //         p[0] = p[1] = p[2] = n;
+    //         break;
+    //     default:
+    //         BADF("Bad color depth\n");
+    //         return;
+    //     }
+    //     p += dest_width;
+    // }
     /* TODO: Implement row/column remapping.  */
     dest = surface_data(surface);
     memcpy(dest, s->framebuffer, sizeof(uint32_t)*DPY_ROWS*DPY_COLS);
@@ -380,7 +394,7 @@ static void st7789v_invalidate_display(void * opaque)
 static void st7789v_cd(void *opaque, int n, int level)
 {
     st7789v_state *s = (st7789v_state *)opaque;
-    printf("st7789v mode %s\n", level ? "Data" : "Command");
+    // printf("st7789v mode %s\n", level ? "Data" : "Command");
     s->mode = level ? ST7789V_DATA : ST7789V_CMD;
     s->byte_msb = false;
 }
