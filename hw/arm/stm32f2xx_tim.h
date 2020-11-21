@@ -60,7 +60,7 @@ struct f2xx_tim {
     QEMUTimer *timer;
     qemu_irq irq;
     uint32_t regs[R_TIM_MAX];
-
+    uint8_t id;
     qemu_irq pwm_ratio_changed;
     qemu_irq pwm_enable;
 };

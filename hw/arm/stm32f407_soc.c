@@ -31,7 +31,7 @@
 #include "stm32f407_soc.h"
 #include "hw/misc/unimp.h"
 #include "hw/i2c/smbus_eeprom.h"
-
+#include "exec/ramblock.h"
 #define SYSCFG_ADD                     0x40013800
 static const uint32_t usart_addr[] = { 0x40011000, 0x40004400, 0x40004800,
                                        0x40004C00, 0x40005000, 0x40011400,
@@ -97,9 +97,12 @@ static void stm32f407_soc_initfn(Object *obj)
     object_initialize_child(obj, "syscfg", &s->syscfg, TYPE_STM32F4XX_SYSCFG);
 
     for (i = 0; i < STM_NUM_USARTS; i++) {
+        if (i==1) continue;
         object_initialize_child(obj, "usart[*]", &s->usart[i],
                                 TYPE_STM32F2XX_USART);
     }
+
+    object_initialize_child(obj, "usart2", &s->usart2, TYPE_TMC2209_USART);
 
     // for (i = 0; i < STM_NUM_TIMERS; i++) {
     //     object_initialize_child(obj, "timer[*]", &s->timer[i],
@@ -165,6 +168,9 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
                              "STM32F407.flash.alias", &s->flash, 0,
                              FLASH_SIZE);
 
+    // Kinda sketchy but needed to bypass the FW check on the Mini...
+    s->flash.ram_block->host[FLASH_SIZE-1] = 0xFF;
+
     memory_region_add_subregion(system_memory, FLASH_BASE_ADDRESS, &s->flash);
     memory_region_add_subregion(system_memory, 0, &s->flash_alias);
 
@@ -175,6 +181,10 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         return;
     }
     memory_region_add_subregion(system_memory, SRAM_BASE_ADDRESS, &s->sram);
+
+    memory_region_init_ram(&s->ccmsram, NULL, "STM32F407.ccmsram", 64*1024,&err);
+
+    memory_region_add_subregion(system_memory, 0x10000000, &s->ccmsram);
 
     memory_region_init_rom(&s->otp, OBJECT(dev_soc),"STM32F407.otp",512, &err);
 
@@ -228,6 +238,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 
     /* Attach UART (uses USART registers) and USART controllers */
     for (i = 0; i < STM_NUM_USARTS; i++) {
+        if (i==1) continue;
         dev = DEVICE(&(s->usart[i]));
         qdev_prop_set_chr(dev, "chardev", serial_hd(i));
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
@@ -237,6 +248,15 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_mmio_map(busdev, 0, usart_addr[i]);
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, usart_irq[i]));
     }
+
+    // Wire up our special TMC USART.
+    dev = DEVICE(&s->usart2);
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart2),errp)) {
+        return;
+    }
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, usart_addr[1]);
+    sysbus_connect_irq(busdev,0,qdev_get_gpio_in(armv7m, usart_irq[1]));
 
     // /* Timer 2 to 5 */
     // for (i = 0; i < STM_NUM_TIMERS; i++) {
@@ -253,6 +273,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     for (i = 0; i < STM_NUM_TIMERS; ++i) {
         //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
         dev = DEVICE(&s->timers[i]);
+        s->timers[i].id = i;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
             return;
         busdev = SYS_BUS_DEVICE(dev);
@@ -320,9 +341,9 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_mmio_map(busdev, 0, dma_addr[i]);
         for (int j=0; j<8; j++) {
             if (i==0)
-                sysbus_connect_irq(busdev, i, qdev_get_gpio_in(armv7m, dma1_irq[i]));
+                sysbus_connect_irq(busdev, j, qdev_get_gpio_in(armv7m, dma1_irq[j]));
             else if (i==1)
-                sysbus_connect_irq(busdev, i, qdev_get_gpio_in(armv7m, dma2_irq[i]));
+                sysbus_connect_irq(busdev, j, qdev_get_gpio_in(armv7m, dma2_irq[j]));
         }
     }
 
@@ -410,6 +431,8 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("DCMI",        0x50050000, 0x400);
     create_unimplemented_device("RNG",         0x50060800, 0x400);
     create_unimplemented_device("OTP",         0x1FFF7800, 0x210);
+  //  create_unimplemented_device("EXTERNAL",    0xA0000000, 0x3FFFFFFF);
+
     
 }
 

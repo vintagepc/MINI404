@@ -180,9 +180,12 @@ f2xx_dma_stream_write(f2xx_dma_stream *s, int stream_no, uint32_t addr, uint32_t
     case R_DMA_SxCR:
         DPRINTF("%s: stream: %d, register CR, data:0x%x\n", __func__, stream_no, data);
         if ((s->cr & R_DMA_SxCR_EN) == 0 && (data & R_DMA_SxCR_EN) != 0) {
+            s->cr = data;
+            qemu_set_irq(s->irq,0);
             f2xx_dma_stream_start(s, stream_no);
+        } else {
+            s->cr = data;
         }
-        s->cr = data;
         break;
     case R_DMA_SxNDTR:
         DPRINTF("%s: stream: %d, register NDTR, data:0x%x\n", __func__, stream_no, data);

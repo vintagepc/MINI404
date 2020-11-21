@@ -42,7 +42,7 @@ static uint32_t
 f2xx_tim_period(f2xx_tim *s)
 {
     /* FIXME: hard coded to 32kHz */
-    return 31250;
+    return 1250;
 }
 
 static int64_t
@@ -50,7 +50,7 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
 {
     if (s->regs[R_TIM_CR1] & 0x70) {
         qemu_log_mask(LOG_UNIMP, "f2xx tim, only upedge-aligned mode supported\n");
-        return -1;
+       // return -1;
     }
     return current_time + f2xx_tim_period(s) * s->regs[R_TIM_ARR];
 }

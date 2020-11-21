@@ -42,6 +42,7 @@
 #include "stm32f2xx_tim.h"
 #include "stm32f4xx_itm.h"
 #include "stm32f2xx_crc.h"
+#include "tmc2209_usart.h"
 #include "hw/arm/armv7m.h"
 #include "qom/object.h"
 
@@ -111,10 +112,14 @@ struct STM32F407State {
 
     f2xx_crc crc;
 
+    TMC2209UsartState usart2;
+
     MemoryRegion sram;
     MemoryRegion flash;
     MemoryRegion flash_alias;
     MemoryRegion otp;
+    MemoryRegion ccmsram;
+
 };
 
 #endif
