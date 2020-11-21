@@ -29,7 +29,7 @@
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
-#include "stm32f407_soc.h"
+#include "stm32f407/stm32f407_soc.h"
 #include "hw/arm/boot.h"
 
 /* Main SYSCLK frequency in Hz (168MHz) */
@@ -82,6 +82,13 @@ static void buddy_init(MachineState *machine)
         bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
         st25dv64k_init_one(bus, 0x57);
     }
+
+    dev = qdev_new("buddy-input");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    // dev_get_gpio_out_connector(dev,"buddy-enc-button",0);
+    qdev_connect_gpio_out_named(dev, "buddy-enc-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
+    qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
+    qdev_connect_gpio_out_named(dev, "buddy-enc-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
 
 };
 
