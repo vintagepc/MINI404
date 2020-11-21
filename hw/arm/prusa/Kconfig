@@ -12,7 +12,7 @@ config STM32F407_SOC
     select STM32F2XX_USART
     select STM32F2XX_SYSCFG
     select STM32F2XX_ADC
-    select STM32F2XX_SPI
+    select SSI
     select STM32F4XX_SYSCFG
     select STM32F4XX_EXTI
 

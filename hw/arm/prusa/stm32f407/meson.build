@@ -1,1 +1,2 @@
-arm_ss.add(when: 'CONFIG_STM32F407_SOC', if_true: files('stm32f407_soc.c','stm32f2xx_i2c.c', 'stm32f2xx_rcc.c','stm32_rcc.c','stm32_clktree.c','stm32f2xx_gpio.c','stm32f2xx_dma.c','stm32f4xx_itm.c','stm32f2xx_tim.c','stm32f2xx_rtc.c','stm32f2xx_flashint.c','stm32f2xx_pwr.c','stm32f2xx_crc.c','tmc2209_usart.c'))
+arm_ss.add(when: 'CONFIG_STM32F407_SOC', if_true: files('stm32f407_soc.c','stm32f2xx_i2c.c', 'stm32f2xx_rcc.c','stm32_rcc.c','stm32_clktree.c','stm32f2xx_gpio.c','stm32f2xx_dma.c',
+    'stm32f4xx_itm.c','stm32f2xx_tim.c','stm32f2xx_rtc.c','stm32f2xx_flashint.c','stm32f2xx_pwr.c','stm32f4xx_spi.c','stm32f2xx_crc.c','tmc2209_usart.c'))

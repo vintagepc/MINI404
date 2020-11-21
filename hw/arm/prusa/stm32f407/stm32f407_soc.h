@@ -31,7 +31,7 @@
 #include "hw/adc/stm32f2xx_adc.h"
 #include "hw/misc/stm32f4xx_exti.h"
 #include "hw/or-irq.h"
-#include "hw/ssi/stm32f2xx_spi.h"
+#include "stm32f4xx_spi.h"
 #include "stm32f2xx_i2c.h"
 #include "stm32f2xx_rcc.h"
 #include "stm32f2xx_gpio.h"
@@ -92,7 +92,7 @@ struct STM32F407State {
     //STM32F2XXTimerState timer[STM_NUM_TIMERS];
     qemu_or_irq adc_irqs;
     STM32F2XXADCState adc[STM_NUM_ADCS];
-    STM32F2XXSPIState spi[STM_NUM_SPIS];
+    STM32F4XXSPIState spi[STM_NUM_SPIS];
     STM32F2XXI2CState i2c[STM_NUM_I2CS];
     stm32f2xx_gpio gpio[STM_NUM_GPIOS];
 

@@ -114,7 +114,7 @@ static void stm32f407_soc_initfn(Object *obj)
     }
 
     for (i = 0; i < STM_NUM_SPIS; i++) {
-        object_initialize_child(obj, "spi[*]", &s->spi[i], TYPE_STM32F2XX_SPI);
+        object_initialize_child(obj, "spi[*]", &s->spi[i], TYPE_STM32F4XX_SPI);
     }
 
     for (i = 0; i < STM_NUM_I2CS; i++) {
