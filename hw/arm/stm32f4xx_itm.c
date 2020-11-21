@@ -101,7 +101,8 @@ stm32f4xx_itm_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
                     printf("%c", s->port_buffer[i]);
 
                 s->buffer_pos = 0;
-                printf("\n");
+                if (data != '\n') 
+                    printf("\n");
             }
             break;
         default:
