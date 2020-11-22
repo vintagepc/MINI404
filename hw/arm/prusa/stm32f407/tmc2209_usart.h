@@ -59,6 +59,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(TMC2209UsartState, TMC2209_USART)
 
 typedef union { 
     uint8_t bytes[8];
+    uint32_t dwords[2];
     uint64_t raw;
 } cmd;
 
@@ -88,5 +89,7 @@ struct TMC2209UsartState {
     SSIBus *spi;
 
     qemu_irq irq;
+    qemu_irq irqCS[4]; // Motor CS irqs. 0-3 = Z/X/E/Y
+
 };
 #endif /* HW_TMC2209_USART_H */

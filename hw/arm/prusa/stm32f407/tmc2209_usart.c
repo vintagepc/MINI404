@@ -128,6 +128,22 @@ static uint64_t tmc2209_usart_read(void *opaque, hwaddr addr,
     return 0;
 }
 
+static void tmc2209_usart_ssi_tx(TMC2209UsartState *s)
+{
+    // This is a little weird because the clients will reply after the command has completed, 
+    // so we clock extra bytes in order to get the reply this cycle (as opposed to) 
+    // traditional SPI where the reply comes with the next data packet.
+    // Honestly an I2CSlave is probably better suited but since SPI seems to be the other TMC option 
+    // it'll hopefully make for slightley easier sharing of code. 
+            qemu_set_irq(s->irqCS[s->cmdTx.bytes[6]],1);
+            ssi_transfer(s->spi,s->cmdTx.dwords[1]); // Do the addr dword first so the driver knows if it's a read/write ASAP
+            ssi_transfer(s->spi,s->cmdTx.dwords[0]);
+            // TODO - get reply. 
+            qemu_set_irq(s->irqCS[s->cmdTx.bytes[6]],0);
+
+}
+
+
 static void tmc2209_usart_write(void *opaque, hwaddr addr,
                                   uint64_t val64, unsigned int size)
 {
@@ -159,9 +175,11 @@ static void tmc2209_usart_write(void *opaque, hwaddr addr,
         }
         if (s->cmdTxIdx==s->cmdLen)
         {
-     //       printf("%s complete, %8lx\n",s->cmdLen==8? "Write":"Read",s->cmdTx.raw);
+            // printf("%s complete, %8lx\n",s->cmdLen==8? "Write":"Read",s->cmdTx.raw);
             s->cmdTxIdx=0;
-            // TODO - send command to TMC driver & get reply
+
+            tmc2209_usart_ssi_tx(s);
+
             s->cmdRx.raw = 0x50FF010000000000;
             s->cmdRxLen = 4;
             s->usart_sr |= USART_SR_RXNE;
@@ -217,6 +235,8 @@ static void tmc2209_usart_init(Object *obj)
     memory_region_init_io(&s->mmio, obj, &tmc2209_usart_ops, s,
                           TYPE_TMC2209_USART, 0x400);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
+    for (int i=0; i<4; i++)
+        qdev_init_gpio_out_named(DEVICE(obj), &s->irqCS[i], "tmc2209_usart_cs", 1);
 
     s->spi = ssi_create_bus(DEVICE(obj), "spi");
 }

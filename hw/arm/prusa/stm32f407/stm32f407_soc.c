@@ -110,7 +110,7 @@ static void stm32f407_soc_initfn(Object *obj)
     // }
 
     for (i = 0; i < STM_NUM_ADCS; i++) {
-        object_initialize_child(obj, "adc[*]", &s->adc[i], TYPE_STM32F2XX_ADC);
+        object_initialize_child(obj, "adc[*]", &s->adc[i], TYPE_STM32F4XX_ADC);
     }
 
     for (i = 0; i < STM_NUM_SPIS; i++) {

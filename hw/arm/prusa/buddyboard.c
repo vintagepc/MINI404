@@ -90,6 +90,23 @@ static void buddy_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
     qdev_connect_gpio_out_named(dev, "buddy-enc-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
 
+    {
+        bus = qdev_get_child_bus(DEVICE(&SOC->usart2),"spi");
+        DeviceState *tmc = ssi_create_slave(bus, "tmc2209");
+        qdev_connect_gpio_out_named(DEVICE(&SOC->usart2),"tmc2209_usart_cs",0, qdev_get_gpio_in_named(tmc, SSI_GPIO_CS, 0));
+    }
+
+    uint16_t startvals[] = {966, 977, 512, 512, 512};
+    uint8_t channels[] = {4,10,3,5,6};
+    for (int i=0; i<5; i++)
+    {
+        dev = qdev_new("thermistor");
+        qdev_prop_set_uint16(dev, "temp",startvals[i]);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out_named(DEVICE(&SOC->adc[0]),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(DEVICE(&SOC->adc[0]),"adc_data_in",channels[i]));
+    }
+
 };
 
 

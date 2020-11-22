@@ -56,7 +56,7 @@ static uint8_t eeprom_receive_byte(SMBusDevice *dev)
     uint8_t val = data[eeprom->offset++];
 
     eeprom->accessed = true;
-#if 1 //DEBUG
+#if DEBUG
     printf("eeprom_receive_byte: addr=0x%02x val=0x%02x\n",
            dev->i2c.address, val);
 #endif
