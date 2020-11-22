@@ -1,7 +1,8 @@
 /*
  * STM32F405 SPI
  *
- * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me> 
+ * Portions ported from the Pebble Qemu version.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,31 +39,43 @@
     } \
 } while (0)
 
+#define	R_CR1             (0x00 / 4)
+#define	R_CR1_DFF      (1 << 11)
+#define	R_CR1_LSBFIRST (1 <<  7)
+#define	R_CR1_SPE      (1 <<  6)
+#define	R_CR2             (0x04 / 4)
+
+#define	R_SR       (0x08 / 4)
+#define	R_SR_RESET    0x0002
+#define	R_SR_MASK     0x01FF
+#define R_SR_OVR     (1 << 6)
+#define R_SR_TXE     (1 << 1)
+#define R_SR_RXNE    (1 << 0)
+
+#define	R_DR       (0x0C / 4)
+#define	R_CRCPR    (0x10 / 4)
+#define	R_CRCPR_RESET 0x0007
+#define	R_RXCRCR   (0x14 / 4)
+#define	R_TXCRCR   (0x18 / 4)
+#define	R_I2SCFGR  (0x1C / 4)
+#define	R_I2SPR    (0x20 / 4)
+#define	R_I2SPR_RESET 0x0002
+
 #define DB_PRINT(fmt, args...) DB_PRINT_L(1, fmt, ## args)
 
 static void stm32f4xx_spi_reset(DeviceState *dev)
 {
     STM32F4XXSPIState *s = STM32F4XX_SPI(dev);
 
-    s->spi_cr1 = 0x00000000;
-    s->spi_cr2 = 0x00000000;
-    s->spi_sr = 0x0000000A;
-    s->spi_dr = 0x0000000C;
-    s->spi_crcpr = 0x00000007;
-    s->spi_rxcrcr = 0x00000000;
-    s->spi_txcrcr = 0x00000000;
-    s->spi_i2scfgr = 0x00000000;
-    s->spi_i2spr = 0x00000002;
-}
-
-static void stm32f4xx_spi_transfer(STM32F4XXSPIState *s)
-{
-    DB_PRINT("Data to send: 0x%x\n", s->spi_dr);
-
-    s->spi_dr = ssi_transfer(s->ssi, s->spi_dr);
-    s->spi_sr |= R_SPI_SR_RXNE;
-
-    DB_PRINT("Data received: 0x%x\n", s->spi_dr);
+    s->regs[R_CR1] = 0x00000000;
+    s->regs[R_CR2] = 0x00000000;
+    s->regs[R_SR] = 0x0000000A;
+    s->regs[R_DR] = 0x0000000C;
+    s->regs[R_CRCPR] = 0x00000007;
+    s->regs[R_RXCRCR] = 0x00000000;
+    s->regs[R_TXCRCR] = 0x00000000;
+    s->regs[R_I2SCFGR] = 0x00000000;
+    s->regs[R_I2SPR] = 0x00000002;
 }
 
 static uint64_t stm32f4xx_spi_read(void *opaque, hwaddr addr,
@@ -72,95 +85,86 @@ static uint64_t stm32f4xx_spi_read(void *opaque, hwaddr addr,
 
     DB_PRINT("Address: 0x%" HWADDR_PRIx "\n", addr);
 
-    switch (addr) {
-    case R_SPI_CR1:
-        return s->spi_cr1;
-    case R_SPI_CR2:
-        qemu_log_mask(LOG_UNIMP, "%s: Interrupts and DMA are not implemented\n",
-                      __func__);
-        return s->spi_cr2;
-    case R_SPI_SR:
-        return s->spi_sr;
-    case R_SPI_DR:
-        //stm32f4xx_spi_transfer(s);
-        s->spi_sr &= ~R_SPI_SR_RXNE;
-        return s->spi_dr;
-    case R_SPI_CRCPR:
-        qemu_log_mask(LOG_UNIMP, "%s: CRC is not implemented, the registers " \
-                      "are included for compatibility\n", __func__);
-        return s->spi_crcpr;
-    case R_SPI_RXCRCR:
-        qemu_log_mask(LOG_UNIMP, "%s: CRC is not implemented, the registers " \
-                      "are included for compatibility\n", __func__);
-        return s->spi_rxcrcr;
-    case R_SPI_TXCRCR:
-        qemu_log_mask(LOG_UNIMP, "%s: CRC is not implemented, the registers " \
-                      "are included for compatibility\n", __func__);
-        return s->spi_txcrcr;
-    case R_SPI_I2SCFGR:
-        qemu_log_mask(LOG_UNIMP, "%s: I2S is not implemented, the registers " \
-                      "are included for compatibility\n", __func__);
-        return s->spi_i2scfgr;
-    case R_SPI_I2SPR:
-        qemu_log_mask(LOG_UNIMP, "%s: I2S is not implemented, the registers " \
-                      "are included for compatibility\n", __func__);
-        return s->spi_i2spr;
-    default:
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%" HWADDR_PRIx "\n",
-                      __func__, addr);
-    }
+    uint16_t r = UINT16_MAX;
 
-    return 0;
+    if (!(size == 1 || size == 2 || size == 4 || (addr & 0x3) != 0)) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad register access 0x%" HWADDR_PRIx "\n",
+             __func__, addr);
+    }
+    addr >>= 2;
+    if (addr < R_MAX) {
+        r = s->regs[addr];
+    } else {
+        qemu_log_mask(LOG_GUEST_ERROR, "Out of range SPI write, addr 0x%x", (unsigned)addr<<2);
+    }
+    switch (addr) {
+    case R_DR:
+        s->regs[R_SR] &= ~R_SR_RXNE;
+    }
+    return r;
 }
 
+static uint8_t bitswap(uint8_t val)
+{
+    return ((val * 0x0802LU & 0x22110LU) | (val * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;
+}
+
+
 static void stm32f4xx_spi_write(void *opaque, hwaddr addr,
-                                uint64_t val64, unsigned int size)
+                                uint64_t data, unsigned int size)
 {
     STM32F4XXSPIState *s = opaque;
-    uint32_t value = val64;
 
-    DB_PRINT("Address: 0x%" HWADDR_PRIx ", Value: 0x%x\n", addr, value);
+    DB_PRINT("Address: 0x%" HWADDR_PRIx ", Value: 0x%lx\n", addr, data);
+
+    int offset = addr & 0x3;
+
+    /* SPI registers are all at most 16 bits wide */
+    data &= 0xFFFFF;
+    addr >>= 2;
+
+    switch (size) {
+        case 1:
+            data = (s->regs[addr] & ~(0xff << (offset * 8))) | data << (offset * 8);
+            break;
+        case 2:
+            data = (s->regs[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
+            break;
+        case 4:
+            break;
+        default:
+            abort();
+    }
 
     switch (addr) {
-    case R_SPI_CR1:
-        s->spi_cr1 = value;
-        return;
-    case R_SPI_CR2:
-        qemu_log_mask(LOG_UNIMP, "%s: " \
-                      "Interrupts and DMA are not implemented\n", __func__);
-        s->spi_cr2 = value;
-        return;
-    case R_SPI_SR:
-        /* Read only register, except for clearing the CRCERR bit, which
-         * is not supported
-         */
-        return;
-    case R_SPI_DR:
-        s->spi_dr = value;
-        stm32f4xx_spi_transfer(s);
-        return;
-    case R_SPI_CRCPR:
-        qemu_log_mask(LOG_UNIMP, "%s: CRC is not implemented\n", __func__);
-        return;
-    case R_SPI_RXCRCR:
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: Read only register: " \
-                      "0x%" HWADDR_PRIx "\n", __func__, addr);
-        return;
-    case R_SPI_TXCRCR:
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: Read only register: " \
-                      "0x%" HWADDR_PRIx "\n", __func__, addr);
-        return;
-    case R_SPI_I2SCFGR:
-        qemu_log_mask(LOG_UNIMP, "%s: " \
-                      "I2S is not implemented\n", __func__);
-        return;
-    case R_SPI_I2SPR:
-        qemu_log_mask(LOG_UNIMP, "%s: " \
-                      "I2S is not implemented\n", __func__);
-        return;
+        case R_CR1:
+            if ((data & R_CR1_DFF) != s->regs[R_CR1] && (s->regs[R_CR1] & R_CR1_SPE) != 0)
+                qemu_log_mask(LOG_GUEST_ERROR, "cannot change DFF with SPE set\n");
+            if (data & R_CR1_DFF)
+                qemu_log_mask(LOG_UNIMP, "f2xx DFF 16-bit mode not implemented\n");
+            s->regs[R_CR1] = data;
+            break;
+        case R_DR:
+            s->regs[R_SR] &= ~R_SR_TXE;
+            if (s->regs[R_SR] & R_SR_RXNE) {
+                s->regs[R_SR] |= R_SR_OVR;
+            }
+            if (s->regs[R_CR1] & R_CR1_LSBFIRST) {
+                s->regs[R_DR] = bitswap(ssi_transfer(s->ssi, bitswap(data)));
+            } else {
+                s->regs[R_DR] = ssi_transfer(s->ssi, data);
+            }
+            
+            s->regs[R_SR] |= R_SR_RXNE;
+            s->regs[R_SR] |= R_SR_TXE;
+            break;
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: Bad offset 0x%" HWADDR_PRIx "\n", __func__, addr);
+        if (addr < ARRAY_SIZE(s->regs)) {
+            s->regs[addr] = data;
+        } else {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: Bad addr 0x%" HWADDR_PRIx "\n", __func__, addr);
+        }
     }
 }
 
@@ -175,15 +179,7 @@ static const VMStateDescription vmstate_stm32f4xx_spi = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32(spi_cr1, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_cr2, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_sr, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_dr, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_crcpr, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_rxcrcr, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_txcrcr, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_i2scfgr, STM32F4XXSPIState),
-        VMSTATE_UINT32(spi_i2spr, STM32F4XXSPIState),
+        VMSTATE_UINT16_ARRAY(regs,STM32F4XXSPIState, R_MAX),
         VMSTATE_END_OF_LIST()
     }
 };

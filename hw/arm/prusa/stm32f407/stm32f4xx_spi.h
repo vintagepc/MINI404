@@ -29,20 +29,21 @@
 #include "hw/ssi/ssi.h"
 #include "qom/object.h"
 
-#define R_SPI_CR1     0x00
-#define R_SPI_CR2     0x04
-#define R_SPI_SR      0x08
-#define R_SPI_DR      0x0C
-#define R_SPI_CRCPR   0x10
-#define R_SPI_RXCRCR  0x14
-#define R_SPI_TXCRCR  0x18
-#define R_SPI_I2SCFGR 0x1C
-#define R_SPI_I2SPR   0x20
+// #define R_SPI_CR1     0x00
+// #define R_SPI_CR2     0x04
+// #define R_SPI_SR      0x08
+// #define R_SPI_DR      0x0C
+// #define R_SPI_CRCPR   0x10
+// #define R_SPI_RXCRCR  0x14
+// #define R_SPI_TXCRCR  0x18
+// #define R_SPI_I2SCFGR 0x1C
+// #define R_SPI_I2SPR   0x20
 
-#define R_SPI_CR1_SPE  (1 << 6)
-#define R_SPI_CR1_MSTR (1 << 2)
+// #define R_SPI_CR1_SPE  (1 << 6)
+// #define R_SPI_CR1_MSTR (1 << 2)
 
-#define R_SPI_SR_RXNE   1
+// #define R_SPI_SR_RXNE   1
+#define R_MAX      (0x24 / 4)
 
 #define TYPE_STM32F4XX_SPI "stm32f4xx-spi"
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXSPIState, STM32F4XX_SPI)
@@ -54,15 +55,7 @@ struct STM32F4XXSPIState {
     /* <public> */
     MemoryRegion mmio;
 
-    uint32_t spi_cr1;
-    uint32_t spi_cr2;
-    uint32_t spi_sr;
-    uint32_t spi_dr;
-    uint32_t spi_crcpr;
-    uint32_t spi_rxcrcr;
-    uint32_t spi_txcrcr;
-    uint32_t spi_i2scfgr;
-    uint32_t spi_i2spr;
+    uint16_t regs[R_MAX];
 
     qemu_irq irq;
     SSIBus *ssi;
