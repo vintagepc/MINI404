@@ -27,7 +27,7 @@
 
 #include "hw/misc/stm32f4xx_syscfg.h"
 #include "hw/timer/stm32f2xx_timer.h"
-#include "hw/char/stm32f2xx_usart.h"
+// #include "hw/char/stm32f2xx_usart.h"
 #include "hw/misc/stm32f4xx_exti.h"
 #include "hw/or-irq.h"
 #include "stm32f4xx_adc.h"
@@ -42,8 +42,9 @@
 #include "stm32f2xx_rtc.h"
 #include "stm32f4xx_spi.h"
 #include "stm32f2xx_tim.h"
-#include "tmc2209_usart.h"
+// #include "tmc2209_usart.h"
 #include "hw/arm/armv7m.h"
+#include "stm32_uart.h"
 #include "qom/object.h"
 
 #define TYPE_STM32F407_SOC "stm32f407-soc"
@@ -88,7 +89,8 @@ struct STM32F407State {
 
     STM32F4xxSyscfgState syscfg;
     STM32F4xxExtiState exti;
-    STM32F2XXUsartState usart[STM_NUM_USARTS];
+    // STM32F2XXUsartState usart[STM_NUM_USARTS];
+    Stm32Uart usart[STM_NUM_USARTS];
     //STM32F2XXTimerState timer[STM_NUM_TIMERS];
     qemu_or_irq adc_irqs;
     STM32F4XXADCState adc[STM_NUM_ADCS];
@@ -112,7 +114,8 @@ struct STM32F407State {
 
     f2xx_crc crc;
 
-    TMC2209UsartState usart2;
+
+    // TMC2209UsartState usart2;
 
     MemoryRegion sram;
     MemoryRegion flash;

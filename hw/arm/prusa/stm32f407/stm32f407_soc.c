@@ -97,12 +97,14 @@ static void stm32f407_soc_initfn(Object *obj)
     object_initialize_child(obj, "syscfg", &s->syscfg, TYPE_STM32F4XX_SYSCFG);
 
     for (i = 0; i < STM_NUM_USARTS; i++) {
-        if (i==1) continue;
+        // if (i==1) continue;
         object_initialize_child(obj, "usart[*]", &s->usart[i],
-                                TYPE_STM32F2XX_USART);
+                                TYPE_STM32_UART);
     }
 
-    object_initialize_child(obj, "usart2", &s->usart2, TYPE_TMC2209_USART);
+    //object_initialize_child(obj, "usart2", &s->usart2, TYPE_TMC2209_USART);
+
+    // object_initialize_child(obj, "uart2", &s->uart2, TYPE_STM32_UART);
 
     // for (i = 0; i < STM_NUM_TIMERS; i++) {
     //     object_initialize_child(obj, "timer[*]", &s->timer[i],
@@ -238,9 +240,10 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 
     /* Attach UART (uses USART registers) and USART controllers */
     for (i = 0; i < STM_NUM_USARTS; i++) {
-        if (i==1) continue;
+        // if (i==1) continue;
         dev = DEVICE(&(s->usart[i]));
         qdev_prop_set_chr(dev, "chardev", serial_hd(i));
+        qdev_prop_set_int32(dev, "index",i+1); // Set to STM index, not 0-based
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
             return;
         }
@@ -249,14 +252,14 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, usart_irq[i]));
     }
 
-    // Wire up our special TMC USART.
-    dev = DEVICE(&s->usart2);
-    if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart2),errp)) {
-        return;
-    }
-    busdev = SYS_BUS_DEVICE(dev);
-    sysbus_mmio_map(busdev, 0, usart_addr[1]);
-    sysbus_connect_irq(busdev,0,qdev_get_gpio_in(armv7m, usart_irq[1]));
+    // // Wire up our special TMC USART.
+    // dev = DEVICE(&s->uart2);
+    // if (!sysbus_realize(SYS_BUS_DEVICE(&s->uart2),errp)) {
+    //     return;
+    // }
+    // busdev = SYS_BUS_DEVICE(dev);
+    // sysbus_mmio_map(busdev, 0, usart_addr[1]);
+    // sysbus_connect_irq(busdev,0,qdev_get_gpio_in(armv7m, usart_irq[1]));
 
     // /* Timer 2 to 5 */
     // for (i = 0; i < STM_NUM_TIMERS; i++) {

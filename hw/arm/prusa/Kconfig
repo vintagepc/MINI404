@@ -9,7 +9,6 @@ config STM32F407_SOC
     select ARM_V7M
     select OR_IRQ
     select STM32F2XX_TIMER
-    select STM32F2XX_USART
     select STM32F2XX_SYSCFG
     select SSI
     select STM32F4XX_SYSCFG

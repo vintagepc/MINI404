@@ -11,6 +11,8 @@
 #include "qemu/osdep.h"
 #include "hw/irq.h"
 #include "hw/ssi/ssi.h"
+#include "hw/qdev-properties.h"
+#include "chardev/char-fe.h"
 #include "qemu/module.h"
 #include "hw/sysbus.h"
 #include "qom/object.h"
@@ -29,6 +31,8 @@ do { \
 #define BADF(fmt, ...) \
 do { fprintf(stderr, "tmc2209: error: " fmt , ## __VA_ARGS__);} while (0)
 #endif
+
+#define TMC2209_CMD_LEN 8
 
 // the internal programming registers.
 typedef union 
@@ -56,11 +60,11 @@ typedef union
             uint8_t uv_cp   :1;
             uint32_t :29; // unused
         }  __attribute__ ((__packed__)) GSTAT; // 0x01
-        struct 
+        struct                 // 0x01
         {
-            uint8_t ifcnt :8;
-            uint32_t :24;
-        } __attribute__ ((__packed__)) IFCNT;  // 0x02
+            uint32_t :24; // unused
+            uint32_t ifcnt :8;
+        }  __attribute__ ((__packed__)) IFCNT; // 0x01
         uint32_t _unimplemented[61]; //0x03 - 0x6B
         struct // 0x40
         {
@@ -141,10 +145,13 @@ typedef union {
 struct tmc2209_state {
 
     SysBusDevice parent_obj;
-    SSISlave i2cdev;
+
+    uint8_t rx_buffer[TMC2209_CMD_LEN];
+    uint8_t rx_pos;
 
     uint8_t address;
-    char id;
+    unsigned char id;
+
     uint64_t cmdIn; 
     uint8_t bytePos;
 
@@ -166,33 +173,29 @@ struct tmc2209_state {
     tmc2209_registers_t regs; // The programming registers. 
 
     qemu_irq irq_diag;
+    qemu_irq byte_out;
     
 };
 
 #define TYPE_TMC2209 "tmc2209"
 OBJECT_DECLARE_SIMPLE_TYPE(tmc2209_state, TMC2209)
 
-static uint32_t tmc2209_transfer(SSISlave *dev, uint32_t data)
-{
-    tmc2209_state *s = TMC2209(dev);
-    // printf("DATA: %llx\n",data);
-    if (s->bytePos==0)
-    {
-        s->cmdIn = (uint64_t)data<<32;
-        s->bytePos++;
-        return 0;
-    } else {
-        s->cmdIn |= data;
-        s->bytePos = 0;
-    }
-    //printf("Cmd: %llx\n",s->cmdIn);
-    tmc2209_cmd cmd;
-    // cmd.raw = s->cmdIn;
-    // printf("%02x %02x %d to %02x with data %08lx (%02x)\n", cmd.write.sync, cmd.write.slave, cmd.write.rw, cmd.write.address, cmd.write.data, cmd.write.crc);
-    // TODO... reply. 
-
-    return 0;
-
+// Unceremoniously lifted directly from the TMC buddy firmware code. 
+static uint8_t tmc2209_calcCRC(uint8_t datagram[], uint8_t len) {
+	uint8_t crc = 0;
+	for (uint8_t i = 0; i < len; i++) {
+		uint8_t currentByte = datagram[i];
+		for (uint8_t j = 0; j < 8; j++) {
+			if ((crc >> 7) ^ (currentByte & 0x01)) {
+				crc = (crc << 1) ^ 0x07;
+			} else {
+				crc = (crc << 1);
+			}
+			crc &= 0xff;
+			currentByte = currentByte >> 1;
+		}
+	}
+	return crc;
 }
 
 static void tmc2209_enable(void *opaque, int n, int level) {
@@ -285,45 +288,89 @@ static void tmc2209_dir(void *opaque, int n, int level) {
 static void tmc2209_check_diag() {
 
 }
-static void tmc2209_realize(SSISlave *dev, Error **errp){
 
-    tmc2209_state *s = TMC2209(dev);
+static void tmc2209_write(tmc2209_state *s)
+{
+    uint32_t data;
+    memcpy(&data, s->rx_buffer+3, 4);
+    s->regs.raw[s->rx_buffer[2]&0x7F] = data;
+    // TODO- check CRC.
+    s->regs.defs.IFCNT.ifcnt++;
+    
+}
+
+static void tmc2209_read(tmc2209_state *s)
+{
+    // TODO, actually construct reply.
+    uint32_t data = s->regs.raw[s->rx_buffer[2]];
+    uint8_t reply[8] = {0x05, 0xFF, s->rx_buffer[2],0x00,0x00,0x00,0x00,0x00};
+    memcpy(reply+3, &data, 4);
+    reply[7] = tmc2209_calcCRC(reply,7);
+    for (int i=0; i<8; i++)
+        qemu_set_irq(s->byte_out, reply[i]); // 
+}
+
+static void tmc2209_receive(void *opaque, int n, int level)
+{
+    tmc2209_state *s = (tmc2209_state *)opaque;
+
+    s->rx_buffer[s->rx_pos] = (uint8_t)level;
+    s->rx_pos++;
+
+    if (s->rx_pos == 8 && s->rx_buffer[2] & 0x80)
+    {
+        tmc2209_write(s);
+        s->rx_pos = 0;
+    } else if (s->rx_pos == 4 && !(s->rx_buffer[2] & 0x80)) {
+        tmc2209_read(s);
+        s->rx_pos = 0;
+    }
+}
+
+
+static void tmc2209_init(Object *obj){
+
+    tmc2209_state *s = TMC2209(obj);
     s->id=' ';
     s->address=0;
     s->bytePos = 0;
     s->cmdIn = 0;
 
-    qdev_init_gpio_in_named(DEVICE(dev),tmc2209_dir, "tmc2209-dir",1);
-    qdev_init_gpio_in_named(DEVICE(dev),tmc2209_step, "tmc2209-step",1);
-    qdev_init_gpio_in_named(DEVICE(dev),tmc2209_enable, "tmc2209-enable",1);
-    qdev_init_gpio_out_named(DEVICE(dev),&s->irq_diag, "tmc2209-diag", 1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "tmc2209-step",1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_enable, "tmc2209-enable",1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->irq_diag, "tmc2209-diag", 1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_receive, "tmc2209-byte-in",1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out, "tmc2209-byte-out", 1);
 }
+
+
+static Property tmc2209_properties[] = {
+    DEFINE_PROP_UINT8("axis", tmc2209_state, id,(uint8_t)' '),
+    DEFINE_PROP_UINT8("address", tmc2209_state, address,0),
+    DEFINE_PROP_END_OF_LIST()
+};
+
 
 static void tmc2209_class_init(ObjectClass *klass, void *data)
 {
-    // DeviceClass *dc = DEVICE_CLASS(klass);
-    SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
-
-    k->realize = tmc2209_realize;
-    k->transfer = tmc2209_transfer;
-    k->cs_polarity = SSI_CS_HIGH;
-
-    
-
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    device_class_set_props(dc, tmc2209_properties);
    // dc->vmsd = &vmstate_tmc2209;
 }
 
 static const TypeInfo tmc2209_info = {
     .name          = TYPE_TMC2209,
-    .parent        = TYPE_SSI_SLAVE,
+    .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(tmc2209_state),
     .class_init    = tmc2209_class_init,
+    .instance_init = tmc2209_init
 };
 
-static void tmc22092_register_types(void)
+static void tmc2209_register_types(void)
 {
     type_register_static(&tmc2209_info);
 }
 
-type_init(tmc22092_register_types)
+type_init(tmc2209_register_types)
 ;
