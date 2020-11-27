@@ -143,6 +143,7 @@ static void stm32f407_soc_initfn(Object *obj)
 
     for (i=0; i < STM_NUM_TIMERS; i++)
     {
+        s->timers[i].id = i+1;
         object_initialize_child(obj, "timers[*]", &s->timers[i], TYPE_STM32F4XX_TIMER);
     }
 

@@ -26,6 +26,7 @@
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "hw/irq.h"
+#include "qemu/timer.h"
 #include "ui/console.h"
 #include "qom/object.h"
 #include "hw/sysbus.h"
@@ -44,6 +45,11 @@ struct inputState {
     qemu_irq irq_rst;
     int last_state;
     uint8_t phase;
+
+    int32_t encoder_ticks;
+    int8_t encoder_dir;
+
+    QEMUTimer *timer;
 };
 
 
@@ -53,9 +59,29 @@ static void buddy_input_keyevent(inputState *s, int keycode)
     // TODO, keyboard events.
 }
 
-static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int buttons_state)
+static void buddy_input_timer_expire(void *opaque)
 {
     static const uint8_t buddy_input_phases[4] = {0x00, 0x10, 0x11, 0x01};
+    inputState *s = opaque;
+    if (s->encoder_dir<0){
+        s->phase++;
+    } else {
+        s->phase+=3;
+    }
+    s->phase = s->phase%4;
+    qemu_set_irq(s->irq_enc_a, (buddy_input_phases[s->phase]&0xF0)>0);
+    qemu_set_irq(s->irq_enc_b, (buddy_input_phases[s->phase]&0x0F)>0);
+    s->encoder_ticks--;
+
+    if (s->encoder_ticks>0)
+    {
+        timer_mod(s->timer,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
+    }
+
+}
+
+static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int buttons_state)
+{
     inputState *s = opaque;
     int changed = buttons_state^s->last_state;
     if (changed & MOUSE_EVENT_LBUTTON)
@@ -65,14 +91,13 @@ static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int but
     }
     if (dz) // Mouse wheel motion.
     {
-        if (dz<0){
-            s->phase++;
-        } else {
-            s->phase+=3;
+        if (s->encoder_dir != dz) // direction change
+        {
+            s->encoder_ticks = 0;
+            s->encoder_dir=dz;
         }
-        s->phase = s->phase%4;
-        qemu_set_irq(s->irq_enc_a, (buddy_input_phases[s->phase]&0xF0)>0);
-        qemu_set_irq(s->irq_enc_b, (buddy_input_phases[s->phase]&0x0F)>0);
+        s->encoder_ticks +=2;
+        timer_mod(s->timer,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
         // printf("phase: %d %d\n",(buddy_input_phases[s->phase]&0xF)>0,(buddy_input_phases[s->phase]&0x0F)>0);
     }
     if (changed)
@@ -110,6 +135,9 @@ static void buddy_input_initfn(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "buddy-enc-a", 1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "buddy-enc-b", 1);
     qemu_add_mouse_event_handler(&buddy_input_mouseevent,BUDDY_INPUT(obj),false, "buddy-mouse");
+
+    s->timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
+                    (QEMUTimerCB *)buddy_input_timer_expire, s);
 }
 
 static void buddy_input_class_init(ObjectClass *oc, void *data)

@@ -162,6 +162,8 @@ struct tmc2209_state {
     bool last_step;
 
     bool stalled;
+    
+    uint8_t is_inverted; 
 
     int64_t current_step; 
     uint64_t max_step;
@@ -174,6 +176,7 @@ struct tmc2209_state {
 
     qemu_irq irq_diag;
     qemu_irq byte_out;
+    qemu_irq position_out;
     
 };
 
@@ -199,7 +202,12 @@ static uint8_t tmc2209_calcCRC(uint8_t datagram[], uint8_t len) {
 }
 
 static void tmc2209_enable(void *opaque, int n, int level) {
-    TMC2209(opaque)->enabled = (level==0);
+    tmc2209_state *s = opaque;
+    s->enabled = (level==0);
+    if (level==1)
+    {
+        qemu_set_irq(s->irq_diag,0); // EN H clears diag.
+    }
 }
 
 static float tmc2209_step_to_pos(int32_t step, uint32_t max_steps_per_mm)
@@ -207,7 +215,7 @@ static float tmc2209_step_to_pos(int32_t step, uint32_t max_steps_per_mm)
 	return (float)(step)/(float)(max_steps_per_mm);
 }
 
-int32_t tmc2209_pos_tostep(float pos, uint32_t max_steps_per_mm)
+int32_t tmc2209_pos_to_step(float pos, uint32_t max_steps_per_mm)
 {
 	return pos*(float)(max_steps_per_mm); // Convert pos to steps, we always work in the full 256 microstep workspace.
 }
@@ -223,6 +231,7 @@ int32_t tmc2209_pos_tostep(float pos, uint32_t max_steps_per_mm)
 // }
 
 static void tmc2209_step(void *opaque, int n, int value) {
+    
     tmc2209_state *s = opaque;
     if (!s->enabled) return;
 	if (!s->regs.defs.CHOPCONF.dedge)
@@ -263,6 +272,7 @@ static void tmc2209_step(void *opaque, int n, int value) {
     uint32_t posOut;
 	// std::memcpy (&posOut, &m_fCurPos, 4);
     // RaiseIRQ(POSITION_OUT, posOut);
+    qemu_set_irq(s->position_out, s->current_step);
 	// RaiseIRQ(STEP_POS_OUT, s->current_step);
     // TRACE(printf("cur pos: %f (%u)\n",s->current_position,s->current_step));
 	bStall |= s->stalled;
@@ -282,7 +292,8 @@ static void tmc2209_step(void *opaque, int n, int value) {
 }
 
 static void tmc2209_dir(void *opaque, int n, int level) {
-    TMC2209(opaque)->dir = level;
+    tmc2209_state *s = opaque;
+    s->dir = (level^s->is_inverted)&0x1;
 }
 
 static void tmc2209_check_diag() {
@@ -336,18 +347,28 @@ static void tmc2209_init(Object *obj){
     s->bytePos = 0;
     s->cmdIn = 0;
 
+    s->ms_increment = 16;
+    // s->max_steps_per_mm = 256*100;
+    // s->max_step  = 160*16*100;
+    s->current_step = 10 * s->ms_increment; // 10mm
+
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "tmc2209-step",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_enable, "tmc2209-enable",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->irq_diag, "tmc2209-diag", 1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_receive, "tmc2209-byte-in",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out, "tmc2209-byte-out", 1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->position_out, "tmc2209-step-out", 1);
+    qemu_set_irq(s->irq_diag,0);
 }
 
 
 static Property tmc2209_properties[] = {
     DEFINE_PROP_UINT8("axis", tmc2209_state, id,(uint8_t)' '),
     DEFINE_PROP_UINT8("address", tmc2209_state, address,0),
+    DEFINE_PROP_UINT8("inverted",tmc2209_state, is_inverted, 0),
+    DEFINE_PROP_UINT64("max_step", tmc2209_state, max_step,16*100),
+    DEFINE_PROP_UINT32("fullstepspermm",tmc2209_state, max_steps_per_mm,160*16*100),
     DEFINE_PROP_END_OF_LIST()
 };
 

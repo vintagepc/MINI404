@@ -34,7 +34,6 @@
 #include "qom/object.h"
 
 //#define DEBUG
-
 #define TYPE_ST25DV64K "st25dv64k"
 
 OBJECT_DECLARE_SIMPLE_TYPE(st25dv64kDevice, ST25DV64K)
@@ -56,7 +55,7 @@ static uint8_t eeprom_receive_byte(SMBusDevice *dev)
     uint8_t val = data[eeprom->offset++];
 
     eeprom->accessed = true;
-#if DEBUG
+#ifdef DEBUG
     printf("eeprom_receive_byte: addr=0x%02x val=0x%02x\n",
            dev->i2c.address, val);
 #endif

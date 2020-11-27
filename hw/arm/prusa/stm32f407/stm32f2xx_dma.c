@@ -200,7 +200,7 @@ f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
         return;
     }
    
-    while (x->ndtr--) {
+    while (s->ndtr--) {
         cpu_physical_memory_read(x->src, buf, x->srcsize);
         cpu_physical_memory_write(x->dest, buf, x->destsize);
         x->src += x->srcinc;
@@ -248,10 +248,13 @@ static void stm32f2xx_dma_rx_timer_expire(void *opaque)
     {
         return;
     }
-    timer_mod(s->rx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 10000);
     uint8_t buf[4];
     cpu_physical_memory_read(pfctrlar, pfctrl,4);
     memcpy(&pfctrl32, pfctrl, 4);
+
+    // If we are active or there is data, check more often. (10 us vs 100)
+    timer_mod(s->rx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ((pfctrl32 & pfctrlmask)? 10000 : 100000));
+
     int transferred = 0;
     while ((pfctrl32 & pfctrlmask) && s->ndtr--)
     {
