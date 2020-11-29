@@ -72,6 +72,9 @@ struct Stm32Uart {
     // Byte IRQ for connected peripherals to avoid the charbackend complexity. 
     qemu_irq byte_out; 
 
+    qemu_irq dmar;
+    int dmar_current_level;
+
     /* We buffer the characters we receive from our qemu_chr receive handler in here
      * to increase our overall throughput. This allows us to tell the target that
      * another character is ready immediately after it does a read.

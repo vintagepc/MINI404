@@ -11,6 +11,7 @@
 #include "qemu/osdep.h"
 #include "hw/irq.h"
 #include "hw/ssi/ssi.h"
+#include "qemu/timer.h"
 #include "hw/qdev-properties.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
@@ -62,8 +63,8 @@ typedef union
         }  __attribute__ ((__packed__)) GSTAT; // 0x01
         struct                 // 0x01
         {
-            uint32_t :24; // unused
             uint32_t ifcnt :8;
+            uint32_t :24; // unused
         }  __attribute__ ((__packed__)) IFCNT; // 0x01
         uint32_t _unimplemented[61]; //0x03 - 0x6B
         struct // 0x40
@@ -175,8 +176,11 @@ struct tmc2209_state {
     tmc2209_registers_t regs; // The programming registers. 
 
     qemu_irq irq_diag;
+    qemu_irq hard_out;
     qemu_irq byte_out;
     qemu_irq position_out;
+
+    QEMUTimer *standstill;
     
 };
 
@@ -230,6 +234,15 @@ int32_t tmc2209_pos_to_step(float pos, uint32_t max_steps_per_mm)
 // 	}
 // }
 
+// Fired on standstill. set the STST flag and clear DIAG
+static void tmc2209_standstill_timer(void *opaque)
+{
+    tmc2209_state *s = opaque;
+    s->regs.defs.DRV_STATUS.stst = 1;
+    qemu_set_irq(s->irq_diag,0);
+    s->regs.defs.SG_RESULT.sg_result = 0;
+}
+
 static void tmc2209_step(void *opaque, int n, int value) {
     
     tmc2209_state *s = opaque;
@@ -278,17 +291,22 @@ static void tmc2209_step(void *opaque, int n, int value) {
 	bStall |= s->stalled;
     if (bStall)
     {
+        if (s->current_step==0) qemu_set_irq(s->hard_out,1);
         qemu_set_irq(s->irq_diag,1);
         s->regs.defs.SG_RESULT.sg_result = 0;
     }
     else if (!bStall)
     {
+            qemu_set_irq(s->hard_out,0);
             qemu_set_irq(s->irq_diag,0);
           s->regs.defs.SG_RESULT.sg_result = 250;
     }
     s->regs.defs.DRV_STATUS.stst = false;
     // 2^20 comes from the datasheet.
-   // RegisterTimer(m_fcnStandstill,1U<<20U,this);
+
+    // Internal clock is 12 MHz, 2^20 cycles is ~87 msec.
+   // RegisterTimer(m_fcnStandstill,1U<<20U,this is );
+   timer_mod(s->standstill, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+87);
 }
 
 static void tmc2209_dir(void *opaque, int n, int level) {
@@ -302,9 +320,14 @@ static void tmc2209_check_diag() {
 
 static void tmc2209_write(tmc2209_state *s)
 {
-    uint32_t data;
-    memcpy(&data, s->rx_buffer+3, 4);
+    uint32_t data = 0;
+    for(int i=3; i<7; i++)
+    {
+        data<<=8;
+        data |=s->rx_buffer[i];
+    }
     s->regs.raw[s->rx_buffer[2]&0x7F] = data;
+    // if (s->address==1) printf("wrote %08x to %02x\n",data, s->rx_buffer[2]&0x7f);
     // TODO- check CRC.
     s->regs.defs.IFCNT.ifcnt++;
     
@@ -314,11 +337,15 @@ static void tmc2209_read(tmc2209_state *s)
 {
     // TODO, actually construct reply.
     uint32_t data = s->regs.raw[s->rx_buffer[2]];
-    uint8_t reply[8] = {0x05, 0xFF, s->rx_buffer[2],0x00,0x00,0x00,0x00,0x00};
-    memcpy(reply+3, &data, 4);
+    if (s->address==1) printf("Read from %02x: %08x\n", s->rx_buffer[2], data);
+    uint8_t reply[8] = {0x05, 0xFF, s->rx_buffer[2],data>>24,data>>16,data>>8,data,0x00};
     reply[7] = tmc2209_calcCRC(reply,7);
+  //  printf("Buffer: ");
     for (int i=0; i<8; i++)
+    {
+    //    printf("%02x, ",reply[i]);
         qemu_set_irq(s->byte_out, reply[i]); // 
+    }
 }
 
 static void tmc2209_receive(void *opaque, int n, int level)
@@ -330,10 +357,10 @@ static void tmc2209_receive(void *opaque, int n, int level)
 
     if (s->rx_pos == 8 && s->rx_buffer[2] & 0x80)
     {
-        tmc2209_write(s);
+        if (s->rx_buffer[1] == s->address) tmc2209_write(s);
         s->rx_pos = 0;
     } else if (s->rx_pos == 4 && !(s->rx_buffer[2] & 0x80)) {
-        tmc2209_read(s);
+        if (s->rx_buffer[1] == s->address) tmc2209_read(s);
         s->rx_pos = 0;
     }
 }
@@ -351,15 +378,22 @@ static void tmc2209_init(Object *obj){
     // s->max_steps_per_mm = 256*100;
     // s->max_step  = 160*16*100;
     s->current_step = 10 * s->ms_increment; // 10mm
+    s->regs.defs.SG_RESULT.sg_result = 250;
 
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "tmc2209-step",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_enable, "tmc2209-enable",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->irq_diag, "tmc2209-diag", 1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->hard_out, "tmc2209-hard", 1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_receive, "tmc2209-byte-in",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out, "tmc2209-byte-out", 1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->position_out, "tmc2209-step-out", 1);
     qemu_set_irq(s->irq_diag,0);
+    qemu_set_irq(s->hard_out,0);
+
+    s->standstill =
+        timer_new_ms(QEMU_CLOCK_VIRTUAL,
+            (QEMUTimerCB *)tmc2209_standstill_timer, s);
 }
 
 

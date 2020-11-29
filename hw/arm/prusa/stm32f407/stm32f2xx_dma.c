@@ -135,6 +135,26 @@ f2xx_dma_read(void *arg, hwaddr addr, unsigned int size)
     return result;
 }
 
+static void set_DMAR_map(hwaddr src, f2xx_dma_stream *s)
+{
+    switch (src)
+    {
+        case 0x40011004: // USART1
+            s->usart_dmar = 1;
+            break;
+        case 0x40004404: // USART2
+            s->usart_dmar = 2;
+            break;
+        case 0x40011404: // USART6
+            s->usart_dmar = 6;
+            break;
+        default:
+            printf("FIXME: Unknown DMAR source %08x\n",src);
+            s->usart_dmar = -1;
+    }
+
+}
+
 /* Start a DMA transfer for a given stream. */
 static void
 f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
@@ -150,14 +170,14 @@ f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
         return;
     }
     /* XXX Skip USART, as pacing control is not yet in place. */
-    if (s->par == 0x40011004 || s->par == 0x40011404) {
-        qemu_log_mask(LOG_GUEST_ERROR, "f2xx dma: skipping USART\n");
-        return;
-    }
-
+    // if (s->par == 0x40011004) {//} || s->par == 0x40011404) {
+    //     qemu_log_mask(LOG_GUEST_ERROR, "f2xx dma: skipping USART\n");
+    //     return;
+    // }
+    s->id = stream_no;
     f2xx_dma_current_xfer *x = &s->active_transfer;
     uint8_t dir = (s->cr & R_DMA_SxCR_DIR) >> R_DMA_SxCR_DIR_SHIFT;
-    memset(x,0,sizeof(f2xx_dma_current_xfer));
+    memset(&s->active_transfer,0,sizeof(f2xx_dma_current_xfer));
     x->peripheral = s->par;
     switch (dir & 0x3)
     {
@@ -165,7 +185,7 @@ f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
         case 2:
             x->src = s->par;
             x->dest = s->m0ar;
-            if (stream_no==5) printf("Dest str 5: %08x\n", x->dest);
+            // if (stream_no==5) printf("Dest str %d: %08x\n", x->dest);
             x->srcsize = psize;
             x->destsize = msize;
             if (s->cr & R_DMA_SxCR_PINC)
@@ -196,10 +216,12 @@ f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
     // If the transfer is perhph to memory, then start teh transfer timer. 
     if (dir==0)
     {
-        timer_mod(s->rx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 10000);
+        set_DMAR_map(s->par, s);
+        // printf("Routing usart %d to stream %d -  \n", s->usart_dmar, stream_no);
+      //  timer_mod(s->rx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 10000);
         return;
     }
-   
+    // printf("DMA %d :Transferring %d bytes from %08x to %08x\n", stream_no, s->ndtr, x->src, x->dest);
     while (s->ndtr--) {
         cpu_physical_memory_read(x->src, buf, x->srcsize);
         cpu_physical_memory_write(x->dest, buf, x->destsize);
@@ -219,6 +241,7 @@ static void f2xx_dma_lookup_pfctl(hwaddr periph, hwaddr *addr, hwaddr *mask)
     //  TODO- abstract this for other boards.
     switch (periph)
     {
+        // case 0x40011004: // USART1
         case 0x40004404: // USART2
         case 0x40011404: // USART6
             *addr = periph - 4; // SR
@@ -231,10 +254,13 @@ static void f2xx_dma_lookup_pfctl(hwaddr periph, hwaddr *addr, hwaddr *mask)
     }
 }
 
+
 // Timer for handling peripheral RX streams where the peripheral is the flow controller
 static void stm32f2xx_dma_rx_timer_expire(void *opaque)
 {
     f2xx_dma_stream *s = opaque;
+
+  //  return;
      // if (!(s->cr & R_DMA_SxCR_PFCTL))
     //      return;
     
@@ -251,14 +277,14 @@ static void stm32f2xx_dma_rx_timer_expire(void *opaque)
     uint8_t buf[4];
     cpu_physical_memory_read(pfctrlar, pfctrl,4);
     memcpy(&pfctrl32, pfctrl, 4);
-
+    // if (pfctrl32!=0xc0) printf("PFCTLAR: %08x\n",pfctrl32);
     // If we are active or there is data, check more often. (10 us vs 100)
     timer_mod(s->rx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ((pfctrl32 & pfctrlmask)? 10000 : 100000));
 
     int transferred = 0;
     while ((pfctrl32 & pfctrlmask) && s->ndtr--)
     {
-      //  printf("Transferring from %08x to %08x\n",x->src, x->dest);
+        printf("2Transferring from %08x to %08x\n",x->src, x->dest);
         cpu_physical_memory_read(x->src, buf, x->srcsize);
         cpu_physical_memory_write(x->dest, buf, x->destsize);
         x->src += x->srcinc;
@@ -269,7 +295,7 @@ static void stm32f2xx_dma_rx_timer_expire(void *opaque)
     }
     if (transferred)
     {
-    // printf("Transferred %d bytes.\n",transferred);
+    printf("Transferred %d bytes.\n",transferred);
     
         if (!(s->cr & R_DMA_SxCR_CIRC))
         {
@@ -299,6 +325,71 @@ static void stm32f2xx_dma_rx_timer_expire(void *opaque)
     // TODO - reset the src/dest pointers for circ mode?
 }
 
+static void stm32f2xx_dma_dmar_transfer(void *opaque)
+{
+    f2xx_dma_stream *s = opaque;
+
+  //  return;
+     // if (!(s->cr & R_DMA_SxCR_PFCTL))
+    //      return;
+    
+    f2xx_dma_current_xfer *x = &s->active_transfer;
+    int transferred = 0;
+    uint8_t buf[4];
+    // printf("3Transferring from %08x to %08x\n",x->src, x->dest);
+    cpu_physical_memory_read(x->src, buf, x->srcsize);
+    cpu_physical_memory_write(x->dest, buf, x->destsize);
+    s->ndtr--;
+    x->src += x->srcinc;
+    x->dest += x->destinc;
+    transferred++;
+    if (transferred){    
+        if (!(s->cr & R_DMA_SxCR_CIRC))
+        {
+            s->cr &= ~R_DMA_SxCR_EN;
+        }
+        if (s->ndtr == (x->ndtr>>1))
+        {
+            // printf("HTIF\n");
+            s->isr |= R_DMA_ISR_HTIF;
+            if (s->cr & R_DMA_SxCR_HTIE)
+                qemu_set_irq(s->irq,1);
+        }
+        if (s->ndtr == 0)
+        {
+            // printf("TCIF\n");
+            s->isr |= R_DMA_ISR_TCIF;
+            if (s->cr & R_DMA_SxCR_TCIE)
+                qemu_set_irq(s->irq, 1);
+        }
+        if (s->cr & R_DMA_SxCR_CIRC && s->ndtr==0) // Reset the buffer pointer if circ mode.
+        {
+            x->src -= (x->ndtr*x->srcinc);
+            x->dest -= (x->ndtr*x->destinc);
+            s->ndtr = x->ndtr;
+        }
+    }
+     // TODO - reset the src/dest pointers for circ mode?
+}
+
+// Receiver for DMAR requests by USARTs.
+static void f2xx_dma_usart_dmar(void *opaque, int n, int level)
+{
+    if (level==0)
+    {
+        return;
+    };
+    f2xx_dma *s = opaque;
+    for (int i=0; i<R_DMA_Sx_COUNT; i++)
+    {
+        if (s->stream[i].usart_dmar==n+1) // USARTs are 1-based, irqs 0-based
+        {
+            // printf("Routing to stream %d\n",i);
+            stm32f2xx_dma_dmar_transfer(&s->stream[i]);
+        }
+    }
+}
+
 /* Per-stream register write. */
 static void
 f2xx_dma_stream_write(f2xx_dma_stream *s, int stream_no, uint32_t addr, uint32_t data)
@@ -313,6 +404,11 @@ f2xx_dma_stream_write(f2xx_dma_stream *s, int stream_no, uint32_t addr, uint32_t
             {
                 printf("Circ mode %d w/ NDTR: %d\n",stream_no, s->ndtr);
             }
+            if ((s->cr & R_DMA_SxCR_PFCTL))
+            {
+                printf("FIXME: PFCTL for stream %d, PAR %08lx\n", stream_no, s->par);
+            }
+
             f2xx_dma_stream_start(s, stream_no);
         } else {
             s->cr = data;
@@ -339,6 +435,7 @@ f2xx_dma_stream_write(f2xx_dma_stream *s, int stream_no, uint32_t addr, uint32_t
         s->m1ar = data;
         break;
     case R_DMA_SxFCR:
+        s->fcr = data & 0xFF;
         DPRINTF("%s: stream: %d, register FCR (UINIMPLEMENTED), data:0x%x\n", __func__,
                         stream_no, data);
                         // printf("SxFCR\n"); // FIFO mode is not used atm.
@@ -452,8 +549,11 @@ f2xx_dma_init(Object *obj)
     memory_region_init_io(&s->iomem, obj, &f2xx_dma_ops, s, "dma", 0x400);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
+    qdev_init_gpio_in_named(DEVICE(obj),f2xx_dma_usart_dmar,"usart-dmar",7);
+
     for (i = 0; i < R_DMA_Sx_COUNT; i++) {
         sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->stream[i].irq);
+        s->stream[i].id = i;
         s->stream[i].rx_timer =
             timer_new_ns(QEMU_CLOCK_VIRTUAL,
                   (QEMUTimerCB *)stm32f2xx_dma_rx_timer_expire, &s->stream[i]);
@@ -477,6 +577,7 @@ f2xx_dma_reset(DeviceState *ds)
         memset(&s->stream[i], 0, sizeof(f2xx_dma_stream));
         s->stream[i].irq = save;
         s->stream[i].rx_timer = timer;
+        s->stream[i].usart_dmar = -1;
     }
 }
 

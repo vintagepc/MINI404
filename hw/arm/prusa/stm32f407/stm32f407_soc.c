@@ -36,9 +36,6 @@
 static const uint32_t usart_addr[] = { 0x40011000, 0x40004400, 0x40004800,
                                        0x40004C00, 0x40005000, 0x40011400,
                                        0x40007800, 0x40007C00 };
-/* At the moment only Timer 2 to 5 are modelled */
-static const uint32_t timer_addr[] = { 0x40000000, 0x40000400,
-                                       0x40000800, 0x40000C00 };
 static const uint32_t adc_addr[] = { 0x40012000, 0x40012100, 0x40012200,
                                      0x40012300, 0x40012400, 0x40012500 };
 static const uint32_t spi_addr[] =   { 0x40013000, 0x40003800, 0x40003C00,
@@ -106,10 +103,7 @@ static void stm32f407_soc_initfn(Object *obj)
 
     // object_initialize_child(obj, "uart2", &s->uart2, TYPE_STM32_UART);
 
-    // for (i = 0; i < STM_NUM_TIMERS; i++) {
-    //     object_initialize_child(obj, "timer[*]", &s->timer[i],
-    //                             TYPE_STM32F2XX_TIMER);
-    // }
+
 
     for (i = 0; i < STM_NUM_ADCS; i++) {
         object_initialize_child(obj, "adc[*]", &s->adc[i], TYPE_STM32F4XX_ADC);
@@ -141,12 +135,23 @@ static void stm32f407_soc_initfn(Object *obj)
         object_initialize_child(obj,"dma[*]", &s->dma[i], TYPE_STM32F2XX_DMA);
     }
 
+#ifdef PARTIAL_TIMER
+    for (i = 0; i < 4; i++) {
+        object_initialize_child(obj, "basic_timer[*]", &s->basic_timers[i],
+                                TYPE_STM32F2XX_TIMER);
+    }
+    for (i=0; i < STM_NUM_TIMERS-4; i++)
+    {
+        s->timers[i].id = i+1;
+        object_initialize_child(obj, "timers[*]", &s->timers[i], TYPE_STM32F4XX_TIMER);
+    }
+#else
     for (i=0; i < STM_NUM_TIMERS; i++)
     {
         s->timers[i].id = i+1;
         object_initialize_child(obj, "timers[*]", &s->timers[i], TYPE_STM32F4XX_TIMER);
     }
-
+#endif
     object_initialize_child(obj, "itm", &s->itm, TYPE_STM32F4XX_ITM);
 
     object_initialize_child(obj,"crc",&s->crc, TYPE_STM32F2XX_CRC);
@@ -273,11 +278,41 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     //     sysbus_mmio_map(busdev, 0, timer_addr[i]);
     //     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, timer_irq[i]));
     // }
+    #ifdef PARTIAL_TIMER
+     for (i = 2; i < 6; ++i) { // Timers 2-5
+        //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
+        dev = DEVICE(&s->basic_timers[i-2]);
+        // s->timers[i].id = i;
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->basic_timers[i-2]),errp))
+            return;
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, timer_desc[i].addr);
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m,timer_desc[i].irq_idx));
+         // timer->id = stm32f4xx_periph_name_arr[periph];
+        // stm32_init_periph(timer, periph, timer_desc[i].addr,
+        //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
+    }
+    for (i = 0; i < STM_NUM_TIMERS-4; ++i) {
+        //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
+        int index =i;
+        if (i>1) index+=4; // adjust for timer gap. 
 
+        dev = DEVICE(&s->timers[i]);
+        s->timers[i].id = index+1;
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
+            return;
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, timer_desc[index].addr);
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m,timer_desc[index].irq_idx));
+         // timer->id = stm32f4xx_periph_name_arr[periph];
+        // stm32_init_periph(timer, periph, timer_desc[i].addr,
+        //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
+    }
+#else
     for (i = 0; i < STM_NUM_TIMERS; ++i) {
         //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
         dev = DEVICE(&s->timers[i]);
-        s->timers[i].id = i;
+        s->timers[i].id = i+1;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
             return;
         busdev = SYS_BUS_DEVICE(dev);
@@ -287,7 +322,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         // stm32_init_periph(timer, periph, timer_desc[i].addr,
         //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
     }
-
+#endif 
     /* ADC device, the IRQs are ORed together */
     if (!object_initialize_child_with_props(OBJECT(s), "adc-orirq",
                                             &s->adc_irqs, sizeof(s->adc_irqs),
@@ -338,6 +373,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 
     for (i = 0; i < STM_NUM_DMAS; i++) {
         dev = DEVICE(&(s->dma[i]));
+        s->dma[i].id = i+1;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->dma[i]), errp)) {
             return;
         }
@@ -349,6 +385,13 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
             else if (i==1)
                 sysbus_connect_irq(busdev, j, qdev_get_gpio_in(armv7m, dma2_irq[j]));
         }
+    }
+    for (int j=0; j<STM_NUM_USARTS; j++) // Attach the USART dmar IRQs
+    {
+        qemu_irq split_usart =qemu_irq_split(
+                                qdev_get_gpio_in_named(DEVICE(&s->dma[0]), "usart-dmar",j),
+                                qdev_get_gpio_in_named(DEVICE(&s->dma[1]), "usart-dmar",j));
+        qdev_connect_gpio_out_named(DEVICE(&s->usart[j]), "uart-dmar",0, split_usart);
     }
 
 

@@ -58,7 +58,7 @@ typedef struct f2xx_dma_current_xfer {
 
 typedef struct f2xx_dma_stream {
     qemu_irq irq;
-
+    uint8_t id;
     uint32_t cr;
     uint16_t ndtr;
     uint32_t par;
@@ -76,6 +76,9 @@ typedef struct f2xx_dma_stream {
 
     f2xx_dma_current_xfer active_transfer;
 
+    //store info for streams attached to USART DMAR.
+    int usart_dmar;
+
     struct QEMUTimer *rx_timer;
 
 } f2xx_dma_stream;
@@ -89,8 +92,12 @@ typedef struct f2xx_dma {
     SysBusDevice busdev;
     MemoryRegion iomem;
 
+    int id;
     uint32_t ifcr[R_DMA_HIFCR - R_DMA_LIFCR + 1];
     f2xx_dma_stream stream[R_DMA_Sx_COUNT]; 
+
+
+
 } f2xx_dma;
 
 #endif // STM32F2XX_DMA

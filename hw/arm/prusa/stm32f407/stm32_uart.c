@@ -77,6 +77,7 @@
 #define USART_CR3_OFFSET 0x14
 #define USART_CR3_CTSE_BIT 9
 #define USART_CR3_RTSE_BIT 8
+#define USART_CR3_DMAR_BIT 6
 
 #define USART_GTPR_OFFSET 0x18
 
@@ -85,7 +86,7 @@
 /* Update the baud rate based on the USART's peripheral clock frequency. */
 static void stm32_uart_baud_update(Stm32Uart *s)
 {
-    uint32_t clk_freq = 16000000;
+    uint32_t clk_freq = 84000000;
     if (s->stm32_rcc)
         clk_freq = stm32_rcc_get_periph_freq(s->stm32_rcc, s->periph);
 
@@ -146,6 +147,12 @@ static void stm32_uart_update_irq(Stm32Uart *s) {
     if(new_irq_level ^ s->curr_irq_level) {
         qemu_set_irq(s->irq, new_irq_level);
         s->curr_irq_level = new_irq_level;
+    }
+    int new_dmar = s->USART_SR_RXNE && (s->USART_CR3 & (1<<USART_CR3_DMAR_BIT));
+    if (new_dmar != s->dmar_current_level || new_dmar==1)
+    {
+        s->dmar_current_level = new_dmar;
+        qemu_set_irq(s->dmar,new_dmar);
     }
 }
 
@@ -257,6 +264,7 @@ static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
         /* Receive the character and mark the buffer as not empty. */
         s->USART_RDR = byte;
         s->USART_SR_RXNE = 1;
+        // Clear DMAR flag so the irq gets re-raised.
         stm32_uart_update_irq(s);
     }
 
@@ -402,7 +410,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint32_t *read_value)
         /* Put next character into the RDR if we have one */
         stm32_uart_fill_receive_data_register(s);
     } else {
-        printf("STM32_UART WARNING: Read value from USART_DR while it was empty.\n");
+        printf("STM32_UART WARNING: Read value from USART_DR (%08x) while it was empty.\n", s->iomem.addr);
     }
 
     stm32_uart_update_irq(s);
@@ -412,7 +420,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint32_t *read_value)
 static void stm32_uart_USART_DR_write(Stm32Uart *s, uint32_t new_value)
 {
     uint32_t write_value = new_value & 0x000001ff;
-    // printf("uart %d: wr: %02x\n",s->uart_index, write_value);
+    //printf("uart %d: wr: %02x\n",s->uart_index, write_value);
 
     if(!s->USART_CR1_UE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART was disabled.");
@@ -505,6 +513,8 @@ static void stm32_uart_reset(DeviceState *dev)
     s->USART_SR_TC = 1;
     s->USART_SR_RXNE = 0;
     s->USART_SR_ORE = 0;
+
+    s->dmar_current_level = -1;
 
     // Do not initialize USART_DR - it is documented as undefined at reset
     // and does not behave like normal registers.
@@ -665,6 +675,7 @@ static void stm32_uart_init(Object *obj)
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32_uart_rx_wrapper,"uart-byte-in",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out,"uart-byte-out",1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->dmar,"uart-dmar",1);
 
     s->rx_timer =
         timer_new_ns(QEMU_CLOCK_VIRTUAL,

@@ -219,8 +219,8 @@ static void buddy_visuals_realize(Object *obj)
     buddy_visuals_state *s = BUDDY_VISUALS(obj);
     qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_step_in, "motor-step",4);
     qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_enable_in, "motor-enable",4);
-    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_analog, "indicator-analog",4);
-    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_logic, "indicator-logic",4);
+    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_analog, "indicator-analog",8);
+    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_logic, "indicator-logic",8);
 
 
     const char IPC_FILE[] = "MK404.IPC";
@@ -240,10 +240,14 @@ static void buddy_visuals_realize(Object *obj)
     buddy_visuals_add_motor(s, 2, 'Z', 16*400, 16*400*185,false);
     buddy_visuals_add_motor(s, 3, 'E', 16*320, 0, true);
 
-    buddy_visuals_add_indicator(s, 0,'X', 0xFF000000);
+    buddy_visuals_add_indicator(s, 0,'X', 0xFF000000); // DIAG pins (temporary)
     buddy_visuals_add_indicator(s, 1,'Y', 0xFF0000);
     buddy_visuals_add_indicator(s, 2,'Z', 0xFF00);
     buddy_visuals_add_indicator(s, 3,'E', 0xFFFFFF00);
+    buddy_visuals_add_indicator(s, 4,'E', 0xFF0000); // E fan
+    buddy_visuals_add_indicator(s, 5,'P', 0xFF0000); // P fan
+    buddy_visuals_add_indicator(s, 6,'F', 0xFFFF0000); // Fsensor
+    buddy_visuals_add_indicator(s, 7,'M', 0xFF000000); // Z-probe/minda
 
 }
 

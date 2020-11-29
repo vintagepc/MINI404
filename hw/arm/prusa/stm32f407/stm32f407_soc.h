@@ -63,6 +63,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
 #define SRAM_BASE_ADDRESS 0x20000000
 #define SRAM_SIZE (192 * 1024)
 
+//#define PARTIAL_TIMER
+
 // Convenience enum. 
 enum {
     GPIO_A = 0,
@@ -91,7 +93,9 @@ struct STM32F407State {
     STM32F4xxExtiState exti;
     // STM32F2XXUsartState usart[STM_NUM_USARTS];
     Stm32Uart usart[STM_NUM_USARTS];
-    //STM32F2XXTimerState timer[STM_NUM_TIMERS];
+    #ifdef PARTIAL_TIMER
+    STM32F2XXTimerState basic_timers[4]; // Timers 2-5, use the stock ones;
+    #endif
     qemu_or_irq adc_irqs;
     STM32F4XXADCState adc[STM_NUM_ADCS];
     STM32F4XXSPIState spi[STM_NUM_SPIS];
@@ -107,9 +111,11 @@ struct STM32F407State {
     f2xx_pwr pwr;
 
     f2xx_dma dma[STM_NUM_DMAS];
-
+#ifdef PARTIAL_TIMER
+    f2xx_tim timers[STM_NUM_TIMERS-4];
+#else
     f2xx_tim timers[STM_NUM_TIMERS];
-
+#endif
     stm32f4xx_itm itm;
 
     f2xx_crc crc;

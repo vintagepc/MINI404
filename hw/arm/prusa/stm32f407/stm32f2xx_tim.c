@@ -27,6 +27,52 @@
 #include "qemu/log.h"
 #include "qemu/timer.h"
 
+
+#define R_TIM_CR1    (0x00 / 4) //p
+#define R_TIM_CR2    (0x04 / 4)
+#define R_TIM_SMCR   (0x08 / 4)
+#define R_TIM_DIER   (0x0c / 4) //p
+#define R_TIM_SR     (0x10 / 4) //p
+#define R_TIM_EGR    (0x14 / 4) //p
+#define R_TIM_CCMR1  (0x18 / 4)
+#define R_TIM_CCMR2  (0x1c / 4)
+#define R_TIM_CCER   (0x20 / 4)
+#define R_TIM_CNT    (0x24 / 4)
+#define R_TIM_PSC    (0x28 / 4) //p
+#define R_TIM_ARR    (0x2c / 4) //p
+#define R_TIM_CCR1   (0x34 / 4)
+#define R_TIM_CCR2   (0x38 / 4)
+#define R_TIM_CCR3   (0x3c / 4)
+#define R_TIM_CCR4   (0x40 / 4)
+#define R_TIM_DCR    (0x48 / 4)
+#define R_TIM_DMAR   (0x4c / 4)
+#define R_TIM_OR     (0x50 / 4)
+
+#define R_TIM_DIER_UIE 0x1
+
+static const char *f2xx_tim_reg_names[] = {
+    ENUM_STRING(R_TIM_CR1),
+    ENUM_STRING(R_TIM_CR2),
+    ENUM_STRING(R_TIM_SMCR),
+    ENUM_STRING(R_TIM_DIER),
+    ENUM_STRING(R_TIM_SR),
+    ENUM_STRING(R_TIM_EGR),
+    ENUM_STRING(R_TIM_CCMR1),
+    ENUM_STRING(R_TIM_CCMR2),
+    ENUM_STRING(R_TIM_CCER),
+    ENUM_STRING(R_TIM_CNT),
+    ENUM_STRING(R_TIM_PSC),
+    ENUM_STRING(R_TIM_ARR),
+    ENUM_STRING(R_TIM_CCR1),
+    ENUM_STRING(R_TIM_CCR2),
+    ENUM_STRING(R_TIM_CCR3),
+    ENUM_STRING(R_TIM_CCR4),
+    ENUM_STRING(R_TIM_DCR),
+    ENUM_STRING(R_TIM_CCMR1),
+    ENUM_STRING(R_TIM_DMAR),
+    ENUM_STRING(R_TIM_OR)
+};
+
 //#define DEBUG_STM32F2XX_TIM
 #ifdef DEBUG_STM32F2XX_TIM
 // NOTE: The usleep() helps the MacOS stdout from freezing when we have a lot of print out
@@ -41,8 +87,27 @@
 static uint32_t
 f2xx_tim_period(f2xx_tim *s)
 {
-    /* FIXME: hard coded to 32kHz */
-    return 1250;
+
+       uint64_t clock_freq = 85000000UL;
+            clock_freq/= (s->regs[R_TIM_PSC]+1);
+            uint32_t interval = 1000000000UL/clock_freq;
+            return interval;
+    switch (s->id)
+    {
+        case 14:
+        case 7:
+        {
+            // TODO... get real timer clock, but for now this should be ok. 
+            // TIM14:  84 MHz/PSC = 1MHz = 1 us = 1000 ns (for a final interval of 1ms after TIMx_ARR).
+            // TIM7: ARR=84, PSC = 999 (div by 1000) = ~ 11905 ns 
+            uint64_t clock_freq = 85000000UL;
+            clock_freq/= (s->regs[R_TIM_PSC]+1);
+            uint32_t interval = 1000000000UL/clock_freq;
+            return interval;
+        }
+        default:
+            return 750;
+    }
 }
 
 static int64_t
@@ -67,7 +132,11 @@ f2xx_tim_timer(void *arg)
         //printf("f2xx tim timer expired, setting int\n");
         s->regs[R_TIM_SR] |= 1;
     }
-    qemu_set_irq(s->irq, 1);
+    // Set IRQ if UIE is enabled. 
+   if (s->regs[R_TIM_DIER] & R_TIM_DIER_UIE)
+   {
+        qemu_set_irq(s->irq, 1);
+   }
 }
 
 static uint64_t
@@ -106,8 +175,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     int offset = addr & 0x3;
 
     addr >>= 2;
-
-    DPRINTF("%s %s: reg:%s, size: %d, value: 0x%llx\n", s->busdev.parent_obj.id,
+    if (s->id==7 && addr!=R_TIM_SR) printf("%d %s: reg:%s, size: %d, value: 0x%llx\n", s->id,
                     __func__, f2xx_tim_reg_names[addr], size, data);
     if (addr >= R_TIM_MAX) {
         qemu_log_mask(LOG_GUEST_ERROR, "f2xx tim invalid write register 0x%x\n",
@@ -134,7 +202,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_log_mask(LOG_UNIMP, "f2xx tim non-zero CR1 unimplemented\n");
         }
         if ((s->regs[addr] & 1) == 0 && data & 1) {
-            //printf("f2xx tim started\n");
+            printf("f2xx tim started: %d\n", s->id);
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
             qemu_set_irq(s->pwm_enable, 1);
         } else if (s->regs[addr] & 1 && (data & 1) == 0) {

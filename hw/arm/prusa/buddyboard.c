@@ -108,23 +108,28 @@ static void buddy_init(MachineState *machine)
 
 
         // bus = qdev_get_child_bus(DEVICE(&SOC->usart2),"spi");
+        DeviceState *split_out = qdev_new("split-irq");
+        qdev_prop_set_uint16(split_out, "num-lines", 4);
+        qdev_realize_and_unref(DEVICE(split_out),NULL,  &error_fatal);
+        qdev_connect_gpio_out_named(DEVICE(&SOC->usart[1]),"uart-byte-out", 0, qdev_get_gpio_in(split_out,0));
+
         for (int i=0; i<4; i++){
             dev = qdev_new("tmc2209");
             qdev_prop_set_uint8(dev, "axis",names[i]);
-            qdev_prop_set_uint16(dev, "address", addresses[i]);
+            qdev_prop_set_uint8(dev, "address", addresses[i]);
             qdev_prop_set_uint8(dev, "inverted",is_inverted[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
             sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
             qdev_connect_gpio_out_named(dev,"tmc2209-byte-out", 0, qdev_get_gpio_in_named(DEVICE(&SOC->usart[1]),"uart-byte-in",0));
-            qdev_connect_gpio_out_named(DEVICE(&SOC->usart[1]),"uart-byte-out", 0, qdev_get_gpio_in_named(dev,"tmc2209-byte-in",0));
+            qdev_connect_gpio_out(split_out,i, qdev_get_gpio_in_named(dev,"tmc2209-byte-in",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), step_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-step",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), dir_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-dir",0));
             qemu_irq split_en = qemu_irq_split( qdev_get_gpio_in_named(dev,"tmc2209-enable",0),qdev_get_gpio_in_named(vis,"motor-enable",i));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), en_pins[i],split_en);
             qemu_irq split_diag = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]),qdev_get_gpio_in_named(vis,"indicator-logic",i));
             qdev_connect_gpio_out_named(dev,"tmc2209-diag", 0, split_diag);
-            qdev_connect_gpio_out_named(DEVICE(&SOC->usart[1]),"uart-byte-out", 0, qdev_get_gpio_in_named(dev,"tmc2209-byte-in",0));
+            if (i==2) qdev_connect_gpio_out_named(dev,"tmc2209-hard", 0, qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8));
             qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(vis,"motor-step",i));
 
         }
