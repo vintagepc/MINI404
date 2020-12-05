@@ -42,6 +42,10 @@ struct heater_state {
     char m_chrLabel;
     uint16_t pwm, lastpwm;
 
+    uint8_t mass10x;
+
+    int tick_overrun;
+
     qemu_irq temp_out;
     QEMUTimer *temp_tick;
 };
@@ -50,19 +54,20 @@ static void heater_temp_tick_expire(void *opaque)
 {
     heater_state *s = opaque;
 
-    if (s->pwm>0 || s->lastpwm>0)// || (pAVR->cycle-m_cntOff)<(pAVR->frequency/100))
+    if (s->pwm>0)// || (pAVR->cycle-m_cntOff)<(pAVR->frequency/100))
     {
         float fDelta = (s->thermalMass*((float)(s->pwm)/255.0f))*0.3f;
         s->currentTemp += fDelta;
-    }
-    else // Cooling - do a little exponential decay
-    {
-
+        s->tick_overrun = 3; 
+        s->lastpwm = s->pwm;
+    } else if (s->tick_overrun>0){
+        float fDelta = (s->thermalMass*((float)(s->lastpwm)/255.0f))*0.3f;
+        s->currentTemp += fDelta;
+        s->tick_overrun--;
+    } else {// Cooling - do a little exponential decay
         float dT = (s->currentTemp - s->ambientTemp)*pow(2.7183,-0.005*0.3);
         s->currentTemp -= s->currentTemp - (s->ambientTemp + dT);
-
     }
-    s->lastpwm = s->pwm;
 	// m_iDrawTemp = s->currentTemp;
 
     if (s->pwm>0 || s->currentTemp>s->ambientTemp+0.3)
@@ -129,7 +134,7 @@ static void heater_reset(DeviceState *dev)
 {
     heater_state *s = HEATER(dev);
 
-    s->thermalMass = 2.f;
+    s->thermalMass = ((float)s->mass10x)/10.f;
     s->ambientTemp = 25.f;
     s->currentTemp = s->ambientTemp;
 }
@@ -147,6 +152,7 @@ static void heater_init(Object *obj)
 }
 
 static Property heater_properties[] = {
+    DEFINE_PROP_UINT8("thermal_mass_x10",heater_state, mass10x, 40),
  //   DEFINE_PROP_FLOAT("temp", heaterState, start_temp,0),
    // DEFINE_PROP_("cpu-type", STM32F407State, cpu_type),
     DEFINE_PROP_END_OF_LIST(),

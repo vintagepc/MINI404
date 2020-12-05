@@ -255,7 +255,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         // if (i==1) continue;
         dev = DEVICE(&(s->usart[i]));
         s->usart[i].periph = STM32_UART1+i;
-       s->usart[i].stm32_rcc = (Stm32Rcc*)&s->rcc;
+        s->usart[i].stm32_rcc = (Stm32Rcc*)&s->rcc;
         qdev_prop_set_chr(dev, "chardev", serial_hd(i));
         qdev_prop_set_int32(dev, "index",i+1); // Set to STM index, not 0-based
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
@@ -313,7 +313,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         dev = DEVICE(&s->timers[i]);
         s->timers[i].id = i+1;
         s->timers[i].periph = STM32_TIM1+i;
-     //   s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
+        if (i!=5) s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
             return;
         busdev = SYS_BUS_DEVICE(dev);

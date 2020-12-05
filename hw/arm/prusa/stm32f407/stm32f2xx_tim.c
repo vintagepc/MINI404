@@ -26,7 +26,7 @@
 #include "qemu-common.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
-
+#include <assert.h>
 
 #define R_TIM_CR1    (0x00 / 4) //p
 #define R_TIM_CR2    (0x04 / 4)
@@ -91,13 +91,13 @@ f2xx_tim_period(f2xx_tim *s)
     uint64_t clock_freq = 84000000UL; // APB2 @ 84 Mhz
     if (s->rcc!=NULL) {
         clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
-    } else if ((s->id>=2 && s->id<=5) || s->id==7 || s->id>=12) {
+    } else if (s->id!=6) {
         // APB1 timers, 42mhz
         // 6 should be included here but for some reason that causes the firmware to hang during boot. 
         // Likely the timer implementation is just missing something.
         clock_freq>>=1;
     }
-    clock_freq/= (s->regs[R_TIM_PSC]+1);
+    clock_freq/= (s->defs.PSC+1);
     uint32_t interval = 1000000000UL/clock_freq;
     return interval;
     // switch (s->id)
@@ -121,11 +121,12 @@ f2xx_tim_period(f2xx_tim *s)
 static int64_t
 f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
 {
-    if (s->regs[R_TIM_CR1] & 0x70) {
+    if (s->defs.CR1.CMS || s->defs.CR1.DIR) {
         qemu_log_mask(LOG_UNIMP, "f2xx tim, only upedge-aligned mode supported\n");
        // return -1;
     }
-    return current_time + f2xx_tim_period(s) * s->regs[R_TIM_ARR];
+    // Note - counter counts from 0...ARR, so there are actually ARR+1 "ticks" to account for.
+    return current_time + f2xx_tim_period(s) * (s->defs.ARR+1);
 }
 
 static void
@@ -133,15 +134,15 @@ f2xx_tim_timer(void *arg)
 {
     f2xx_tim *s = arg;
 
-    if (s->regs[R_TIM_CR1] & 1) {
+    if (s->defs.CR1.CEN) {
         timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
     }
-    if (!(s->regs[R_TIM_SR] & 1)) {
+    if (!s->defs.SR.UIF) {
         //printf("f2xx tim timer expired, setting int\n");
-        s->regs[R_TIM_SR] |= 1;
+        s->defs.SR.UIF = 1;
     }
     // Set IRQ if UIE is enabled. 
-   if (s->regs[R_TIM_DIER] & R_TIM_DIER_UIE)
+   if (s->defs.DIER.UIE)
    {
         qemu_set_irq(s->irq, 1);
    }
@@ -236,6 +237,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     case R_TIM_EGR:
         qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented write EGR+%u size %u val 0x%x\n",
           offset, size, (unsigned int)data);
+        s->regs[addr] = data;
         break;
     case R_TIM_CCER:
         // Capture/Compare Enable register
@@ -243,55 +245,49 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         s->regs[addr] = data;
 
         // If we are enabling PWM mode in output 1, notify the callback if we have one registered
-        if (    (data & 0x01) // Capture Compare 1 output enable
-             && ((s->regs[R_TIM_CCMR1] & 0x60) == 0x60)
-             && ((s->regs[R_TIM_CCMR1] & 0x03) == 0x00)) {
+        if ( s->defs.CCER.CC1E // Capture Compare 1 output enable
+             && s->defs.CCMR1.OC1M == 6
+             && s->defs.CCMR1.CC1S == 0) {
 
-            uint32_t ratio = (s->regs[R_TIM_CCR1] * 255) / s->regs[R_TIM_ARR];
+            uint32_t ratio = (s->defs.CCR1 * 255) / s->defs.ARR;
             DPRINTF("Setting PWM ratio to %d\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[0], ratio);
         }
 
         // If we are enabling PWM mode in output 1, notify the callback if we have one registered
-        else if (    (data & 0x10) // Capture Compare 2 output enable
-             && ((s->regs[R_TIM_CCMR1] & 0x6000) == 0x6000)
-             && ((s->regs[R_TIM_CCMR1] & 0x0300) == 0x0000)) {
+        if ( s->defs.CCER.CC2E // Capture Compare 2 output enable
+            && s->defs.CCMR1.OC2M == 6
+            && s->defs.CCMR1.CC2S == 0) {
 
-            uint32_t ratio = (s->regs[R_TIM_CCR2] * 255) / s->regs[R_TIM_ARR];
+            uint32_t ratio = (s->defs.CCR2 * 255) / s->defs.ARR;
             DPRINTF("Setting PWM ratio to %d\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[1], ratio);
         } 
-        if (    (data & 0x100) // Capture Compare 3 output enable
-             && ((s->regs[R_TIM_CCMR2] & 0x60) == 0x60)
-             && ((s->regs[R_TIM_CCMR2] & 0x03) == 0x00)) {
+        if ( s->defs.CCER.CC3E // Capture Compare 2 output enable
+            && s->defs.CCMR2.OC3M == 6
+            && s->defs.CCMR2.CC3S == 0) {
 
-            uint32_t ratio = (s->regs[R_TIM_CCR3] * 255) / s->regs[R_TIM_ARR];
+            uint32_t ratio = (s->defs.CCR3 * 255) / s->defs.ARR;
             DPRINTF("Setting PWM ratio to %d\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[2], data&0x200? 255-ratio : ratio);
             // printf("pwm3: %d\n",ratio);
         } 
-        if (    (data & 0x1000) // Capture Compare 4 output enable
-             && ((s->regs[R_TIM_CCMR2] & 0x6000) == 0x6000)
-             && ((s->regs[R_TIM_CCMR2] & 0x0300) == 0x0000)) {
+        if ( s->defs.CCER.CC4E // Capture Compare 2 output enable
+            && s->defs.CCMR2.OC4M == 6
+            && s->defs.CCMR2.CC4S == 0) {
 
-            uint32_t ratio = (s->regs[R_TIM_CCR4] * 255) / s->regs[R_TIM_ARR];
+            uint32_t ratio = (s->defs.CCR4 * 255) / s->defs.ARR;
             DPRINTF("Setting PWM ratio to %d\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[3], data&0x2000? 255-ratio : ratio);
-            printf("pwm4: %u CCR %08lx ARR %08lx\n",ratio, s->regs[R_TIM_CCR4], s->regs[R_TIM_ARR]);
-            printf("alt duty: %d", s->regs[R_TIM_CCR4] / (100 * (s->regs[R_TIM_PSC] + 1)));
+            // printf("pwm4: %u CCR %08lx ARR %08lx\n",ratio, s->regs[R_TIM_CCR4], s->regs[R_TIM_ARR]);
+            // printf("alt duty: %d", s->regs[R_TIM_CCR4] / (100 * (s->regs[R_TIM_PSC] + 1)));
         } else {
             qemu_set_irq(s->pwm_ratio_changed[3], 0);
         }
 
         break;
     case R_TIM_CCMR1:
-        // Capture/Compare mode register 1
-        s->regs[addr] = data;
-        break;
     case R_TIM_CCMR2:
-        // Capture/Compare mode register 2
-        s->regs[addr] = data;
-        break;
     case R_TIM_DIER:
     case R_TIM_PSC:
     case R_TIM_ARR:
@@ -321,20 +317,39 @@ static const MemoryRegionOps f2xx_tim_ops = {
 static void f2xx_tim_reset(DeviceState *dev)
 {
     f2xx_tim *s = STM32F4XX_TIMER(dev);
-
     timer_del(s->timer);
     memset(&s->regs, 0, sizeof(s->regs));
 }
 
+#define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - TIMER " name " register definition misaligned!")
+#define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg)
 
 static void
 f2xx_tim_init(Object *obj)
 {
     f2xx_tim *s = STM32F4XX_TIMER(obj);
+    // Check the register union definitions... This thows compile errors if they are misaligned, so it's ok in regards to not throwing exceptions
+    // during object init in QEMU.
+    CHECK_ALIGN(sizeof(s->defs),sizeof(uint32_t)*R_TIM_MAX, "defs union");
+    CHECK_REG_u32(s->defs.CR1);
+    CHECK_REG_u32(s->defs.CR2);
+    CHECK_REG_u32(s->defs.SMCR);
+    CHECK_REG_u32(s->defs.DIER);
+    CHECK_REG_u32(s->defs.SR);
+    CHECK_REG_u32(s->defs.EGR);
+    CHECK_REG_u32(s->defs.CCMR1);
+    CHECK_REG_u32(s->defs.CCMR2);
+    CHECK_REG_u32(s->defs.CCER);
+    CHECK_REG_u32(s->defs.RCR);
+    CHECK_REG_u32(s->defs.BDTR);
+    CHECK_REG_u32(s->defs.DCR);
+
+
+    // End size check.
     memory_region_init_io(&s->iomem, obj, &f2xx_tim_ops, s, "tim", 0xa0);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
     //s->regs[R_RTC_ISR] = R_RTC_ISR_RESET;
-    ////s->regs[R_RTC_PRER] = R_RTC_PRER_RESET;
+    ////s->regs[R_RTC_PRER] = R_RTC_PRER_RESET
     //s->regs[R_RTC_WUTR] = R_RTC_WUTR_RESET;
     DeviceState *dev = DEVICE(obj);
     s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, f2xx_tim_timer, s);
@@ -354,6 +369,7 @@ f2xx_tim_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     //TODO: fix this: dc->no_user = 1;
     dc->reset = f2xx_tim_reset;
+
 }
 
 static const TypeInfo
