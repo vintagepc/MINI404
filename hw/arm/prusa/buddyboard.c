@@ -48,7 +48,7 @@ static void buddy_init(MachineState *machine)
 
     dev = qdev_new(TYPE_STM32F407_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 
     armv7m_load_kernel(ARM_CPU(first_cpu),
                        machine->kernel_filename,
@@ -84,7 +84,7 @@ static void buddy_init(MachineState *machine)
     }
 
     dev = qdev_new("buddy-input");
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // dev_get_gpio_out_connector(dev,"buddy-enc-button",0);
     qdev_connect_gpio_out_named(dev, "buddy-enc-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
     qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
@@ -92,7 +92,7 @@ static void buddy_init(MachineState *machine)
 
     
     DeviceState *vis = qdev_new("buddy-visuals");
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(vis), &error_fatal);
+    sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
    
     {
         static const char names[4] = {'X','Y','Z','E'};
@@ -120,7 +120,7 @@ static void buddy_init(MachineState *machine)
             qdev_prop_set_uint8(dev, "inverted",is_inverted[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
-            sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+            sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
             qdev_connect_gpio_out_named(dev,"tmc2209-byte-out", 0, qdev_get_gpio_in_named(DEVICE(&SOC->usart[1]),"uart-byte-in",0));
             qdev_connect_gpio_out(split_out,i, qdev_get_gpio_in_named(dev,"tmc2209-byte-in",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), step_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-step",0));
@@ -137,16 +137,41 @@ static void buddy_init(MachineState *machine)
         // qdev_connect_gpio_out_named(DEVICE(&SOC->usart2),"tmc2209_usart_cs",0, qdev_get_gpio_in_named(tmc, SSI_GPIO_CS, 0));
     }
 
-    uint16_t startvals[] = {966, 977, 512, 512, 512};
-    uint8_t channels[] = {4,10,3,5,6};
+    uint16_t startvals[] = {25, 30, 25, 512, 512};
+    uint8_t channels[] = {10,4,3,5,6};
+    int tables[] = {5, 1, 2000,0,0};
+    DeviceState *bed = NULL, *hotend = NULL;
     for (int i=0; i<5; i++)
     {
         dev = qdev_new("thermistor");
+        if (i==0) hotend = dev;
+        if (i==1) bed = dev;
         qdev_prop_set_uint16(dev, "temp",startvals[i]);
-        sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_prop_set_uint16(dev, "table_no", tables[i]);
+        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(DEVICE(&SOC->adc[0]),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(DEVICE(&SOC->adc[0]),"adc_data_in",channels[i]));
     }
+    // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
+
+    dev = qdev_new("heater");
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
+    qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
+
+    dev = qdev_new("heater");
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
+    qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
+    // PE9     ------> TIM1_CH1
+    // PE11     ------> TIM1_CH2
+    // dev = qdev_new("fan");
+    // qdev_prop_set_uint8(dev,"label",(uint8_t)'P');
+    // // qdev_prop_set_uint16
+    // sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    // qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),10));
+    // qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in-soft",0),qdev_get_gpio_in_named(vis,"indicator-logic",4));
+    // qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),9,split_fan);
 
 };
 

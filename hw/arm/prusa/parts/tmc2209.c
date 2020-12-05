@@ -337,7 +337,7 @@ static void tmc2209_read(tmc2209_state *s)
 {
     // TODO, actually construct reply.
     uint32_t data = s->regs.raw[s->rx_buffer[2]];
-    if (s->address==1) printf("Read from %02x: %08x\n", s->rx_buffer[2], data);
+    // if (s->address==1) printf("Read from %02x: %08x\n", s->rx_buffer[2], data);
     uint8_t reply[8] = {0x05, 0xFF, s->rx_buffer[2],data>>24,data>>16,data>>8,data,0x00};
     reply[7] = tmc2209_calcCRC(reply,7);
   //  printf("Buffer: ");

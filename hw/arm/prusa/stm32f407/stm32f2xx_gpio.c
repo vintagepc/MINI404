@@ -219,9 +219,9 @@ stm32f2xx_gpio_init(Object *obj)
     memory_region_init_io(&s->iomem, obj, &stm32f2xx_gpio_ops, s, "gpio", 0x400);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
-    qdev_init_gpio_in(SYS_BUS_DEVICE(obj), f2xx_gpio_set, STM32_GPIO_PIN_COUNT);
-    qdev_init_gpio_out(SYS_BUS_DEVICE(obj), s->pin, STM32_GPIO_PIN_COUNT);
-    qdev_init_gpio_out_named(SYS_BUS_DEVICE(obj), s->alternate_function, "af", STM32_GPIO_PIN_COUNT);
+    qdev_init_gpio_in(DEVICE(obj), f2xx_gpio_set, STM32_GPIO_PIN_COUNT);
+    qdev_init_gpio_out(DEVICE(obj), s->pin, STM32_GPIO_PIN_COUNT);
+    qdev_init_gpio_out_named(DEVICE(obj), s->alternate_function, "af", STM32_GPIO_PIN_COUNT);
 
 }
 

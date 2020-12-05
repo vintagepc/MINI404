@@ -28,7 +28,7 @@ struct stm32f2xx_gpio {
     SysBusDevice busdev;
     MemoryRegion iomem;
 
-   // stm32_periph_t periph;
+    // stm32_periph_t periph;
     uint32_t periph;
     uint32_t idr_mask;
 

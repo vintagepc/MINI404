@@ -566,8 +566,8 @@ static void stm32_uart_write(void *opaque, hwaddr offset,
     Stm32Uart *s = (Stm32Uart *)opaque;
     int start = (offset & 3) * 8;
     int length = size * 8;
-
-    // stm32_rcc_check_periph_clk((Stm32Rcc *)s->stm32_rcc, s->periph);
+    if (s->stm32_rcc)
+        stm32_rcc_check_periph_clk(s->stm32_rcc, s->periph);
 
     switch (offset & 0xfffffffc) {
         case USART_SR_OFFSET:
@@ -665,7 +665,7 @@ static void stm32_uart_init(Object *obj)
     qemu_irq *clk_irq;
     Stm32Uart *s = STM32_UART(obj);
 
-    s->stm32_rcc = (Stm32Rcc *)s->stm32_rcc_prop;
+    // s->stm32_rcc = (Stm32Rcc *)s->stm32_rcc_prop;
 
     memory_region_init_io(&s->iomem, obj,  &stm32_uart_ops, s,
                           "uart", 0x03ff);
@@ -689,9 +689,6 @@ static void stm32_uart_init(Object *obj)
           qemu_allocate_irqs(stm32_uart_clk_irq_handler, (void *)s, 1);
     if (s->stm32_rcc)
         stm32_rcc_set_periph_clk_irq(s->stm32_rcc, s->periph, clk_irq[0]);
-    else
-        printf("FIXME - UART RCC\n");
-
 
     stm32_uart_connect(s, &s->chr);
 
@@ -701,8 +698,7 @@ static void stm32_uart_init(Object *obj)
 }
 
 static Property stm32_uart_properties[] = {
- //   DEFINE_PROP_
- //   DEFINE_PROP_PTR("stm32_rcc", Stm32Uart, stm32_rcc_prop),
+    // DEFINE_PROP_PTR("stm32_rcc", Stm32Uart, stm32_rcc_prop),
     DEFINE_PROP_CHR("chardev", Stm32Uart, chr),
     DEFINE_PROP_INT32("index", Stm32Uart, uart_index,0),
     DEFINE_PROP_END_OF_LIST()

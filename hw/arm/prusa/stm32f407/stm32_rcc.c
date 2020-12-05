@@ -1,6 +1,4 @@
 #include "stm32_rcc.h"
-#include "stm32_clktree.h"   
-#include "stm32.h"
 /* PUBLIC FUNCTIONS */
 
 void stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph)

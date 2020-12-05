@@ -9,17 +9,19 @@
 #define TYPE_STM32UART "stm32-uart"
 OBJECT_DECLARE_SIMPLE_TYPE(Stm32Uart, STM32UART)
 
+struct Stm32Rcc;
+
 struct Stm32Uart {
     /* Inherited */
     SysBusDevice busdev;
 
     /* Properties */
-    void *stm32_rcc_prop;
+    // void *stm32_rcc_prop;
 
     /* Private */
     MemoryRegion iomem;
 
-    void *stm32_rcc;
+    Stm32Rcc *stm32_rcc;
 
     int uart_index;
 

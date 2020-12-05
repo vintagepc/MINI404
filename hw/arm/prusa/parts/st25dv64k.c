@@ -137,6 +137,11 @@ static void st25dv64k_realize(DeviceState *dev, Error **errp)
     // }
 }
 
+static void st25dv64k_finalize(Object *obj)
+{
+    printf("EEPROM finalize\n");
+}
+
 static void st25dv64k_class_initfn(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -158,6 +163,7 @@ static const TypeInfo st25dv64k_info = {
     .parent        = TYPE_SMBUS_DEVICE,
     .instance_size = sizeof(st25dv64kDevice),
     .class_init    = st25dv64k_class_initfn,
+    .instance_finalize = st25dv64k_finalize,
 };
 
 static void st25dv64k_register_types(void)
@@ -175,7 +181,7 @@ void st25dv64k_init_one(I2CBus *smbus, uint8_t address)
     qdev_prop_set_uint8(dev, "address", address);
     /* FIXME: use an array of byte or block backend property? */
    // ST25DV64K(dev)->init_data = eeprom_buf;
-    qdev_realize_and_unref(dev, (BusState *)smbus, &error_fatal);
+    qdev_realize(dev, (BusState *)smbus, &error_fatal);
 }
 
 // void st25dv64k_init(I2CBus *smbus,

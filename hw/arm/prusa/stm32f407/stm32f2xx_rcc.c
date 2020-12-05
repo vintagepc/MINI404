@@ -207,6 +207,9 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define RCC_APB1ENR_SPI3EN_BIT   15
 #define RCC_APB1ENR_SPI2EN_BIT   14
 #define RCC_APB1ENR_WWDGEN_BIT   11
+#define RCC_APB1ENR_TIM14EN_BIT  8
+#define RCC_APB1ENR_TIM13EN_BIT  7
+#define RCC_APB1ENR_TIM12EN_BIT  6
 #define RCC_APB1ENR_TIM7EN_BIT   5
 #define RCC_APB1ENR_TIM6EN_BIT   4
 #define RCC_APB1ENR_TIM5EN_BIT   3
@@ -217,9 +220,9 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define RCC_APB2ENR_RESET_VALUE  0x00000000
 #define RCC_APB2ENR_OFFSET       0x44
 #define RCC_APB2ENR_MASK         0x00075F33
-#define RCC_APB2ENR_TIM11EN      18
-#define RCC_APB2ENR_TIM10EN      17
-#define RCC_APB2ENR_TIM9EN       16
+#define RCC_APB2ENR_TIM11EN_BIT      18
+#define RCC_APB2ENR_TIM10EN_BIT      17
+#define RCC_APB2ENR_TIM9EN_BIT       16
 #define RCC_APB2ENR_SYSCFGEN_BIT 14
 #define RCC_APB2ENR_SPI1EN_BIT   12
 #define RCC_APB2ENR_SDIOEN_BIT   11
@@ -680,6 +683,12 @@ static void stm32_rcc_RCC_APB2ENR_write(Stm32f2xxRcc *s, uint32_t new_value,
     stm32_rcc_periph_enable(s, new_value, init, STM32_UART1, RCC_APB2ENR_USART1EN_BIT);
     stm32_rcc_periph_enable(s, new_value, init, STM32_UART6, RCC_APB2ENR_USART6EN_BIT);
 
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM1, RCC_APB2ENR_TIM1EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM8, RCC_APB2ENR_TIM8EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM9, RCC_APB2ENR_TIM9EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM10, RCC_APB2ENR_TIM10EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM11, RCC_APB2ENR_TIM11EN_BIT);
+
     s->RCC_APB2ENR = new_value & RCC_APB2ENR_MASK;
 }
 
@@ -700,6 +709,25 @@ static void stm32_rcc_RCC_APB1ENR_write(Stm32f2xxRcc *s, uint32_t new_value,
                             RCC_APB1ENR_USART3EN_BIT);
     stm32_rcc_periph_enable(s, new_value, init, STM32_UART2,
                             RCC_APB1ENR_USART2EN_BIT);
+
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM2,
+        RCC_APB1ENR_TIM2EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM3,
+        RCC_APB1ENR_TIM3EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM4,
+        RCC_APB1ENR_TIM4EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM5,
+        RCC_APB1ENR_TIM5EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM6,
+        RCC_APB1ENR_TIM6EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM7,
+        RCC_APB1ENR_TIM7EN_BIT);        
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM12,
+        RCC_APB1ENR_TIM12EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM13,
+        RCC_APB1ENR_TIM13EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_TIM14,
+        RCC_APB1ENR_TIM14EN_BIT);
 
     /* 0b00110110111111101100100111111111 */
     s->RCC_APB1ENR = new_value & 0x36fec9ff;
@@ -971,8 +999,9 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
 /* DEVICE INITIALIZATION */
 
 /* Set up the clock tree */
-static void stm32_rcc_init_clk(Stm32f2xxRcc *s)
+static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 {
+    Stm32f2xxRcc *s = STM32F2XX_RCC(dev);
     int i;
     qemu_irq *hclk_upd_irq =
     qemu_allocate_irqs(stm32_rcc_hclk_upd_irq_handler, s, 1);
@@ -1073,6 +1102,21 @@ static void stm32_rcc_init_clk(Stm32f2xxRcc *s)
         clktree_create_clk("UART7", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
     s->PERIPHCLK[STM32_UART8] =
         clktree_create_clk("UART8", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    
+    s->PERIPHCLK[STM32_TIM1] = clktree_create_clk("TIM1",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
+    s->PERIPHCLK[STM32_TIM2] = clktree_create_clk("TIM2",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM3] = clktree_create_clk("TIM3",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM4] = clktree_create_clk("TIM4",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM5] = clktree_create_clk("TIM5",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM6] = clktree_create_clk("TIM6",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM7] = clktree_create_clk("TIM7",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM8] = clktree_create_clk("TIM8",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
+    s->PERIPHCLK[STM32_TIM9] = clktree_create_clk("TIM9",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
+    s->PERIPHCLK[STM32_TIM10] = clktree_create_clk("TIM10",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
+    s->PERIPHCLK[STM32_TIM11] = clktree_create_clk("TIM11",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
+    s->PERIPHCLK[STM32_TIM12] = clktree_create_clk("TIM12",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM13] = clktree_create_clk("TIM13",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    s->PERIPHCLK[STM32_TIM14] = clktree_create_clk("TIM14",1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
 
 
     s->PERIPHCLK[STM32_DCMI_PERIPH] =
@@ -1102,7 +1146,7 @@ static void stm32_rcc_init(Object *obj)
 
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 
-    stm32_rcc_init_clk(s);
+    // stm32_rcc_init_clk(s);
 }
 
 
@@ -1117,6 +1161,7 @@ static void stm32_rcc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32_rcc_reset;
+    dc->realize = stm32_rcc_realize;
     device_class_set_props(dc, stm32_rcc_properties);
 }
 
@@ -1124,8 +1169,8 @@ static TypeInfo stm32_rcc_info = {
     .name  = TYPE_STM32F2XX_RCC,
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size  = sizeof(Stm32f2xxRcc),
-    .instance_init = stm32_rcc_init,
-    .class_init = stm32_rcc_class_init
+    .class_init = stm32_rcc_class_init,
+    .instance_init = stm32_rcc_init
 };
 
 static void stm32_rcc_register_types(void)

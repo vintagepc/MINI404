@@ -16,13 +16,28 @@
  */
 
 #include "qemu/osdep.h"
-#include "thermistor.h"
 #include "hw/irq.h"
 #include "qom/object.h"
 #include "qemu/module.h"
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
+#include "thermistortables.h"
 
+#define TYPE_THERMISTOR "thermistor"
+OBJECT_DECLARE_SIMPLE_TYPE(ThermistorState, THERMISTOR)
+
+struct ThermistorState {
+    SysBusDevice parent;
+
+    qemu_irq irq_value;
+
+    uint16_t table_index;
+    const short int *table;    
+    int table_length;
+    float temperature;
+    int8_t oversampling;
+    uint16_t start_temp;
+};
 
 static void thermistor_read_request(void *opaque, int n, int level) {
     if (!level)
@@ -30,8 +45,10 @@ static void thermistor_read_request(void *opaque, int n, int level) {
         return;
     }
 	ThermistorState *s = opaque;
-    qemu_set_irq(s->irq_value,s->temp);
+    if (s->table_index==0) {
+        qemu_set_irq(s->irq_value,s->start_temp);
     return;
+    }
 	for (uint16_t i= 0; i<s->table_length; i+=2) {
 		if (s->table[i+1] <= s->temperature) {
 			int16_t tt = s->table[i];
@@ -44,8 +61,9 @@ static void thermistor_read_request(void *opaque, int n, int level) {
 			}
 			// if (m_adc_mux_number==-1)
 			// 	printf("simAVR ADC out value: %u\n",((tt / m_oversampling) * 5000) / 0x3ff);
-			int value = (((tt / s->oversampling) * 5000));
+			int value = (((tt / s->oversampling)));
 			qemu_set_irq(s->irq_value,value);
+            return;
 		}
 	}
 
@@ -61,8 +79,27 @@ static void thermistor_temp_in(void *opaque, int n, int level)
 static void thermistor_reset(DeviceState *dev)
 {
     ThermistorState *s = THERMISTOR(dev);
-    s->temperature = 25;
+    s->temperature = s->start_temp;
+    switch (s->table_index)
+    {
+        case 1:
+            s->table_length = 2*BEDTEMPTABLE_LEN;
+            s->table = &temptable_1[0][0];
+            break;
+        case 5:
+            s->table = &temptable_5[0][0];
+            s->table_length = 2*HEATER_0_TEMPTABLE_LEN;
+            break;
+        case 2000:
+            s->table_length = AMBIENTTEMPTABLE_LEN;
+            s->table = &temptable_2000[0][0];
+            break;
+        default:
+            s->table = NULL;
     s->table_length = 0;
+            break;
+    }
+
 }
 
 
@@ -75,10 +112,12 @@ static void thermistor_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_read_request, "thermistor_read_request", 1);
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_temp_in, "thermistor_set_temperature", 1);
 
+    s->oversampling = OVERSAMPLENR;
 }
 
 static Property thermistor_properties[] = {
-    DEFINE_PROP_UINT16("temp", ThermistorState, temp,0),
+    DEFINE_PROP_UINT16("temp", ThermistorState, start_temp,0),
+    DEFINE_PROP_UINT16("table_no", ThermistorState, table_index, 0),
    // DEFINE_PROP_("cpu-type", STM32F407State, cpu_type),
     DEFINE_PROP_END_OF_LIST(),
 };

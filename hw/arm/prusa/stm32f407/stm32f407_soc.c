@@ -157,6 +157,12 @@ static void stm32f407_soc_initfn(Object *obj)
     object_initialize_child(obj,"crc",&s->crc, TYPE_STM32F2XX_CRC);
 }
 
+
+static void stm32f407_soc_finalize(Object *obj)
+{
+    printf("soc finalize;");
+}
+
 static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 {
     STM32F407State *s = STM32F407_SOC(dev_soc);
@@ -216,12 +222,12 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, SYSCFG_IRQ));
 
     // RCC
-    uint32_t osc_freq = 8000000, /*osc_freq*/
-                   osc32_freq = 32768; /*osc2_freq*/
+    uint32_t osc_freq = 12000000; /*osc_freq*/
+                   //osc32_freq = 32768; /*osc2_freq*/
 
     dev = DEVICE(&(s->rcc));
     qdev_prop_set_uint32(dev, "osc_freq", osc_freq);
-    qdev_prop_set_uint32(dev, "osc32_freq", osc32_freq);
+    //qdev_prop_set_uint32(dev, "osc32_freq", osc32_freq);
     
     if (!sysbus_realize(SYS_BUS_DEVICE(dev), errp)) {
         return;
@@ -248,6 +254,8 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     for (i = 0; i < STM_NUM_USARTS; i++) {
         // if (i==1) continue;
         dev = DEVICE(&(s->usart[i]));
+        s->usart[i].periph = STM32_UART1+i;
+       s->usart[i].stm32_rcc = (Stm32Rcc*)&s->rcc;
         qdev_prop_set_chr(dev, "chardev", serial_hd(i));
         qdev_prop_set_int32(dev, "index",i+1); // Set to STM index, not 0-based
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
@@ -257,15 +265,6 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_mmio_map(busdev, 0, usart_addr[i]);
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, usart_irq[i]));
     }
-
-    // // Wire up our special TMC USART.
-    // dev = DEVICE(&s->uart2);
-    // if (!sysbus_realize(SYS_BUS_DEVICE(&s->uart2),errp)) {
-    //     return;
-    // }
-    // busdev = SYS_BUS_DEVICE(dev);
-    // sysbus_mmio_map(busdev, 0, usart_addr[1]);
-    // sysbus_connect_irq(busdev,0,qdev_get_gpio_in(armv7m, usart_irq[1]));
 
     // /* Timer 2 to 5 */
     // for (i = 0; i < STM_NUM_TIMERS; i++) {
@@ -313,6 +312,8 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
         dev = DEVICE(&s->timers[i]);
         s->timers[i].id = i+1;
+        s->timers[i].periph = STM32_TIM1+i;
+     //   s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
             return;
         busdev = SYS_BUS_DEVICE(dev);
@@ -503,6 +504,7 @@ static const TypeInfo stm32f407_soc_info = {
     .instance_size = sizeof(STM32F407State),
     .instance_init = stm32f407_soc_initfn,
     .class_init    = stm32f407_soc_class_init,
+    .instance_finalize = stm32f407_soc_finalize
 };
 
 static void stm32f407_soc_types(void)

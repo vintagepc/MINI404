@@ -87,27 +87,35 @@ static const char *f2xx_tim_reg_names[] = {
 static uint32_t
 f2xx_tim_period(f2xx_tim *s)
 {
-
-       uint64_t clock_freq = 85000000UL;
-            clock_freq/= (s->regs[R_TIM_PSC]+1);
-            uint32_t interval = 1000000000UL/clock_freq;
-            return interval;
-    switch (s->id)
-    {
-        case 14:
-        case 7:
-        {
-            // TODO... get real timer clock, but for now this should be ok. 
-            // TIM14:  84 MHz/PSC = 1MHz = 1 us = 1000 ns (for a final interval of 1ms after TIMx_ARR).
-            // TIM7: ARR=84, PSC = 999 (div by 1000) = ~ 11905 ns 
-            uint64_t clock_freq = 85000000UL;
-            clock_freq/= (s->regs[R_TIM_PSC]+1);
-            uint32_t interval = 1000000000UL/clock_freq;
-            return interval;
-        }
-        default:
-            return 750;
+    
+    uint64_t clock_freq = 84000000UL; // APB2 @ 84 Mhz
+    if (s->rcc!=NULL) {
+        clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
+    } else if ((s->id>=2 && s->id<=5) || s->id==7 || s->id>=12) {
+        // APB1 timers, 42mhz
+        // 6 should be included here but for some reason that causes the firmware to hang during boot. 
+        // Likely the timer implementation is just missing something.
+        clock_freq>>=1;
     }
+    clock_freq/= (s->regs[R_TIM_PSC]+1);
+    uint32_t interval = 1000000000UL/clock_freq;
+    return interval;
+    // switch (s->id)
+    // {
+    //     case 14:
+    //     case 7:
+    //     {
+    //         // TODO... get real timer clock, but for now this should be ok. 
+    //         // TIM14:  84 MHz/PSC = 1MHz = 1 us = 1000 ns (for a final interval of 1ms after TIMx_ARR).
+    //         // TIM7: ARR=84, PSC = 999 (div by 1000) = ~ 11905 ns 
+    //         uint64_t clock_freq = 85000000UL;
+    //         clock_freq/= (s->regs[R_TIM_PSC]+1);
+    //         uint32_t interval = 1000000000UL/clock_freq;
+    //         return interval;
+    //     }
+    //     default:
+    //         return 750;
+    // }
 }
 
 static int64_t
@@ -175,8 +183,8 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     int offset = addr & 0x3;
 
     addr >>= 2;
-    if (s->id==7 && addr!=R_TIM_SR) printf("%d %s: reg:%s, size: %d, value: 0x%llx\n", s->id,
-                    __func__, f2xx_tim_reg_names[addr], size, data);
+   // if (s->id==3 && addr!=R_TIM_SR) printf("%d %s: reg:%s, size: %d, value: 0x%llx\n", s->id,
+     //               __func__, f2xx_tim_reg_names[addr], size, data);
     if (addr >= R_TIM_MAX) {
         qemu_log_mask(LOG_GUEST_ERROR, "f2xx tim invalid write register 0x%x\n",
           (unsigned int)addr << 2);
@@ -204,10 +212,17 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         if ((s->regs[addr] & 1) == 0 && data & 1) {
             printf("f2xx tim started: %d\n", s->id);
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
-            qemu_set_irq(s->pwm_enable, 1);
+            qemu_set_irq(s->pwm_enable[0], 1);
+            printf("pwm en\n");
         } else if (s->regs[addr] & 1 && (data & 1) == 0) {
             timer_del(s->timer);
-            qemu_set_irq(s->pwm_enable, 0);
+            qemu_set_irq(s->pwm_enable[0], 0);
+            printf("pwm dis\n");
+
+        }
+        if (data & 1<<3)
+        {
+            printf("%d OPM!\n", s->id);
         }
         s->regs[addr] = data;
         break;
@@ -224,6 +239,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         break;
     case R_TIM_CCER:
         // Capture/Compare Enable register
+       // printf("CCER: %04x\n",data);
         s->regs[addr] = data;
 
         // If we are enabling PWM mode in output 1, notify the callback if we have one registered
@@ -233,7 +249,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 
             uint32_t ratio = (s->regs[R_TIM_CCR1] * 255) / s->regs[R_TIM_ARR];
             DPRINTF("Setting PWM ratio to %d\n", ratio);
-            qemu_set_irq(s->pwm_ratio_changed, ratio);
+            qemu_set_irq(s->pwm_ratio_changed[0], ratio);
         }
 
         // If we are enabling PWM mode in output 1, notify the callback if we have one registered
@@ -243,10 +259,28 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 
             uint32_t ratio = (s->regs[R_TIM_CCR2] * 255) / s->regs[R_TIM_ARR];
             DPRINTF("Setting PWM ratio to %d\n", ratio);
-            qemu_set_irq(s->pwm_ratio_changed, ratio);
+            qemu_set_irq(s->pwm_ratio_changed[1], ratio);
+        } 
+        if (    (data & 0x100) // Capture Compare 3 output enable
+             && ((s->regs[R_TIM_CCMR2] & 0x60) == 0x60)
+             && ((s->regs[R_TIM_CCMR2] & 0x03) == 0x00)) {
 
+            uint32_t ratio = (s->regs[R_TIM_CCR3] * 255) / s->regs[R_TIM_ARR];
+            DPRINTF("Setting PWM ratio to %d\n", ratio);
+            qemu_set_irq(s->pwm_ratio_changed[2], data&0x200? 255-ratio : ratio);
+            // printf("pwm3: %d\n",ratio);
+        } 
+        if (    (data & 0x1000) // Capture Compare 4 output enable
+             && ((s->regs[R_TIM_CCMR2] & 0x6000) == 0x6000)
+             && ((s->regs[R_TIM_CCMR2] & 0x0300) == 0x0000)) {
+
+            uint32_t ratio = (s->regs[R_TIM_CCR4] * 255) / s->regs[R_TIM_ARR];
+            DPRINTF("Setting PWM ratio to %d\n", ratio);
+            qemu_set_irq(s->pwm_ratio_changed[3], data&0x2000? 255-ratio : ratio);
+            printf("pwm4: %u CCR %08lx ARR %08lx\n",ratio, s->regs[R_TIM_CCR4], s->regs[R_TIM_ARR]);
+            printf("alt duty: %d", s->regs[R_TIM_CCR4] / (100 * (s->regs[R_TIM_PSC] + 1)));
         } else {
-            qemu_set_irq(s->pwm_ratio_changed, 0);
+            qemu_set_irq(s->pwm_ratio_changed[3], 0);
         }
 
         break;
@@ -263,6 +297,8 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     case R_TIM_ARR:
     case R_TIM_CCR1:
     case R_TIM_CCR2:
+    case R_TIM_CCR3:
+    case R_TIM_CCR4:
         s->regs[addr] = data;
         break;
     default:
@@ -304,8 +340,8 @@ f2xx_tim_init(Object *obj)
     s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, f2xx_tim_timer, s);
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
 
-    qdev_init_gpio_out_named(DEVICE(dev), &s->pwm_ratio_changed, "pwm_ratio_changed", 1);
-    qdev_init_gpio_out_named(DEVICE(dev), &s->pwm_enable, "pwm_enable", 1);
+    qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
+    qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);
 }
 
 // static Property f2xx_tim_properties[] = {

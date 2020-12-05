@@ -10,26 +10,11 @@
 OBJECT_DECLARE_SIMPLE_TYPE(Stm32f2xxRcc, STM32F2XX_RCC)
 
 typedef struct Stm32f2xxRcc {
-    /* Inherited */
-    union {
-        Stm32Rcc inherited;
-        struct {
-            /* Inherited */
-            SysBusDevice busdev;
-
-            /* Properties */
-            uint32_t osc_freq;
-            uint32_t osc32_freq;
-
-            /* Private */
-            MemoryRegion iomem;
-            qemu_irq irq;
-        };
-    };
+    /* Inherited -- MUST MATCH stm32_rcc.h. NO EXCEPTIONS. */
+    STM32_RCC_COMMON
     
-    /* Peripheral clocks */
-    Clk PERIPHCLK[STM32_PERIPH_COUNT], // MUST be first field after `inherited`, because Stm32Rcc's last field aliases this array
-    HSICLK,
+    /* Additional clocks */
+    Clk HSICLK,
     HSECLK,
     LSECLK,
     LSICLK,
