@@ -19,7 +19,7 @@ struct Stm32Rcc;
 struct f2xx_tim {
     SysBusDevice busdev;
     MemoryRegion iomem;
-    QEMUTimer *timer;
+    QEMUTimer *timer, *pwmtimer;
     qemu_irq irq;
     // Union-ized for my/code sanity and easier inspection during debugging. 
     union {
@@ -182,7 +182,8 @@ struct f2xx_tim {
     };
     uint8_t id;
     qemu_irq pwm_ratio_changed[4];
-    qemu_irq pwm_enable[4];
+    qemu_irq pwm_enable[4], pwm_pin[4];
+
 
     stm32_periph_t periph;
     Stm32Rcc *rcc; // RCC for clock speed. 

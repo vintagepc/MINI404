@@ -93,9 +93,9 @@ f2xx_tim_period(f2xx_tim *s)
         clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
     } else if (s->id!=6) {
         // APB1 timers, 42mhz
-        // 6 should be included here but for some reason that causes the firmware to hang during boot. 
+        // 6/14 should be included here but for some reason that causes the firmware to hang during boot. 
         // Likely the timer implementation is just missing something.
-        clock_freq>>=1;
+        //clock_freq>>=1;
     }
     clock_freq/= (s->defs.PSC+1);
     uint32_t interval = 1000000000UL/clock_freq;
@@ -177,15 +177,62 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     return r;
 }
 
+static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool active_low)
+{
+    bool is_inverted = 0; mode &0x1;
+    uint32_t ratio = 0;
+    switch (mode)
+    {
+        case 0x00: // frozen
+            return -1;
+    //    case 0x4: // Force inactive/active:
+    //    case 0x5:
+            return 255*is_inverted;
+        case 0x6:
+      //  case 0x7:
+            ratio = (CCR*255)/s->defs.ARR;
+            if (is_inverted^active_low) ratio = 255-ratio;
+            return ratio;
+        default:
+            printf("FIXME: unimplemented OCxM!\n");
+            return -1;
+    }
+}
+
+// static void f2xx_tim_update_pwm_pin_state(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool active_low)
+// {
+//     bool is_inverted = 0; mode &0x1;
+//     uint32_t ratio = 0;
+//     bool is_on = false;
+//     switch (mode)
+//     {
+//         case 0x00: // frozen; do nothing.
+//             return;
+   
+//         case 0x6:
+//       //  case 0x7:
+//             if (s->defs.CR1.DIR) // downcount. 
+//             {
+//                 is_on = 
+//             }
+//             ratio = (CCR*255)/s->defs.ARR;
+//             if (is_inverted^active_low) ratio = 255-ratio;
+//             return ratio;
+//         default:
+//             printf("FIXME: unimplemented OCxM!\n");
+//             return;
+//     }
+// }
+
+// static int 
+
 static void
 f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 {
     f2xx_tim *s = arg;
     int offset = addr & 0x3;
-
+    uint32_t changed = 0;
     addr >>= 2;
-   // if (s->id==3 && addr!=R_TIM_SR) printf("%d %s: reg:%s, size: %d, value: 0x%llx\n", s->id,
-     //               __func__, f2xx_tim_reg_names[addr], size, data);
     if (addr >= R_TIM_MAX) {
         qemu_log_mask(LOG_GUEST_ERROR, "f2xx tim invalid write register 0x%x\n",
           (unsigned int)addr << 2);
@@ -204,7 +251,11 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     default:
         abort();
     }
+    changed = s->regs[addr]^data;
+    if (changed==0)
+        return;
 
+    // if (s->id==3) printf("Timer%d: Wrote %08x to %02x (change mask %08x)\n", s->id, data, addr, changed);
     switch(addr) {
     case R_TIM_CR1:
         if (data & ~1) {
@@ -263,43 +314,46 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             DPRINTF("Setting PWM ratio to %d\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[1], ratio);
         } 
-        if ( s->defs.CCER.CC3E // Capture Compare 2 output enable
-            && s->defs.CCMR2.OC3M == 6
-            && s->defs.CCMR2.CC3S == 0) {
-
-            uint32_t ratio = (s->defs.CCR3 * 255) / s->defs.ARR;
-            DPRINTF("Setting PWM ratio to %d\n", ratio);
-            qemu_set_irq(s->pwm_ratio_changed[2], data&0x200? 255-ratio : ratio);
-            // printf("pwm3: %d\n",ratio);
-        } 
-        if ( s->defs.CCER.CC4E // Capture Compare 2 output enable
-            && s->defs.CCMR2.OC4M == 6
-            && s->defs.CCMR2.CC4S == 0) {
-
-            uint32_t ratio = (s->defs.CCR4 * 255) / s->defs.ARR;
-            DPRINTF("Setting PWM ratio to %d\n", ratio);
-            qemu_set_irq(s->pwm_ratio_changed[3], data&0x2000? 255-ratio : ratio);
-            // printf("pwm4: %u CCR %08lx ARR %08lx\n",ratio, s->regs[R_TIM_CCR4], s->regs[R_TIM_ARR]);
-            // printf("alt duty: %d", s->regs[R_TIM_CCR4] / (100 * (s->regs[R_TIM_PSC] + 1)));
-        } else {
-            qemu_set_irq(s->pwm_ratio_changed[3], 0);
+        if (changed & 0xF00) {
+            if ( s->defs.CCER.CC3E // Capture Compare 2 output enable
+                   && s->defs.CCMR2.CC3S == 0) {
+                int ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+                if (ratio>=0)
+                    qemu_set_irq(s->pwm_ratio_changed[2], ratio);
+            } 
+            
         }
-
+        if (changed & 0x3000){
+            if (s->defs.CCER.CC4E // Capture Compare 4 output enable
+                && s->defs.CCMR2.CC4S == 0) {
+                int ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
+                DPRINTF("Setting PWM ratio to %d\n", ratio);
+                if (ratio>=0)
+                    qemu_set_irq(s->pwm_ratio_changed[3], ratio);
+            }
+        }
         break;
     case R_TIM_CCMR1:
     case R_TIM_CCMR2:
     case R_TIM_DIER:
     case R_TIM_PSC:
     case R_TIM_ARR:
+        s->regs[addr] = data;
+        break;
     case R_TIM_CCR1:
     case R_TIM_CCR2:
     case R_TIM_CCR3:
     case R_TIM_CCR4:
         s->regs[addr] = data;
+        if (addr == R_TIM_CCR4)
+        {
+            // printf("CCR4: %02x\n",data);
+        }
         break;
     default:
-        qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented write 0x%x+%u size %u val 0x%x\n",
-          (unsigned int)addr << 2, offset, size, (unsigned int)data);
+        s->regs[addr] = data;
+        // printf("f2xx tim unimplemented write 0x%x+%u size %u val 0x%x\n",
+        //   (unsigned int)addr << 2, offset, size, (unsigned int)data);
     }
 
 }

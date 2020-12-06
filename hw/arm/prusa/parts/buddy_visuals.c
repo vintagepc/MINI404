@@ -221,9 +221,13 @@ static void buddy_visuals_realize(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_enable_in, "motor-enable",4);
     qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_analog, "indicator-analog",8);
     qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_logic, "indicator-logic",8);
-
-
+    struct stat file;
     const char IPC_FILE[] = "MK404.IPC";
+    if (stat(IPC_FILE, &file)<0)
+    {
+        printf("MK404.IPC file not found. Skipping connection.\n");
+        return;
+    }
     s->fd_pipe = fopen(IPC_FILE, "w");
     if (s->fd_pipe==NULL)
     {

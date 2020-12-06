@@ -49,14 +49,52 @@ struct inputState {
     int32_t encoder_ticks;
     int8_t encoder_dir;
 
-    QEMUTimer *timer;
+    QEMUTimer *timer, *release;
 };
 
 
 
-static void buddy_input_keyevent(inputState *s, int keycode)
+static void buddy_input_keyevent(void *opaque, int keycode)
 {
-    // TODO, keyboard events.
+    inputState *s = opaque;
+    int dir = 0;
+    // printf("Key: %04x\n",keycode);
+    switch (keycode)
+    {
+        case 0x50: // down
+            dir = 1;
+            break;
+        case 0x48: // up
+            dir = -1;
+            break;
+        case 0x1c: // enter
+            qemu_set_irq(s->irq_enc_button,0);
+            timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
+            // printf("return\n");
+            break;
+
+    }
+    if (keycode == QEMU_KEY_UP)
+    {
+        dir = 1;
+    } else if (keycode == QEMU_KEY_DOWN) {
+        dir = -1;
+    } 
+    if (dir) {
+        if (s->encoder_dir != dir) // direction change
+        {
+            s->encoder_ticks = 0;
+            s->encoder_dir=dir;
+        }
+        s->encoder_ticks +=2;
+        timer_mod(s->timer,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
+    }
+}
+
+static void buddy_autorelease_timer_expire(void *opaque)
+{
+    inputState *s = opaque;
+    qemu_set_irq(s->irq_enc_button,1);
 }
 
 static void buddy_input_timer_expire(void *opaque)
@@ -87,7 +125,7 @@ static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int but
     if (changed & MOUSE_EVENT_LBUTTON)
     {
         // printf("Button\n");
-        qemu_set_irq(s->irq_enc_button,(buttons_state & MOUSE_EVENT_LBUTTON)>0);
+        qemu_set_irq(s->irq_enc_button,(buttons_state & MOUSE_EVENT_LBUTTON)==0);
     }
     if (dz) // Mouse wheel motion.
     {
@@ -135,9 +173,12 @@ static void buddy_input_initfn(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "buddy-enc-a", 1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "buddy-enc-b", 1);
     qemu_add_mouse_event_handler(&buddy_input_mouseevent,BUDDY_INPUT(obj),false, "buddy-mouse");
+    qemu_add_kbd_event_handler(&buddy_input_keyevent,s);
 
     s->timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
                     (QEMUTimerCB *)buddy_input_timer_expire, s);
+    s->release = timer_new_ms(QEMU_CLOCK_VIRTUAL,
+            (QEMUTimerCB *)buddy_autorelease_timer_expire, s);
 }
 
 static void buddy_input_class_init(ObjectClass *oc, void *data)

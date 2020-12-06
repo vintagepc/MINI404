@@ -44,7 +44,11 @@ struct heater_state {
 
     uint8_t mass10x;
 
+    uint64_t last_tick, last_off;
+
     int tick_overrun;
+
+    bool is_ticking;
 
     qemu_irq temp_out;
     QEMUTimer *temp_tick;
@@ -53,29 +57,40 @@ struct heater_state {
 static void heater_temp_tick_expire(void *opaque)
 {
     heater_state *s = opaque;
+    static const float updaterate = 0.25;
 
     if (s->pwm>0)// || (pAVR->cycle-m_cntOff)<(pAVR->frequency/100))
     {
-        float fDelta = (s->thermalMass*((float)(s->pwm)/255.0f))*0.3f;
+        float fDelta = (s->thermalMass*((float)(s->pwm)/255.0f))*updaterate;
         s->currentTemp += fDelta;
-        s->tick_overrun = 3; 
+        s->tick_overrun = 4; 
         s->lastpwm = s->pwm;
+        s->last_tick = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+    // } else if (s->last_tick>0) {
+    //     // take "credit" for on time that is not a complete increment of the tickrate.
+    //     int32_t delta_ms = s->last_off-s->last_tick;
+    //     if (delta_ms>0){ 
+    //         float fDelta = (s->thermalMass*((float)(s->lastpwm)/255.0f))*((float)delta_ms/1000.f);
+    //         s->currentTemp += fDelta;
+    //     }
+    //     s->last_tick = 0;
     } else if (s->tick_overrun>0){
-        float fDelta = (s->thermalMass*((float)(s->lastpwm)/255.0f))*0.3f;
+        float fDelta = (s->thermalMass*((float)(s->lastpwm)/255.0f))*updaterate;
         s->currentTemp += fDelta;
         s->tick_overrun--;
     } else {// Cooling - do a little exponential decay
-        float dT = (s->currentTemp - s->ambientTemp)*pow(2.7183,-0.005*0.3);
+        float dT = (s->currentTemp - s->ambientTemp)*pow(2.7183,-0.005*updaterate);
         s->currentTemp -= s->currentTemp - (s->ambientTemp + dT);
     }
 	// m_iDrawTemp = s->currentTemp;
 
     if (s->pwm>0 || s->currentTemp>s->ambientTemp+0.3)
 	{
-        timer_mod(s->temp_tick,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+300);
+        timer_mod(s->temp_tick,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+(1000*updaterate));
 	}
     else
     {
+        s->is_ticking = false;
         s->currentTemp = s->ambientTemp;
         //qemu_set_irq(s->temp_out, s->currentTemp*256.f);
     }
@@ -92,50 +107,25 @@ static void heater_pwm_change(void* opaque, int n, int level)
 
     //printf("New pwm: %d\n",level);
     s->pwm = level;
-    if (s->pwm > 0)
+    if (s->pwm > 0 && !s->is_ticking)
 	{
-        timer_mod(s->temp_tick, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+100);
-	}
+        timer_mod(s->temp_tick, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+1); // schedule immediate.
+        s->is_ticking = true;
+	} else if (s->pwm==0) {
+        s->last_off = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+    }
     // if (GetIRQ(ON_OUT)->value != (s->pwm>0))
 	// {
     //     RaiseIRQ(ON_OUT,s->pwm>0);
 	// }
 }
 
-//TCCR0A  _SFR_IO8(0x24)
-//#define COM0B0  4
-
-// void Heater::OnDigitalChanged(struct avr_irq_t * irq, uint32_t value)
-// {
-
-//     if (m_bIsBed) // The heatbed PWM is based on inverting mode trickery. We can just watch COM0B0 rather than the digital pin output.
-//     {
-//         avr_regbit_t inv = AVR_IO_REGBIT(0x24 + 32,4);
-//         uint8_t COM0B0 = avr_regbit_get(m_pAVR, inv);
-//         value = COM0B0^1U;
-//     }
-
-//     if (value==1)
-// 	{
-//         value = 255;
-// 	}
-
-//     OnPWMChanged(irq,value);
-// }
-
-// void Heater::Set(uint8_t uiPWM)
-// {
-//     m_bAuto = false;
-//     s->pwm = uiPWM;
-//     RaiseIRQ(PWM_IN,0XFF);
-// }
-
 static void heater_reset(DeviceState *dev)
 {
     heater_state *s = HEATER(dev);
 
     s->thermalMass = ((float)s->mass10x)/10.f;
-    s->ambientTemp = 25.f;
+    s->ambientTemp = 18.f;
     s->currentTemp = s->ambientTemp;
 }
 
@@ -152,7 +142,7 @@ static void heater_init(Object *obj)
 }
 
 static Property heater_properties[] = {
-    DEFINE_PROP_UINT8("thermal_mass_x10",heater_state, mass10x, 40),
+    DEFINE_PROP_UINT8("thermal_mass_x10",heater_state, mass10x, 25),
  //   DEFINE_PROP_FLOAT("temp", heaterState, start_temp,0),
    // DEFINE_PROP_("cpu-type", STM32F407State, cpu_type),
     DEFINE_PROP_END_OF_LIST(),
