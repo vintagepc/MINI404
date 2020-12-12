@@ -166,15 +166,25 @@ static void buddy_init(MachineState *machine)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
-    // PE9     ------> TIM1_CH1
-    // PE11     ------> TIM1_CH2
-    // dev = qdev_new("fan");
-    // qdev_prop_set_uint8(dev,"label",(uint8_t)'P');
-    // // qdev_prop_set_uint16
-    // sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    // qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),10));
-    // qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in-soft",0),qdev_get_gpio_in_named(vis,"indicator-logic",4));
-    // qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),9,split_fan);
+
+
+    // hotend = fan1
+    // print fan = fan0
+    uint16_t fan_max_rpms[] = { 6600, 8000 };
+    uint8_t  fan_pwm_pins[] = { 11, 9};
+    uint8_t fan_tach_pins[] = { 10, 14};
+    uint8_t fan_labels[] = {'P','E'};
+    for (int i=0; i<2; i++)
+    {
+        dev = qdev_new("fan");
+        qdev_prop_set_uint8(dev,"label",fan_labels[i]);
+        qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
+        qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
+        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),fan_tach_pins[i]));
+        qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in-soft",0),qdev_get_gpio_in_named(vis,"indicator-logic",4+i));
+        qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],split_fan);
+    }
 
 };
 

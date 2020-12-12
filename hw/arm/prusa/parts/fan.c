@@ -32,12 +32,12 @@ struct  fan_state //:public SoftPWMable, public Scriptable
 {
     SysBusDevice parent;
 	bool pulse_state;
-	bool is_soft_pwm;
+	bool is_nonlinear;
 
 	uint8_t pwm;
-	uint16_t max_rpm;
-	uint16_t current_rpm;
-	uint16_t usec_per_pulse;
+	uint32_t max_rpm;
+	uint32_t current_rpm;
+	uint32_t usec_per_pulse;
 	// std::atomic_uint16_t m_uiRot {0};
 
     int last_level;
@@ -52,6 +52,9 @@ struct  fan_state //:public SoftPWMable, public Scriptable
 
 };
 
+// FIXME/HACK - E fan is nonlinear in the RPM vs PWM.
+static uint16_t fan_corrections[] = {1450,2100, 1700, 1050, 0};
+
 #define TYPE_FAN "fan"
 OBJECT_DECLARE_SIMPLE_TYPE(fan_state, FAN)
 
@@ -59,25 +62,31 @@ OBJECT_DECLARE_SIMPLE_TYPE(fan_state, FAN)
 static void fan_tach_expire(void *opaque)
 {
     fan_state *s = opaque;
-    if (s->current_rpm>0)
-    {
-        qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
-        timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
-    }
+    qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
+    timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
 }
 
 static void fan_pwm_change(void *opaque, int n, int level) {
     fan_state *s = opaque;
-    printf("Fan pwm change: %d\n", level);
-    s->current_rpm = ((s->max_rpm)*level)/255;
+    s->current_rpm = (((uint32_t)s->max_rpm)*level)/255;
+    if (s->is_nonlinear)
+    {
+        s->current_rpm += fan_corrections[level/64];
+        // printf( "Corr: %d - ", level/64u);
+    }
     float fSecPerRev = 60.0f/(float)s->current_rpm;
-    float fuSPerRev = 1000000*fSecPerRev;
-    s->usec_per_pulse = fuSPerRev/6; // 4 pulses per rev.
+    float fuSPerRev = 1000000.f*fSecPerRev;
+    s->usec_per_pulse = fuSPerRev/4.f; // 4 pulses per rev.
+    // if(s->label == 'E') printf("Fan %c pwm change: %d (RPM %u) uspr: %lu\n", s->label, level, s->current_rpm, s->usec_per_pulse);
     // TRACE(printf("New PWM(%u)/RPM/cyc: %u / %u / %u\n", max_rpm, m_uiPWM.load(), current_rpm, usec_per_pulse));
-    // Since there's no nice way to cancel a running timer, we leave it up to the expiry callback to do nothing and not 
-    // re-schedule the timer if RPM is 0.
-    if (timer_expired(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL))) // Restart the timer if it has expired, otherwise leave it be.
+    if (s->current_rpm>0) // Restart the timer if it has expired, otherwise leave it be.
+    {
         timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
+    }
+    else
+    {
+        timer_del(s->tach);
+    }
 }
 
 
@@ -92,31 +101,35 @@ static void fan_softpwm_timeout(void* opaque)
 static void fan_pwm_change_soft(void *opaque, int n, int level)
 {
     fan_state *s = opaque;
-
+    //printf("P%d ", level);
     // static const uint32_t timeout = 17000; // fudge factor/trigger timeout... fix this later.
     int64_t tNow = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
 	if (level & !s->last_level) // Was off, start at full, we'll update rate later.
 	{
-        timer_mod(s->softpwm, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+100);
+        timer_mod(s->softpwm, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+200);
 		// if (s->cntTOn>s->cntSoftPWM)
 		// {
 		// }
         //fan_pwm_change(s, 0, 255);
         s->tLastOn = s->tOn;
 		s->tOn = tNow;
-        // printf("New Total: %ld\n", s->tOn - s->tLastOn);
+        //printf("New Total: %ld, last on %ld\n", s->tOn - s->tLastOn);
 	}
 	else if (!level && s->last_level)
 	{
         s->tOff = tNow;
 		uint64_t uiCycleDelta = s->tOff - s->tOn; // This is the on time in us.  
-        uint64_t tTotal = s->tOn - s->tLastOn; // Total delta between on pulese (total duty cycle)
+        uint64_t tTotal = 50000; // hack, based on TIM1 init config (50 ms period). //s->tOn - s->tLastOn; // Total delta between on pulese (total duty cycle)
         //printf("New On: %lu/%lu\n",uiCycleDelta, tTotal);
 		//TRACE(printf("New soft PWM delta: %d\n",uiCycleDelta/1000));
+        if (uiCycleDelta > tTotal)
+        {
+            uiCycleDelta %= (tTotal); // HACK: Workaround for the first "off" after the initial 100% "kickstart"
+        }
 		uint16_t uiSoftPWM = 255.f*((float)uiCycleDelta/(float)tTotal); //62.5 Hz means full on is ~256k cycles.
 		fan_pwm_change(s, 0, uiSoftPWM);
 		// s->cntTOn = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
-        timer_mod(s->softpwm, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+100);
+        timer_mod(s->softpwm, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+200);
 
 	}
     s->last_level = level;
@@ -128,7 +141,6 @@ static void fan_init(Object *obj){
 
     fan_state *s = FAN(obj);
     s->current_rpm = 0;
-    s->is_soft_pwm = 0;
     s->usec_per_pulse = 0;
 
     s->tach =timer_new_us(QEMU_CLOCK_VIRTUAL,
@@ -146,7 +158,8 @@ static void fan_init(Object *obj){
 
 static Property fan_properties[] = {
     DEFINE_PROP_UINT8("label", fan_state, label,(uint8_t)' '),
-    DEFINE_PROP_UINT16("max_rpm", fan_state, max_rpm,5000),
+    DEFINE_PROP_UINT32("max_rpm", fan_state, max_rpm,8800),
+    DEFINE_PROP_BOOL("is_nonlinear", fan_state, is_nonlinear, 0),
     DEFINE_PROP_END_OF_LIST()
 };
 

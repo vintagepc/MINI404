@@ -313,7 +313,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         dev = DEVICE(&s->timers[i]);
         s->timers[i].id = i+1;
         s->timers[i].periph = STM32_TIM1+i;
-        if (i!=5) s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
+        if (i!=5 && i!=13) s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
             return;
         busdev = SYS_BUS_DEVICE(dev);
