@@ -54,22 +54,22 @@ struct buddy_visuals_state {
 OBJECT_DECLARE_SIMPLE_TYPE(buddy_visuals_state, BUDDY_VISUALS)
 
 
-static void buddy_visuals_update_display(void *opaque)
-{
-    const int width = DPY_COLS, height = DPY_ROWS;
-    buddy_visuals_state *s = (buddy_visuals_state *)opaque;
-    DisplaySurface *surface = qemu_console_surface(s->con);
-    uint8_t *dest;
+// static void buddy_visuals_update_display(void *opaque)
+// {
+//     const int width = DPY_COLS, height = DPY_ROWS;
+//     buddy_visuals_state *s = (buddy_visuals_state *)opaque;
+//     DisplaySurface *surface = qemu_console_surface(s->con);
+//     uint8_t *dest;
 
-    if (!s->redraw)
-        return;
+//     if (!s->redraw)
+//         return;
 
-    dest = surface_data(surface);
-    memset(dest, 0xCC, sizeof(uint32_t)*DPY_ROWS*DPY_COLS);
-    // memcpy(dest, s->framebuffer, sizeof(uint32_t)*DPY_ROWS*DPY_COLS);
-    s->redraw = 0;
-    dpy_gfx_update(s->con, 0, 0, DPY_COLS, DPY_ROWS);
-}
+//     dest = surface_data(surface);
+//     memset(dest, 0xCC, sizeof(uint32_t)*DPY_ROWS*DPY_COLS);
+//     // memcpy(dest, s->framebuffer, sizeof(uint32_t)*DPY_ROWS*DPY_COLS);
+//     s->redraw = 0;
+//     dpy_gfx_update(s->con, 0, 0, DPY_COLS, DPY_ROWS);
+// }
 
 // static void buddy_visuals_invalidate_display(void * opaque)
 // {
@@ -195,7 +195,7 @@ static void buddy_visuals_step_in(void *opaque, int n, int level)
         return;
 
     fprintf(s->fd_pipe, "%cM%cP",7, n+'0');
-    int32_t pos = level;
+    // int32_t pos = level;
     for (int i=3; i>=0; i--)
         fputc(level>>(8*i),s->fd_pipe);
     fflush(s->fd_pipe);
@@ -217,10 +217,10 @@ static void buddy_visuals_realize(Object *obj)
 {
     DeviceState *dev = DEVICE(obj);
     buddy_visuals_state *s = BUDDY_VISUALS(obj);
-    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_step_in, "motor-step",4);
-    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_enable_in, "motor-enable",4);
-    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_analog, "indicator-analog",8);
-    qdev_init_gpio_in_named(DEVICE(obj), buddy_visuals_set_indicator_logic, "indicator-logic",8);
+    qdev_init_gpio_in_named(dev, buddy_visuals_step_in, "motor-step",4);
+    qdev_init_gpio_in_named(dev, buddy_visuals_enable_in, "motor-enable",4);
+    qdev_init_gpio_in_named(dev, buddy_visuals_set_indicator_analog, "indicator-analog",10);
+    qdev_init_gpio_in_named(dev, buddy_visuals_set_indicator_logic, "indicator-logic",10);
     struct stat file;
     const char IPC_FILE[] = "MK404.IPC";
     if (stat(IPC_FILE, &file)<0)
@@ -252,6 +252,9 @@ static void buddy_visuals_realize(Object *obj)
     buddy_visuals_add_indicator(s, 5,'P', 0xFF0000); // P fan
     buddy_visuals_add_indicator(s, 6,'F', 0xFFFF0000); // Fsensor
     buddy_visuals_add_indicator(s, 7,'M', 0xFF000000); // Z-probe/minda
+    buddy_visuals_add_indicator(s, 8,'H', 0xFF000000); // E heater
+    buddy_visuals_add_indicator(s, 9,'B', 0xFF000000); // Bed heater
+
 
 }
 

@@ -44,7 +44,7 @@ struct  fan_state //:public SoftPWMable, public Scriptable
 
 	uint8_t label;
 
-    qemu_irq tach_pulse;
+    qemu_irq tach_pulse, pwm_out;
 
 	QEMUTimer *tach;
 	QEMUTimer *softpwm;
@@ -68,6 +68,7 @@ static void fan_tach_expire(void *opaque)
 
 static void fan_pwm_change(void *opaque, int n, int level) {
     fan_state *s = opaque;
+    qemu_set_irq(s->pwm_out, level);
     s->current_rpm = (((uint32_t)s->max_rpm)*level)/255;
     if (s->is_nonlinear)
     {
@@ -92,7 +93,7 @@ static void fan_pwm_change(void *opaque, int n, int level) {
 
 static void fan_softpwm_timeout(void* opaque)
 {
-    printf("timeout\n");
+    // printf("timeout\n");
         fan_state *s = opaque;
         fan_pwm_change(opaque, 0,s->last_level*255);
         s->tOn = 0;
@@ -151,6 +152,7 @@ static void fan_init(Object *obj){
             (QEMUTimerCB *)fan_softpwm_timeout, s);
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->tach_pulse, "tach-out",1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 }

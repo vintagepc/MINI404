@@ -179,7 +179,7 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
 
 static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool active_low)
 {
-    bool is_inverted = 0; mode &0x1;
+    bool is_inverted = mode &0x1;
     uint32_t ratio = 0;
     switch (mode)
     {

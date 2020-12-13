@@ -155,17 +155,22 @@ static void buddy_init(MachineState *machine)
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
 
     dev = qdev_new("heater");
-    qdev_prop_set_uint8(dev, "thermal_mass_x10",40);
+    qdev_prop_set_uint8(dev, "thermal_mass_x10",30);
+    qdev_prop_set_uint8(dev,"label", 'E');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
+    qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",8));
 
     // Bed.
     dev = qdev_new("heater");
     qdev_prop_set_uint8(dev, "thermal_mass_x10",3);
+    qdev_prop_set_uint8(dev,"label", 'B');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
+    qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",9));
+
 
 
     // hotend = fan1
@@ -182,8 +187,8 @@ static void buddy_init(MachineState *machine)
         qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),fan_tach_pins[i]));
-        qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in-soft",0),qdev_get_gpio_in_named(vis,"indicator-logic",4+i));
-        qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],split_fan);
+        qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],qdev_get_gpio_in_named(dev, "pwm-in-soft",0));
+        qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",4+i));
     }
 
 };
