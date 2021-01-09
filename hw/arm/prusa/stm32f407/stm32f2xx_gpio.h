@@ -24,6 +24,12 @@
 #define TYPE_STM32F2XX_GPIO "stm32f2xx-gpio"
 OBJECT_DECLARE_SIMPLE_TYPE(stm32f2xx_gpio, STM32F2XX_GPIO)
 
+
+/* GPIO - f2xx */
+void f2xx_gpio_exti_set(stm32f2xx_gpio *, unsigned, qemu_irq);
+void f2xx_gpio_wake_set(stm32f2xx_gpio *, unsigned, qemu_irq);
+
+
 struct stm32f2xx_gpio {
     SysBusDevice busdev;
     MemoryRegion iomem;

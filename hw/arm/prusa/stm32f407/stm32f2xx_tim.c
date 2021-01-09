@@ -50,6 +50,8 @@
 
 #define R_TIM_DIER_UIE 0x1
 
+//#define DEBUG_STM32F2XX_TIM
+#ifdef  DEBUG_STM32F2XX_TIM
 static const char *f2xx_tim_reg_names[] = {
     ENUM_STRING(R_TIM_CR1),
     ENUM_STRING(R_TIM_CR2),
@@ -72,9 +74,6 @@ static const char *f2xx_tim_reg_names[] = {
     ENUM_STRING(R_TIM_DMAR),
     ENUM_STRING(R_TIM_OR)
 };
-
-//#define DEBUG_STM32F2XX_TIM
-#ifdef DEBUG_STM32F2XX_TIM
 // NOTE: The usleep() helps the MacOS stdout from freezing when we have a lot of print out
 #define DPRINTF(fmt, ...)                                       \
     do { printf("DEBUG_STM32F2XX_TIM: " fmt , ## __VA_ARGS__); \

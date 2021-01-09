@@ -117,30 +117,30 @@ typedef union
     }defs;
 } tmc2209_registers_t;
 
-typedef union { 
-    uint64_t raw;
-    uint32_t dwords[2];
-    struct {
-        uint8_t crc;
+// typedef union tmc2209_cmd_t{ 
+//     uint64_t raw;
+//     uint32_t dwords[2];
+//     struct {
+//         uint8_t crc;
 
-    }
-    // struct {
-    //     uint64_t crc :8;
-    //     uint64_t data :32;
-    //     uint64_t rw :1;
-    //     uint64_t address :7;
-    //     uint64_t slave :8;
-    //     uint64_t sync :8;
-    // }  __attribute__ ((__packed__)) write;
-    // struct {
-    //     uint64_t sync :8;
-    //     uint64_t slave :8;
-    //     uint64_t address :7;
-    //     uint64_t rw :1;
-    //     uint64_t crc :8;
-    //     uint64_t :32;
-    // }  __attribute__ ((__packed__)) read;
-} tmc2209_cmd;
+//     }
+//     // struct {
+//     //     uint64_t crc :8;
+//     //     uint64_t data :32;
+//     //     uint64_t rw :1;
+//     //     uint64_t address :7;
+//     //     uint64_t slave :8;
+//     //     uint64_t sync :8;
+//     // }  __attribute__ ((__packed__)) write;
+//     // struct {
+//     //     uint64_t sync :8;
+//     //     uint64_t slave :8;
+//     //     uint64_t address :7;
+//     //     uint64_t rw :1;
+//     //     uint64_t crc :8;
+//     //     uint64_t :32;
+//     // }  __attribute__ ((__packed__)) read;
+// } tmc2209_cmd;
 
 
 struct tmc2209_state {
@@ -219,10 +219,10 @@ static float tmc2209_step_to_pos(int32_t step, uint32_t max_steps_per_mm)
 	return (float)(step)/(float)(max_steps_per_mm);
 }
 
-int32_t tmc2209_pos_to_step(float pos, uint32_t max_steps_per_mm)
-{
-	return pos*(float)(max_steps_per_mm); // Convert pos to steps, we always work in the full 256 microstep workspace.
-}
+// int32_t tmc2209_pos_to_step(float pos, uint32_t max_steps_per_mm)
+// {
+// 	return pos*(float)(max_steps_per_mm); // Convert pos to steps, we always work in the full 256 microstep workspace.
+// }
 
 // static void tmc2209_check_raise_diag(tmc2209_state *s, int32_t value){
 //     bool bDiag = s->regs.defs.GCONF.diag0_stall || s->regs.defs.GCONF.diag1_stall;
@@ -282,12 +282,7 @@ static void tmc2209_step(void *opaque, int n, int value) {
     }
 
     s->current_position = tmc2209_step_to_pos(s->current_step, s->max_steps_per_mm);
-    uint32_t posOut;
-	// std::memcpy (&posOut, &m_fCurPos, 4);
-    // RaiseIRQ(POSITION_OUT, posOut);
     qemu_set_irq(s->position_out, s->current_step);
-	// RaiseIRQ(STEP_POS_OUT, s->current_step);
-    // TRACE(printf("cur pos: %f (%u)\n",s->current_position,s->current_step));
 	bStall |= s->stalled;
     if (bStall)
     {
@@ -314,9 +309,9 @@ static void tmc2209_dir(void *opaque, int n, int level) {
     s->dir = (level^s->is_inverted)&0x1;
 }
 
-static void tmc2209_check_diag() {
+// static void tmc2209_check_diag() {
 
-}
+// }
 
 static void tmc2209_write(tmc2209_state *s)
 {

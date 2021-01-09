@@ -51,21 +51,24 @@
     do { printf("STM32STM32F2XXI2CState: " fmt , ## __VA_ARGS__); \
          usleep(1000); \
     } while (0)
+    
+
+    static const char *STM32F2XXI2CState_reg_name_arr[] = {
+        "CR1",
+        "CR2",
+        "OAR1",
+        "OAR2",
+        "DR",
+        "SR1",
+        "SR2",
+        "CCR",
+        "TRISE"
+    };
+
 #else
 #define DPRINTF(fmt, ...)
 #endif
 
-static const char *STM32F2XXI2CState_reg_name_arr[] = {
-    "CR1",
-    "CR2",
-    "OAR1",
-    "OAR2",
-    "DR",
-    "SR1",
-    "SR2",
-    "CCR",
-    "TRISE"
-};
 
 static const char *_SR1_names[] = {
     "SB",
@@ -176,7 +179,6 @@ STM32F2XXI2CState_read(void *arg, hwaddr offset, unsigned size)
 {
     STM32F2XXI2CState *s = arg;
     uint16_t r = UINT16_MAX;
-    const char *reg_name = "UNKNOWN";
 
     if (!(size == 2 || size == 4 || (offset & 0x3) != 0)) {
         STM32_BAD_REG(offset, size);
@@ -184,7 +186,7 @@ STM32F2XXI2CState_read(void *arg, hwaddr offset, unsigned size)
     offset >>= 2;
     if (offset < R_I2C_MAX) {
 
-        reg_name = STM32F2XXI2CState_reg_name_arr[offset];
+        //char *reg_name = STM32F2XXI2CState_reg_name_arr[offset];
         switch(offset) {
             //case R_I2C_SR1: 
             //     if ((s->slave_address&1) && (s->regs[R_I2C_SR1]&R_I2C_SR1_BTF_BIT)) { // This is likely polling for a read...
@@ -247,7 +249,6 @@ STM32F2XXI2CState_read(void *arg, hwaddr offset, unsigned size)
 static void
 STM32F2XXI2CState_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
 {
-    const char *reg_name = "UNKNOWN";
     struct STM32F2XXI2CState *s = (struct STM32F2XXI2CState *)arg;
 
     if (size != 2 && size != 4) {
@@ -257,13 +258,15 @@ STM32F2XXI2CState_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
     data &= 0xFFFFF;
     offset >>= 2;
 
-    if (offset < R_I2C_MAX) {
-        reg_name = STM32F2XXI2CState_reg_name_arr[offset];
-    }
+    // char *reg_name = NULL;
+    // if (offset < R_I2C_MAX) {
+    //     reg_name = STM32F2XXI2CState_reg_name_arr[offset];
+    // }
+
     // printf("%s %s: register %s, data: 0x%llx, size:%d\n", __func__, "s->busdev.parent_obj.id",
     //         reg_name, data, size);
     //printf("Write: %s: %04x\n",reg_name, data);
-    int result = 0;
+    // int result = 0;
     switch (offset) {
         case R_I2C_CR1:
             dumpReg("Wri CR1",data,_CR1_names);

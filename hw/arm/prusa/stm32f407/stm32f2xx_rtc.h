@@ -51,6 +51,12 @@
 
 OBJECT_DECLARE_SIMPLE_TYPE(f2xx_rtc, STM32F2XX_RTC)
 
+/* RTC */
+// Set the value of one of the QEMU specific extra RTC backup registers. The idx value starts
+// at 0 for the first extra register
+void f2xx_rtc_set_extra_bkup_reg(void *opaque, uint32_t idx, uint32_t value);
+
+
 struct f2xx_rtc{
     SysBusDevice  busdev;
     MemoryRegion  iomem;

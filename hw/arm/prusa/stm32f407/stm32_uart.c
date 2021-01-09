@@ -410,7 +410,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint32_t *read_value)
         /* Put next character into the RDR if we have one */
         stm32_uart_fill_receive_data_register(s);
     } else {
-        printf("STM32_UART WARNING: Read value from USART_DR (%08x) while it was empty.\n", s->iomem.addr);
+        printf("STM32_UART WARNING: Read value from USART_DR (%08lx) while it was empty.\n", s->iomem.addr);
     }
 
     stm32_uart_update_irq(s);

@@ -128,7 +128,7 @@ static void heater_pwm_change(void* opaque, int n, int level)
         s->last_off = tNow;
         tOn = tNow - s->last_on;
         s->timeout_level = 0;
-        DBG printf("Ontime: %lu\n",tOn);
+        DBG printf("Ontime: %u\n",tOn);
         timer_mod(s->softpwm_timeout, tNow+3000);
         s->pwm = tOn & 0xFF;
     }

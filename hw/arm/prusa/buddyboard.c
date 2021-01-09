@@ -30,6 +30,7 @@
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "stm32f407/stm32f407_soc.h"
+#include "parts/st25dv64k.h"
 #include "hw/arm/boot.h"
 
 /* Main SYSCLK frequency in Hz (168MHz) */
