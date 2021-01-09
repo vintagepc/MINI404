@@ -1,0 +1,257 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI Build
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the master branch
+on:
+  push:
+    branches: [ MINI404 ]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [ MINI404 ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - name: Checkout ${{ github.event.pull_request.head.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ github.event.pull_request }}
+      with:
+        repository: vintagepc/MINI404.git
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
+
+    - name: Checkout ${{ github.event.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ !github.event.pull_request }}
+      with:
+        repository: vintagepc/MINI404.git
+        ref: ${{ github.event.ref }}
+        submodules: true
+
+    - name: Cache packages
+      uses: actions/cache@v1.0.3
+      id: cache-pkgs
+      with:
+          path: "packages"
+          key: "${{ runner.os }}-packages-1_0_0"
+          restore-keys: ${{ runner.os }}-packages-
+
+    - name: Setup cache dir
+      if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
+      run: mkdir -p packages/partial
+
+    - name: Install packages
+      run: |
+          sudo apt-get update
+          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev
+
+    - name: Cache permissions
+      run: sudo chmod -R 744 packages
+
+    - name: Configure build
+      run: mkdir ${{ runner.workspace }}/Mini404 && ./configure --target-list="buddy-softmmu" 
+
+    - name: Build Einsy
+      run: cd ${{ runner.workspace }}/Mini404 && make -j2
+
+    # - name: Checkout Wiki
+    #   uses: actions/checkout@v2.2.0
+    #   if: ${{ !github.event.pull_request }}
+    #   with:
+    #     repository: vintagepc/MK404.wiki.git
+    #     path: ref
+
+    # - name: Regen docs
+    #   if: ${{ !github.event.pull_request }}
+    #   run: |
+    #     cd ${{ runner.workspace }}/MK404/build
+    #     make UpdateDocs
+    #     cd ${{ runner.workspace }}/MK404/ref
+    #     git add autogen/*
+    #     git config --local user.email "action@github.com"
+    #     git config --local user.name "GitHub Action"
+    #     git diff-index --quiet HEAD || git commit -m "Regen reference docs" && git push
+
+    - name: Assemble artifacts
+      if: ${{ !github.event.pull_request }}
+      run: |
+          cd ${{ runner.workspace }}/Mini404/build
+          tar -jcvf Mini404-development-build.tar.bz2 qemu-system-buddy
+
+    - name: Upload artifact
+      if: ${{ !github.event.pull_request }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: Binaries
+        path: ${{ runner.workspace }}/Mini404/build/Mini404-development-build.tar.bz2
+
+  # build_osx:
+  #   # The type of runner that the job will run on
+  #   runs-on: macos-latest
+  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
+  #   steps:
+  #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+  #   - name: Checkout ${{ github.event.pull_request.head.ref }}
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ github.event.pull_request }}
+  #     with:
+  #       repository: vintagepc/MK404.git
+  #       ref: ${{ github.event.pull_request.head.sha }}
+  #       submodules: true
+
+  #   - name: Checkout ${{ github.event.ref }}
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ !github.event.pull_request }}
+  #     with:
+  #       repository: vintagepc/MK404.git
+  #       ref: ${{ github.event.ref }}
+  #       submodules: true
+
+  #   - name: Install packages
+  #     run: |
+  #         brew cask install xquartz
+  #         brew tap osx-cross/avr
+  #         brew install libelf freeglut glew SDL avr-gcc libpng
+
+  #   - name: Prepare CMake build
+  #     run: mkdir ${{ runner.workspace }}/MK404/build && cd ${{ runner.workspace }}/MK404/build && cmake -DCMAKE_BUILD_TYPE=RELEASE ..
+
+  #   - name: Build Einsy
+  #     run: |
+  #       cd ${{ runner.workspace }}/MK404/build && make -j2
+  #       cp MK404 MK404_OSX
+
+  #   - name: Upload OSX artifact
+  #     if: ${{ !github.event.pull_request }}
+  #     uses: actions/upload-artifact@v2
+  #     with:
+  #       name: Binaries
+  #       path: ${{ runner.workspace }}/MK404/build/MK404_OSX
+
+  # build_cygwin:
+  #   # The type of runner that the job will run on
+  #   runs-on: windows-latest
+  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   steps:
+  #     - uses: actions/cache@v1
+  #       with:
+  #         path: C:\tools\chococache
+  #         key: ${{ runner.os }}-cygwin-${{ github.sha }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-cygwin-
+  #     - name: Cygwin package cache
+  #       uses: actions/cache@v1
+  #       with:
+  #         path: C:\tools\cygcache
+  #         key: ${{ runner.os }}-cygwinpkgs-1_1
+  #         restore-keys: |
+  #           ${{ runner.os }}-cygwinpkgs-
+  #     - name: Install cygwin
+  #       run: |
+  #         choco config set cacheLocation C:\tools\chococache
+  #         choco install --no-progress cygwin
+  #     - name: Install cygwin dependencies
+  #       run: |
+  #         C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P cmake,make,libelf-devel,gcc-core,gcc-g++,libstdc++-6-devel,git,libglut-devel,libGLEW-devel,libSDL_sound-devel,libSDL-devel,avr-gcc,python2,libpng-devel
+  #       shell: cmd
+
+  #     - name: Checkout ${{ github.event.pull_request.head.ref }}
+  #       uses: actions/checkout@v2.2.0
+  #       if: ${{ github.event.pull_request }}
+  #       with:
+  #         repository: vintagepc/MK404.git
+  #         ref: ${{ github.event.pull_request.head.sha }}
+  #         submodules: true
+
+  #     - name: Checkout ${{ github.event.ref }}
+  #       uses: actions/checkout@v2.2.0
+  #       if: ${{ !github.event.pull_request }}
+  #       with:
+  #         repository: vintagepc/MK404.git
+  #         ref: ${{ github.event.ref }}
+  #         submodules: true
+
+  #     - name: Configure build
+  #       run: |
+  #         echo %USERPROFILE%
+  #         cd MK404
+  #         mkdir build
+  #         cd build
+  #         set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
+  #         bash.exe -c "cmake -DCMAKE_BUILD_TYPE=RELEASE .."
+  #       shell: cmd
+
+  #     - name: Build
+  #       run: |
+  #         cd ${{runner.workspace}}\MK404\build
+  #         pwd
+  #         set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
+  #         bash.exe -c "make -j2"
+  #       shell: cmd
+
+  #     - name: Upload Cygwin artifact
+  #       if: ${{ !github.event.pull_request }}
+  #       uses: actions/upload-artifact@v2
+  #       with:
+  #         name: Binaries
+  #         path: ${{ runner.workspace }}/MK404/build/MK404.exe
+
+  Publish:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request }}
+    needs: [build]
+    steps:
+      - name: Retrieve platform binaries
+        uses: actions/download-artifact@v2
+        with:
+          name: Binaries
+
+      - name: Extract assets
+        run: |
+          tar -jxvf Mini404-development-build.tar.bz2
+
+      - name: Check tag version
+        id: get_version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+
+      - name: Build ${{ steps.get_version.outputs.VERSION }} tarball
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mv Mini404-dev Mini404-${{ steps.get_version.outputs.VERSION }}
+          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-multiplatform.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}
+
+      - name: RELEASE THE KRAKEN
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          files: |
+            Mini404-${{ steps.get_version.outputs.VERSION }}-multiplatform.tar.bz2
+
+      - name: Rebuild dev tarball
+        if: steps.get_version.outcome == 'Skipped'
+        run: tar -jcvf Mini404-dev-multiplatform.tar.bz2 Mini404-dev
+
+      - name: Publish prerelease
+        if: steps.get_version.outcome == 'Skipped'
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "dev"
+          prerelease: true
+          title: "Latest (Development) Build"
+          files: |
+            Mini404-dev-multiplatform.tar.bz2
