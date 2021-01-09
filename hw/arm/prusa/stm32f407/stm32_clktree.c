@@ -120,7 +120,7 @@ static void clktree_recalc_output_freq(Clk clk) {
 
         /* Check the new frequency against the max frequency. */
         if(new_output_freq > clk->max_output_freq) {
-            fprintf(stderr, "%s: Clock %s output frequency (%d Hz) exceeds max frequency (%d Hz).\n",
+            fprintf(stderr, "%s: Clock %s output frequency (%u Hz) exceeds max frequency (%u Hz).\n",
                     __FUNCTION__,
                     clk->name,
                     new_output_freq,
@@ -256,7 +256,7 @@ Clk clktree_create_clk(
                 clk,
                 CLKTREE_MAX_OUTPUT);
     }
-
+    va_end(input_clks);
     clktree_set_selected_input(clk, selected_input);
 
     return clk;

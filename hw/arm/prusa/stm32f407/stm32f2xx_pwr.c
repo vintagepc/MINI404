@@ -59,7 +59,7 @@ f2xx_pwr_read(void *arg, hwaddr addr, unsigned int size)
 
     r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
 
-    DPRINTF("%s: addr: 0x%llx, size: %d, value: 0x%x\n", __func__, addr, size, r);
+    DPRINTF("%s: addr: 0x%llx, size: %u, value: 0x%x\n", __func__, addr, size, r);
     return r;
 }
 
@@ -69,7 +69,7 @@ f2xx_pwr_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     f2xx_pwr *s = arg;
     int offset = addr & 0x3;
 
-    DPRINTF("%s: addr: 0x%llx, data: 0x%llx, size: %d\n", __func__, addr, data, size);
+    DPRINTF("%s: addr: 0x%llx, data: 0x%lx, size: %u\n", __func__, addr, data, size);
 
     addr >>= 2;
     if (addr >= R_PWR_MAX) {

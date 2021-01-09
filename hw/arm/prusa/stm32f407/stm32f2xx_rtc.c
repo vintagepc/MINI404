@@ -251,7 +251,7 @@ f2xx_rtc_read(void *arg, hwaddr addr, unsigned int size)
 
         // Compute the prescaler value
         value = prer_s - (fract * prer_s);
-        DPRINTF("%s: SSR value = %d\n", __func__, value);
+        DPRINTF("%s: SSR value = %u\n", __func__, value);
     }
 
     r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
@@ -266,7 +266,7 @@ f2xx_rtc_read(void *arg, hwaddr addr, unsigned int size)
         strftime(date_time_str, sizeof(date_time_str), "%x %X", &target_tm);
         DPRINTF("%s: current date/time: %s\n", __func__, date_time_str);
     } else {
-        DPRINTF("%s: addr: 0x%llx, size: %d, value: 0x%x\n", __func__, addr << 2, size, r);
+        DPRINTF("%s: addr: 0x%llx, size: %u, value: 0x%x\n", __func__, addr << 2, size, r);
     }
 #endif
 
@@ -281,7 +281,7 @@ f2xx_rtc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     bool    compute_new_target_offset = false;
     bool    update_wut = false;
 
-    DPRINTF("%s: addr: 0x%llx, data: 0x%llx, size: %d\n", __func__, addr, data, size);
+    DPRINTF("%s: addr: 0x%llx, data: 0x%lx, size: %u\n", __func__, addr, data, size);
 
     addr >>= 2;
     if (addr >= R_RTC_MAX) {
@@ -418,7 +418,7 @@ f2xx_alarm_match(f2xx_rtc *s, uint32_t alarm_reg)
         /* Hours match requested, but do not match. */
         return false;
     }
-    if ((alarm_reg & (1<<31)) == 0) { /* Day match. */
+    if ((alarm_reg & (1UL<<31)) == 0) { /* Day match. */
         uint32_t dr = s->regs[R_RTC_DR];
         if (alarm_reg & (1<<30)) { /* Day is week day. */
             if (((alarm_reg>>24) & 0xf) != ((dr>>13) & 0xf)) {
@@ -579,7 +579,7 @@ f2xx_rtc_init(Object *obj)
     s->regs[R_RTC_WUTR] = R_RTC_WUTR_RESET;
 
     uint32_t period_ns = f2xx_clock_period_ns(s);
-    DPRINTF("%s: period: %d ns\n", __func__, period_ns);
+    DPRINTF("%s: period: %u ns\n", __func__, period_ns);
 
     // Init the time and date registers from the time on the host as the default
     s->host_to_target_offset_us = 0;
