@@ -59,10 +59,10 @@ jobs:
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: mkdir ${{ runner.workspace }}/Mini404 && ./configure --target-list="buddy-softmmu" 
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" 
 
-    - name: Build Einsy
-      run: cd ${{ runner.workspace }}/Mini404 && make -j2
+    - name: Build qemu-system-buddy
+      run: cd ${{ runner.workspace }}/MINI404 && make -j2
 
     # - name: Checkout Wiki
     #   uses: actions/checkout@v2.2.0
@@ -85,15 +85,15 @@ jobs:
     - name: Assemble artifacts
       if: ${{ !github.event.pull_request }}
       run: |
-          cd ${{ runner.workspace }}/Mini404/build
-          tar -jcvf Mini404-development-build.tar.bz2 qemu-system-buddy
-
+          cd ${{ runner.workspace }}/MINI404/build
+          mv buddy-softmmu Mini404-dev
+          tar -jhcvf Mini404-development-build.tar.bz2 Mini404-dev
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
       uses: actions/upload-artifact@v2
       with:
         name: Binaries
-        path: ${{ runner.workspace }}/Mini404/build/Mini404-development-build.tar.bz2
+        path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build.tar.bz2
 
   # build_osx:
   #   # The type of runner that the job will run on
