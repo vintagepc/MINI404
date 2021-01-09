@@ -28,7 +28,7 @@ jobs:
       with:
         repository: vintagepc/MINI404.git
         ref: ${{ github.event.pull_request.head.sha }}
-        submodules: true
+        submodules: false
 
     - name: Checkout ${{ github.event.ref }}
       uses: actions/checkout@v2.2.0
@@ -36,7 +36,7 @@ jobs:
       with:
         repository: vintagepc/MINI404.git
         ref: ${{ github.event.ref }}
-        submodules: true
+        submodules: false
 
     - name: Cache packages
       uses: actions/cache@v1.0.3
