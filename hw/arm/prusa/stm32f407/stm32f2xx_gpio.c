@@ -84,7 +84,7 @@ f2xx_update_mode(stm32f2xx_gpio *s, uint32_t val)
             continue;
         }
 
-        DPRINTF("%s mode of pin %i changing to %d\n", s->busdev.parent_obj.id, i, setting);
+        DPRINTF("%s mode of pin %i changing to %u\n", s->busdev.parent_obj.id, i, setting);
         bool is_alternate_function = (setting == 2);
         qemu_set_irq(s->alternate_function[i], is_alternate_function);
     }
@@ -133,7 +133,7 @@ stm32f2xx_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         break;
     }
     default:
-        qemu_log_mask(LOG_UNIMP, "f2xx GPIO %d reg 0x%x:%d write (0x%x) unimplemented\n",
+        qemu_log_mask(LOG_UNIMP, "f2xx GPIO %u reg 0x%x:%d write (0x%x) unimplemented\n",
           s->periph,  (int)addr << 2, offset, (int)data);
         s->regs[addr] = data;
         break;
@@ -194,21 +194,21 @@ f2xx_gpio_set(void *arg, int pin, int level)
     // tied to a handler callback in the NVIC. 
     qemu_set_irq(s->cpu_wake[pin], level);
 
-    DPRINTF("GPIO %d set pin %d level %d\n", s->periph, pin, level);
+    DPRINTF("GPIO %u set pin %d level %d\n", s->periph, pin, level);
 }
 
 void
 f2xx_gpio_exti_set(stm32f2xx_gpio *s, unsigned pin, qemu_irq irq)
 {
     s->exti[pin] = irq;
-    DPRINTF("GPIO %d set exti %d irq %p\n", s->periph, pin, irq);
+    DPRINTF("GPIO %u set exti %u irq %p\n", s->periph, pin, irq);
 }
 
 void
 f2xx_gpio_wake_set(stm32f2xx_gpio *s, unsigned pin, qemu_irq irq)
 {
     s->cpu_wake[pin] = irq;
-    DPRINTF("GPIO %d set cpu_wake %d irq %p\n", s->periph, pin, irq);
+    DPRINTF("GPIO %u set cpu_wake %u irq %p\n", s->periph, pin, irq);
 }
 
 static void

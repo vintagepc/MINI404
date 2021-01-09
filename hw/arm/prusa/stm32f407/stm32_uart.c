@@ -595,10 +595,10 @@ static void stm32_uart_write(void *opaque, hwaddr offset,
                   deposit64(s->USART_CR3, start, length, value), false);
             break;
         case USART_GTPR_OFFSET:
-            STM32_NOT_IMPL_REG(offset, 2);
+            STM32_NOT_IMPL_REG(offset, 2U);
             break;
         default:
-            STM32_BAD_REG(offset, 2);
+            STM32_BAD_REG(offset, 2U);
             break;
     }
 }

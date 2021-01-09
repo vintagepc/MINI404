@@ -44,7 +44,7 @@
 #define VALUE_BETWEEN(value, start, end) ((value >= start) && (value <= end))
 
 #define GET_BIT_MASK(position, value) ((value ? 1 : 0) << position)
-#define GET_BIT_MASK_ONE(position) (1 << position)
+#define GET_BIT_MASK_ONE(position) (1UL << position)
 #define GET_BIT_MASK_ZERO(position) (~(1 << position))
 #define GET_BIT_VALUE(value, position) \
                 ((value & GET_BIT_MASK_ONE(position)) >> position)

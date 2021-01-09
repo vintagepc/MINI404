@@ -93,7 +93,7 @@ f2xx_dma_read(void *arg, hwaddr addr, unsigned int size)
     f2xx_dma *s = arg;
     uint64_t result;
 
-    DPRINTF("%s: addr: 0x%llx, size:%d...\n", __func__, addr, size);
+    DPRINTF("%s: addr: 0x%llx, size:%u...\n", __func__, addr, size);
 
     if (size != 4) {
         qemu_log_mask(LOG_UNIMP, "f2xx crc only supports 4-byte reads\n");
@@ -133,7 +133,7 @@ f2xx_dma_read(void *arg, hwaddr addr, unsigned int size)
         }
     }
 
-    DPRINTF("    %s: result:0x%llx\n", __func__, result);
+    DPRINTF("    %s: result:0x%lx\n", __func__, result);
     return result;
 }
 
@@ -450,7 +450,7 @@ f2xx_dma_stream_write(f2xx_dma_stream *s, int stream_no, uint32_t addr, uint32_t
 static void
 f2xx_dma_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 {
-    DPRINTF("DMA write size %d, to addr %04x with data %llx\n",size,addr,data);
+    DPRINTF("DMA write size %u, to addr %04x with data %lx\n",size,addr,data);
     f2xx_dma *s = arg;
     int offset = addr & 0x3;
 
@@ -476,15 +476,15 @@ f2xx_dma_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     }
     switch(addr) {
     case R_DMA_LISR:
-        DPRINTF("%s: register LISR (READ-ONLY), data: 0x%llx\n", __func__, data);
+        DPRINTF("%s: register LISR (READ-ONLY), data: 0x%lx\n", __func__, data);
         qemu_log_mask(LOG_GUEST_ERROR, "f2xx dma: invalid write to ISR\n");
         break;
     case R_DMA_HISR:
-        DPRINTF("%s: register HISR (READ-ONLY), data: 0x%llx\n", __func__, data);
+        DPRINTF("%s: register HISR (READ-ONLY), data: 0x%lx\n", __func__, data);
         qemu_log_mask(LOG_GUEST_ERROR, "f2xx dma: invalid write to ISR\n");
         break;
     case R_DMA_LIFCR:
-        DPRINTF("%s: register LIFCR, data: 0x%llx\n", __func__, data);
+        DPRINTF("%s: register LIFCR, data: 0x%lx\n", __func__, data);
         // Any interrupt clear write to stream x clears all interrupts for that stream
         s->ifcr[addr - R_DMA_LIFCR] &= ~(data);
         if (data & 0x0f400000) {
@@ -505,7 +505,7 @@ f2xx_dma_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         }
         break;
     case R_DMA_HIFCR:
-        DPRINTF("%s: register HIFCR, data: 0x%llx\n", __func__, data);
+        DPRINTF("%s: register HIFCR, data: 0x%lx\n", __func__, data);
         // Any interrupt clear write to stream x clears all interrupts for that stream
         s->ifcr[addr - R_DMA_LIFCR] &= ~(data);
         if (data & 0x0f400000) {

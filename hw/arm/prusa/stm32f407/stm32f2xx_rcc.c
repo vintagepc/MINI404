@@ -840,7 +840,7 @@ static void stm32_rcc_writeb(void *opaque, hwaddr offset, uint64_t value)
         stm32_rcc_RCC_BDCR_writeb0(s, value, false);
         break;
     default:
-        STM32_BAD_REG(offset, 1);
+        STM32_BAD_REG(offset, 1U);
         break;
     }
 }

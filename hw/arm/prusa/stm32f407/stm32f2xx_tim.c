@@ -152,7 +152,7 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
           (unsigned int)addr << 2, offset, size, (unsigned int)r);
     }
 
-    DPRINTF("%s %s: reg: %s, size: %d, value: 0x%x\n", s->busdev.parent_obj.id,
+    DPRINTF("%s %s: reg: %s, size: %u, value: 0x%x\n", s->busdev.parent_obj.id,
                   __func__, f2xx_tim_reg_names[addr], size, r);
     return r;
 }
@@ -281,7 +281,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
              && s->defs.CCMR1.CC1S == 0) {
 
             uint32_t ratio = (s->defs.CCR1 * 255) / s->defs.ARR;
-            DPRINTF("Setting PWM ratio to %d\n", ratio);
+            DPRINTF("Setting PWM ratio to %u\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[0], ratio);
         }
 
@@ -291,7 +291,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             && s->defs.CCMR1.CC2S == 0) {
 
             uint32_t ratio = (s->defs.CCR2 * 255) / s->defs.ARR;
-            DPRINTF("Setting PWM ratio to %d\n", ratio);
+            DPRINTF("Setting PWM ratio to %u\n", ratio);
             qemu_set_irq(s->pwm_ratio_changed[1], ratio);
         } 
         if (changed & 0xF00) {

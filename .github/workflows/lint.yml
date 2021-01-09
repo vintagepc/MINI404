@@ -1,0 +1,86 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Code Lint
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the master branch
+on:
+  push:
+    branches: [ MINI404 ]
+  pull_request:
+    branches: [ MINI404 ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  cppcheck:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - name: Checkout ${{ github.event.pull_request.head.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ github.event.pull_request }}
+      with:
+        repository: vintagepc/MINI404.git
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: false
+
+    - name: Checkout ${{ github.event.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ !github.event.pull_request }}
+      with:
+        repository: vintagepc/MINI404.git
+        ref: ${{ github.event.ref }}
+        submodules: false
+
+    - name: Cache packages
+      uses: actions/cache@v1.0.3
+      id: cache-pkgs
+      with:
+          path: "packages"
+          key: "pkgs-linting_1_0"
+    - name: Setup cache dir
+      if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
+      run: mkdir -p packages/partial
+
+    - name: Install packages
+      run: |
+        sudo apt-get update
+        sudo apt-get purge clang-*
+        sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install clang-5.0 clang-tidy
+        sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev iwyu cppcheck
+
+    - name: Cache permissions
+      run: sudo chmod -R 744 packages
+
+    # - name: Prepare CMake build
+    #   run: mkdir ${{ runner.workspace }}/MK404/build && cd ${{ runner.workspace }}/MK404/build && cmake -DCMAKE_BUILD_TYPE=DEBUG -DCPPCHECK_ONLY=1 ..
+
+    - name: Run CPPCheck
+      run: |
+        cd ${{ runner.workspace }}/MINI404
+        cppcheck --template='::{severity} file={file},line={line}::{message}' --error-exitcode=2 --inline-suppr --enable=warning --language=c hw/arm/prusa/*
+
+    # - name: Run Clang-tidy
+    #   run: |
+    #     cd ${{ runner.workspace }}/MK404/build
+    #     cmake -DCMAKE_BUILD_TYPE=DEBUG -DCPPCHECK_ONLY=0 -DENABLE_TIDY=1 ..
+    #     make -j2 simavr
+    #     make -j2 |& tee tidy.txt
+
+    # - name: Upload clang-tidy log
+    #   uses: actions/upload-artifact@v2
+    #   with:
+    #     name: warnings
+    #     path: ${{ runner.workspace }}/MK404/build/tidy.txt
+
+    # - name : Final status
+    #   id: tidy_status
+    #   run: |
+    #     cd ${{ runner.workspace }}/MK404
+    #     cat build/tidy.txt | python3 3rdParty/clang-tidy-to-github.py `pwd`
+    #     grep -v "jobserver unavailable" ${{ runner.workspace }}/MK404/build/tidy.txt > ${{ runner.workspace }}/MK404/build/tidy2.txt
+    #     ! grep -q "warning:" ${{ runner.workspace }}/MK404/build/tidy2.txt
