@@ -50,6 +50,8 @@
 
 #define R_TIM_DIER_UIE 0x1
 
+//#define DEBUG_STM32F2XX_TIM
+#ifdef  DEBUG_STM32F2XX_TIM
 static const char *f2xx_tim_reg_names[] = {
     ENUM_STRING(R_TIM_CR1),
     ENUM_STRING(R_TIM_CR2),
@@ -72,9 +74,6 @@ static const char *f2xx_tim_reg_names[] = {
     ENUM_STRING(R_TIM_DMAR),
     ENUM_STRING(R_TIM_OR)
 };
-
-//#define DEBUG_STM32F2XX_TIM
-#ifdef DEBUG_STM32F2XX_TIM
 // NOTE: The usleep() helps the MacOS stdout from freezing when we have a lot of print out
 #define DPRINTF(fmt, ...)                                       \
     do { printf("DEBUG_STM32F2XX_TIM: " fmt , ## __VA_ARGS__); \
@@ -91,31 +90,12 @@ f2xx_tim_period(f2xx_tim *s)
     uint64_t clock_freq = 84000000UL; // APB2 @ 84 Mhz
     if (s->rcc!=NULL) {
         clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
-    } else if (s->id!=6) {
-        // APB1 timers, 42mhz
-        // 6/14 should be included here but for some reason that causes the firmware to hang during boot. 
-        // Likely the timer implementation is just missing something.
-        //clock_freq>>=1;
+
     }
     clock_freq/= (s->defs.PSC+1);
     uint32_t interval = 1000000000UL/clock_freq;
     return interval;
-    // switch (s->id)
-    // {
-    //     case 14:
-    //     case 7:
-    //     {
-    //         // TODO... get real timer clock, but for now this should be ok. 
-    //         // TIM14:  84 MHz/PSC = 1MHz = 1 us = 1000 ns (for a final interval of 1ms after TIMx_ARR).
-    //         // TIM7: ARR=84, PSC = 999 (div by 1000) = ~ 11905 ns 
-    //         uint64_t clock_freq = 85000000UL;
-    //         clock_freq/= (s->regs[R_TIM_PSC]+1);
-    //         uint32_t interval = 1000000000UL/clock_freq;
-    //         return interval;
-    //     }
-    //     default:
-    //         return 750;
-    // }
+
 }
 
 static int64_t

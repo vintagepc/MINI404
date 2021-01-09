@@ -29,7 +29,11 @@
 #include <math.h>
 
 
-#define DBG if(s->chrLabel=='B')
+//#define DBG if(s->chrLabel=='B')
+
+#ifndef DBG
+#define DBG if(false)
+#endif
 
 #define TYPE_HEATER "heater"
 OBJECT_DECLARE_SIMPLE_TYPE(heater_state, HEATER)
@@ -87,19 +91,7 @@ static void heater_temp_tick_expire(void *opaque)
         s->tick_overrun = 4; 
         s->lastpwm = s->pwm;
         s->last_tick = tNow;
-    // } else if (s->tick_overrun>0){
-    //     float fDelta = (s->thermalMass*((float)(s->lastpwm)/255.0f))*updaterate;
-    //     s->currentTemp += fDelta;
-    //     s->tick_overrun--;
-    // } else if (tNow - s->last_off<=250) {
-    //     // take "credit" for on time that is not a complete increment of the tickrate.
-    //     // This is a hack for a poor HAL implementation that rewrites the entire timer config (shutting off the PWM bit) just to update the PWM.
-    //     uint64_t tDiff = tNow - s->last_off;
-    //     float updateLen = (float)(tDiff%250)/1000.f;
-    //     if (s->chrLabel=='E') printf("Partial tick: %d\n", tNow - s->last_off);
-    //     float fDelta = (s->thermalMass*((float)(s->lastpwm)/255.0f))*(updateLen);
-    //     s->currentTemp += fDelta;
-    } else {// Cooling - do a little exponential decay
+     } else {// Cooling - do a little exponential decay
         float dT = (s->currentTemp - s->ambientTemp)*pow(2.7183,-0.005*updaterate);
         s->currentTemp -= s->currentTemp - (s->ambientTemp + dT);
     }
@@ -136,7 +128,7 @@ static void heater_pwm_change(void* opaque, int n, int level)
         s->last_off = tNow;
         tOn = tNow - s->last_on;
         s->timeout_level = 0;
-        DBG printf("Ontime: %lu\n",tOn);
+        DBG printf("Ontime: %u\n",tOn);
         timer_mod(s->softpwm_timeout, tNow+3000);
         s->pwm = tOn & 0xFF;
     }
@@ -147,21 +139,6 @@ static void heater_pwm_change(void* opaque, int n, int level)
         timer_mod(s->temp_tick,tNow + 1); 
         s->is_ticking = true;
     }
-
-    //if (s->chrLabel=='E') printf("New pwm: %d\n",level);
-    // s->pwm = level;
-    // if (s->pwm > 0 && !s->is_ticking)
-	// {
-    //     heater_temp_tick_expire(s);
-    //     s->is_ticking = true;
-	// } else if (s->pwm==0) {
-    //     s->last_off = tNow;
-    //     if (s->chrLabel=='E') printf("Ontime: %lu\n",tNow - s->last_on);
-    // }
-    // if (GetIRQ(ON_OUT)->value != (s->pwm>0))
-	// {
-    //     RaiseIRQ(ON_OUT,s->pwm>0);
-	// }
 }
 
 static void heater_reset(DeviceState *dev)

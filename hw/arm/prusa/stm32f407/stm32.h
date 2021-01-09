@@ -310,12 +310,6 @@ void stm32_exti_reset_gpio(Stm32Exti *s, unsigned exti_line, const uint8_t gpio_
 
 
 
-/* RTC */
-// Set the value of one of the QEMU specific extra RTC backup registers. The idx value starts
-// at 0 for the first extra register
-void f2xx_rtc_set_extra_bkup_reg(void *opaque, uint32_t idx, uint32_t value);
-
-
 /* GPIO */
 typedef struct Stm32Gpio Stm32Gpio;
 
@@ -347,16 +341,6 @@ uint8_t stm32_gpio_get_mode_bits(Stm32Gpio *s, unsigned pin);
 #define STM32_GPIO_OUT_ALT_PUSHPULL 2
 #define STM32_GPIO_OUT_ALT_OPEN 3
 uint8_t stm32_gpio_get_config_bits(Stm32Gpio *s, unsigned pin);
-
-
-
-
-/* GPIO - f2xx */
-typedef struct stm32f2xx_gpio stm32f2xx_gpio;
-void f2xx_gpio_exti_set(stm32f2xx_gpio *, unsigned, qemu_irq);
-void f2xx_gpio_wake_set(stm32f2xx_gpio *, unsigned, qemu_irq);
-
-
 
 
 /* RCC */

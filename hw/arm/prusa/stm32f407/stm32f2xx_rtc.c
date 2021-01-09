@@ -567,8 +567,6 @@ f2xx_rtc_init(Object *obj)
 {
     f2xx_rtc *s = STM32F2XX_RTC(obj);
 
-    DeviceState *dev = DEVICE(obj);
-
     memory_region_init_io(&s->iomem, obj, &f2xx_rtc_ops, s, "rtc", 0x03ff);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 

@@ -83,7 +83,6 @@ typedef struct f2xx_dma_stream {
 
 } f2xx_dma_stream;
 
-static int msize_table[] = {1, 2, 4, 0};
 
 #define TYPE_STM32F2XX_DMA "stm32f2xx-dma"
 OBJECT_DECLARE_SIMPLE_TYPE(f2xx_dma, STM32F2XX_DMA)

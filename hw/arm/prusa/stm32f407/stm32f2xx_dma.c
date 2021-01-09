@@ -26,6 +26,8 @@
 #include "stm32f2xx_dma.h"
 #include "qemu/log.h"
 
+static int msize_table[] = {1, 2, 4, 0};
+
 //#define DEBUG_STM32F2XX_DMA
 #ifdef DEBUG_STM32F2XX_DMA
 
@@ -149,7 +151,7 @@ static void set_DMAR_map(hwaddr src, f2xx_dma_stream *s)
             s->usart_dmar = 6;
             break;
         default:
-            printf("FIXME: Unknown DMAR source %08x\n",src);
+            printf("FIXME: Unknown DMAR source %08lx\n",src);
             s->usart_dmar = -1;
     }
 
@@ -406,7 +408,7 @@ f2xx_dma_stream_write(f2xx_dma_stream *s, int stream_no, uint32_t addr, uint32_t
             }
             if ((s->cr & R_DMA_SxCR_PFCTL))
             {
-                printf("FIXME: PFCTL for stream %d, PAR %08lx\n", stream_no, s->par);
+                printf("FIXME: PFCTL for stream %d, PAR %08x\n", stream_no, s->par);
             }
 
             f2xx_dma_stream_start(s, stream_no);

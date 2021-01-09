@@ -129,7 +129,7 @@ static void st25dv64k_reset(DeviceState *dev)
 
 static void st25dv64k_realize(DeviceState *dev, Error **errp)
 {
-    st25dv64kDevice *eeprom = ST25DV64K(dev);
+    // st25dv64kDevice *eeprom = ST25DV64K(dev);
 
     st25dv64k_reset(dev);
     // if (eeprom->init_data == NULL) {

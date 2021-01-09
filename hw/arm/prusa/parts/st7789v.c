@@ -187,7 +187,6 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
 
 static void st7789v_update_display(void *opaque)
 {
-    const int width = DPY_COLS, height = DPY_ROWS;
     st7789v_state *s = (st7789v_state *)opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
     uint8_t *dest;
