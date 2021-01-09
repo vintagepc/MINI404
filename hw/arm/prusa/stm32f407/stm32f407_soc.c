@@ -183,7 +183,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
                              FLASH_SIZE);
 
     // Kinda sketchy but needed to bypass the FW check on the Mini...
-    s->flash.ram_block->host[FLASH_SIZE-1] = 0xFF;
+     s->flash.ram_block->host[FLASH_SIZE-1] = 0xFF;
 
     memory_region_add_subregion(system_memory, FLASH_BASE_ADDRESS, &s->flash);
     memory_region_add_subregion(system_memory, 0, &s->flash_alias);
@@ -307,13 +307,13 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
     }
 #else
-    printf("FIXME - Timers clocking as if on APB2 @84 Mhz (issue #14)\n");
     for (i = 0; i < STM_NUM_TIMERS; ++i) {
         //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
         dev = DEVICE(&s->timers[i]);
         s->timers[i].id = i+1;
         s->timers[i].periph = STM32_TIM1+i;
-        if (i!=5 && i!=13 && i!=2) s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
+        //if (i!=5 && i!=13 && i!=2) 
+        s->timers[i].rcc = (Stm32Rcc*)&s->rcc;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
             return;
         busdev = SYS_BUS_DEVICE(dev);
