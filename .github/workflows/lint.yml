@@ -61,7 +61,7 @@ jobs:
 
     - name: Run CPPCheck
       run: |
-        cd ${{ runner.workspace }}/MIN404
+        cd ${{ runner.workspace }}/MINI404
         cppcheck --template='::{severity} file={file},line={line}::{message}' --error-exitcode=2 --inline-suppr --enable=warning --language=c hw/arm/prusa/*
 
     # - name: Run Clang-tidy
