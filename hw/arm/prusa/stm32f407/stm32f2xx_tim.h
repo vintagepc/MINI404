@@ -184,6 +184,7 @@ struct f2xx_tim {
     qemu_irq pwm_ratio_changed[4];
     qemu_irq pwm_enable[4], pwm_pin[4];
 
+    int64_t count_timebase;
 
     stm32_periph_t periph;
     Stm32Rcc *rcc; // RCC for clock speed. 

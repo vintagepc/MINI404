@@ -98,6 +98,13 @@ f2xx_tim_period(f2xx_tim *s)
 
 }
 
+static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
+{
+    uint64_t clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
+    return muldiv64(t, clock_freq, 1000000000ULL) / (s->defs.PSC + 1);
+}
+
+
 static int64_t
 f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
 {
@@ -105,6 +112,8 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
         qemu_log_mask(LOG_UNIMP, "f2xx tim, only upedge-aligned mode supported\n");
        // return -1;
     }
+    // We also need to update the timebase used for determining the count value each rollover.
+    s->count_timebase = f2xx_tim_ns_to_ticks(s,current_time);
     // Note - counter counts from 0...ARR, so there are actually ARR+1 "ticks" to account for.
     return current_time + f2xx_tim_period(s) * (s->defs.ARR+1);
 }
@@ -128,6 +137,7 @@ f2xx_tim_timer(void *arg)
    }
 }
 
+
 static uint64_t
 f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
 {
@@ -147,6 +157,9 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     case R_TIM_DIER:
     case R_TIM_SR:
         break;
+    case R_TIM_CNT:
+        r = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase; 
+        // printf("Attempted to read count on timer %u (val %u)\n", s->id,r);
     default:
         qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented read 0x%x+%u size %u val 0x%x\n",
           (unsigned int)addr << 2, offset, size, (unsigned int)r);
@@ -353,6 +366,7 @@ static void f2xx_tim_reset(DeviceState *dev)
     f2xx_tim *s = STM32F4XX_TIMER(dev);
     timer_del(s->timer);
     memset(&s->regs, 0, sizeof(s->regs));
+    s->count_timebase = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - TIMER " name " register definition misaligned!")
