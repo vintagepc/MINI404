@@ -267,7 +267,7 @@ static void tmc2209_step(void *opaque, int n, int value) {
         s->current_step+=s->ms_increment;
 	}
     bool bStall = false;
-    if (1)//!cfg.bHasNoEndStops)
+    if (s->max_step != 0 )// If max_step ==0 it means endstopless, e.g. extruder.
     {
         if (s->current_step<0)
         {

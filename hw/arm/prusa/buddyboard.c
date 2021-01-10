@@ -103,7 +103,7 @@ static void buddy_init(MachineState *machine)
         static const uint8_t en_pins[4] = {3, 14, 2, 10};
         static const uint8_t diag_pins[4] = {2, 1, 3, 15};
         static const uint8_t diag_ports[4] = {GPIO_E, GPIO_E, GPIO_E, GPIO_A};
-        static const uint8_t is_inverted[4] = {1,1,0,0};
+        static const uint8_t is_inverted[4] = {1,1,0,1};
         static const int32_t ends[4] = { 100*16*182, 100*16*183, 400*16*185,0 };
         static const int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
 
