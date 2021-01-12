@@ -32,9 +32,12 @@
 #include "stm32f407/stm32f407_soc.h"
 #include "parts/st25dv64k.h"
 #include "hw/arm/boot.h"
+#include "hw/loader.h"
 
 /* Main SYSCLK frequency in Hz (168MHz) */
 #define SYSCLK_FRQ 168000000ULL
+
+#define BOOTLOADER_IMAGE "bootloader.bin"
 
 static void buddy_init(MachineState *machine)
 {
@@ -50,13 +53,35 @@ static void buddy_init(MachineState *machine)
     dev = qdev_new(TYPE_STM32F407_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-
-    armv7m_load_kernel(ARM_CPU(first_cpu),
-                       machine->kernel_filename,
-                       FLASH_SIZE);
-
     STM32F407State *SOC = STM32F407_SOC(dev);
 
+    int kernel_len = strlen(machine->kernel_filename);
+    if (kernel_len >3)
+    {
+        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
+        if (strncmp(kernel_ext, "bbf",3)==0)
+        {
+            // TODO... use initrd_image as a bootloader alternative?
+            struct stat bootloader;
+            if (stat(BOOTLOADER_IMAGE,&bootloader))
+            {
+                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
+                return;
+            }
+            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+            // by -64 bytes and rely on the bootloader clobbering it.
+            load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
+            armv7m_load_kernel(ARM_CPU(first_cpu),
+                BOOTLOADER_IMAGE,
+                FLASH_SIZE);
+        } 
+        else // Raw bin or ELF file, load directly.
+        {
+            armv7m_load_kernel(ARM_CPU(first_cpu),
+                            machine->kernel_filename,
+                            FLASH_SIZE);
+        }
+    }
     /* Wire up display */
 
     void *bus;
