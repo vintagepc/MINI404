@@ -155,6 +155,14 @@ static void stm32f407_soc_initfn(Object *obj)
     object_initialize_child(obj, "itm", &s->itm, TYPE_STM32F4XX_ITM);
 
     object_initialize_child(obj,"crc",&s->crc, TYPE_STM32F2XX_CRC);
+
+    // // TODO - I don't think this is necessary because the STM32 arch differs
+    // // from the BCM2835, but it's required unless we alter the dwc2 driver, even if it's unused
+    // memory_region_init(&s->temp_usb, obj, "usb-mr", (uint64_t)1 << 32);
+    // // object_initialize_child(obj, "otg_fs", &s->otg_fs, TYPE_DWC2_USB);
+    // // object_property_add_const_link(OBJECT(&s->otg_fs), "dma-mr",
+    // //                             OBJECT(&s->temp_usb));
+    object_initialize_child(obj, "otg_hs", &s->otg_hs, TYPE_STM32F4xx_USB);
 }
 
 
@@ -446,6 +454,26 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         return;
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0xE0000000UL);
+
+    // IRQs: FS wakeup: 42 FS Global: 67
+    // if (!sysbus_realize(SYS_BUS_DEVICE(&s->otg_fs),errp))
+    // {
+    //     return;
+    // }    
+    // memory_region_add_subregion(system_memory, 0x50000000UL,
+    //     sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->otg_fs), 0));
+
+
+    // USB IRQs:
+    // Global HS: 77. WKUP: 76, EP1 in/out = 75/74.
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->otg_hs),errp))
+    {
+        return;
+    }    
+    sysbus_mmio_map(SYS_BUS_DEVICE(&s->otg_hs),0,0x40040000UL);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->otg_hs), 0, qdev_get_gpio_in(armv7m, 77));
+    // memory_region_add_subregion(system_memory, 0x40040000UL,
+    //     sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->otg_hs), 0));
 
     // create_unimplemented_device("timer[7]",    0x40001400, 0x400);
     // create_unimplemented_device("timer[12]",   0x40001800, 0x400);

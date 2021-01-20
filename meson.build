@@ -1315,6 +1315,7 @@ if have_system
     'hw/acpi',
     'hw/alpha',
     'hw/arm',
+    'hw/arm/prusa/stm32f407',
     'hw/audio',
     'hw/block',
     'hw/block/dataplane',
