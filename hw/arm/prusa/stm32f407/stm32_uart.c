@@ -203,6 +203,8 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     s->USART_SR_TC = 0;
 
     /* Write the character out. */
+    uint8_t chcr = '\r';
+    if (ch == '\n') qemu_chr_fe_write_all(&s->chr, &chcr, 1);
     qemu_chr_fe_write_all(&s->chr, &ch, 1);
     qemu_set_irq(s->byte_out, ch);
     // if (s->chr_write_obj) {
@@ -309,17 +311,11 @@ static int stm32_uart_can_receive(void *opaque)
     return (USART_RCV_BUF_LEN - s->rcv_char_bytes);
 }
 
-static void stm32_uart_event(void *opaque, QEMUChrEvent event)
-{
-    /* Do nothing */
-}
-
 static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
 {
     Stm32Uart *s = (Stm32Uart *)opaque;
 
     assert(size > 0);
-
     /* Copy the characters into our buffer first */
     assert (size <= USART_RCV_BUF_LEN - s->rcv_char_bytes);
     memmove(s->rcv_char_buf + s->rcv_char_bytes, buf, size);
@@ -328,9 +324,6 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
     /* Put next byte into RDR if the target is ready for it */
     stm32_uart_fill_receive_data_register(s);
 }
-
-
-
 
 /* REGISTER IMPLEMENTATION */
 
@@ -347,6 +340,8 @@ static uint32_t stm32_uart_USART_SR_read(Stm32Uart *s)
            (s->USART_SR_TC << USART_SR_TC_BIT) |
            (s->USART_SR_RXNE << USART_SR_RXNE_BIT) |
            (s->USART_SR_ORE << USART_SR_ORE_BIT);
+
+    qemu_chr_fe_accept_input(&s->chr);
 }
 
 
@@ -413,6 +408,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint32_t *read_value)
         printf("STM32_UART WARNING: Read value from USART_DR (%08lx) while it was empty.\n", s->iomem.addr);
     }
 
+    qemu_chr_fe_accept_input(&s->chr);
     stm32_uart_update_irq(s);
 }
 
@@ -612,41 +608,6 @@ static const MemoryRegionOps stm32_uart_ops = {
 };
 
 
-
-
-
-/* PUBLIC FUNCTIONS */
-
-// void stm32_uart_set_write_handler(Stm32Uart *s, void *obj,
-//         int (*chr_write_handler)(void *chr_write_obj, const uint8_t *buf, int len))
-// {
-//     s->chr_write_obj = obj;
-//     s->chr_write = chr_write_handler;
-// }
-
-
-// // Stub used to typecast the generic write handler prototype to a
-// // qemu_chr write handler.
-// static int stm32_uart_chr_fe_write_stub(void *s, const uint8_t *buf, int len)
-// {
-//     return qemu_chr_fe_write(&s->chr, buf, len);
-// }
-
-
-// Helper method that connects this UART device's receive handlers to a qemu_chr instance.
-void stm32_uart_connect(Stm32Uart *s, CharBackend *chr)
-{
-    s->chr_write_obj = chr;
-    if (chr) {
-        qemu_chr_fe_set_handlers(chr, stm32_uart_can_receive, stm32_uart_receive, stm32_uart_event,
-            NULL,s,NULL,true);
-        //qemu_chr_w
-        // stm32_uart_set_write_handler(s, chr, stm32_uart_chr_fe_write_stub);
-    }
-
-    // s->afio_board_map = afio_board_map;
-}
-
 static void stm32_uart_rx_wrapper(void *opaque, int n, int level)
 {
     uint8_t buff = level;
@@ -690,11 +651,19 @@ static void stm32_uart_init(Object *obj)
     if (s->stm32_rcc)
         stm32_rcc_set_periph_clk_irq(s->stm32_rcc, s->periph, clk_irq[0]);
 
-    stm32_uart_connect(s, &s->chr);
+    //stm32_uart_connect(s, &s->chr);
 
     s->rcv_char_bytes = 0;
 
     stm32_uart_reset(DEVICE(obj));
+}
+
+static void stm32_uart_realize(DeviceState *dev, Error **errp)
+{
+    Stm32Uart *s = STM32_UART(dev);
+    qemu_chr_fe_set_handlers(&s->chr, stm32_uart_can_receive, stm32_uart_receive, NULL,
+            NULL,s,NULL,true);
+    qemu_chr_fe_set_echo(&s->chr, true);
 }
 
 static Property stm32_uart_properties[] = {
@@ -709,6 +678,7 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32_uart_reset;
     device_class_set_props(dc, stm32_uart_properties);
+    dc->realize = stm32_uart_realize;
 }
 
 static TypeInfo stm32_uart_info = {
