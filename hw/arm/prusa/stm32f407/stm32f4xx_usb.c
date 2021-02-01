@@ -41,7 +41,7 @@
 #include "hw/qdev-properties.h"
 
 #define USB_HZ_FS       12000000
-#define USB_HZ_HS       96000000
+#define USB_HZ_HS       96000000 // was 96, this might be wrong but STM clocks usb at 48 mhz
 #define USB_FRMINTVL    12000
 
 /* nifty macros from Arnon's EHCI version  */
@@ -69,7 +69,7 @@ static inline void STM32F4xx_update_irq(STM32F4xxUSBState *s)
     }
     if (level != oldlevel) {
         oldlevel = level;
-        trace_usb_stm_update_irq(level);
+        // trace_usb_stm_update_irq(level);
         qemu_set_irq(s->irq, level);
     }
 }
@@ -79,7 +79,7 @@ static inline void STM32F4xx_raise_global_irq(STM32F4xxUSBState *s, uint32_t int
 {
     if (!(s->gintsts & intr)) {
         s->gintsts |= intr;
-        trace_usb_stm_raise_global_irq(intr);
+        // trace_usb_stm_raise_global_irq(intr);
         STM32F4xx_update_irq(s);
     }
 }
@@ -88,7 +88,7 @@ static inline void STM32F4xx_lower_global_irq(STM32F4xxUSBState *s, uint32_t int
 {
     if (s->gintsts & intr) {
         s->gintsts &= ~intr;
-        trace_usb_stm_lower_global_irq(intr);
+        // trace_usb_stm_lower_global_irq(intr);
         STM32F4xx_update_irq(s);
     }
 }
@@ -98,7 +98,7 @@ static inline void STM32F4xx_raise_host_irq(STM32F4xxUSBState *s, uint32_t host_
     if (!(s->haint & host_intr)) {
         s->haint |= host_intr;
         s->haint &= 0xffff;
-        trace_usb_stm_raise_host_irq(host_intr);
+        // trace_usb_stm_raise_host_irq(host_intr);
         if (s->haint & s->haintmsk) {
             STM32F4xx_raise_global_irq(s, GINTSTS_HCHINT);
         }
@@ -109,7 +109,7 @@ static inline void STM32F4xx_lower_host_irq(STM32F4xxUSBState *s, uint32_t host_
 {
     if (s->haint & host_intr) {
         s->haint &= ~host_intr;
-        trace_usb_stm_lower_host_irq(host_intr);
+        // trace_usb_stm_lower_host_irq(host_intr);
         if (!(s->haint & s->haintmsk)) {
             STM32F4xx_lower_global_irq(s, GINTSTS_HCHINT);
         }
@@ -137,7 +137,7 @@ static void STM32F4xx_eof_timer(STM32F4xxUSBState *s)
 static void STM32F4xx_sof(STM32F4xxUSBState *s)
 {
     s->sof_time += s->usb_frame_time;
-    trace_usb_stm_sof(s->sof_time);
+    // trace_usb_stm_sof(s->sof_time);
     STM32F4xx_eof_timer(s);
     STM32F4xx_raise_global_irq(s, GINTSTS_SOF);
 }
@@ -223,7 +223,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
     STM32F4xxPacket *p;
     uint32_t hcchar = s->hreg1[index];
     uint32_t hctsiz = s->hreg1[index + 4];
-    uint32_t hcdma = s->hreg1[index + 5];
+    // uint32_t hcdma = s->hreg1[index + 5];
     uint32_t chan, epnum, epdir, eptype, mps, pid, pcnt, len, tlen, intr = 0;
     uint32_t tpcnt, stsidx, actual = 0;
     bool do_intr = false, done = false;
@@ -239,8 +239,49 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
     chan = index >> 3;
     p = &s->packet[chan];
 
+    if (hcchar & HCCHAR_CHDIS)
+    {
+        printf("Channel %u disabled, ignoring.\n",chan);
+        return;
+    }
+
+    if (hctsiz & TSIZ_DOPNG){
+        // Ping packet. just ACK it. 
+        if (!s->is_ping) {
+            s->hreg1[index + 2] |= HCINTMSK_ACK;
+            // s->hreg1[index + 4] &= ~TSIZ_DOPNG; // clear ping bit, it's done.
+            printf("PING ack'ed (EN: %u), tsiz: %08x\n",(hcchar & HCCHAR_CHDIS)>0, s->hreg1[index+4]);
+            // s->hreg1[index] &= (~HCCHAR_CHENA);
+            s->is_ping=true;
+        } else if (s->is_ping<2){
+            // Reenabled post-ping...
+            printf("Ping idling...\n");
+        } else {
+            s->is_ping = false;
+            printf("Ping complete\n");
+            s->hreg1[index] &= (~HCCHAR_CHENA);
+ //           s->hreg1[index] &= (~HCCHAR_CHENA);
+
+        }
+       // s->is_ping = true;
+        STM32F4xx_update_hc_irq(s, index);
+        return;
+        // printf("Ping send (pid %02x)\n",pid);
+    } else if (s->is_ping) {
+        printf("ping clear\n");
+        s->is_ping = false;
+    }
+
     trace_usb_stm_handle_packet(chan, dev, &p->packet, epnum, types[eptype],
                                  dirs[epdir], mps, len, pcnt);
+
+
+    if(pcnt==0)
+    {
+        printf("pcnt=0, retrning.\n"); // TODO - figure out why this happens and the halt reenables the channel.
+        s->hreg1[index] &= (~HCCHAR_CHENA);
+        return;
+    }
 
     if (eptype == USB_ENDPOINT_XFER_CONTROL && pid == TSIZ_SC_MC_PID_SETUP) {
         pid = USB_TOKEN_SETUP;
@@ -257,18 +298,31 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
         }
 
         if (pid != USB_TOKEN_IN) {
-            trace_usb_stm_memory_read(hcdma, tlen);
-            if (dma_memory_read(&s->dma_as, hcdma,
-                                s->usb_buf[chan], tlen) != MEMTX_OK) {
-                qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_read failed\n",
-                              __func__);
+            trace_usb_stm_memory_read(s->fifo_head[index], tlen);
+            if (s->fifo_level[index]<(tlen>>2))
+            {
+                printf("No data to send in FIFO, ignoring...\n");
+                return; // No data to send yet...
             }
+            memcpy(s->usb_buf[chan],&s->fifo_ram[s->fifo_head[index]],tlen);
+            s->fifo_head[index] += tlen>>2;
+            s->fifo_level[index] -= tlen>>2;
+            printf("USB TX:");
+            for (int i=0; i<tlen; i++)
+                printf("%02x ",s->usb_buf[chan][i]);
+            printf("\n");
+            printf("\n");
+            // if (dma_memory_read(&s->dma_as, hcdma,                                          
+            //                     s->usb_buf[chan], tlen) != MEMTX_OK) {
+            //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_read failed\n",
+            //                   __func__);
+            // }
         }
 
         usb_packet_init(&p->packet);
-        usb_packet_setup(&p->packet, pid, ep, 0, hcdma,
+        usb_packet_setup(&p->packet, pid, ep, 0, s->fifo_head[chan],
                          pid != USB_TOKEN_IN, true);
-        usb_packet_addbuf(&p->packet, s->usb_buf[chan], tlen);
+        usb_packet_addbuf(&p->packet, s->usb_buf[chan], len);
         p->async = STM32F4xx_ASYNC_NONE;
         usb_handle_packet(dev, &p->packet);
     } else {
@@ -313,19 +367,61 @@ babble:
         }
 
         if (pid == USB_TOKEN_IN) {
-            trace_usb_stm_memory_write(hcdma, actual);
-            if (dma_memory_write(&s->dma_as, hcdma, s->usb_buf[chan],
-                                 actual) != MEMTX_OK) {
-                qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_write failed\n",
-                              __func__);
+            // First constuct the packet header
+            if (actual>0) {
+                trace_usb_stm_memory_write(s->rx_fifo_tail, actual);
+                uint32_t dpid = get_field(s->hctsiz(chan), TSIZ_SC_MC_PID);
+                rxstatus_t header = {.chnum = chan, .bcnt = actual, .dpid = dpid, .pktsts = 0b0010};
+                // uint32_t orig_head =s->rx_fifo_tail;
+                s->fifo_ram[s->rx_fifo_tail++] = header.raw;
+                s->rx_fifo_level++;
+                memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
+                printf("USB RX:");
+                for (int i=0; i<actual; i++)
+                    printf("%02x ",s->usb_buf[chan][i]);
+                printf("\n");
+                uint32_t words = actual>>2;
+                if (actual%4 !=0) {
+                    words++; 
+                }
+                s->rx_fifo_tail += words;
+                s->rx_fifo_level += words;
+                assert(s->rx_fifo_tail < 32768); // Fix this you lazy lump...
+          
+                // while (orig_head != s->rx_fifo_tail)
+                // {
+                //     printf("RxFifo add @ %u: %08x \n", orig_head, s->fifo_ram[orig_head]);
+                //     orig_head++;
+                // }
+                s->gintsts |= GINTSTS_RXFLVL;
             }
-        }
+            else
+            {
+                printf("Incoming size 0, doping: %u\n",s->is_ping);
+                pcnt--;
+                // if (s->is_ping)
+                // {
+                //     intr |= HCINTMSK_ACK | HCINTMSK_XFERCOMPL;
+                //     s->is_ping = 0;
+                //     STM32F4xx_update_hc_irq(s, index);
+                //     usb_packet_cleanup(&p->packet);
+                //     return;
+                // }
+            }
+            // cpu_physical_memory_write(hcdma + 0x1000,s->usb_buf[chan],tlen);
+            // if (dma_memory_write(&s->dma_as, hcdma, s->usb_buf[chan],
+            //                      actual) != MEMTX_OK) {
+            //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_write failed\n",
+            //                   __func__);
+            // }
+        } 
 
         tpcnt = actual / mps;
         if (actual % mps) {
             tpcnt++;
             if (pid == USB_TOKEN_IN) {
                 done = true;
+                // intr |= HCINTMSK_NYET; // Transfer complete.
             }
         }
 
@@ -334,11 +430,12 @@ babble:
         len -= actual < len ? actual : len;
         set_field(&hctsiz, len, TSIZ_XFERSIZE);
         s->hreg1[index + 4] = hctsiz;
-        hcdma += actual;
-        s->hreg1[index + 5] = hcdma;
+        // hcdma += actual;
+        // s->hreg1[index + 5] = hcdma;
 
         if (!pcnt || len == 0 || actual == 0) {
             done = true;
+            // intr |= HCINTMSK_ACK;
         }
     } else {
         intr |= pintr[stsidx];
@@ -618,6 +715,7 @@ static void STM32F4xx_enable_chan(STM32F4xxUSBState *s,  uint32_t index)
 
     trace_usb_stm_enable_chan(index >> 3, dev, &p->packet, epnum);
     if (dev == NULL) {
+        s->hreg1[index] &= ~HCCHAR_CHENA; // Disable channel if device not found.
         return;
     }
 
@@ -645,14 +743,14 @@ static void STM32F4xx_enable_chan(STM32F4xxUSBState *s,  uint32_t index)
     qemu_bh_schedule(s->async_bh);
 }
 
-static const char *glbregnm[] = {
-    "GOTGCTL  ", "GOTGINT  ", "GAHBCFG  ", "GUSBCFG  ", "GRSTCTL  ",
-    "GINTSTS  ", "GINTMSK  ", "GRXSTSR  ", "GRXSTSP  ", "GRXFSIZ  ",
-    "GNPTXFSIZ", "GNPTXSTS ", "GI2CCTL  ", "GPVNDCTL ", "GGPIO    ",
-    "GUID     ", "GSNPSID  ", "GHWCFG1  ", "GHWCFG2  ", "GHWCFG3  ",
-    "GHWCFG4  ", "GLPMCFG  ", "GPWRDN   ", "GDFIFOCFG", "GADPCTL  ",
-    "GREFCLK  ", "GINTMSK2 ", "GINTSTS2 "
-};
+// static const char *glbregnm[] = {
+//     "GOTGCTL  ", "GOTGINT  ", "GAHBCFG  ", "GUSBCFG  ", "GRSTCTL  ",
+//     "GINTSTS  ", "GINTMSK  ", "GRXSTSR  ", "GRXSTSP  ", "GRXFSIZ  ",
+//     "GNPTXFSIZ", "GNPTXSTS ", "GI2CCTL  ", "GPVNDCTL ", "GGPIO    ",
+//     "GUID     ", "GSNPSID  ", "GHWCFG1  ", "GHWCFG2  ", "GHWCFG3  ",
+//     "GHWCFG4  ", "GLPMCFG  ", "GPWRDN   ", "GDFIFOCFG", "GADPCTL  ",
+//     "GREFCLK  ", "GINTMSK2 ", "GINTSTS2 "
+// };
 
 static uint64_t STM32F4xx_glbreg_read(void *ptr, hwaddr addr, int index,
                                  unsigned size)
@@ -670,19 +768,108 @@ static uint64_t STM32F4xx_glbreg_read(void *ptr, hwaddr addr, int index,
                  GRSTCTL_FRMCNTRRST | GRSTCTL_HSFTRST | GRSTCTL_CSFTRST);
         s->glbreg[index] = val;
         break;
+    case GRXSTSP:
+        printf("RX fifo pop (STSP): %08x @ %u\n", s->fifo_ram[s->rx_fifo_head], s->rx_fifo_head);
+        if(s->rx_fifo_level>0) {
+            val = s->fifo_ram[s->rx_fifo_head++];
+            s->rx_fifo_level--;
+        } // else: val will be 0 from s->GRXSTSP;
+        break;
+    case GRXSTSR:
+        printf("rxfifo read\n");
+        if (s->rx_fifo_level>0)
+            val = s->fifo_ram[s->rx_fifo_head];
+        break;
     default:
         break;
     }
 
-    trace_usb_stm_glbreg_read(addr, glbregnm[index], val);
+   // trace_usb_stm_glbreg_read(addr, glbregnm[index], val);
     return val;
+}
+
+
+static void STM32F4xx_tx_packet(STM32F4xxUSBState *s, int index) {
+
+    USBDevice *dev;
+    USBEndpoint *ep;
+    uint32_t hcchar;
+    uint32_t hctsiz;
+    uint32_t devadr, epnum, epdir, eptype, pid, len;
+    STM32F4xxPacket *p;
+
+    assert((index >> 3) < STM32F4xx_NB_CHAN);
+    p = &s->packet[index >> 3];
+    hcchar = s->hreg1[index];
+    hctsiz = s->hreg1[index + 4];
+    devadr = get_field(hcchar, HCCHAR_DEVADDR);
+    epnum = get_field(hcchar, HCCHAR_EPNUM);
+    epdir = get_bit(hcchar, HCCHAR_EPDIR);
+    eptype = get_field(hcchar, HCCHAR_EPTYPE);
+    pid = get_field(hctsiz, TSIZ_SC_MC_PID);
+    len = get_field(hctsiz, TSIZ_XFERSIZE);
+
+    dev = STM32F4xx_find_device(s, devadr);
+
+    if (dev == NULL) {
+        return;
+    }
+
+    if (eptype == USB_ENDPOINT_XFER_CONTROL && pid == TSIZ_SC_MC_PID_SETUP) {
+        pid = USB_TOKEN_SETUP;
+    } else {
+        pid = epdir ? USB_TOKEN_IN : USB_TOKEN_OUT;
+    }
+
+    ep = usb_ep_get(dev, pid, epnum);
+
+    /*
+     * Hack: Networking doesn't like us delivering large transfers, it kind
+     * of works but the latency is horrible. So if the transfer is <= the mtu
+     * size, we take that as a hint that this might be a network transfer,
+     * and do the transfer packet-by-packet.
+     */
+    if (len > 1536) {
+        p->small = false;
+    } else {
+        p->small = true;
+    }
+
+    STM32F4xx_handle_packet(s, devadr, dev, ep, index, true);
+    qemu_bh_schedule(s->async_bh);
+}
+
+
+static void STM32F4xx_flush_tx(void *ptr)
+{
+    STM32F4xxUSBState *s = ptr;
+    uint16_t index = (s->grstctl & GRSTCTL_TXFNUM_MASK) >> GRSTCTL_TXFNUM_SHIFT;
+
+    if (index==0b1000 || index>0)
+    {
+        printf("FIXME: >0 flush\n");
+        return;
+    }
+    if (s->fifo_level[index] == 0) {
+        return; // FIFO already empty. 
+    }
+    // switch (index) {
+    //     case 0b10000: // All
+    //     break;
+    //     default:
+
+    // }
+
+    printf("FIXME: PACKET FLUSH\n");
+    //STM32F4xx_tx_packet(s);
+    
 }
 
 static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t val,
                               unsigned size)
 {
     STM32F4xxUSBState *s = ptr;
-    uint64_t orig = val;
+   // uint64_t orig = val;
     uint32_t *mmio;
     uint32_t old;
     int iflg = 0;
@@ -706,13 +893,17 @@ static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t v
         if ((val & GAHBCFG_GLBL_INTR_EN) && !(old & GAHBCFG_GLBL_INTR_EN)) {
             iflg = 1;
         }
+        if (val & GAHBCFG_DMA_EN)
+        {
+            printf("FIXME: USB dma not implemented!\n");
+        }
         break;
     case GRSTCTL:
         val |= GRSTCTL_AHBIDLE;
         val &= ~GRSTCTL_DMAREQ;
         if (!(old & GRSTCTL_TXFFLSH) && (val & GRSTCTL_TXFFLSH)) {
                 /* TODO - TX fifo flush */
-            qemu_log_mask(LOG_UNIMP, "Tx FIFO flush not implemented\n");
+            STM32F4xx_flush_tx(s);
         }
         if (!(old & GRSTCTL_RXFFLSH) && (val & GRSTCTL_RXFFLSH)) {
                 /* TODO - RX fifo flush */
@@ -753,11 +944,16 @@ static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t v
     case GINTMSK:
         iflg = 1;
         break;
+    case GRXFSIZ:
+    case GRXSTSP:
+    case GRXSTSR:
+        printf("write to sts/siz\n");
+        break;
     default:
         break;
     }
 
-    trace_usb_stm_glbreg_write(addr, glbregnm[index], orig, old, val);
+    //trace_usb_stm_glbreg_write(addr, glbregnm[index], orig, old, val);
     *mmio = val;
 
     if (iflg) {
@@ -923,7 +1119,7 @@ static uint64_t STM32F4xx_hreg1_read(void *ptr, hwaddr addr, int index,
     assert(addr >= HCCHAR(0) && addr <= HCDMAB(STM32F4xx_NB_CHAN - 1));
     val = s->hreg1[index];
 
-    trace_usb_stm_hreg1_read(addr, hreg1nm[index & 7], addr >> 5, val);
+    //trace_usb_stm_hreg1_read(addr, hreg1nm[index & 7], addr >> 5, val);
     return val;
 }
 
@@ -941,12 +1137,15 @@ static void STM32F4xx_hreg1_write(void *ptr, hwaddr addr, int index, uint64_t va
     assert(addr >= HCCHAR(0) && addr <= HCDMAB(STM32F4xx_NB_CHAN - 1));
     mmio = &s->hreg1[index];
     old = *mmio;
-
+    uint64_t  HALT = HCCHAR_CHDIS | HCCHAR_CHENA;
     switch (HSOTG_REG(0x500) + (addr & 0x1c)) {
     case HCCHAR(0):
+
+
         if ((val & HCCHAR_CHDIS) && !(old & HCCHAR_CHDIS)) {
             val &= ~(HCCHAR_CHENA | HCCHAR_CHDIS);
             disflg = 1;
+            // printf("p1\n");
         } else {
             val |= old & HCCHAR_CHDIS;
             if ((val & HCCHAR_CHENA) && !(old & HCCHAR_CHENA)) {
@@ -955,10 +1154,25 @@ static void STM32F4xx_hreg1_write(void *ptr, hwaddr addr, int index, uint64_t va
             } else {
                 val |= old & HCCHAR_CHENA;
             }
+            // printf("p2\n");
+        }
+        if ((val & HALT) == HALT)
+        {
+            printf("CH HALTED\n");
+            val &= ~(HCCHAR_CHENA | HCCHAR_CHDIS);
+            disflg = 1;
+            enflg = 0;
         }
         break;
     case HCINT(0):
         /* clear the write-1-to-clear bits */
+        if (s->is_ping && (val & HCINTMSK_CHHLTD)) {
+            s->is_ping++;
+            // TODO -  the way ping works this needs to be fired after the CHHLTD flag has been handled.
+            old |= HCINTMSK_XFERCOMPL;
+            iflg = 1;
+            printf("Ping XFRC\n");
+        }
         val |= ~old;
         val = ~val;
         val &= ~HCINTMSK_RESERVED14_31;
@@ -1098,25 +1312,55 @@ static const MemoryRegionOps STM32F4xx_mmio_hsotg_ops = {
     .write = STM32F4xx_hsotg_write,
     .impl.min_access_size = 4,
     .impl.max_access_size = 4,
-    .endianness = DEVICE_LITTLE_ENDIAN,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static uint64_t STM32F4xx_hreg2_read(void *ptr, hwaddr addr, unsigned size)
 {
     /* TODO - implement FIFOs to support slave mode */
-    trace_usb_stm_hreg2_read(addr, addr >> 12, 0);
-    qemu_log_mask(LOG_UNIMP, "FIFO read not implemented\n");
-    return 0;
+    STM32F4xxUSBState *s = ptr;
+    uint32_t value = 0;
+    if (s->rx_fifo_level > 0) {
+        value = s->fifo_ram[s->rx_fifo_head++];
+        s->rx_fifo_level--;
+        if (s->rx_fifo_level == 0) {
+            s->gintsts &= ~GINTSTS_RXFLVL;
+            STM32F4xx_update_irq(s);
+        }
+        printf("FIFO read: %08x (L: %u H: %u T: %u)\n",value, s->rx_fifo_level, s->rx_fifo_head, s->rx_fifo_tail);
+    }
+    // trace_usb_stm_hreg2_read(addr, addr >> 12, value);
+    // qemu_log_mask(LOG_GUEST_ERROR, "FIFO read not implemented\n");
+    // printf("FIXME: Read FIFO\n");
+
+    return value;
 }
 
 static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
                              unsigned size)
 {
     uint64_t orig = val;
-
-    /* TODO - implement FIFOs to support slave mode */
+    STM32F4xxUSBState *s = ptr;
+    uint8_t index = addr >> 12;
+    if (index>0){
+        printf("FIXME: Accessing FIFO>0\n");
+        return;
+    }
     trace_usb_stm_hreg2_write(addr, addr >> 12, orig, 0, val);
-    qemu_log_mask(LOG_UNIMP, "FIFO write not implemented\n");
+    if (s->fifo_level[index]==s->gnptxfsiz_txfd) {
+        qemu_log_mask(LOG_GUEST_ERROR, "Wrote to a full FIFO (data discarded)!\n");
+    }
+    s->fifo_ram[s->fifo_tail[index]++] = val;
+    s->fifo_level[index]++;
+    assert(s->fifo_tail[index]<16384); // laziness ftw
+    uint32_t txsize = s->hctsiz(index);
+    int words_needed = get_field(txsize, TSIZ_XFERSIZE)>>2;
+    int packets_left = get_field(txsize, TSIZ_PKTCNT);
+    if ( (s->fifo_level[index]) >= words_needed && packets_left>0) {
+        // Enough data written to do a transfer...
+        printf("Data ready for tx\n");
+        if (1) STM32F4xx_tx_packet(s, index);
+    }
 }
 
 static const MemoryRegionOps STM32F4xx_mmio_hreg2_ops = {
@@ -1124,7 +1368,7 @@ static const MemoryRegionOps STM32F4xx_mmio_hreg2_ops = {
     .write = STM32F4xx_hreg2_write,
     .impl.min_access_size = 4,
     .impl.max_access_size = 4,
-    .endianness = DEVICE_LITTLE_ENDIAN,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static void STM32F4xx_wakeup_endpoint(USBBus *bus, USBEndpoint *ep,
@@ -1228,10 +1472,22 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
     s->fi = USB_FRMINTVL - 1;
     s->next_chan = 0;
     s->working = false;
+    s->is_ping = false;
 
     for (i = 0; i < STM32F4xx_NB_CHAN; i++) {
         s->packet[i].needs_service = false;
     }
+
+    memset(s->fifo_ram, 0, sizeof(s->fifo_ram));
+    memset(s->fifo_head, 0, sizeof(s->fifo_head));
+    memset(s->fifo_level, 0, sizeof(s->fifo_level));
+    memset(s->fifo_tail, 0, sizeof(s->fifo_tail));
+    // RX fifo storage is the 2nd half of the 128k... for now. 
+    s->rx_fifo_head = (64U*KiB)/sizeof(uint32_t);
+    s->rx_fifo_tail = s->rx_fifo_head;
+    s->rx_fifo_level = 0;
+
+    
 }
 
 static void STM32F4xx_reset_hold(Object *obj)
@@ -1270,12 +1526,16 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
 {
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     STM32F4xxUSBState *s = STM32F4xx_USB(dev);
-    Object *obj;
+    //Object *obj;
 
-    obj = object_property_get_link(OBJECT(dev), "dma-mr", &error_abort);
+    // obj = object_property_get_link(OBJECT(dev), "dma-mr", &error_abort);
 
-    s->dma_mr = MEMORY_REGION(obj);
-    address_space_init(&s->dma_as, s->dma_mr, "STM32F4xx");
+    // s->dma_mr = MEMORY_REGION(obj);
+    // I have no idea if this is right, I can't find any docs on where the dma 
+    // region for the USB controller lives. 
+    // memory_region_add_subregion(&s->container, 0x20000, &s->dma_mr);
+    // address_space_init(&s->dma_as, MEMORY_REGION(&s->dma_mr), "STM32F4xxUSBDMA");
+
 
     usb_bus_new(&s->bus, sizeof(s->bus), &STM32F4xx_bus_ops, dev);
     usb_register_port(&s->bus, &s->uport, s, 0, &STM32F4xx_port_ops,
@@ -1311,8 +1571,13 @@ static void STM32F4xx_init(Object *obj)
     memory_region_add_subregion(&s->container, 0x0000, &s->hsotg);
 
     memory_region_init_io(&s->fifos, obj, &STM32F4xx_mmio_hreg2_ops, s,
-                          "STM32F4xx-fifo", 64 * KiB);
+                         "STM32F4xx-fifo", 64 * KiB);
     memory_region_add_subregion(&s->container, 0x1000, &s->fifos);
+
+    // memory_region_init_io(&s->dma_mr, obj, &STM32F4xx_mmio_hreg2_ops, s,
+    //                       "STM32F4xx-dbg", 0x1FFFF);
+    // memory_region_add_subregion(&s->container, 0x20000, &s->dma_mr);
+    //memory_region_init_io(&s->dma_mr, obj, NULL, s, "f4xx-usb.dma", 0x1FFFF);
 }
 
 static const VMStateDescription vmstate_STM32F4xx_state_packet = {

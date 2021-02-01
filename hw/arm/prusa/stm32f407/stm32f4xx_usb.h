@@ -25,11 +25,13 @@
 #include "hw/sysbus.h"
 #include "hw/usb.h"
 #include "sysemu/dma.h"
+#include "qemu/units.h"
 #include "qom/object.h"
 
-#define STM32F4xx_MMIO_SIZE      0x3FFFF
+#define STM32F4xx_MMIO_SIZE      0xCFFF // CSRs and FIFOs
 
-#define STM32F4xx_NB_CHAN        12       /* Number of host channels */
+#define STM32F4xx_NB_CHAN        16       /* Number of host channels */
+// N.B - device has max 12, but the LL HAL code resets up to 16 (likely for other device compat)
 #define STM32F4xx_MAX_XFER_SIZE  65536   /* Max transfer size expected in HCTSIZ */
 
 typedef struct STM32F4xxPacket STM32F4xxPacket;
@@ -57,6 +59,16 @@ struct STM32F4xxPacket {
     bool small;
     bool needs_service;
 };
+typedef union {
+    uint32_t raw;
+    struct {
+        uint32_t chnum      :4;
+        uint32_t bcnt       :11;
+        uint32_t dpid       :2;
+        uint32_t pktsts     :4;
+        uint32_t :11; // unused/reserved
+    } QEMU_PACKED;
+} rxstatus_t;
 
 struct STM32F4xxUSBState {
     /*< private >*/
@@ -65,7 +77,7 @@ struct STM32F4xxUSBState {
     /*< public >*/
     USBBus bus;
     qemu_irq irq;
-    MemoryRegion *dma_mr;
+    MemoryRegion dma_mr;
     AddressSpace dma_as;
     MemoryRegion container;
     MemoryRegion hsotg;
@@ -82,10 +94,19 @@ struct STM32F4xxUSBState {
             uint32_t grstctl;       /* 10 */
             uint32_t gintsts;       /* 14 */
             uint32_t gintmsk;       /* 18 */
-            uint32_t grxstsr;       /* 1c */
+            union {
+                uint32_t grxstsr;       /* 1c */
+                rxstatus_t defs;
+            };
             uint32_t grxstsp;       /* 20 */
             uint32_t grxfsiz;       /* 24 */
-            uint32_t gnptxfsiz;     /* 28 */
+            union {
+                uint32_t gnptxfsiz;     /* 28 */
+                struct {
+                    uint32_t gnptxfsiz_txfsa  :16;
+                    uint32_t gnptxfsiz_txfd   :16;
+                } QEMU_PACKED;
+            };
             uint32_t gnptxsts;      /* 2c */
             uint32_t gi2cctl;       /* 30 */
             uint32_t gpvndctl;      /* 34 */
@@ -171,6 +192,16 @@ struct STM32F4xxUSBState {
     USBPort uport;
     STM32F4xxPacket packet[STM32F4xx_NB_CHAN];                   /* one packet per chan */
     uint8_t usb_buf[STM32F4xx_NB_CHAN][STM32F4xx_MAX_XFER_SIZE]; /* one buffer per chan */
+    uint32_t fifo_ram[(128*KiB)/sizeof(uint32_t)]; // 128K FIFO ram (0x20000- 0x3FFFF)
+    // TODO - relocate these and use the correct registers instead. 
+    uint16_t fifo_head[STM32F4xx_NB_CHAN];
+    uint16_t fifo_level[STM32F4xx_NB_CHAN];
+    uint16_t fifo_tail[STM32F4xx_NB_CHAN];
+    uint32_t rx_fifo_head;
+    uint32_t rx_fifo_tail;
+    uint32_t rx_fifo_level;
+    uint8_t is_ping;
+
 };
 
 struct STM32F4xxClass {

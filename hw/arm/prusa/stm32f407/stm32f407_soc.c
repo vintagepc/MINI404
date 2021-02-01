@@ -158,11 +158,13 @@ static void stm32f407_soc_initfn(Object *obj)
 
     // // TODO - I don't think this is necessary because the STM32 arch differs
     // // from the BCM2835, but it's required unless we alter the dwc2 driver, even if it's unused
-    // memory_region_init(&s->temp_usb, obj, "usb-mr", (uint64_t)1 << 32);
+   // memory_region_init(&s->temp_usb, obj, "usb-mr", (uint64_t)1 << 32);
     // // object_initialize_child(obj, "otg_fs", &s->otg_fs, TYPE_DWC2_USB);
     // // object_property_add_const_link(OBJECT(&s->otg_fs), "dma-mr",
     // //                             OBJECT(&s->temp_usb));
     object_initialize_child(obj, "otg_hs", &s->otg_hs, TYPE_STM32F4xx_USB);
+    // object_property_add_const_link(OBJECT(&s->otg_hs), "dma-mr",
+    //                             OBJECT(&s->temp_usb));
 }
 
 
@@ -502,7 +504,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     // create_unimplemented_device("DMA1",        0x40026000, 0x400);
     // create_unimplemented_device("DMA2",        0x40026400, 0x400);
     create_unimplemented_device("Ethernet",    0x40028000, 0x1400);
-    create_unimplemented_device("USB OTG HS",  0x40040000, 0x30000);
+//    create_unimplemented_device("USB OTG HS",  0x40040000, 0x30000);
     create_unimplemented_device("USB OTG FS",  0x50000000, 0x31000); // Note - FS is the serial port/micro-usb connector
     create_unimplemented_device("DCMI",        0x50050000, 0x400);
     create_unimplemented_device("RNG",         0x50060800, 0x400);
