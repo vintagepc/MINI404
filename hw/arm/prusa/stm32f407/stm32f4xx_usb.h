@@ -34,6 +34,8 @@
 // N.B - device has max 12, but the LL HAL code resets up to 16 (likely for other device compat)
 #define STM32F4xx_MAX_XFER_SIZE  65536   /* Max transfer size expected in HCTSIZ */
 
+#define STM32F4xx_EP_FIFO_SIZE 4*KiB / sizeof(uint32_t)
+
 typedef struct STM32F4xxPacket STM32F4xxPacket;
 typedef struct STM32F4xxUSBState STM32F4xxUSBState;
 typedef struct STM32F4xxClass STM32F4xxClass;
@@ -192,8 +194,15 @@ struct STM32F4xxUSBState {
     USBPort uport;
     STM32F4xxPacket packet[STM32F4xx_NB_CHAN];                   /* one packet per chan */
     uint8_t usb_buf[STM32F4xx_NB_CHAN][STM32F4xx_MAX_XFER_SIZE]; /* one buffer per chan */
+
+
+    // TODO- rework this into blocks on a per-channel basis
+    // so the math is easier on my head...
     uint32_t fifo_ram[(128*KiB)/sizeof(uint32_t)]; // 128K FIFO ram (0x20000- 0x3FFFF)
-    // TODO - relocate these and use the correct registers instead. 
+    // TODO - relocate these and use the correct registers instead.
+    // #channels *4KiB of space.
+    uint32_t tx_fifos[STM32F4xx_NB_CHAN][STM32F4xx_EP_FIFO_SIZE];
+    
     uint16_t fifo_head[STM32F4xx_NB_CHAN];
     uint16_t fifo_level[STM32F4xx_NB_CHAN];
     uint16_t fifo_tail[STM32F4xx_NB_CHAN];

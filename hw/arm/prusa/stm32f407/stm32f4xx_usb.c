@@ -298,15 +298,16 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
         }
 
         if (pid != USB_TOKEN_IN) {
-            trace_usb_stm_memory_read(s->fifo_head[index], tlen);
-            if (s->fifo_level[index]<(tlen>>2))
+            trace_usb_stm_memory_read(s->fifo_head[chan], tlen);
+            uint32_t words_required = (tlen>>2) + ((tlen%4>0));
+            if (s->fifo_level[chan]<words_required)
             {
                 printf("No data to send in FIFO, ignoring...\n");
                 return; // No data to send yet...
             }
-            memcpy(s->usb_buf[chan],&s->fifo_ram[s->fifo_head[index]],tlen);
-            s->fifo_head[index] += tlen>>2;
-            s->fifo_level[index] -= tlen>>2;
+            memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],tlen);
+            s->fifo_head[chan] += words_required;
+            s->fifo_level[chan] -= words_required;
             printf("USB TX:");
             for (int i=0; i<tlen; i++)
                 printf("%02x ",s->usb_buf[chan][i]);
@@ -376,7 +377,7 @@ babble:
                 s->fifo_ram[s->rx_fifo_tail++] = header.raw;
                 s->rx_fifo_level++;
                 memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
-                printf("USB RX:");
+                printf("USB RX %u: ", actual);
                 for (int i=0; i<actual; i++)
                     printf("%02x ",s->usb_buf[chan][i]);
                 printf("\n");
@@ -1169,9 +1170,15 @@ static void STM32F4xx_hreg1_write(void *ptr, hwaddr addr, int index, uint64_t va
         if (s->is_ping && (val & HCINTMSK_CHHLTD)) {
             s->is_ping++;
             // TODO -  the way ping works this needs to be fired after the CHHLTD flag has been handled.
-            old |= HCINTMSK_XFERCOMPL;
-            iflg = 1;
-            printf("Ping XFRC\n");
+            // but not for bulk endpoints though, it expects those to remain in NREADY
+            if ((index>>3) == USB_ENDPOINT_XFER_BULK) {
+                s->is_ping = 0;
+                s->hreg1[index-2] &= (~HCCHAR_CHENA);
+            } else {
+                old |= HCINTMSK_XFERCOMPL;
+                iflg = 1;
+                printf("Ping XFRC\n");
+            }
         }
         val |= ~old;
         val = ~val;
@@ -1342,24 +1349,25 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     uint64_t orig = val;
     STM32F4xxUSBState *s = ptr;
     uint8_t index = addr >> 12;
-    if (index>0){
-        printf("FIXME: Accessing FIFO>0\n");
-        return;
-    }
     trace_usb_stm_hreg2_write(addr, addr >> 12, orig, 0, val);
     if (s->fifo_level[index]==s->gnptxfsiz_txfd) {
         qemu_log_mask(LOG_GUEST_ERROR, "Wrote to a full FIFO (data discarded)!\n");
     }
-    s->fifo_ram[s->fifo_tail[index]++] = val;
+    s->tx_fifos[index][s->fifo_tail[index]++] = val;
     s->fifo_level[index]++;
-    assert(s->fifo_tail[index]<16384); // laziness ftw
+    assert(s->fifo_tail[index]<STM32F4xx_EP_FIFO_SIZE); // laziness ftw
     uint32_t txsize = s->hctsiz(index);
-    int words_needed = get_field(txsize, TSIZ_XFERSIZE)>>2;
+    uint32_t bytes_needed = get_field(txsize, TSIZ_XFERSIZE);
+    int words_needed = (bytes_needed >> 2);
+    if (bytes_needed % 4 !=0)
+    {
+        words_needed++;
+    }
     int packets_left = get_field(txsize, TSIZ_PKTCNT);
     if ( (s->fifo_level[index]) >= words_needed && packets_left>0) {
         // Enough data written to do a transfer...
-        printf("Data ready for tx\n");
-        if (1) STM32F4xx_tx_packet(s, index);
+        printf("Data ready for tx on %u\n", index);
+        if (1) STM32F4xx_tx_packet(s, index<<3);
     }
 }
 
@@ -1476,15 +1484,16 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
 
     for (i = 0; i < STM32F4xx_NB_CHAN; i++) {
         s->packet[i].needs_service = false;
-    }
 
+    }
+    memset(s->tx_fifos, 0, STM32F4xx_NB_CHAN * 4 *KiB);
     memset(s->fifo_ram, 0, sizeof(s->fifo_ram));
     memset(s->fifo_head, 0, sizeof(s->fifo_head));
     memset(s->fifo_level, 0, sizeof(s->fifo_level));
     memset(s->fifo_tail, 0, sizeof(s->fifo_tail));
     // RX fifo storage is the 2nd half of the 128k... for now. 
-    s->rx_fifo_head = (64U*KiB)/sizeof(uint32_t);
-    s->rx_fifo_tail = s->rx_fifo_head;
+    s->rx_fifo_head = 0;
+    s->rx_fifo_tail = 0;
     s->rx_fifo_level = 0;
 
     
