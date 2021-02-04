@@ -49,7 +49,7 @@ struct usb_msd_csw {
     uint32_t tag;
     uint32_t residue;
     uint8_t status;
-};
+} QEMU_PACKED;
 
 struct MSDState {
     USBDevice dev;
