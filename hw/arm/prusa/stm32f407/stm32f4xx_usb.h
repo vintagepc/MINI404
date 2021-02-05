@@ -35,6 +35,7 @@
 #define STM32F4xx_MAX_XFER_SIZE  65536   /* Max transfer size expected in HCTSIZ */
 
 #define STM32F4xx_EP_FIFO_SIZE 4*KiB / sizeof(uint32_t)
+#define STM32F4xx_RX_FIFO_SIZE (128*KiB)/sizeof(uint32_t)
 
 typedef struct STM32F4xxPacket STM32F4xxPacket;
 typedef struct STM32F4xxUSBState STM32F4xxUSBState;
@@ -198,11 +199,11 @@ struct STM32F4xxUSBState {
 
     // TODO- rework this into blocks on a per-channel basis
     // so the math is easier on my head...
-    uint32_t fifo_ram[(128*KiB)/sizeof(uint32_t)]; // 128K FIFO ram (0x20000- 0x3FFFF)
+    uint32_t fifo_ram[STM32F4xx_RX_FIFO_SIZE]; // 128K FIFO ram (0x20000- 0x3FFFF)
     // TODO - relocate these and use the correct registers instead.
     // #channels *4KiB of space.
     uint32_t tx_fifos[STM32F4xx_NB_CHAN][STM32F4xx_EP_FIFO_SIZE];
-    
+
     uint16_t fifo_head[STM32F4xx_NB_CHAN];
     uint16_t fifo_level[STM32F4xx_NB_CHAN];
     uint16_t fifo_tail[STM32F4xx_NB_CHAN];

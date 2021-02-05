@@ -250,15 +250,15 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
         if (!s->is_ping) {
             s->hreg1[index + 2] |= HCINTMSK_ACK;
             // s->hreg1[index + 4] &= ~TSIZ_DOPNG; // clear ping bit, it's done.
-            printf("PING ack'ed (EN: %u), tsiz: %08x\n",(hcchar & HCCHAR_CHDIS)>0, s->hreg1[index+4]);
+            // printf("PING ack'ed (EN: %u), tsiz: %08x\n",(hcchar & HCCHAR_CHDIS)>0, s->hreg1[index+4]);
             // s->hreg1[index] &= (~HCCHAR_CHENA);
             s->is_ping=true;
         } else if (s->is_ping<2){
             // Reenabled post-ping...
-            printf("Ping idling...\n");
+            // printf("Ping idling...\n");
         } else {
             s->is_ping = false;
-            printf("Ping complete\n");
+            // printf("Ping complete\n");
             s->hreg1[index] &= (~HCCHAR_CHENA);
  //           s->hreg1[index] &= (~HCCHAR_CHENA);
 
@@ -268,7 +268,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
         return;
         // printf("Ping send (pid %02x)\n",pid);
     } else if (s->is_ping) {
-        printf("ping clear\n");
+        // printf("ping clear\n");
         s->is_ping = false;
     }
 
@@ -278,7 +278,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
 
     if(pcnt==0)
     {
-        printf("pcnt=0, retrning.\n"); // TODO - figure out why this happens and the halt reenables the channel.
+        printf("pcnt=0, returning.\n"); // TODO - figure out why this happens and the halt reenables the channel.
         s->hreg1[index] &= (~HCCHAR_CHENA);
         return;
     }
@@ -305,13 +305,22 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
                 printf("No data to send in FIFO, ignoring...\n");
                 return; // No data to send yet...
             }
-            memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],tlen);
-            s->fifo_head[chan] += words_required;
+            uint32_t copy_end = s->fifo_head[chan] + words_required;
+            if (copy_end > STM32F4xx_EP_FIFO_SIZE){
+                // Split copy because we're looping back around.
+                size_t bytes_to_end = ((STM32F4xx_EP_FIFO_SIZE - s->fifo_head[chan])) * sizeof(uint32_t); 
+                memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],bytes_to_end); // Copy from head to end of ringbuffer
+                s->fifo_head[chan] = 0;
+                memcpy(&s->usb_buf[chan][bytes_to_end],&s->tx_fifos[chan][0],tlen-bytes_to_end); // Copy remainder.
+                s->fifo_head[chan] = copy_end %(STM32F4xx_EP_FIFO_SIZE);
+            } else { 
+                memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],tlen);
+                s->fifo_head[chan] += words_required;
+            }
             s->fifo_level[chan] -= words_required;
             printf("USB TX:");
             for (int i=0; i<tlen; i++)
                 printf("%02x ",s->usb_buf[chan][i]);
-            printf("\n");
             printf("\n");
             // if (dma_memory_read(&s->dma_as, hcdma,                                          
             //                     s->usb_buf[chan], tlen) != MEMTX_OK) {
@@ -374,18 +383,34 @@ babble:
                 uint32_t dpid = get_field(s->hctsiz(chan), TSIZ_SC_MC_PID);
                 rxstatus_t header = {.chnum = chan, .bcnt = actual, .dpid = dpid, .pktsts = 0b0010};
                 // uint32_t orig_head =s->rx_fifo_tail;
+                uint32_t words = (actual>>2); // +1 for header.
+                if (actual%4 !=0) {
+                    words++; 
+                }
+                if (s->rx_fifo_level + words + 1 > STM32F4xx_RX_FIFO_SIZE)
+                {
+                    qemu_log_mask(LOG_GUEST_ERROR,"Receive FIFO full, data discarded!");
+                }
+                s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
                 s->fifo_ram[s->rx_fifo_tail++] = header.raw;
+                s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
                 s->rx_fifo_level++;
-                memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
+                uint32_t copy_end = s->rx_fifo_tail + words;
+                if (copy_end > STM32F4xx_RX_FIFO_SIZE){
+                    size_t bytes_to_end = ((STM32F4xx_RX_FIFO_SIZE - s->rx_fifo_tail)) * sizeof(uint32_t); 
+                    // Split copy because we're looping back around.
+                    memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],bytes_to_end);
+                    s->rx_fifo_tail = 0; // Loop around.
+                    memcpy(&s->fifo_ram[s->rx_fifo_tail],&s->usb_buf[chan][bytes_to_end],actual - bytes_to_end);
+                    s->rx_fifo_tail = copy_end % (STM32F4xx_RX_FIFO_SIZE);
+                } else { 
+                    memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
+                    s->rx_fifo_tail += words;
+                }
                 printf("USB RX %u: ", actual);
                 for (int i=0; i<actual; i++)
                     printf("%02x ",s->usb_buf[chan][i]);
                 printf("\n");
-                uint32_t words = actual>>2;
-                if (actual%4 !=0) {
-                    words++; 
-                }
-                s->rx_fifo_tail += words;
                 s->rx_fifo_level += words;
                 assert(s->rx_fifo_tail < 32768); // Fix this you lazy lump...
           
@@ -770,14 +795,14 @@ static uint64_t STM32F4xx_glbreg_read(void *ptr, hwaddr addr, int index,
         s->glbreg[index] = val;
         break;
     case GRXSTSP:
-        printf("RX fifo pop (STSP): %08x @ %u\n", s->fifo_ram[s->rx_fifo_head], s->rx_fifo_head);
+        // printf("RX fifo pop (STSP): %08x @ %u\n", s->fifo_ram[s->rx_fifo_head], s->rx_fifo_head);
         if(s->rx_fifo_level>0) {
             val = s->fifo_ram[s->rx_fifo_head++];
             s->rx_fifo_level--;
         } // else: val will be 0 from s->GRXSTSP;
         break;
     case GRXSTSR:
-        printf("rxfifo read\n");
+        // printf("rxfifo read\n");
         if (s->rx_fifo_level>0)
             val = s->fifo_ram[s->rx_fifo_head];
         break;
@@ -1159,7 +1184,7 @@ static void STM32F4xx_hreg1_write(void *ptr, hwaddr addr, int index, uint64_t va
         }
         if ((val & HALT) == HALT)
         {
-            printf("CH HALTED\n");
+            //printf("CH HALTED\n");
             val &= ~(HCCHAR_CHENA | HCCHAR_CHDIS);
             disflg = 1;
             enflg = 0;
@@ -1177,7 +1202,7 @@ static void STM32F4xx_hreg1_write(void *ptr, hwaddr addr, int index, uint64_t va
             } else {
                 old |= HCINTMSK_XFERCOMPL;
                 iflg = 1;
-                printf("Ping XFRC\n");
+                //printf("Ping XFRC\n");
             }
         }
         val |= ~old;
@@ -1329,12 +1354,13 @@ static uint64_t STM32F4xx_hreg2_read(void *ptr, hwaddr addr, unsigned size)
     uint32_t value = 0;
     if (s->rx_fifo_level > 0) {
         value = s->fifo_ram[s->rx_fifo_head++];
+        s->rx_fifo_head %= STM32F4xx_RX_FIFO_SIZE;
         s->rx_fifo_level--;
         if (s->rx_fifo_level == 0) {
             s->gintsts &= ~GINTSTS_RXFLVL;
             STM32F4xx_update_irq(s);
         }
-        printf("FIFO read: %08x (L: %u H: %u T: %u)\n",value, s->rx_fifo_level, s->rx_fifo_head, s->rx_fifo_tail);
+        // printf("FIFO read: %08x (L: %u H: %u T: %u)\n",value, s->rx_fifo_level, s->rx_fifo_head, s->rx_fifo_tail);
     }
     // trace_usb_stm_hreg2_read(addr, addr >> 12, value);
     // qemu_log_mask(LOG_GUEST_ERROR, "FIFO read not implemented\n");
@@ -1349,11 +1375,13 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     uint64_t orig = val;
     STM32F4xxUSBState *s = ptr;
     uint8_t index = addr >> 12;
-    trace_usb_stm_hreg2_write(addr, addr >> 12, orig, 0, val);
+    trace_usb_stm_hreg2_write(addr, addr >> 12, orig, s->fifo_tail[index], val);
     if (s->fifo_level[index]==s->gnptxfsiz_txfd) {
         qemu_log_mask(LOG_GUEST_ERROR, "Wrote to a full FIFO (data discarded)!\n");
     }
     s->tx_fifos[index][s->fifo_tail[index]++] = val;
+    // %size ensures we automatically loop back around. 
+    s->fifo_tail[index] %= STM32F4xx_EP_FIFO_SIZE;
     s->fifo_level[index]++;
     assert(s->fifo_tail[index]<STM32F4xx_EP_FIFO_SIZE); // laziness ftw
     uint32_t txsize = s->hctsiz(index);
@@ -1366,8 +1394,8 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     int packets_left = get_field(txsize, TSIZ_PKTCNT);
     if ( (s->fifo_level[index]) >= words_needed && packets_left>0) {
         // Enough data written to do a transfer...
-        printf("Data ready for tx on %u\n", index);
-        if (1) STM32F4xx_tx_packet(s, index<<3);
+        // printf("Data ready for tx on %u\n", index);
+        STM32F4xx_tx_packet(s, index<<3);
     }
 }
 
