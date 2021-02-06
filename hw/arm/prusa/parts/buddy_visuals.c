@@ -26,7 +26,7 @@
 #if MQ
 #include <mqueue.h>
 #elif SHM
-#include "../3rdParty/shmemq-blog/shmemq.h"
+#include "../3rdParty/shmemq404/shmemq.h"
 #endif
 //#define DEBUG_buddy_visuals 1
 
@@ -164,11 +164,10 @@ static void buddy_visuals_add_motor(buddy_visuals_state *s, unsigned char index,
 #if MQ    
     if (mq_send(s->queue, "AM", 3,0)) {
 #elif SHM
-    char addmsg[] = {'A','M', 0,0,0,0,0};
-    if (!shmemq_try_enqueue(s->queue, addmsg, sizeof(addmsg))) { 
+    shm404_msg_t addmsg = SHM_ADD_MOTOR;
+    if (!shmemq_try_enqueue(s->queue, &addmsg)) { 
 #endif           
         fprintf(stderr,"Failed to send IPC message!\n");
-        perror("AM");
     }
   
     // fprintf(s->fd_pipe,"%cAM",2);
@@ -177,8 +176,10 @@ static void buddy_visuals_add_motor(buddy_visuals_state *s, unsigned char index,
     char msg[] = {'M','0' + index, 'L', label };
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    char msg[] = {'M','0' + index, 'L', label,0,0,0 };
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    shm404_msg_t msg = SHM_SET_MOTOR_ID;
+    msg[1] += index;
+    msg[3] = label;
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif           
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -188,19 +189,25 @@ static void buddy_visuals_add_motor(buddy_visuals_state *s, unsigned char index,
 #if MQ
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif           
         fprintf(stderr,"Failed to send IPC message!\n");
     }
 
     // fprintf(s->fd_pipe,"%cM%cL%c",4,index+'0', label);
     // fprintf(s->fd_pipe,"%cM%cS%c",4,index+'0', is_simple+'0');
-    
-    char msg2[] = {'M','0' + index , 'U', (steps_per_mm>>24)&0xFF, (steps_per_mm>>16)&0xFF, (steps_per_mm>>8)&0xFF, (steps_per_mm)&0xFF};
+    shm404_msg_t msg2 = SHM_SET_MOTOR_USTEPS;
+    msg2[1] += index;
+
+    msg2[3] = (steps_per_mm>>24)&0xFF;
+    msg2[4] = (steps_per_mm>>16)&0xFF;
+    msg2[5] = (steps_per_mm>>8)&0xFF; 
+    msg2[6] = (steps_per_mm)&0xFF;
+
 #if MQ    
     if (mq_send(s->queue, msg2, sizeof(msg2),0)) {
 #elif SHM
-    if (!shmemq_try_enqueue(s->queue, msg2, sizeof(msg2))) { 
+    if (!shmemq_try_enqueue(s->queue, &msg2)) { 
 #endif           
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -208,15 +215,16 @@ static void buddy_visuals_add_motor(buddy_visuals_state *s, unsigned char index,
     // fprintf(s->fd_pipe,"%cM%cU",7,index+'0');
     // for (int i=3; i>=0; i--)
     //     fputc(steps_per_mm>>(8*i),s->fd_pipe);
-    msg2[2] = 'X';
-    msg2[3] = (max_steps>>24)&0xFF;
-    msg2[4] = (max_steps>>16)&0xFF;
-    msg2[5] = (max_steps>>8)&0xFF;
-    msg2[6] = (max_steps)&0xFF;
+    shm404_msg_t msg3 = SHM_SET_MOTOR_MSTEPS;
+    msg3[1] += index;
+    msg3[3] = (max_steps>>24)&0xFF;
+    msg3[4] = (max_steps>>16)&0xFF;
+    msg3[5] = (max_steps>>8)&0xFF;
+    msg3[6] = (max_steps)&0xFF;
 #if MQ    
     if (mq_send(s->queue, msg2, sizeof(msg2),0)) {
 #elif SHM
-    if (!shmemq_try_enqueue(s->queue, msg2, sizeof(msg2))) { 
+    if (!shmemq_try_enqueue(s->queue, &msg3)) { 
 #endif   
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -242,8 +250,10 @@ static void buddy_visuals_set_indicator_logic(void *opaque, int n, int value)
     char msg[] = {'I','0'+n,'V', (255*(value>0)) };
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    char msg[] = {'I','0'+n,'V', (255*(value>0)),0,0,0 };
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    shm404_msg_t msg = SHM_SET_INDICATOR;
+    msg[1] += n;
+    msg[3] = (255*(value>0));
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif   
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -262,8 +272,10 @@ static void buddy_visuals_set_indicator_analog(void *opaque, int n, int value)
     char msg[] = {'I','0'+n,'V', value&0xFF };
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    char msg[] = {'I','0'+n,'V', value&0xFF,0,0,0 };
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    shm404_msg_t msg = SHM_SET_INDICATOR;
+    msg[1] += n;
+    msg[3] = value&0xFF;
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif        
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -280,17 +292,22 @@ static void buddy_visuals_add_indicator(buddy_visuals_state *s, unsigned char in
     char msg[] = {'A','I', label };
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    char msg[] = {'A','I', label ,0,0,0,0};
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    shm404_msg_t msg = SHM_ADD_INDICATOR;
+    msg[2] = label;
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif
         fprintf(stderr,"Failed to send IPC message!\n");
     }
-
-    char msg2[] = {'I','0' + index , 'C', (color>>24)&0xFF, (color>>16)&0xFF, (color>>8)&0xFF, (color)&0xFF};
+    shm404_msg_t msg2 = SHM_SET_IND_COLOUR;
+    msg2[1] += index;
+    msg2[3] = (color>>24)&0xFF;
+    msg2[4] = (color>>16)&0xFF;
+    msg2[5] = (color>>8)&0xFF;
+    msg2[6] = (color)&0xFF;
 #if MQ
     if (mq_send(s->queue, msg2, sizeof(msg2),0)) {
 #elif SHM
-    if (!shmemq_try_enqueue(s->queue, msg2, sizeof(msg2))) { 
+    if (!shmemq_try_enqueue(s->queue, &msg2)) { 
 #endif        
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -309,43 +326,19 @@ static void buddy_visuals_add_indicator(buddy_visuals_state *s, unsigned char in
 // //    fflush(s->fd_pipe);
 // }
 
-
-static void buddy_visuals_inverted_step_in(void *opaque, int n, int level)
-{
-    buddy_visuals_state *s = opaque;
-    if (!s->is_opened)
-        return;
-    int temp = -level;
-    char msg[] = {'M','0' + n, 'P', 0,0,0,0};
-    memcpy(msg+3, &temp, 4);
-#if MQ
-    if (mq_send(s->queue, msg, sizeof(msg),0)) {
-#elif SHM
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
-#endif
-        fprintf(stderr,"Failed to send IPC message!\n");
-    }
-    // fprintf(s->fd_pipe, "%cM%cP",7, n+'0');
-    // // int32_t pos = level;
-    // for (int i=3; i>=0; i--)
-    //     fputc(level>>(8*i),s->fd_pipe);
-
-    // buddy_visuals_schedule_flush(s);
-  
-}
-
 static void buddy_visuals_step_in(void *opaque, int n, int level)
 {
     buddy_visuals_state *s = opaque;
     if (!s->is_opened)
         return;
     
-    char msg[] = {'M','0' + n, 'P', 0,0,0,0};
+    shm404_msg_t msg = SHM_SET_MOTOR_SPOS;
+    msg[1] += n;
     memcpy(msg+3, &level, 4);
 #if MQ
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -368,8 +361,10 @@ static void buddy_visuals_enable_in(void *opaque, int n, int level)
     char msg[] = {'M','0' + n, 'E', '0'+ (level>0)};
     if (mq_send(s->queue, msg, sizeof(msg),0)) {
 #elif SHM
-    char msg[] = {'M','0' + n, 'E', '0'+ (level>0),0,0,0};
-    if (!shmemq_try_enqueue(s->queue, msg, sizeof(msg))) { 
+    shm404_msg_t msg = SHM_SET_MOTOR_EN;
+    msg[1] +=n ;
+    msg[3] = level>0;
+    if (!shmemq_try_enqueue(s->queue, &msg)) { 
 #endif        
         fprintf(stderr,"Failed to send IPC message!\n");
     }
@@ -381,7 +376,6 @@ static void buddy_visuals_realize(Object *obj)
     DeviceState *dev = DEVICE(obj);
     buddy_visuals_state *s = BUDDY_VISUALS(obj);
     qdev_init_gpio_in_named(dev, buddy_visuals_step_in, "motor-step",4);
-    qdev_init_gpio_in_named(dev, buddy_visuals_inverted_step_in, "motor-invstep",4);
     qdev_init_gpio_in_named(dev, buddy_visuals_enable_in, "motor-enable",4);
     qdev_init_gpio_in_named(dev, buddy_visuals_set_indicator_analog, "indicator-analog",10);
     qdev_init_gpio_in_named(dev, buddy_visuals_set_indicator_logic, "indicator-logic",10);
@@ -412,10 +406,15 @@ static void buddy_visuals_realize(Object *obj)
     setbuffer(s->fd_pipe, s->buffer,BUFFER_SIZE);
     s->timer_flush = timer_new_ms(QEMU_CLOCK_VIRTUAL, buddy_visuals_flush_timer, s);
 #else
-    s->queue = shmemq_new(IPC_FILE, 500, 7);
+    s->queue = shmemq_open(IPC_FILE);
+    if (s->queue == NULL)
+    {
+        printf("Could not open SHM queue. Skipping connection.\n");
+        return; // Queue not available.
+    }
 
-    char MSG[] = {'C', 0,0,0,0,0,0};
-    shmemq_try_enqueue(s->queue, MSG, sizeof(MSG));
+    shm404_msg_t msg = SHM_CLEAR;
+    shmemq_try_enqueue(s->queue, &msg);
 
 #endif
     s->is_opened = true;

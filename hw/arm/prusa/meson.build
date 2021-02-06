@@ -10,7 +10,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'parts/buddy_visuals.c',
         'parts/fan.c',
         'parts/heater.c',
-        '3rdParty/shmemq-blog/shmemq.c'
+        '3rdParty/shmemq404/shmemq.c'
     ))
 # Required if using Message queue IPC
 c = meson.get_compiler('c')
