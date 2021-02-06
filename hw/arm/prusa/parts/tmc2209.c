@@ -375,6 +375,7 @@ static void tmc2209_init(Object *obj){
     // s->max_step  = 160*16*100;
     s->current_step = 0 * s->ms_increment; // 10mm
     s->regs.defs.SG_RESULT.sg_result = 250;
+    s->regs.defs.DRV_STATUS.stst = 1;
 
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "tmc2209-step",1);
