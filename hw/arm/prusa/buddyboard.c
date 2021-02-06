@@ -34,21 +34,12 @@
 #include "hw/arm/boot.h"
 #include "hw/loader.h"
 
-/* Main SYSCLK frequency in Hz (168MHz) */
-#define SYSCLK_FRQ 168000000ULL
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
 static void buddy_init(MachineState *machine)
 {
     DeviceState *dev;
-
-    /*
-     * TODO: ideally we would model the SoC RCC and let it handle
-     * system_clock_scale, including its ability to define different
-     * possible SYSCLK sources.
-     */
-    system_clock_scale = NANOSECONDS_PER_SECOND / SYSCLK_FRQ;
 
     dev = qdev_new(TYPE_STM32F407_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));

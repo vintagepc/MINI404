@@ -43,6 +43,7 @@
 #include "stm32f4xx_spi.h"
 #include "stm32f2xx_tim.h"
 // #include "tmc2209_usart.h"
+#include "stm32f4xx_usb.h"
 #include "hw/arm/armv7m.h"
 #include "stm32_uart.h"
 #include "qom/object.h"
@@ -120,6 +121,8 @@ struct STM32F407State {
 
     f2xx_crc crc;
 
+    STM32F4xxUSBState otg_fs, otg_hs;
+
 
     // TMC2209UsartState usart2;
 
@@ -128,6 +131,7 @@ struct STM32F407State {
     MemoryRegion flash_alias;
     MemoryRegion otp;
     MemoryRegion ccmsram;
+    MemoryRegion temp_usb;
 
 };
 
