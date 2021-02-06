@@ -412,7 +412,7 @@ static void buddy_visuals_realize(Object *obj)
     setbuffer(s->fd_pipe, s->buffer,BUFFER_SIZE);
     s->timer_flush = timer_new_ms(QEMU_CLOCK_VIRTUAL, buddy_visuals_flush_timer, s);
 #else
-    s->queue = shmemq_new(IPC_FILE, 100, 7);
+    s->queue = shmemq_new(IPC_FILE, 500, 7);
 
     char MSG[] = {'C', 0,0,0,0,0,0};
     shmemq_try_enqueue(s->queue, MSG, sizeof(MSG));

@@ -13,7 +13,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         '3rdParty/shmemq-blog/shmemq.c'
     ))
 # Required if using Message queue IPC
-#cc = meson.get_compiler('c')
-#arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('rt'))
+c = meson.get_compiler('c')
+arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('rt'))
 
 # hw_arch += {'arm': buddy_ss}
