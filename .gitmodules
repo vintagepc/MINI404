@@ -64,6 +64,4 @@
 [submodule "roms/vbootrom"]
 	path = roms/vbootrom
 	url = https://git.qemu.org/git/vbootrom.git
-[submodule "hw/arm/prusa/3rdParty/shmemq-blog"]
-	path = hw/arm/prusa/3rdParty/shmemq-blog
-	url = https://github.com/goldshtn/shmemq-blog.git
+
