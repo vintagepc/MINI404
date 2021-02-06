@@ -14,5 +14,5 @@ config STM32F407_SOC
     select SSI
     select STM32F4XX_SYSCFG
     select STM32F4XX_EXTI
-
+    select USB
 
