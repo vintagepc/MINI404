@@ -332,7 +332,7 @@ static void tmc2209_read(tmc2209_state *s)
 {
     // TODO, actually construct reply.
     uint32_t data = s->regs.raw[s->rx_buffer[2]];
-    // if (s->address==1) printf("Read from %02x: %08x\n", s->rx_buffer[2], data);
+    if (s->address==1) printf("Read from %02x: %08x\n", s->rx_buffer[2], data);
     uint8_t reply[8] = {0x05, 0xFF, s->rx_buffer[2],data>>24,data>>16,data>>8,data,0x00};
     reply[7] = tmc2209_calcCRC(reply,7);
   //  printf("Buffer: ");
@@ -375,6 +375,7 @@ static void tmc2209_init(Object *obj){
     // s->max_step  = 160*16*100;
     s->current_step = 0 * s->ms_increment; // 10mm
     s->regs.defs.SG_RESULT.sg_result = 250;
+    s->regs.defs.DRV_STATUS.stst = 1;
 
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "tmc2209-step",1);
