@@ -50,6 +50,11 @@ jobs:
       if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
       run: mkdir -p packages/partial
 
+    - name: Pull submodule
+      run: | 
+        cd ${{ runner.workspace }}/MINI404 && git submodule init hw/arm/prusa/3rdParty/shmemq404
+        cd ${{ runner.workspace }}/MINI404 && git submodule update hw/arm/prusa/3rdParty/shmemq404
+
     - name: Install packages
       run: |
           sudo apt-get update

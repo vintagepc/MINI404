@@ -368,11 +368,12 @@ static void tmc2209_init(Object *obj){
     s->address=0;
     s->bytePos = 0;
     s->cmdIn = 0;
-
+    s->dir = 0;
     s->ms_increment = 16;
+    s->is_inverted = 0;
     // s->max_steps_per_mm = 256*100;
     // s->max_step  = 160*16*100;
-    s->current_step = 10 * s->ms_increment; // 10mm
+    s->current_step = 0 * s->ms_increment; // 10mm
     s->regs.defs.SG_RESULT.sg_result = 250;
 
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
