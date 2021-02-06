@@ -278,7 +278,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
 
     if(pcnt==0)
     {
-        printf("pcnt=0, returning.\n"); // TODO - figure out why this happens and the halt reenables the channel.
+        //printf("pcnt=0, returning.\n"); // TODO - figure out why this happens and the halt reenables the channel.
         s->hreg1[index] &= (~HCCHAR_CHENA);
         return;
     }
@@ -302,7 +302,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
             uint32_t words_required = (tlen>>2) + ((tlen%4>0));
             if (s->fifo_level[chan]<words_required)
             {
-                printf("No data to send in FIFO, ignoring...\n");
+                //printf("No data to send in FIFO, ignoring...\n");
                 return; // No data to send yet...
             }
             uint32_t copy_end = s->fifo_head[chan] + words_required;
@@ -318,10 +318,10 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
                 s->fifo_head[chan] += words_required;
             }
             s->fifo_level[chan] -= words_required;
-            printf("USB TX:");
-            for (int i=0; i<tlen; i++)
-                printf("%02x ",s->usb_buf[chan][i]);
-            printf("\n");
+            // printf("USB TX:");
+            // for (int i=0; i<tlen; i++)
+            //     printf("%02x ",s->usb_buf[chan][i]);
+            // printf("\n");
             // if (dma_memory_read(&s->dma_as, hcdma,                                          
             //                     s->usb_buf[chan], tlen) != MEMTX_OK) {
             //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_read failed\n",
@@ -407,12 +407,12 @@ babble:
                     memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
                     s->rx_fifo_tail += words;
                 }
-                printf("USB RX %u: ", actual);
-                for (int i=0; i<actual; i++)
-                    printf("%02x ",s->usb_buf[chan][i]);
-                printf("\n");
+                // printf("USB RX %u: ", actual);
+                // for (int i=0; i<actual; i++)
+                //     printf("%02x ",s->usb_buf[chan][i]);
+                // printf("\n");
                 s->rx_fifo_level += words;
-                assert(s->rx_fifo_tail < 32768); // Fix this you lazy lump...
+                assert(s->rx_fifo_tail <= 32768); // Fix this you lazy lump...
           
                 // while (orig_head != s->rx_fifo_tail)
                 // {
