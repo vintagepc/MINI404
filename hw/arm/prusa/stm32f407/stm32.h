@@ -145,6 +145,7 @@ enum {
     STM32_I2C4,
     STM32_I2S2,
     STM32_I2S3,
+    STM32_IWDG,
     STM32_WWDG,
     STM32_CAN1,
     STM32_CAN2,

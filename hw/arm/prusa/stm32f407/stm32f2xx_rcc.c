@@ -1025,8 +1025,9 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
     s->HSECLK = clktree_create_src_clk("HSE", s->osc_freq, false);
     s->LSECLK = clktree_create_src_clk("LSE", s->osc32_freq, false);
 
-    s->IWDGCLK = clktree_create_clk("IWDGCLK", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0,
-                                    s->LSICLK, NULL);
+    // Moved into PERIPHCLK so it can be queried
+    // s->IWDGCLK = clktree_create_clk("IWDGCLK", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0,
+    //                                 s->LSICLK, NULL);
     s->RTCCLK = clktree_create_clk("RTCCLK", 1, 1, false, CLKTREE_NO_MAX_FREQ,
                                    CLKTREE_NO_INPUT, s->LSECLK, s->LSICLK, s->HSECLK, NULL);
 
@@ -1120,6 +1121,9 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
     s->PERIPHCLK[STM32_TIM13] = clktree_create_clk("TIM13",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
     s->PERIPHCLK[STM32_TIM14] = clktree_create_clk("TIM14",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
 
+
+    s->PERIPHCLK[STM32_IWDG] = clktree_create_clk("IWDGCLK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0,
+                                    s->LSICLK, NULL);
 
     s->PERIPHCLK[STM32_DCMI_PERIPH] =
         clktree_create_clk("DCMI", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);

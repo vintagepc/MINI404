@@ -37,6 +37,7 @@
 #include "stm32f2xx_gpio.h"
 #include "stm32f2xx_i2c.h"
 #include "stm32f4xx_itm.h"
+#include "stm32f4xx_iwdg.h"
 #include "stm32f2xx_pwr.h"
 #include "stm32f2xx_rcc.h"
 #include "stm32f2xx_rtc.h"
@@ -123,7 +124,7 @@ struct STM32F407State {
 
     STM32F4xxUSBState otg_fs, otg_hs;
 
-
+    stm32f4xx_iwdg iwdg;
     // TMC2209UsartState usart2;
 
     MemoryRegion sram;
