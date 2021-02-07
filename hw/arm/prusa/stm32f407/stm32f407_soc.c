@@ -156,9 +156,8 @@ static void stm32f407_soc_initfn(Object *obj)
 
     object_initialize_child(obj,"crc",&s->crc, TYPE_STM32F2XX_CRC);
 
-    // // TODO - I don't think this is necessary because the STM32 arch differs
-    // // from the BCM2835, but it's required unless we alter the dwc2 driver, even if it's unused
-   // memory_region_init(&s->temp_usb, obj, "usb-mr", (uint64_t)1 << 32);
+    object_initialize_child(obj, "iwdg",&s->iwdg, TYPE_STM32F4XX_IWDG);
+
     // // object_initialize_child(obj, "otg_fs", &s->otg_fs, TYPE_DWC2_USB);
     // // object_property_add_const_link(OBJECT(&s->otg_fs), "dma-mr",
     // //                             OBJECT(&s->temp_usb));
@@ -450,6 +449,12 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x40007000);
 
+    dev = DEVICE(&s->iwdg);
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->iwdg),errp))
+        return;
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, 0x40003000);
+
     // ITM@ (0xE0000000UL) 
     dev = DEVICE(&s->itm);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->itm),errp))
@@ -484,7 +489,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     // create_unimplemented_device("timer[14]",   0x40002000, 0x400);
     //create_unimplemented_device("RTC and BKP", 0x40002800, 0x400);
     create_unimplemented_device("WWDG",        0x40002C00, 0x400);
-    create_unimplemented_device("IWDG",        0x40003000, 0x400);
+    //create_unimplemented_device("IWDG",        0x40003000, 0x400);
     create_unimplemented_device("I2S2ext",     0x40003000, 0x400);
     create_unimplemented_device("I2S3ext",     0x40004000, 0x400);
     create_unimplemented_device("CAN1",        0x40006400, 0x400);
