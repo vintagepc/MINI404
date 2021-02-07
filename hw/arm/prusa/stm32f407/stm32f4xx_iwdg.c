@@ -64,10 +64,20 @@ static void stm32f4xx_iwdg_fire(void *opaque) {
 
 static void stm32f4xx_iwdg_update(stm32f4xx_iwdg *s){
     // Calculate how long this will take...
-    // assert(s->rcc !=NULL);
-    // TODO- use the RCC and get the LSI clock speed instead. 
+    if (!s->started){
+        return;
+    }
+    uint32_t clkrate = 32000;
+    if (s->rcc != NULL){
+        clkrate = stm32_rcc_get_periph_freq(s->rcc, STM32_IWDG);
+        if (clkrate == 0)
+        {
+            qemu_log_mask(LOG_GUEST_ERROR,"ERR: Attempted to enable IWDG with LSI clock disabled!\n");
+            return;
+        }
+    }
     uint32_t prescale = 4<<s->regs.defs.PR.PR;
-    uint32_t tickrate = 32000U/prescale; // ticks per second.
+    uint32_t tickrate = clkrate/prescale; // ticks per second.
     uint64_t delay_us = (1000000U* s->regs.defs.RLR.RL)/tickrate;
     if (s->time_changed) {
         printf("Watchdog configured with timeout of %lu ms\n", delay_us/1000U);
@@ -110,6 +120,7 @@ stm32f4xx_iwdg_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         s->regs.all[addr] = data;
         switch (s->regs.defs.KR.KEY){
             case 0xCCCC:
+                s->started = true;
             case 0xAAAA:
                 stm32f4xx_iwdg_update(s);
                 break;
@@ -155,6 +166,7 @@ static void stm32f4xx_iwdg_reset(DeviceState *dev)
     s->regs.defs.RLR.RL = 0xFFF;   
     s->timer = NULL;
     s->time_changed = true;
+    s->started = false;
 }
 
 

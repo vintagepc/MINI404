@@ -42,7 +42,7 @@ typedef struct stm32f4xx_iwdg {
 
     QEMUTimer *timer;
 
-    bool time_changed;
+    bool time_changed, started;
 
     Stm32Rcc *rcc; // RCC for clock speed. 
 
