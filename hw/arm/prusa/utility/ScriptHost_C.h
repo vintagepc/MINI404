@@ -30,6 +30,16 @@ extern void* script_instance_new(P404ScriptIF *src, const char *strName);
 // Registers an action with the scripting context. 
 extern bool script_register_action(void *src, const char* strAction, const char* strDesc, int iID);
 
+// Adds an argument of the given type to the specified action.
+extern void script_add_arg_int(void *src, int iID);
+extern void script_add_arg_string(void *src, int iID);
+
+extern int scripthost_get_int(const void *pArgs, uint8_t iIdx);
+
+// returns pointer to C string of the arg. If you want to keep it for later you MUST copy it!
+extern const char* scripthost_get_string(const void *pArgs, uint8_t iIdx);
+
+
 // Initializes the script host with the given script. 
 extern bool scripthost_setup(const char* strScript);
 

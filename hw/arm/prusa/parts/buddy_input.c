@@ -193,9 +193,17 @@ int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, const voi
     switch (action)
     {
         case ACT_TWIST:
-            buddy_input_keyevent(s, QEMU_KEY_UP);
-            printf("Pushed!\n");
+        {
+            int dir = scripthost_get_int(args, 0);
+            if (dir<0) {
+                buddy_input_keyevent(s, 0x50);
+            } else {
+                buddy_input_keyevent(s, 0x48);
+            }
             break;
+        }
+        case ACT_PUSH:
+            buddy_input_keyevent(s, 0x1c);
             break;
         default:
             return ScriptLS_Unhandled;
@@ -222,7 +230,9 @@ static void buddy_input_init(Object *obj)
 
     void *pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
 
-    script_register_action(pScript, "Twist", "Twists the encoder up/down", ACT_TWIST);
+    script_register_action(pScript, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
+    script_add_arg_int(pScript, ACT_TWIST);
+    script_register_action(pScript, "Push",  "Presses the encoder", ACT_PUSH);
 
     scripthost_register_scriptable(pScript);
 

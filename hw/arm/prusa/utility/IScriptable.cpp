@@ -135,6 +135,11 @@ bool IScriptable::RegisterAction_C(const char* strAct, const char* strDesc, int 
 	return RegisterAction(strAct, strDesc, iID);
 }
 
+void IScriptable::AddArg_C(int iID, ArgType arg)
+{
+	m_ActionArgs[iID].push_back(arg);
+}
+
 // Registers a scriptable action Name::strAct(), help description strDesc, internal ID, and a vector of argument types.
 // The types are (currently) for display only but the count is used to sanity-check lines before passing them to you in ProcessAction.
 void IScriptable::RegisterAction(const std::string &strAct, const std::string& strDesc, unsigned int ID, const std::vector<ArgType>& vTypes)
@@ -167,5 +172,15 @@ extern "C" {
     extern bool script_register_action(void *src, const char* strAction, const char* strDesc, int iID){
 		IScriptable *p = static_cast<IScriptable*>(src);
 		return p->RegisterAction_C(strAction, strDesc, iID);
+	}
+
+	extern void script_add_arg_int(void *src, int iID) {
+		IScriptable *p = static_cast<IScriptable*>(src);
+		return p->AddArg_C(iID, ArgType::Int);
+	}
+
+	extern void script_add_arg_string(void *src, int iID) {
+		IScriptable *p = static_cast<IScriptable*>(src);
+		return p->AddArg_C(iID, ArgType::String);
 	}
 }

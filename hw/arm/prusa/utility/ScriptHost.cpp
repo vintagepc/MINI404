@@ -765,6 +765,17 @@ extern "C" {
         ScriptHost::OnMachineCycle(iTime);
     }
 
+	extern int scripthost_get_int(const void *pArgs, uint8_t iIdx)
+	{
+		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
+		return std::stoi(pvArgs->at(iIdx));
+	}
+
+	extern const char* scripthost_get_string(const void *pArgs, uint8_t iIdx)
+	{
+		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
+		return pvArgs->at(iIdx).c_str();
+	}
 // adds an argument requirement to the given action ID.
 //static void scripthost_add_action_arg(P404ScriptIF *src, int id, int argtype);
 

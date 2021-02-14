@@ -70,6 +70,8 @@ class IScriptable
 
         bool RegisterAction_C(const char* strAct, const char* strDesc, int iID);
 
+        void AddArg_C(int iID, ArgType arg);
+
     protected:
 		IScriptable::LineStatus IssueLineError(const std::string &msg);
 

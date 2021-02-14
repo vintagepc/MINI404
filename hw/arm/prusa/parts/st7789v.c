@@ -17,6 +17,11 @@
 #include "qemu/module.h"
 #include "ui/console.h"
 #include "qom/object.h"
+#include "../utility/macros.h"
+#include "../utility/p404scriptable.h"
+#include "../utility/ScriptHost_C.h"
+
+#include "png.h"
 
 //#define DEBUG_ST7789V 1
 
@@ -157,6 +162,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
                 color.r = (word & 0xF800)>>8;
                 color.g = (word & 0x7E0)>> 3;
                 color.b = (word & 0x1F) << 3;
+                color.a = 0xFF;
                 s->framebuffer[(s->col) + (s->row*DPY_COLS)] = color.full;
                 s->col++;
                 if (s->col>s->col_end)
@@ -213,6 +219,80 @@ static void st7789v_cd(void *opaque, int n, int level)
     // printf("st7789v mode %s\n", level ? "Data" : "Command");
     s->mode = level ? ST7789V_DATA : ST7789V_CMD;
     s->byte_msb = false;
+}
+void st7789v_write_png(st7789v_state *s, const char* file);
+void st7789v_write_png(st7789v_state *s, const char* file)
+{
+    FILE *handle = fopen(file, "wb");
+    if (!handle)
+        printf("Screenshot failed - could not open file %s\n",file);
+    
+    png_structrp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+
+    png_inforp info_p = png_create_info_struct(png_ptr);
+
+    png_init_io(png_ptr, handle);
+
+    png_set_IHDR(png_ptr, info_p, DPY_COLS, DPY_ROWS, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, 
+        PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+
+    char text1[] = "Mini404 Screenshot";
+    char text2[] = "Created using Mini404";
+    char text3[] = "http://www.github.com/vintagepc/Mini404/";
+    char key1[] = "Title";
+    char key2[] = "Description";
+    char key3[] = "URL";
+
+    png_text s_title[3] = {
+        {
+            .compression = PNG_TEXT_COMPRESSION_NONE,
+            .key = key1,
+            .text = text1,
+        },
+        {
+            .compression = PNG_TEXT_COMPRESSION_NONE,
+            .key = key2,
+            .text = text2,
+        },
+        {
+            .compression = PNG_TEXT_COMPRESSION_NONE,
+            .key = key3, 
+            .text = text3
+        }
+    };
+
+
+    png_set_text(png_ptr, info_p, s_title, 3);
+
+    png_write_info(png_ptr, info_p);
+    png_set_bgr(png_ptr);
+
+    png_byte row[DPY_COLS*4]; 
+
+
+    for (int i=0; i<DPY_ROWS; i++){
+        memcpy(&row, &s->framebuffer[i*DPY_COLS], sizeof(row));
+        png_write_row(png_ptr, row);
+    }
+  
+    png_write_end(png_ptr, NULL);
+
+    if (info_p) png_free_data(png_ptr, info_p, PNG_FREE_ALL, -1);
+
+    fclose(handle);
+}
+
+int st7789v_process_action(P404ScriptIF *obj, unsigned int action, const void* args);
+int st7789v_process_action(P404ScriptIF *obj, unsigned int action, const void* args)
+{
+    if (action == 0) {
+        const char* file = scripthost_get_string(args, 0);
+        printf("Saving screenshot to: %s\n",file);
+        st7789v_write_png(ST7789V(obj), file);
+        return ScriptLS_Finished;
+    } else {
+        return ScriptLS_Unhandled;
+    }
 }
 
 // static int st7789v_post_load(void *opaque, int version_id)
@@ -276,6 +356,19 @@ static const GraphicHwOps st7789v_ops = {
     .gfx_update  = st7789v_update_display,
 };
 
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_SLAVE, {TYPE_P404_SCRIPTABLE}, {NULL})
+
+static void st7789v_finalize(Object *obj)
+{
+    printf("Disp_finalize\n");
+}
+
+
+static void st7789v_init(Object *obj)
+{
+}
+
+
 static void st7789v_realize(SSISlave *d, Error **errp)
 {
     DeviceState *dev = DEVICE(d);
@@ -287,6 +380,13 @@ static void st7789v_realize(SSISlave *d, Error **errp)
     qemu_console_resize(s->con, DPY_COLS * MAGNIFY, DPY_ROWS * MAGNIFY);
 
     qdev_init_gpio_in(dev, st7789v_cd, 1);
+
+    void *pScript = script_instance_new(P404_SCRIPTABLE(s), TYPE_ST7789V);
+
+    script_register_action(pScript, "Screenshot", "Takes a screenshot to the specified file.", 0);
+    script_add_arg_string(pScript, 0);
+    scripthost_register_scriptable(pScript);
+
 }
 
 static void st7789v_class_init(ObjectClass *klass, void *data)
@@ -294,22 +394,11 @@ static void st7789v_class_init(ObjectClass *klass, void *data)
     // DeviceClass *dc = DEVICE_CLASS(klass);
     SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
 
+    P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
+    sc->ScriptHandler = st7789v_process_action;
+
     k->realize = st7789v_realize;
     k->transfer = st7789v_transfer;
     k->cs_polarity = SSI_CS_LOW;
    // dc->vmsd = &vmstate_st7789v;
 }
-
-static const TypeInfo st7789v_info = {
-    .name          = TYPE_ST7789V,
-    .parent        = TYPE_SSI_SLAVE,
-    .instance_size = sizeof(st7789v_state),
-    .class_init    = st7789v_class_init,
-};
-
-static void st7789v2_register_types(void)
-{
-    type_register_static(&st7789v_info);
-}
-
-type_init(st7789v2_register_types)
