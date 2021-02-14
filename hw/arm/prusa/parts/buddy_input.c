@@ -24,6 +24,7 @@
 #include "../utility/p404scriptable.h"
 #include "../utility/macros.h"
 #include "../utility/ScriptHost_C.h"
+#include "../utility/ArgHelper.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "hw/irq.h"
@@ -235,8 +236,10 @@ static void buddy_input_init(Object *obj)
     script_register_action(pScript, "Push",  "Presses the encoder", ACT_PUSH);
 
     scripthost_register_scriptable(pScript);
+    
+    const char* script = arghelper_get_string("script");
 
-    if (scripthost_setup("script.txt")) // TODO- external file
+    if (script && scripthost_setup(script)) // TODO- move scripthost out of this input handler?
     {
         // Start script timer
         timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
