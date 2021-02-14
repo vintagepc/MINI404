@@ -1,28 +1,29 @@
 /*
- * QEMU ADB keyboard support
- *
- * Copyright (c) 2004 Fabrice Bellard
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+    buddy_input.c - Knob and reset button input handler for
+    Mini404.
+
+	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+
+ 	This file is part of Mini404.
+
+	Mini404 is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	Mini404 is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
+#include "../utility/p404scriptable.h"
+#include "../utility/macros.h"
+#include "../utility/ScriptHost_C.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "hw/irq.h"
@@ -33,9 +34,9 @@
 
 #define TYPE_BUDDY_INPUT "buddy-input"
 
-OBJECT_DECLARE_SIMPLE_TYPE(inputState, BUDDY_INPUT)
+OBJECT_DECLARE_SIMPLE_TYPE(InputState, BUDDY_INPUT)
 
-struct inputState {
+struct InputState {
     SysBusDevice parent_obj;
     /*< private >*/
     /*< public >*/
@@ -49,14 +50,18 @@ struct inputState {
     int32_t encoder_ticks;
     int8_t encoder_dir;
 
-    QEMUTimer *timer, *release;
+    QEMUTimer *timer, *release, *scripting;
 };
 
-
+enum {
+    ACT_TWIST, 
+    ACT_PUSH,
+    ACT_RESET
+};
 
 static void buddy_input_keyevent(void *opaque, int keycode)
 {
-    inputState *s = opaque;
+    InputState *s = opaque;
     int dir = 0;
     // printf("Key: %04x\n",keycode);
     switch (keycode)
@@ -91,16 +96,23 @@ static void buddy_input_keyevent(void *opaque, int keycode)
     }
 }
 
+static void buddy_script_timer_expire(void *opaque)
+{
+    InputState *s = opaque;
+    scripthost_run(qemu_clock_get_us(QEMU_CLOCK_VIRTUAL));
+    timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
+}
+
 static void buddy_autorelease_timer_expire(void *opaque)
 {
-    inputState *s = opaque;
+    InputState *s = opaque;
     qemu_set_irq(s->irq_enc_button,1);
 }
 
 static void buddy_input_timer_expire(void *opaque)
 {
     static const uint8_t buddy_input_phases[4] = {0x00, 0x10, 0x11, 0x01};
-    inputState *s = opaque;
+    InputState *s = opaque;
     if (s->encoder_dir<0){
         s->phase++;
     } else {
@@ -120,7 +132,7 @@ static void buddy_input_timer_expire(void *opaque)
 
 static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int buttons_state)
 {
-    inputState *s = opaque;
+    InputState *s = opaque;
     int changed = buttons_state^s->last_state;
     if (changed & MOUSE_EVENT_LBUTTON)
     {
@@ -150,25 +162,50 @@ static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int but
 //     .version_id = 2,
 //     .minimum_version_id = 2,
 //     .fields = (VMStateField[]) {
-//         VMSTATE_STRUCT(parent_obj, inputState, 0, vmstate_adb_device, ADBDevice),
-//         VMSTATE_BUFFER(data, inputState),
-//         VMSTATE_INT32(rptr, inputState),
-//         VMSTATE_INT32(wptr, inputState),
-//         VMSTATE_INT32(count, inputState),
+//         VMSTATE_STRUCT(parent_obj, InputState, 0, vmstate_adb_device, ADBDevice),
+//         VMSTATE_BUFFER(data, InputState),
+//         VMSTATE_INT32(rptr, InputState),
+//         VMSTATE_INT32(wptr, InputState),
+//         VMSTATE_INT32(count, InputState),
 //         VMSTATE_END_OF_LIST()
 //     }
 // };
 
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, buddy_input, BUDDY_INPUT, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
+
+
+static void buddy_input_finalize(Object *obj)
+{
+    printf("Input_finalize\n");
+}
+
 static void buddy_input_reset(DeviceState *dev)
 {
-    inputState *s = BUDDY_INPUT(dev);
+    InputState *s = BUDDY_INPUT(dev);
     s->last_state = 0;
     s->phase = 0;
 }
 
-static void buddy_input_initfn(Object *obj)
+int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, const void* args);
+int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, const void* args)
 {
-    inputState *s = BUDDY_INPUT(obj);
+    InputState *s = BUDDY_INPUT(obj);
+    switch (action)
+    {
+        case ACT_TWIST:
+            buddy_input_keyevent(s, QEMU_KEY_UP);
+            printf("Pushed!\n");
+            break;
+            break;
+        default:
+            return ScriptLS_Unhandled;
+    }
+    return ScriptLS_Finished;
+}
+
+static void buddy_input_init(Object *obj)
+{
+    InputState *s = BUDDY_INPUT(obj);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_button, "buddy-enc-button", 1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "buddy-enc-a", 1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "buddy-enc-b", 1);
@@ -179,27 +216,28 @@ static void buddy_input_initfn(Object *obj)
                     (QEMUTimerCB *)buddy_input_timer_expire, s);
     s->release = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)buddy_autorelease_timer_expire, s);
+
+    s->scripting = timer_new_ms(QEMU_CLOCK_VIRTUAL,
+        (QEMUTimerCB *)buddy_script_timer_expire, s);
+
+    void *pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
+
+    script_register_action(pScript, "Twist", "Twists the encoder up/down", ACT_TWIST);
+
+    scripthost_register_scriptable(pScript);
+
+    if (scripthost_setup("script.txt")) // TODO- external file
+    {
+        // Start script timer
+        timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
+    }
 }
 
 static void buddy_input_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-  
     dc->reset = buddy_input_reset;
+    P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
+    sc->ScriptHandler = buddy_input_process_action;
   //  dc->vmsd = &vmstate_buddy_input;
 }
-
-static const TypeInfo buddy_input_type_info = {
-    .name = TYPE_BUDDY_INPUT,
-    .parent = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(inputState),
-    .instance_init = buddy_input_initfn,
-    .class_init = buddy_input_class_init,
-};
-
-static void buddy_input_register_types(void)
-{
-    type_register_static(&buddy_input_type_info);
-}
-
-type_init(buddy_input_register_types)
