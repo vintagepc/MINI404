@@ -47,7 +47,10 @@ bool ArgHelper::Parse() {
 	{
 		ScriptHost::PrintScriptHelp(false);
 		return false;
-	}
+	} else if (m_map.count("scripthelpmd")) {
+        ScriptHost::PrintScriptHelp(true);
+        return false;
+    }
 
 	return true;
 }

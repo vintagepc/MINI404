@@ -187,8 +187,8 @@ static void buddy_input_reset(DeviceState *dev)
     s->phase = 0;
 }
 
-int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, const void* args);
-int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, const void* args)
+int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
+int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
     InputState *s = BUDDY_INPUT(obj);
     switch (action)
@@ -229,17 +229,17 @@ static void buddy_input_init(Object *obj)
     s->scripting = timer_new_ms(QEMU_CLOCK_VIRTUAL,
         (QEMUTimerCB *)buddy_script_timer_expire, s);
 
-    void *pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
 
     script_register_action(pScript, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
     script_add_arg_int(pScript, ACT_TWIST);
     script_register_action(pScript, "Push",  "Presses the encoder", ACT_PUSH);
 
     scripthost_register_scriptable(pScript);
-    
+
     const char* script = arghelper_get_string("script");
 
-    if (script && scripthost_setup(script)) // TODO- move scripthost out of this input handler?
+    if (scripthost_setup(script)) // TODO- move scripthost out of this input handler?
     {
         // Start script timer
         timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);

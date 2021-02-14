@@ -51,7 +51,7 @@ IScriptable::LineStatus IScriptable::ProcessAction(unsigned int iAction, const s
 		return IssueLineError(" Invalid object!");
 	}
 	auto func = p404_get_func(m_obj);
-	auto retval = func(m_obj, iAction, static_cast<const void*>(&args));
+	auto retval = func(m_obj, iAction, static_cast<script_args>(&args));
 	return LineStatus(retval);
 }
 
@@ -165,22 +165,29 @@ const std::map<ArgType,std::string>& IScriptable::GetArgTypeNames()
 
 // C linkages
 extern "C" {
-    extern void* script_instance_new(P404ScriptIF *src, const char *strName) {
+    extern script_handle script_instance_new(P404ScriptIF *src, const char *strName) {
         return new IScriptable(strName,src);
     }
 
-    extern bool script_register_action(void *src, const char* strAction, const char* strDesc, int iID){
+    extern bool script_register_action(script_handle src, const char* strAction, const char* strDesc, int iID){
 		IScriptable *p = static_cast<IScriptable*>(src);
 		return p->RegisterAction_C(strAction, strDesc, iID);
 	}
 
-	extern void script_add_arg_int(void *src, int iID) {
+	extern void script_add_arg_int(script_handle src, int iID) {
 		IScriptable *p = static_cast<IScriptable*>(src);
 		return p->AddArg_C(iID, ArgType::Int);
 	}
-
-	extern void script_add_arg_string(void *src, int iID) {
+	extern void script_add_arg_string(script_handle src, int iID) {
 		IScriptable *p = static_cast<IScriptable*>(src);
 		return p->AddArg_C(iID, ArgType::String);
+	}
+	extern void script_add_arg_float(script_handle src, int iID) {
+		IScriptable *p = static_cast<IScriptable*>(src);
+		return p->AddArg_C(iID, ArgType::Float);
+	}
+	extern void script_add_arg_bool(script_handle src, int iID) {
+		IScriptable *p = static_cast<IScriptable*>(src);
+		return p->AddArg_C(iID, ArgType::Bool);
 	}
 }

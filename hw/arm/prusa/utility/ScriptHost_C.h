@@ -21,20 +21,27 @@
 
 typedef P404ScriptIF P404ScriptIF;
 
+typedef void* script_handle;
+
 // Registers a script action for the given src. 
-extern void scripthost_register_scriptable(void *src);
+extern void scripthost_register_scriptable(script_handle src);
 
 // gets a new scripting context for an object. 
-extern void* script_instance_new(P404ScriptIF *src, const char *strName);
+extern script_handle script_instance_new(P404ScriptIF *src, const char *strName);
 
 // Registers an action with the scripting context. 
-extern bool script_register_action(void *src, const char* strAction, const char* strDesc, int iID);
+extern bool script_register_action( script_handle src, const char* strAction, const char* strDesc, int iID);
 
 // Adds an argument of the given type to the specified action.
-extern void script_add_arg_int(void *src, int iID);
-extern void script_add_arg_string(void *src, int iID);
+extern void script_add_arg_int(     script_handle src, int iID);
+extern void script_add_arg_string(  script_handle src, int iID);
+extern void script_add_arg_float(   script_handle src, int iID);
+extern void script_add_arg_bool(    script_handle src, int iID);
 
-extern int scripthost_get_int(const void *pArgs, uint8_t iIdx);
+
+extern int scripthost_get_int(      const void *pArgs, uint8_t iIdx);
+extern float scripthost_get_float(  const void *pArgs, uint8_t iIdx);
+extern bool scripthost_get_bool(    const void *pArgs, uint8_t iIdx);
 
 // returns pointer to C string of the arg. If you want to keep it for later you MUST copy it!
 extern const char* scripthost_get_string(const void *pArgs, uint8_t iIdx);

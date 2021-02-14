@@ -23,6 +23,9 @@
 #ifndef P404_SCRIPTABLE_H
 #define P404_SCRIPTABLE_H
 
+typedef void* script_handle;
+typedef const void* script_args;
+
 #ifndef __cplusplus
 
 #include "qemu/osdep.h"
@@ -43,7 +46,7 @@ struct P404ScriptIFClass {
     InterfaceClass parent;
 
     // Called by the scripting engine when the target should perform the defined action.
-    int (*ScriptHandler)(P404ScriptIF *self, unsigned int action, const void* args);
+    int (*ScriptHandler)(P404ScriptIF *self, unsigned int action, script_args args);
 };
 
 // DANGER WILL ROBINSON! These MUST match the order in IScriptable!
@@ -58,6 +61,8 @@ enum
     ScriptLS_Unhandled
 };
 #endif
-    extern int (*p404_get_func(P404ScriptIF *))(P404ScriptIF *self, unsigned int iAction, const void* args);
+
+
+    extern int (*p404_get_func(P404ScriptIF *))(P404ScriptIF *self, unsigned int iAction, script_args args);
  
 #endif // P404_SCRIPTABLE_H

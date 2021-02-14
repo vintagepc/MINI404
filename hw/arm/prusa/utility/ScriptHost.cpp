@@ -31,6 +31,9 @@
 #include <sstream>		// IWYU pragma: keep
 #include <utility>      // for make_pair, pair
 
+typedef void* script_handle;
+typedef const void* script_args;
+
 std::map<std::string, IScriptable*> ScriptHost::m_clients;
 
 std::vector<std::string> ScriptHost::m_script, ScriptHost::m_scriptGL;
@@ -62,6 +65,12 @@ std::set<std::string> ScriptHost::m_strGLAutoC;
 // String mutex... if interactive, for terminal->host,
 // if running a script, for host->terminal.
 std::mutex ScriptHost::m_lckScript;
+
+extern "C"{
+	// Kinda hacky but can't include the qemu headers here in C++ land
+	#define SHUTDOWN_CAUSE_HOST_SIGNAL 4
+	extern void qemu_system_shutdown_request(int);
+}
 
 void ScriptHost::PrintScriptHelp(bool bMarkdown)
 {
@@ -643,6 +652,7 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 			case LS::Finished:
 				if (m_bIsExecHold)
 				{
+					std::cerr << "FIXME: Exechold not implemented!\n";
 					m_bIsExecHold = false;
 					if (m_clients.count("Board") && m_clients.at("Board")->m_ActionIDs.count("Resume"))
 					{
@@ -670,10 +680,9 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 			{
 				std::cout << "ScriptHost: Script FAILED on line " << m_iLine << '\n';
 				m_state = State::Error;
-				//int ID = m_clients.at("Board")->m_ActionIDs.at("Quit");
-				//m_clients.at("Board")->ProcessAction(ID,{});
 				m_iLine = scriptSize; // Error, end scripting.
 				m_eCmdStatus = TermFailed;
+				qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
 				return;
 			}
 			case LS::HoldExec: // like waiting, but pauses board.
@@ -706,11 +715,8 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 				if (m_bQuitOnTimeout)
 				{
 					std::cout << "ScriptHost: Script TIMED OUT on " << strLine << ". Quitting...\n";
-					int ID = m_clients.at("Board")->m_ActionIDs.at("Resume");
-					m_clients.at("Board")->ProcessAction(ID,{});
-					ID = m_clients.at("Board")->m_ActionIDs.at("Quit");
-					m_clients.at("Board")->ProcessAction(ID,{});
 					m_iLine = scriptSize;
+					qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
 					return;
 				}
 				std::cout << "ScriptHost: Script TIMED OUT on #" << m_iLine << ": " << strLine << '\n';
@@ -748,7 +754,7 @@ void ScriptHost::AddScriptable_C(IScriptable* src)
 
 // C linkages
 extern "C" {
-    extern void scripthost_register_scriptable(void *src)
+    extern void scripthost_register_scriptable(script_handle src)
     {
         IScriptable *p = static_cast<IScriptable*>(src);
         ScriptHost::AddScriptable_C(p);
@@ -757,7 +763,14 @@ extern "C" {
     extern bool scripthost_setup(const char* strScript)
     {
         ScriptHost::Init();
-        return ScriptHost::Setup(strScript, 0);
+		if (strScript!=nullptr)
+		{
+        	return ScriptHost::Setup(strScript, 0);
+		}
+		else 
+		{
+			return false;
+		}
     }
 
     extern void scripthost_run(int64_t iTime)
@@ -765,18 +778,27 @@ extern "C" {
         ScriptHost::OnMachineCycle(iTime);
     }
 
-	extern int scripthost_get_int(const void *pArgs, uint8_t iIdx)
+	extern int scripthost_get_int(script_args pArgs, uint8_t iIdx)
 	{
 		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
 		return std::stoi(pvArgs->at(iIdx));
 	}
 
-	extern const char* scripthost_get_string(const void *pArgs, uint8_t iIdx)
+	extern const char* scripthost_get_string(script_args pArgs, uint8_t iIdx)
 	{
 		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
 		return pvArgs->at(iIdx).c_str();
 	}
-// adds an argument requirement to the given action ID.
-//static void scripthost_add_action_arg(P404ScriptIF *src, int id, int argtype);
 
+	extern bool scripthost_get_bool(script_args pArgs, uint8_t iIdx)
+	{
+		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
+		return std::stoi(pvArgs->at(iIdx))>0;
+	}
+
+	extern float scripthost_get_float(script_args pArgs, uint8_t iIdx)
+	{
+		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
+		return std::stof(pvArgs->at(iIdx));
+	}
 }
