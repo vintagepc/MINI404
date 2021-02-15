@@ -14,6 +14,8 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/p404scriptable.c',
         'utility/ScriptHost.cpp',
         'utility/IScriptable.cpp',
+        'utility/ArgHelper.cpp',
+//        'utility/p404_script_console.c'
     ))
 # Required if using Message queue IPC
 c = meson.get_compiler('c')
