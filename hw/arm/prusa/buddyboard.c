@@ -92,6 +92,24 @@ static void buddy_init(MachineState *machine)
         qdev_connect_gpio_out(gpio,11, lcd_cd);
     }
     {
+        bus = qdev_get_child_bus(DEVICE(&SOC->spi[2]), "ssi");
+        DriveInfo *dinfo = drive_get_next(IF_MTD);
+        dev = qdev_new("w25q64jv");
+        if (dinfo) {
+            qdev_prop_set_drive(dev, "drive",
+                                blk_by_legacy_dinfo(dinfo));
+        }
+        qdev_realize_and_unref(dev, bus, &error_fatal);
+        //DeviceState *flash_dev = ssi_create_slave(bus, "w25q64jv");        
+        qemu_irq flash_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
+        qemu_irq_raise(flash_cs);
+        void* gpio = DEVICE(&SOC->gpio[GPIO_D]);
+        qdev_connect_gpio_out(gpio, 7, flash_cs);
+
+        
+    
+    }
+    {
         bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
         st25dv64k_init_one(bus, 0x53);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
@@ -154,7 +172,7 @@ static void buddy_init(MachineState *machine)
         // qdev_connect_gpio_out_named(DEVICE(&SOC->usart2),"tmc2209_usart_cs",0, qdev_get_gpio_in_named(tmc, SSI_GPIO_CS, 0));
     }
 
-    uint16_t startvals[] = {18,18, 25, 512, 512};
+    uint16_t startvals[] = {-40,18, 25, 512, 512};
     uint8_t channels[] = {10,4,3,5,6};
     int tables[] = {5, 1, 2000,0,0};
     DeviceState *bed = NULL, *hotend = NULL;

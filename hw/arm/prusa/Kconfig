@@ -3,6 +3,7 @@ config BUDDYBOARD
     bool
     select STM32F407_SOC
     select SMBUS_EEPROM
+    select SSI_M25P80
 
 config STM32F407_SOC
     bool
@@ -15,4 +16,3 @@ config STM32F407_SOC
     select STM32F4XX_SYSCFG
     select STM32F4XX_EXTI
     select USB
-
