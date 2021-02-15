@@ -161,7 +161,9 @@ static const MemoryRegionOps stm32f4xx_iwdg_ops = {
 static void stm32f4xx_iwdg_reset(DeviceState *dev)
 {
     stm32f4xx_iwdg *s = STM32F4XX_IWDG(dev);
-
+    if (s->timer) {
+        timer_del(s->timer);
+    }
     memset(&s->regs, 0, sizeof(s->regs));
     s->regs.defs.RLR.RL = 0xFFF;   
     s->timer = NULL;

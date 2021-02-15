@@ -205,7 +205,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     }
     memory_region_add_subregion(system_memory, SRAM_BASE_ADDRESS, &s->sram);
 
-    memory_region_init_ram(&s->ccmsram, NULL, "STM32F407.ccmsram", 64*1024,&err);
+    memory_region_init_ram(&s->ccmsram, OBJECT(dev_soc), "STM32F407.ccmsram", 64* KiB,&err);
 
     memory_region_add_subregion(system_memory, 0x10000000, &s->ccmsram);
 

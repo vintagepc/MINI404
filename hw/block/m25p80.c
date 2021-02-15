@@ -318,6 +318,7 @@ static const FlashPartInfo known_devices[] = {
     { INFO("w25q32dw",    0xef6016,      0,  64 << 10,  64, ER_4K) },
     { INFO("w25x64",      0xef3017,      0,  64 << 10, 128, ER_4K) },
     { INFO("w25q64",      0xef4017,      0,  64 << 10, 128, ER_4K) },
+    { INFO("w25q64jv",    0xef4016,      0,  64 << 10, 128, ER_4K) },
     { INFO("w25q80",      0xef5014,      0,  64 << 10,  16, ER_4K) },
     { INFO("w25q80bl",    0xef4014,      0,  64 << 10,  16, ER_4K) },
     { INFO("w25q256",     0xef4019,      0,  64 << 10, 512, ER_4K) },
@@ -720,7 +721,7 @@ static void complete_collecting_data(Flash *s)
         break;
     case RDID_90:
     case RDID_AB:
-        if (get_man(s) == MAN_SST) {
+        if (get_man(s) != MAN_GENERIC) {
             if (s->cur_addr <= 1) {
                 if (s->cur_addr) {
                     s->data[0] = s->pi->id[2];
@@ -1201,7 +1202,7 @@ static uint32_t m25p80_transfer8(SSISlave *ss, uint32_t tx)
     switch (s->state) {
 
     case STATE_PAGE_PROGRAM:
-        trace_m25p80_page_program(s, s->cur_addr, (uint8_t)tx);
+        if (tx) trace_m25p80_page_program(s, s->cur_addr, (uint8_t)tx);
         flash_write8(s, s->cur_addr, (uint8_t)tx);
         s->cur_addr = (s->cur_addr + 1) & (s->size - 1);
         break;
