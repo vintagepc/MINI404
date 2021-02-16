@@ -27,6 +27,9 @@
 #include "hw/irq.h"
 #include "qemu/timer.h"
 #include <math.h>
+#include "../utility/p404scriptable.h"
+#include "../utility/macros.h"
+#include "../utility/ScriptHost_C.h"
 
 
 //#define DBG if(s->chrLabel=='B')
@@ -54,10 +57,18 @@ struct heater_state {
 
     int tick_overrun;
 
-    bool is_ticking;
+    bool is_ticking, use_custom_pwm;
+
+    uint16_t custom_pwm;
 
     qemu_irq temp_out, pwm_out;
     QEMUTimer *temp_tick, *softpwm_timeout;
+};
+
+enum {
+    ActNormal,
+    ActRunaway,
+    ActOpen,
 };
 
 
@@ -80,16 +91,18 @@ static void heater_temp_tick_expire(void *opaque)
 {
     heater_state *s = opaque;
     static const float updaterate = 0.25;
-    qemu_set_irq(s->pwm_out, s->pwm);
+    uint16_t usedpwmval = s->use_custom_pwm ? s->custom_pwm : s->pwm;
+
+    qemu_set_irq(s->pwm_out, usedpwmval);
     uint64_t tNow = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
-    if (s->pwm>0 || s->lastpwm>0)// || (pAVR->cycle-m_cntOff)<(pAVR->frequency/100))
+    if (usedpwmval || s->lastpwm>0)// || (pAVR->cycle-m_cntOff)<(pAVR->frequency/100))
     {
-        float pwmval = (s->pwm>s->lastpwm)? s->pwm : s->lastpwm;
+        float pwmval = (usedpwmval>s->lastpwm)? usedpwmval : s->lastpwm;
         float fDelta = (s->thermalMass*(pwmval/255.0f))*updaterate;
         s->currentTemp += fDelta;
         DBG printf("Temp: %f %f\n", s->currentTemp, fDelta);
         s->tick_overrun = 4; 
-        s->lastpwm = s->pwm;
+        s->lastpwm = usedpwmval;
         s->last_tick = tNow;
      } else {// Cooling - do a little exponential decay
         float dT = (s->currentTemp - s->ambientTemp)*pow(2.7183,-0.005*updaterate);
@@ -97,7 +110,7 @@ static void heater_temp_tick_expire(void *opaque)
     }
 	// m_iDrawTemp = s->currentTemp;
 
-    if (s->pwm>0 || s->currentTemp>s->ambientTemp+0.3)
+    if (usedpwmval || s->currentTemp>s->ambientTemp+0.3)
 	{
         //  if (s->chrLabel =='E')printf("Resched %u\n",s->pwm);
         timer_mod(s->temp_tick, tNow+250);
@@ -150,6 +163,38 @@ static void heater_reset(DeviceState *dev)
     s->currentTemp = s->ambientTemp;
 }
 
+int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
+int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {
+    heater_state *s = HEATER(obj);
+    switch (action){
+        case ActNormal:
+            s->custom_pwm = 0;
+            s->use_custom_pwm = false;
+            break;
+        case ActRunaway:
+            s->custom_pwm = 255;
+            s->use_custom_pwm = true;
+            if (!s->is_ticking){
+                timer_mod(s->softpwm_timeout, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+500);
+            }
+            break;
+        case ActOpen:
+            s->custom_pwm = 0; 
+            s->use_custom_pwm = true;
+            break;
+        default:
+            return ScriptLS_Unhandled;
+    }
+    return ScriptLS_Finished;
+}
+
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(heater_state, heater, HEATER, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
+
+static void heater_finalize(Object *obj)
+{
+
+};
+
 static void heater_init(Object *obj)
 {
     heater_state *s = HEATER(obj);
@@ -164,13 +209,20 @@ static void heater_init(Object *obj)
             (QEMUTimerCB *)heater_temp_tick_expire, s);
     s->softpwm_timeout = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)heater_softpwm_timeout, s);
+
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_HEATER);
+
+    script_register_action(pScript, "Open","Sets heater as open-circuit", ActOpen);
+    script_register_action(pScript, "Runaway","Sets heater as if in thermal runaway", ActRunaway);
+    script_register_action(pScript, "Restore","Restores normal (non-open or runaway) state", ActNormal);
+
+    scripthost_register_scriptable(pScript);
+
 }
 
 static Property heater_properties[] = {
     DEFINE_PROP_UINT8("thermal_mass_x10",heater_state, mass10x, 25),
     DEFINE_PROP_UINT8("label",heater_state, chrLabel, (uint8_t)' '),
- //   DEFINE_PROP_FLOAT("temp", heaterState, start_temp,0),
-   // DEFINE_PROP_("cpu-type", STM32F407State, cpu_type),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -178,24 +230,11 @@ static Property heater_properties[] = {
 static void heater_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-
     dc->reset = heater_reset;
-    // dc->props = heater_properties;
     device_class_set_props(dc, heater_properties);
     // dc->vmsd = &vmstate_heater;
+
+    P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
+    sc->ScriptHandler = heater_process_action;
+
 }
-
-static const TypeInfo heater_info = {
-    .name          = TYPE_HEATER,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(heater_state),
-    .instance_init = heater_init,
-    .class_init    = heater_class_init,
-};
-
-static void heater_register_types(void)
-{
-    type_register_static(&heater_info);
-}
-
-type_init(heater_register_types)

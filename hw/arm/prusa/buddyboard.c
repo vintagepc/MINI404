@@ -33,6 +33,10 @@
 #include "parts/st25dv64k.h"
 #include "hw/arm/boot.h"
 #include "hw/loader.h"
+#include "utility/ArgHelper.h"
+#include "sysemu/runstate.h"
+
+
 
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
@@ -45,7 +49,10 @@ static void buddy_init(MachineState *machine)
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     STM32F407State *SOC = STM32F407_SOC(dev);
-
+    // We (ab)use the kernel command line to piggyback custom arguments into QEMU. 
+    // Parse those now. 
+    arghelper_setargs(machine->kernel_cmdline);
+    
     int kernel_len = strlen(machine->kernel_filename);
     if (kernel_len >3)
     {
@@ -224,6 +231,13 @@ static void buddy_init(MachineState *machine)
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),fan_tach_pins[i]));
         qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],qdev_get_gpio_in_named(dev, "pwm-in-soft",0));
         qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",4+i));
+    }
+
+    // Check for high-level non configuration arguments like help outputs and handle them.
+    if (!arghelper_parseargs())
+    {
+        // We processed an arg that wants us to quit after it's done.
+        qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
     }
 
 };

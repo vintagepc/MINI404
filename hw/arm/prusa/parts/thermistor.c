@@ -22,6 +22,9 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
 #include "thermistortables.h"
+#include "../utility/macros.h"
+#include "../utility/p404scriptable.h"
+#include "../utility/ScriptHost_C.h"
 
 #define TYPE_THERMISTOR "thermistor"
 OBJECT_DECLARE_SIMPLE_TYPE(ThermistorState, THERMISTOR)
@@ -35,28 +38,38 @@ struct ThermistorState {
     const short int *table;    
     int table_length;
     float temperature;
+    float custom_temp;
+    bool use_custom;
     int8_t oversampling;
     uint16_t start_temp;
 };
 
+enum {
+    ActShort,
+    ActDisconnect, 
+    ActNormal, 
+    ActSet
+};
+
 static void thermistor_read_request(void *opaque, int n, int level) {
-    if (!level)
-    {
+    if (!level) {
         return;
     }
 	ThermistorState *s = opaque;
     if (s->table_index==0) {
         qemu_set_irq(s->irq_value,s->start_temp);
-    return;
+        return;
     }
+    float value = s->use_custom ? s->custom_temp : s->temperature;
+
 	for (uint16_t i= 0; i<s->table_length; i+=2) {
-		if (s->table[i+1] <= s->temperature) {
+		if (s->table[i+1] <= value) {
 			int16_t tt = s->table[i];
 			/* small linear regression between table samples */
-			if ( i !=0 && s->table[i+1] < s->temperature) {
+			if ( i !=0 && s->table[i+1] < value) {
 				int16_t d_adc = s->table[i] - s->table[i-2];
 				float d_temp = s->table[i+1] - s->table[i-1];
-				float delta = s->temperature - s->table[i+1];
+				float delta = value - s->table[i+1];
 				tt = s->table[i] + (d_adc * (delta / d_temp));
 			}
 			// if (m_adc_mux_number==-1)
@@ -74,6 +87,33 @@ static void thermistor_temp_in(void *opaque, int n, int level)
 	ThermistorState *s = opaque;
 	float fv = (float)(level) / 256.f;
 	s->temperature = fv;
+}
+
+int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
+int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
+{
+    ThermistorState *s = THERMISTOR(obj);
+    switch (action)
+    {
+        case ActShort:
+            s->custom_temp = -200;
+            s->use_custom = true;
+            break;
+        case ActDisconnect:
+            s->custom_temp = 800;
+            s->use_custom = true;
+            break;
+        case ActNormal:
+            s->use_custom = false;
+            break;
+        case ActSet:
+            s->custom_temp = scripthost_get_float(args, 0);
+            s->use_custom = true;
+        default:
+            return ScriptLS_Unhandled;
+
+    }
+    return ScriptLS_Finished;
 }
 
 static void thermistor_reset(DeviceState *dev)
@@ -102,6 +142,12 @@ static void thermistor_reset(DeviceState *dev)
 
 }
 
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ThermistorState, thermistor, THERMISTOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
+
+static void thermistor_finalize(Object *obj)
+{
+
+}
 
 static void thermistor_init(Object *obj)
 {
@@ -113,12 +159,20 @@ static void thermistor_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_temp_in, "thermistor_set_temperature", 1);
 
     s->oversampling = OVERSAMPLENR;
+
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_THERMISTOR);
+    script_register_action(pScript, "Short","Shorts the thermistor",ActShort);
+    script_register_action(pScript, "Disconnect","Disconnects the thermistor",ActDisconnect);
+    script_register_action(pScript, "Restore","Restores the thermistor to normal (unshorted, heater-operated) state",ActNormal);
+    script_register_action(pScript, "Set","Sets the temperature to a given value.",ActSet);
+    script_add_arg_float(pScript, ActSet);
+
+    scripthost_register_scriptable(pScript);
 }
 
 static Property thermistor_properties[] = {
     DEFINE_PROP_UINT16("temp", ThermistorState, start_temp,0),
     DEFINE_PROP_UINT16("table_no", ThermistorState, table_index, 0),
-   // DEFINE_PROP_("cpu-type", STM32F407State, cpu_type),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -131,19 +185,7 @@ static void thermistor_class_init(ObjectClass *klass, void *data)
     // dc->props = thermistor_properties;
     device_class_set_props(dc, thermistor_properties);
     // dc->vmsd = &vmstate_thermistor;
+
+    P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
+    sc->ScriptHandler = thermistor_process_action;
 }
-
-static const TypeInfo thermistor_info = {
-    .name          = TYPE_THERMISTOR,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(ThermistorState),
-    .instance_init = thermistor_init,
-    .class_init    = thermistor_class_init,
-};
-
-static void thermistor_register_types(void)
-{
-    type_register_static(&thermistor_info);
-}
-
-type_init(thermistor_register_types)
