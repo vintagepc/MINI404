@@ -23,7 +23,7 @@
 
 #include "ScriptHost.h"
 #include "../3rdParty/gsl-lite.hpp"
-#include <GL/freeglut_std.h> // glut menus
+// #include <GL/freeglut_std.h> // glut menus
 #include <cstddef>
 #include <exception>    // for exception
 #include <fstream>      // IWYU pragma: keep
