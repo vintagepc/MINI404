@@ -30,45 +30,11 @@
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
 
-#define R_I2C_CR1_PE_BIT          0x00001
-#define R_I2C_CR1_SMBUS_BIT       0x00002
-#define R_I2C_CR1_SMBTYPE_BIT     0x00008
-#define R_I2C_CR1_ENARB_BIT       0x00010
-#define R_I2C_CR1_ENPEC_BIT       0x00020
-#define R_I2C_CR1_ENGC_BIT        0x00040
-#define R_I2C_CR1_NOSTRETCH_BIT   0x00080
-#define R_I2C_CR1_START_BIT       0x00100
-#define R_I2C_CR1_STOP_BIT        0x00200
-#define R_I2C_CR1_ACK_BIT         0x00400
-#define R_I2C_CR1_POS_BIT         0x00800
-#define R_I2C_CR1_PEC_BIT         0x01000
-#define R_I2C_CR1_ALERT_BIT       0x02000
-#define R_I2C_CR1_SWRTS_BIT       0x08000
-
-
-#define R_I2C_CR2_ITERREN_BIT     0x00100
-#define R_I2C_CR2_ITEVTEN_BIT     0x00200
-#define R_I2C_CR2_ITBUFEN_BIT     0x00400
-#define R_I2C_CR2_DMAEN_BIT       0x00800
-#define R_I2C_CR2_LAST_BIT        0x01000
-
-#define R_I2C_SR1_SB_BIT          0x00001
-#define R_I2C_SR1_ADDR_BIT        0x00002
-#define R_I2C_SR1_BTF_BIT         0x00004
-#define R_I2C_SR1_ADD10_BIT       0x00008
-#define R_I2C_SR1_STOPF_BIT       0x00010
-#define R_I2C_SR1_RxNE_BIT        0x00040
-#define R_I2C_SR1_TxE_BIT         0x00080
-#define R_I2C_SR1_BERR_BIT        0x00100
-#define R_I2C_SR1_ARLO_BIT        0x00200
-#define R_I2C_SR1_AF_BIT          0x00400
-#define R_I2C_SR1_OVR_BIT         0x00800
-#define R_I2C_SR1_PECERR_BIT      0x01000
-#define R_I2C_SR1_TIMEOUT_BIT     0x04000
-#define R_I2C_SR1_SMBALERT_BIT    0x08000
 
 #define TYPE_STM32F2XX_I2C "stm32f2xx-i2c"
-OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XXI2CState, STM32F2XX_I2C)
+OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XXI2CState, STM32F2XX_I2C);
+
+#define R_I2C_COUNT 9u
 
 struct STM32F2XXI2CState {
     /* <private> */
@@ -79,26 +45,92 @@ struct STM32F2XXI2CState {
     
     union {
         struct {
-            uint16_t i2c_cr1;
-            uint16_t i2c_cr2;
-            uint16_t i2c_oar1;
-            uint16_t i2c_oar2;
-            uint16_t i2c_dr;
-            uint16_t i2c_sr1;
-            uint16_t i2c_sr2;
-            uint16_t i2c_ccr;
-            uint16_t i2c_trise;
-        };
-        uint16_t regs[9];
-    };
+            struct {
+                uint16_t PE :1;
+                uint16_t SMBUS :1;
+                uint16_t _res :1;
+                uint16_t SMBTYPE :1;
+                uint16_t ENARP :1;
+                uint16_t ENPEC :1;
+                uint16_t ENGC :1;
+                uint16_t NOSTRETCH :1;
+                uint16_t START :1;
+                uint16_t STOP :1;
+                uint16_t ACK :1;
+                uint16_t POS :1;
+                uint16_t PEC :1;
+                uint16_t ALERT :1;
+                uint16_t _res1 :1;
+                uint16_t SWRST :1;
+            } CR1 QEMU_PACKED;
+            struct {
+                uint16_t FREQ :6;
+                uint16_t _res :2;
+                uint16_t ITERREN :1;
+                uint16_t ITEVTEN :1;
+                uint16_t ITBUFEN :1;
+                uint16_t DMAEN :1;                                
+                uint16_t LAST :1;
+                uint16_t :3;
+            } CR2 QEMU_PACKED;
+            struct {
+                uint16_t ADD0 :1;
+                uint16_t ADDLO  :7;
+                uint16_t ADDHI :2;
+                uint16_t _res :5;
+                uint16_t ADDMODE :1;
+            } OAR1 QEMU_PACKED;
+            struct {
+                uint16_t ENDUAL :1;
+                uint16_t ADD2 :7;
+                uint16_t :8;
+            } OAR2 QEMU_PACKED;
+            uint16_t DR;
+            struct {
+                uint16_t SB :1;
+                uint16_t ADDR :1;
+                uint16_t BTF :1;
+                uint16_t ADD10 :1;
+                uint16_t STOPF :1;
+                uint16_t :1;
+                uint16_t RxNE :1;
+                uint16_t TxE :1;
+                uint16_t BERR :1;
+                uint16_t ARLO :1;
+                uint16_t AF :1;
+                uint16_t OVR :1;
+                uint16_t PECERR :1;
+                uint16_t :1;
+                uint16_t TIMEOUT :1;
+                uint16_t SMBALERT :1;
+            } SR1 QEMU_PACKED;
+            struct {
+                uint16_t MSL :1;
+                uint16_t BUSY :1;
+                uint16_t TRA :1;
+                uint16_t :1;
+                uint16_t GENCALL:1;
+                uint16_t SMBDEFAULT:1;
+                uint16_t SMBHOST:1;
+                uint16_t DUALF:1;
+                uint16_t PEC :8;
+            } SR2 QEMU_PACKED;
+            uint16_t CCR;
+            uint16_t TRISE;
+        } defs QEMU_PACKED;
+        uint16_t regs[R_I2C_COUNT];
+    } QEMU_PACKED;
 
     uint8_t last_read;
 
     qemu_irq evt_irq;
     qemu_irq err_irq;
     uint8_t slave_address;
+    uint8_t shiftreg; // DR shift register. 
     int32_t rx;
-    int rx_full; 
+    bool shift_full; 
+    bool is_read;
+    bool dr_unread; 
     I2CBus *bus;
 };
 

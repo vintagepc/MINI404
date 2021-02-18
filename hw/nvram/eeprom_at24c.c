@@ -153,8 +153,8 @@ void at24c_eeprom_reset(DeviceState *state)
     ee->changed = false;
     ee->cur = 0;
     ee->haveaddr = 0;
-
-    memset(ee->mem, 0, ee->rsize);
+    // WTF.. I disabled this because real EEPROMS do not erase themselves on reset. ~VintagePC
+  //  memset(ee->mem, 0, ee->rsize);
 
     if (ee->blk) {
         int len = blk_pread(ee->blk, 0, ee->mem, ee->rsize);
