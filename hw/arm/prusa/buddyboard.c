@@ -30,7 +30,6 @@
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "stm32f407/stm32f407_soc.h"
-#include "parts/st25dv64k.h"
 #include "hw/arm/boot.h"
 #include "hw/loader.h"
 #include "utility/ArgHelper.h"
@@ -98,10 +97,11 @@ static void buddy_init(MachineState *machine)
         gpio = DEVICE(&SOC->gpio[GPIO_D]);
         qdev_connect_gpio_out(gpio,11, lcd_cd);
     }
+    DriveInfo *dinfo = NULL;
     {
         bus = qdev_get_child_bus(DEVICE(&SOC->spi[2]), "ssi");
-        DriveInfo *dinfo = drive_get_next(IF_MTD);
         dev = qdev_new("w25q64jv");
+        dinfo = drive_get_next(IF_MTD);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
                                 blk_by_legacy_dinfo(dinfo));
@@ -118,11 +118,27 @@ static void buddy_init(MachineState *machine)
     }
     {
         bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
-        st25dv64k_init_one(bus, 0x53);
+        dev = qdev_new("at24c-eeprom");
+        qdev_prop_set_uint8(dev, "address", 0x53);
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
+        dinfo = drive_get_next(IF_PFLASH);
+        if (dinfo) {
+            qdev_prop_set_drive(dev, "drive",
+                                blk_by_legacy_dinfo(dinfo));
+        }
+        qdev_realize(dev, bus, &error_fatal);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
         // with a second instance at the SYSTEM address.
-        bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
-        st25dv64k_init_one(bus, 0x57);
+        // bus = qdev_get_child_bus(DEVICE(&SOC->i2c[0]),"i2c");
+        dev = qdev_new("at24c-eeprom");
+        qdev_prop_set_uint8(dev, "address", 0x57);
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
+        dinfo = drive_get_next(IF_PFLASH);
+        if (dinfo) {
+            qdev_prop_set_drive(dev, "drive",
+                                blk_by_legacy_dinfo(dinfo));
+        }
+        qdev_realize(dev, bus, &error_fatal);
     }
 
     dev = qdev_new("buddy-input");

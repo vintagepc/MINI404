@@ -4,6 +4,7 @@ config BUDDYBOARD
     select STM32F407_SOC
     select SMBUS_EEPROM
     select SSI_M25P80
+    select AT24C
 
 config STM32F407_SOC
     bool
