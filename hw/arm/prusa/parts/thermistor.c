@@ -89,8 +89,7 @@ static void thermistor_temp_in(void *opaque, int n, int level)
 	s->temperature = fv;
 }
 
-int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
-int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
+static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
     ThermistorState *s = THERMISTOR(obj);
     switch (action)

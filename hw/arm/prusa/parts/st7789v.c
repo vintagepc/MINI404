@@ -282,8 +282,7 @@ void st7789v_write_png(st7789v_state *s, const char* file)
     fclose(handle);
 }
 
-int st7789v_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
-int st7789v_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
+static int st7789v_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
     if (action == 0) {
         const char* file = scripthost_get_string(args, 0);
