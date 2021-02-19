@@ -408,7 +408,7 @@ void ScriptHost::SetupAutocomplete()
 	{
 		const std::string& strName = c.first;
 		// Insert just the prefix so that we don't show actions until *after* - for better tab-complete.
-		m_strGLAutoC.insert(strName + "::");
+		//m_strGLAutoC.insert(strName + "::");
 		for (auto &ActID : c.second->m_ActionIDs)
 		{
 			unsigned int ID = ActID.second;
@@ -752,6 +752,19 @@ void ScriptHost::AddScriptable_C(IScriptable* src)
 	src->m_bRegistered = true;
 }
 
+std::set<std::string> ScriptHost::OnAutoComplete_C(std::string strCmd) {
+	std::set<std::string> strMatches; 
+	auto pNext = m_strGLAutoC.upper_bound(strCmd);
+	if (pNext == m_strGLAutoC.end()) {
+		return strMatches;
+	}
+	while (pNext->rfind(strCmd,0)==0) {
+		strMatches.insert(*pNext);
+		pNext++;
+	}
+	return strMatches;
+}
+
 // C linkages
 extern "C" {
     extern void scripthost_register_scriptable(script_handle src)
@@ -763,6 +776,7 @@ extern "C" {
     extern bool scripthost_setup(const char* strScript)
     {
         ScriptHost::Init();
+		ScriptHost::SetupAutocomplete();
 		if (strScript!=nullptr)
 		{
         	return ScriptHost::Setup(strScript, 0);
@@ -801,4 +815,12 @@ extern "C" {
 		const std::vector<std::string> *pvArgs = static_cast<const std::vector<std::string>*>(pArgs);
 		return std::stof(pvArgs->at(iIdx));
 	}
+
+	extern void scripthost_autocomplete(void *p, const char* cmdline, void(*add_func)(void*,const char*)){
+		std::set<std::string> strOpt = ScriptHost::OnAutoComplete_C(cmdline);
+		for (auto &s : strOpt) {
+			add_func(p,s.c_str());
+		}
+	}
+	
 }

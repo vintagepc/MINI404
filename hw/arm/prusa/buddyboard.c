@@ -141,14 +141,6 @@ static void buddy_init(MachineState *machine)
         qdev_realize(dev, bus, &error_fatal);
     }
 
-    dev = qdev_new("buddy-input");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    // dev_get_gpio_out_connector(dev,"buddy-enc-button",0);
-    qdev_connect_gpio_out_named(dev, "buddy-enc-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
-    qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
-    qdev_connect_gpio_out_named(dev, "buddy-enc-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
-
-    
     DeviceState *vis = qdev_new("buddy-visuals");
     sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
    
@@ -229,7 +221,9 @@ static void buddy_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",9));
 
+    // dev = qdev_new("chardev-p404");
 
+    // sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 
     // hotend = fan1
     // print fan = fan0
@@ -248,6 +242,14 @@ static void buddy_init(MachineState *machine)
         qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],qdev_get_gpio_in_named(dev, "pwm-in-soft",0));
         qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",4+i));
     }
+
+    // Needs to come last because it has the scripting engine setup.
+    dev = qdev_new("buddy-input");
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    // dev_get_gpio_out_connector(dev,"buddy-enc-button",0);
+    qdev_connect_gpio_out_named(dev, "buddy-enc-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
+    qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
+    qdev_connect_gpio_out_named(dev, "buddy-enc-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
 
     // Check for high-level non configuration arguments like help outputs and handle them.
     if (!arghelper_parseargs())
