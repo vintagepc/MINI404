@@ -51,6 +51,6 @@ extern const char* scripthost_get_string(const void *pArgs, uint8_t iIdx);
 extern bool scripthost_setup(const char* strScript);
 
 // Runs one cycle of script processing. 
-extern void scripthost_run(int64_t iTime);
-// adds an argument requirement to the given action ID.
-// static void scripthost_add_action_arg(P404ScriptIF *src, int id, int argtype);
+extern int scripthost_run(int64_t iTime);
+
+extern void scripthost_execute(const char* cmd);

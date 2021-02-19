@@ -109,6 +109,7 @@ int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_arg
         case ActSet:
             s->custom_temp = scripthost_get_float(args, 0);
             s->use_custom = true;
+            break;
         default:
             return ScriptLS_Unhandled;
 

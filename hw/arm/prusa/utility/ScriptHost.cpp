@@ -765,6 +765,11 @@ std::set<std::string> ScriptHost::OnAutoComplete_C(std::string strCmd) {
 	return strMatches;
 }
 
+void ScriptHost::OnCommand_C(std::string strCmd) {
+	std::lock_guard<std::mutex> lck (m_lckScript);
+	m_script.push_back(strCmd);
+}
+
 // C linkages
 extern "C" {
     extern void scripthost_register_scriptable(script_handle src)
@@ -787,9 +792,10 @@ extern "C" {
 		}
     }
 
-    extern void scripthost_run(int64_t iTime)
+    extern int scripthost_run(int64_t iTime)
     {
         ScriptHost::OnMachineCycle(iTime);
+		return ScriptHost::GetTermStatus();
     }
 
 	extern int scripthost_get_int(script_args pArgs, uint8_t iIdx)
@@ -823,4 +829,8 @@ extern "C" {
 		}
 	}
 	
+	extern void scripthost_execute(const char* cmd) {
+		ScriptHost::OnCommand_C(cmd);
+	}
+
 }

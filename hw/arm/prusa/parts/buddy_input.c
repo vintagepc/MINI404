@@ -51,7 +51,7 @@ struct InputState {
     int32_t encoder_ticks;
     int8_t encoder_dir;
 
-    QEMUTimer *timer, *release, *scripting;
+    QEMUTimer *timer, *release;
 };
 
 enum {
@@ -95,13 +95,6 @@ static void buddy_input_keyevent(void *opaque, int keycode)
         s->encoder_ticks +=2;
         timer_mod(s->timer,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
     }
-}
-
-static void buddy_script_timer_expire(void *opaque)
-{
-    InputState *s = opaque;
-    scripthost_run(qemu_clock_get_us(QEMU_CLOCK_VIRTUAL));
-    timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
 }
 
 static void buddy_autorelease_timer_expire(void *opaque)
@@ -226,9 +219,6 @@ static void buddy_input_init(Object *obj)
     s->release = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)buddy_autorelease_timer_expire, s);
 
-    s->scripting = timer_new_ms(QEMU_CLOCK_VIRTUAL,
-        (QEMUTimerCB *)buddy_script_timer_expire, s);
-
     script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
 
     script_register_action(pScript, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
@@ -236,14 +226,6 @@ static void buddy_input_init(Object *obj)
     script_register_action(pScript, "Push",  "Presses the encoder", ACT_PUSH);
 
     scripthost_register_scriptable(pScript);
-
-    const char* script = arghelper_get_string("script");
-
-    if (scripthost_setup(script)) // TODO- move scripthost out of this input handler?
-    {
-        // Start script timer
-        timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
-    }
 }
 
 static void buddy_input_class_init(ObjectClass *oc, void *data)

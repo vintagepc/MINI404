@@ -18,6 +18,7 @@
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "../utility/macros.h"
+#include "../utility/ArgHelper.h"
 #include "hw/qdev-properties.h"
 #include "sysemu/sysemu.h"
 #include "hw/sysbus.h"
@@ -25,7 +26,7 @@
 #include "ui/console.h"
 
 struct ScriptConsoleState {
-    DeviceState parent;
+    SysBusDevice parent;
 
     Chardev *input_source;
 
@@ -37,8 +38,9 @@ struct ScriptConsoleState {
 
     bool is_busy; 
 
-    int cmd_len;
-    char cmd[255];
+    bool show_status;
+
+    QEMUTimer *scripting;
 
     ReadLineState *rl_state;
 };
@@ -48,25 +50,35 @@ struct ScriptConsoleState {
 OBJECT_DECLARE_SIMPLE_TYPE(ScriptConsoleState, P404_SCRIPT_CONSOLE)
 
 
+extern int scripthost_run(int64_t iTime);
+extern bool scripthost_setup(const char* strScript);
+
+
 static int scriptcon_can_read(void* opaque) {
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(opaque);
 
-    if ((!s->is_busy) && s->cmd_len<sizeof(s->cmd)) {
-        return (sizeof(s->cmd)-s->cmd_len);
+    if (!s->is_busy) {
+        return true;
     } else {
         return 0;
     }
 
 }
 
+extern void scripthost_autocomplete(void* p, const char* cmdline, void(*add_func)(void*,const char*));
+extern void scripthost_execute(const char* cmd);
+
 static void scriptcon_execute(void *opaque, const char *cmdline,
                                void *readline_opaque)
 {
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(opaque);
-
     s->is_busy = true;    
-    printf("incoming cmd: %s\n",cmdline);
-    s->is_busy = false;
+    s->show_status = true;
+    scripthost_execute(cmdline);
+    if (timer_expired(s->scripting,qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)))
+    {
+        timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
+    }
 }
 
 static void scriptcon_auto_return(void *opaque, const char* cmd_completed)
@@ -76,7 +88,6 @@ static void scriptcon_auto_return(void *opaque, const char* cmd_completed)
 }
 
 // in ScriptHost.cpp
-extern void scripthost_autocomplete(void* p, const char* cmdline, void(*add_func)(void*,const char*));
 
 static void scriptcon_autocomplete(void *opaque,
                                     const char *cmdline)
@@ -129,6 +140,36 @@ static void scriptcon_event(void *opaque, QEMUChrEvent event)
     }
 }
 
+static const char strOK[8] = "Success";
+static const char strFailed[6] = "Error";
+static const char strWait[8] = "Waiting";
+static const char strTimeout[10] = "Timed out";
+static const char strSyntax[22] = "Syntax/Argument Error";
+
+static void scriptcon_timer_expire(void *opaque)
+{
+    ScriptConsoleState *s = opaque;
+    const char* messages[] = {strOK, strFailed, strWait, strTimeout, strSyntax};
+    int status = scripthost_run(qemu_clock_get_us(QEMU_CLOCK_VIRTUAL));
+    timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
+    bool should_restart = false;
+    if (status !=3 && s->show_status) {
+        should_restart = true;
+    }
+    if (s->show_status && (status ==2 || status>3)) {
+        scriptcon_printf(s,"%s\n",messages[status-1]);
+    }
+    if (should_restart) {
+        readline_restart(s->rl_state);
+        readline_show_prompt(s->rl_state);
+        s->show_status = false;
+        s->is_busy = false;
+    }
+
+
+}
+
+
 static void scriptcon_read_command(ScriptConsoleState *s)
 {
     if (!s->rl_state) {
@@ -163,7 +204,7 @@ static void scriptcon_read(void *opaque, const uint8_t *buf, int size){
     // }
 }
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ScriptConsoleState, scriptcon, P404_SCRIPT_CONSOLE, DEVICE, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ScriptConsoleState, scriptcon, P404_SCRIPT_CONSOLE, SYS_BUS_DEVICE, {NULL})
 
 static void scriptcon_finalize(Object *obj)
 {
@@ -172,26 +213,24 @@ static void scriptcon_finalize(Object *obj)
 
 static void scriptcon_init(Object *obj)
 {
+    ScriptConsoleState *s = P404_SCRIPT_CONSOLE(obj);
+    s->scripting = timer_new_ms(QEMU_CLOCK_VIRTUAL,
+    (QEMUTimerCB *)scriptcon_timer_expire, s);
+
+    const char* script = arghelper_get_string("script");
+
+    if (scripthost_setup(script)) // TODO- move scripthost out of this input handler?
+    {
+        // Start script timer
+        timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
+    }
 }
-
-// static const GraphicHwOps scriptcon_ops = {
-//   //  .gfx_update = scriptcon_update_gfx,
-//     .text_update = scriptcon_update,
-//     .invalidate = scriptcon_invalidate,
-// };
-
-
 
 static void scriptcon_realize(DeviceState *d, Error **errp)
 {
     //DeviceState *dev = DEVICE(d);
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(d);
-    // if (g_strcmp0(s->inputtype,"vc") ==0 ){
-    //     printf("Creating new scripting VC\n");
-    //     s->input_source = qemu_chr_new("P404-script-console", "vc:80Cx24C",NULL);  //qemu_chardev_new("P404 Script Console", "chardev-vc",
-    //            //           NULL,  NULL, errp);
-    //     s->is_vc = true;
-    // }
+
     s->input_source = qemu_chr_find("p404-scriptcon");
     if (!s->input_source) {
         return;
