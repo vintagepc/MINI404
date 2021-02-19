@@ -238,11 +238,11 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
         return;
     }
     qemu_chr_fe_init(&s->be, s->input_source, errp);
-    qemu_chr_fe_set_handlers(&s->be, scriptcon_can_read, scriptcon_read, scriptcon_event, NULL, s, NULL, true);
         s->rl_state = readline_init(scriptcon_printf,
                             scriptcon_flush,
                             s,
                             scriptcon_autocomplete);
+    qemu_chr_fe_set_handlers(&s->be, scriptcon_can_read, scriptcon_read, scriptcon_event, NULL, s, NULL, true);
     scriptcon_read_command(s);
 
 
