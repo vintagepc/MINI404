@@ -92,6 +92,8 @@ static void scriptcon_auto_return(void *opaque, const char* cmd_completed)
 static void scriptcon_autocomplete(void *opaque,
                                     const char *cmdline)
 {
+    ScriptConsoleState *s = P404_SCRIPT_CONSOLE(opaque);
+    readline_set_completion_index(s->rl_state, strlen(cmdline));
     scripthost_autocomplete(opaque, cmdline, scriptcon_auto_return);
 }
 
