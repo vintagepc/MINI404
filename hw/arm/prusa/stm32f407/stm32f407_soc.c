@@ -514,7 +514,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("USB OTG FS",  0x50000000, 0x31000); // Note - FS is the serial port/micro-usb connector
     create_unimplemented_device("DCMI",        0x50050000, 0x400);
     create_unimplemented_device("RNG",         0x50060800, 0x400);
-    create_unimplemented_device("OTP",         0x1FFF7800, 0x210);
+    create_unimplemented_device("OTP",         0x1FFF7800, 0x21F);
   //  create_unimplemented_device("EXTERNAL",    0xA0000000, 0x3FFFFFFF);
 
     
