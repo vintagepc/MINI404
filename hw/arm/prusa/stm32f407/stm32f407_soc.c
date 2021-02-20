@@ -164,6 +164,9 @@ static void stm32f407_soc_initfn(Object *obj)
     object_initialize_child(obj, "otg_hs", &s->otg_hs, TYPE_STM32F4xx_USB);
     // object_property_add_const_link(OBJECT(&s->otg_hs), "dma-mr",
     //                             OBJECT(&s->temp_usb));
+
+    object_initialize_child(obj, "otp", &s->otp, TYPE_STM32F4XX_OTP);
+
 }
 
 
@@ -208,8 +211,6 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     memory_region_init_ram(&s->ccmsram, OBJECT(dev_soc), "STM32F407.ccmsram", 64* KiB,&err);
 
     memory_region_add_subregion(system_memory, 0x10000000, &s->ccmsram);
-
-    memory_region_init_rom(&s->otp, OBJECT(dev_soc),"STM32F407.otp",512, &err);
 
     armv7m = DEVICE(&s->armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", 96);
@@ -456,6 +457,13 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x40003000);
 
+
+    dev = DEVICE(&s->otp);
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->otp),errp))
+        return;
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, 0x1FFF7800);
+
     // ITM@ (0xE0000000UL) 
     dev = DEVICE(&s->itm);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->itm),errp))
@@ -514,7 +522,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("USB OTG FS",  0x50000000, 0x31000); // Note - FS is the serial port/micro-usb connector
     create_unimplemented_device("DCMI",        0x50050000, 0x400);
     create_unimplemented_device("RNG",         0x50060800, 0x400);
-    create_unimplemented_device("OTP",         0x1FFF7800, 0x21F);
+    // create_unimplemented_device("OTP",         0x1FFF7800, 0x21F);
   //  create_unimplemented_device("EXTERNAL",    0xA0000000, 0x3FFFFFFF);
 
     

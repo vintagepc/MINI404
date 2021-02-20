@@ -43,6 +43,7 @@
 #include "stm32f2xx_rtc.h"
 #include "stm32f4xx_spi.h"
 #include "stm32f2xx_tim.h"
+#include "stm32f4xx_otp.h"
 // #include "tmc2209_usart.h"
 #include "stm32f4xx_usb.h"
 #include "hw/arm/armv7m.h"
@@ -127,10 +128,11 @@ struct STM32F407State {
     stm32f4xx_iwdg iwdg;
     // TMC2209UsartState usart2;
 
+    Stm32f4xx_OTP otp;
+
     MemoryRegion sram;
     MemoryRegion flash;
     MemoryRegion flash_alias;
-    MemoryRegion otp;
     MemoryRegion ccmsram;
     MemoryRegion temp_usb;
 
