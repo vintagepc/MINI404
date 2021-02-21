@@ -52,6 +52,9 @@ static void buddy_init(MachineState *machine)
     // Parse those now. 
     arghelper_setargs(machine->kernel_cmdline);
     
+    if (arghelper_is_arg("appendix")) {
+        SOC->gpio[GPIO_A].idr_mask |= 0x2000;
+    }
     int kernel_len = strlen(machine->kernel_filename);
     if (kernel_len >3)
     {

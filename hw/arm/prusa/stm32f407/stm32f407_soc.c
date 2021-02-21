@@ -350,6 +350,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 
     for (i = 0; i < STM_NUM_ADCS; i++) {
         dev = DEVICE(&(s->adc[i]));
+        s->adc[i].id = i+1; // STM32 id, i.e. 1-based.
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->adc[i]), errp)) {
             return;
         }

@@ -63,6 +63,8 @@ struct STM32F4XXADCState {
     uint8_t adc_sequence[ADC_NUM_REG_CHANNELS];
 
     uint8_t adc_sequence_position;
+
+    int id;
 };
 
 #endif /* HW_STM32F4XX_ADC_H */
