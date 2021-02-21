@@ -78,6 +78,10 @@ class ScriptHost: public IScriptable
 
         static void AddScriptable_C(IScriptable *src);
 
+        static std::set<std::string> OnAutoComplete_C(std::string strCmd);
+
+        static void OnCommand_C(std::string strCmd);
+
 		enum class State
 		{
 			Finished, // First because 0 return code is OK.
@@ -88,6 +92,9 @@ class ScriptHost: public IScriptable
 		};
 
 		static inline State GetState(){ return m_state;}
+
+		static inline int GetTermStatus(){ return m_eCmdStatus;}
+
 
     private:
 

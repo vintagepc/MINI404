@@ -69,6 +69,7 @@ enum {
     ActNormal,
     ActRunaway,
     ActOpen,
+    ActSet,
 };
 
 
@@ -163,8 +164,7 @@ static void heater_reset(DeviceState *dev)
     s->currentTemp = s->ambientTemp;
 }
 
-int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
-int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {
+static int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {
     heater_state *s = HEATER(obj);
     switch (action){
         case ActNormal:
@@ -181,6 +181,10 @@ int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args ar
         case ActOpen:
             s->custom_pwm = 0; 
             s->use_custom_pwm = true;
+            break;
+        case ActSet:
+            s->currentTemp = scripthost_get_float(args, 0);
+            qemu_set_irq(s->temp_out, s->currentTemp*256.f);
             break;
         default:
             return ScriptLS_Unhandled;
@@ -215,7 +219,8 @@ static void heater_init(Object *obj)
     script_register_action(pScript, "Open","Sets heater as open-circuit", ActOpen);
     script_register_action(pScript, "Runaway","Sets heater as if in thermal runaway", ActRunaway);
     script_register_action(pScript, "Restore","Restores normal (non-open or runaway) state", ActNormal);
-
+    script_register_action(pScript, "SetTemp","Sets the current temperature the heater uses to update the thermistor", ActSet);
+    script_add_arg_float(pScript, ActSet);
     scripthost_register_scriptable(pScript);
 
 }

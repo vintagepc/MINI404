@@ -26,6 +26,9 @@
 #include "qemu/timer.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
+#include "../utility/macros.h"
+#include "../utility/p404scriptable.h"
+#include "../utility/ScriptHost_C.h"
 #include "qemu/module.h"
 
 struct  fan_state //:public SoftPWMable, public Scriptable
@@ -33,6 +36,8 @@ struct  fan_state //:public SoftPWMable, public Scriptable
     SysBusDevice parent;
 	bool pulse_state;
 	bool is_nonlinear;
+
+    bool is_stalled;
 
 	uint8_t pwm;
 	uint32_t max_rpm;
@@ -52,6 +57,11 @@ struct  fan_state //:public SoftPWMable, public Scriptable
 
 };
 
+enum {
+    ActResume,
+    ActStall
+};
+
 // FIXME/HACK - E fan is nonlinear in the RPM vs PWM.
 static uint16_t fan_corrections[] = {1450,2100, 1700, 1050, 0};
 
@@ -62,7 +72,11 @@ OBJECT_DECLARE_SIMPLE_TYPE(fan_state, FAN)
 static void fan_tach_expire(void *opaque)
 {
     fan_state *s = opaque;
-    qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
+    if (s->is_stalled) {
+        qemu_set_irq(s->tach_pulse, 0);
+    } else {
+        qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
+    }
     timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
 }
 
@@ -134,9 +148,26 @@ static void fan_pwm_change_soft(void *opaque, int n, int level)
 
 	}
     s->last_level = level;
-    
 }
 
+static int fan_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {
+    fan_state *s = FAN(obj);
+    if (action == ActStall) {
+        s->is_stalled = true;
+    } else if (action == ActResume) {
+        s->is_stalled = false;
+    } else  {
+        return ScriptLS_Unhandled;
+    }
+    return ScriptLS_Finished;
+}
+
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(fan_state, fan, FAN, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
+
+
+static void fan_finalize(Object *obj){
+
+}
 
 static void fan_init(Object *obj){
 
@@ -155,6 +186,12 @@ static void fan_init(Object *obj){
     qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
+
+    void* pScript = script_instance_new(P404_SCRIPTABLE(s), "fan");
+    script_register_action(pScript, "Stall","Stalls the fan tachometer",ActStall);
+    script_register_action(pScript, "Resume","Resumes a stalled fan.",ActResume);
+    scripthost_register_scriptable(pScript);
+
 }
 
 
@@ -171,20 +208,7 @@ static void fan_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, fan_properties);
    // dc->vmsd = &vmstate_fan;
+
+    P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
+    sc->ScriptHandler = fan_process_action;
 }
-
-static const TypeInfo fan_info = {
-    .name          = TYPE_FAN,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(fan_state),
-    .class_init    = fan_class_init,
-    .instance_init = fan_init
-};
-
-static void fan_register_types(void)
-{
-    type_register_static(&fan_info);
-}
-
-type_init(fan_register_types)
-;

@@ -32,6 +32,9 @@
 #include "ui/console.h"
 #include "qom/object.h"
 #include "hw/sysbus.h"
+#include "sysemu/runstate.h"
+#include "qapi/qapi-commands-run-state.h"
+#include "qapi/qapi-events-run-state.h"
 
 #define TYPE_BUDDY_INPUT "buddy-input"
 
@@ -51,7 +54,7 @@ struct InputState {
     int32_t encoder_ticks;
     int8_t encoder_dir;
 
-    QEMUTimer *timer, *release, *scripting;
+    QEMUTimer *timer, *release;
 };
 
 enum {
@@ -95,13 +98,6 @@ static void buddy_input_keyevent(void *opaque, int keycode)
         s->encoder_ticks +=2;
         timer_mod(s->timer,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
     }
-}
-
-static void buddy_script_timer_expire(void *opaque)
-{
-    InputState *s = opaque;
-    scripthost_run(qemu_clock_get_us(QEMU_CLOCK_VIRTUAL));
-    timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
 }
 
 static void buddy_autorelease_timer_expire(void *opaque)
@@ -187,8 +183,7 @@ static void buddy_input_reset(DeviceState *dev)
     s->phase = 0;
 }
 
-int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args);
-int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
+static int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
     InputState *s = BUDDY_INPUT(obj);
     switch (action)
@@ -205,6 +200,9 @@ int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_ar
         }
         case ACT_PUSH:
             buddy_input_keyevent(s, 0x1c);
+            break;
+        case ACT_RESET:
+            qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
             break;
         default:
             return ScriptLS_Unhandled;
@@ -226,24 +224,14 @@ static void buddy_input_init(Object *obj)
     s->release = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)buddy_autorelease_timer_expire, s);
 
-    s->scripting = timer_new_ms(QEMU_CLOCK_VIRTUAL,
-        (QEMUTimerCB *)buddy_script_timer_expire, s);
-
     script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
 
     script_register_action(pScript, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
     script_add_arg_int(pScript, ACT_TWIST);
     script_register_action(pScript, "Push",  "Presses the encoder", ACT_PUSH);
+    script_register_action(pScript, "Reset", "Resets the printer", ACT_RESET);
 
     scripthost_register_scriptable(pScript);
-
-    const char* script = arghelper_get_string("script");
-
-    if (scripthost_setup(script)) // TODO- move scripthost out of this input handler?
-    {
-        // Start script timer
-        timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
-    }
 }
 
 static void buddy_input_class_init(ObjectClass *oc, void *data)
