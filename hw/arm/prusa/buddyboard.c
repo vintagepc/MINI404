@@ -221,9 +221,9 @@ static void buddy_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",9));
 
-    // dev = qdev_new("chardev-p404");
-
-    // sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    dev = qdev_new("ir-sensor");
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_B]),4));
 
     // hotend = fan1
     // print fan = fan0
