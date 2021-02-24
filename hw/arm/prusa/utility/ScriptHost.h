@@ -82,6 +82,10 @@ class ScriptHost: public IScriptable
 
         static void OnCommand_C(std::string strCmd);
 
+        static void PrintToConsole_C(std::string strOutput);
+
+        static void SetConsole(void* pConsole) { m_pConsole = pConsole;};
+
 		enum class State
 		{
 			Finished, // First because 0 return code is OK.
@@ -188,5 +192,7 @@ class ScriptHost: public IScriptable
         static uint64_t m_uiCurrentMs, m_uiWaitMs;
 
 		static int m_iTimeoutCycles, m_iTimeoutCount;
+
+        static void *m_pConsole;
 
 };

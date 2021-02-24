@@ -1,18 +1,21 @@
 /*
 	thermistor.c
 	Based on thermistor.c (C) 2008-2012 Michel Pollet <buserror@gmail.com>
-	Rewritten for C++ in 2020 by VintagePC <https://github.com/vintagepc/>
- 	This file is part of MK404.
-	MK404 is free software: you can redistribute it and/or modify
+	
+    Rewritten for MK404/C++ in 2020 by VintagePC <https://github.com/vintagepc/>
+    Backported to C again for QEMU in Mini404 in 2021
+
+ 	This file is part of Mini404.
+	Mini404 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
 	the Free Software Foundation, either version 3 of the License, or
 	(at your option) any later version.
-	MK404 is distributed in the hope that it will be useful,
+	Mini404 is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
 	You should have received a copy of the GNU General Public License
-	along with MK404.  If not, see <http://www.gnu.org/licenses/>.
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
@@ -48,7 +51,8 @@ enum {
     ActShort,
     ActDisconnect, 
     ActNormal, 
-    ActSet
+    ActSet,
+    ActGetTemp,
 };
 
 static void thermistor_read_request(void *opaque, int n, int level) {
@@ -109,6 +113,9 @@ static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, scr
             s->custom_temp = scripthost_get_float(args, 0);
             s->use_custom = true;
             break;
+        case ActGetTemp:
+            script_print_float(s->use_custom ? s->custom_temp : s->temperature);
+            break;
         default:
             return ScriptLS_Unhandled;
 
@@ -166,6 +173,8 @@ static void thermistor_init(Object *obj)
     script_register_action(pScript, "Restore","Restores the thermistor to normal (unshorted, heater-operated) state",ActNormal);
     script_register_action(pScript, "Set","Sets the temperature to a given value.",ActSet);
     script_add_arg_float(pScript, ActSet);
+
+    script_register_action(pScript, "GetTemp","Prints the current temperature",ActGetTemp);
 
     scripthost_register_scriptable(pScript);
 }

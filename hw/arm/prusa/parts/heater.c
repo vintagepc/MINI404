@@ -1,5 +1,5 @@
 /*
-	Heater.c - a heater object for MINI404. There's not much to it,
+	heater.c - a heater object for MINI404. There's not much to it,
     it just ticks the temperature "up" at a determined rate when active on PWM and down in
     in an exponential curve when off.
 
@@ -7,18 +7,18 @@
 
  	This file is part of MINI404 (Adapted from MK404 for QEMU)
 
-	MK404 is free software: you can redistribute it and/or modify
+	MINI404 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
 	the Free Software Foundation, either version 3 of the License, or
 	(at your option) any later version.
 
-	MK404 is distributed in the hope that it will be useful,
+	MINI404 is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with MK404.  If not, see <http://www.gnu.org/licenses/>.
+	along with MINI404.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
