@@ -66,10 +66,15 @@ std::set<std::string> ScriptHost::m_strGLAutoC;
 // if running a script, for host->terminal.
 std::mutex ScriptHost::m_lckScript;
 
+void * ScriptHost::m_pConsole = nullptr;
+
+
 extern "C"{
 	// Kinda hacky but can't include the qemu headers here in C++ land
 	#define SHUTDOWN_CAUSE_HOST_SIGNAL 4
 	extern void qemu_system_shutdown_request(int);
+
+	extern void scriptcon_print_out(void* opaque, const char* msg);
 }
 
 void ScriptHost::PrintScriptHelp(bool bMarkdown)
@@ -770,6 +775,17 @@ void ScriptHost::OnCommand_C(std::string strCmd) {
 	m_script.push_back(strCmd);
 }
 
+void ScriptHost::PrintToConsole_C(std::string strOut) {
+	if (m_pConsole)
+	{
+		scriptcon_print_out(m_pConsole,strOut.c_str());
+	} 
+	else 
+	{
+		std::cerr << "Cannot print to console, it is NULL!\n";
+	}
+}
+
 // C linkages
 extern "C" {
     extern void scripthost_register_scriptable(script_handle src)
@@ -778,10 +794,11 @@ extern "C" {
         ScriptHost::AddScriptable_C(p);
     }
 
-    extern bool scripthost_setup(const char* strScript)
+    extern bool scripthost_setup(const char* strScript, void* pConsole)
     {
         ScriptHost::Init();
 		ScriptHost::SetupAutocomplete();
+		ScriptHost::SetConsole(pConsole);
 		if (strScript!=nullptr)
 		{
         	return ScriptHost::Setup(strScript, 0);
@@ -831,6 +848,17 @@ extern "C" {
 	
 	extern void scripthost_execute(const char* cmd) {
 		ScriptHost::OnCommand_C(cmd);
+	}
+
+	extern void script_print_float(float fVal) {
+		ScriptHost::PrintToConsole_C(std::to_string(fVal));
+	}
+
+	extern void script_print_int(int iVal) {
+		ScriptHost::PrintToConsole_C(std::to_string(iVal));
+	}
+	extern void script_print_string(const char* pStr) {
+		ScriptHost::PrintToConsole_C(pStr);
 	}
 
 }

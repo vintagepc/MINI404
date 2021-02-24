@@ -43,12 +43,18 @@ extern int scripthost_get_int(      const void *pArgs, uint8_t iIdx);
 extern float scripthost_get_float(  const void *pArgs, uint8_t iIdx);
 extern bool scripthost_get_bool(    const void *pArgs, uint8_t iIdx);
 
+// Print helpers for script clients to print to the console.
+extern void script_print_float(float fVal);
+extern void script_print_int(int iVal);
+extern void script_print_string(const char* pStr);
+
+
 // returns pointer to C string of the arg. If you want to keep it for later you MUST copy it!
 extern const char* scripthost_get_string(const void *pArgs, uint8_t iIdx);
 
 
 // Initializes the script host with the given script. 
-extern bool scripthost_setup(const char* strScript);
+extern bool scripthost_setup(const char* strScript, void *pConsole);
 
 // Runs one cycle of script processing. 
 extern int scripthost_run(int64_t iTime);

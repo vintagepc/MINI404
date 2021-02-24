@@ -407,10 +407,10 @@ babble:
                     memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
                     s->rx_fifo_tail += words;
                 }
-                // printf("USB RX %u: ", actual);
-                // for (int i=0; i<actual; i++)
-                //     printf("%02x ",s->usb_buf[chan][i]);
-                // printf("\n");
+                printf("USB RX %u: ", actual);
+                for (int i=0; i<actual; i++)
+                    printf("%02x ",s->usb_buf[chan][i]);
+                printf("\n");
                 s->rx_fifo_level += words;
                 assert(s->rx_fifo_tail <= 32768); // Fix this you lazy lump...
           
@@ -1467,7 +1467,7 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
     s->gi2cctl = GI2CCTL_I2CDATSE0 | GI2CCTL_ACK;
     s->gpvndctl = 0;
     s->ggpio = 0;
-    s->guid = 0;
+    s->guid = 0x00001100;
     s->gsnpsid = 0x4f54294a;
     s->ghwcfg1 = 0;
     s->ghwcfg2 = (8 << GHWCFG2_DEV_TOKEN_Q_DEPTH_SHIFT) |
