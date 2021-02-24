@@ -758,7 +758,7 @@ std::set<std::string> ScriptHost::OnAutoComplete_C(std::string strCmd) {
 	if (pNext == m_strGLAutoC.end()) {
 		return strMatches;
 	}
-	while (pNext->rfind(strCmd,0)==0) {
+	while (pNext->rfind(strCmd,0)==0 && pNext!=m_strGLAutoC.end()) {
 		strMatches.insert(*pNext);
 		pNext++;
 	}

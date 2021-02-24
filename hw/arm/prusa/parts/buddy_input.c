@@ -108,7 +108,7 @@ static void buddy_autorelease_timer_expire(void *opaque)
 
 static void buddy_input_timer_expire(void *opaque)
 {
-    static const uint8_t buddy_input_phases[4] = {0x00, 0x10, 0x11, 0x01};
+    static const uint8_t buddy_input_phases[4] = {0x11, 0x01, 0x00, 0x10};
     InputState *s = opaque;
     if (s->encoder_dir<0){
         s->phase++;
@@ -181,6 +181,8 @@ static void buddy_input_reset(DeviceState *dev)
     InputState *s = BUDDY_INPUT(dev);
     s->last_state = 0;
     s->phase = 0;
+    qemu_irq_lower(s->irq_enc_a);
+    qemu_irq_lower(s->irq_enc_b);
 }
 
 static int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -238,6 +240,8 @@ static void buddy_input_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     dc->reset = buddy_input_reset;
+    // dc->realize = buddy_input_realize;
+    // dc->unrealize = buddy_input_unrealize;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = buddy_input_process_action;
   //  dc->vmsd = &vmstate_buddy_input;

@@ -71,13 +71,13 @@ jobs:
 
     - name: Checkout Wiki
       uses: actions/checkout@v2.2.0
-      # if: ${{ !github.event.pull_request }}
+      if: ${{ !github.event.pull_request }}
       with:
         repository: vintagepc/MINI404.wiki.git
         path: ref
 
     - name: Regen docs
-      # if: ${{ !github.event.pull_request }}
+      if: ${{ !github.event.pull_request }}
       run: |
         cd ${{ runner.workspace }}/MINI404
         ./updateDocs.sh
