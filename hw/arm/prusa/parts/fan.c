@@ -1,5 +1,5 @@
 /*
-    fan.c - Simple fan tach sim for Einsy Rambo
+    fan.c - Simple fan tach sim for Mini404
 
 	Original copyright 2020 VintagePC <https://github.com/vintagepc/> as part of MK404
     Ported to C/QEMU in 2020.
@@ -31,7 +31,7 @@
 #include "../utility/ScriptHost_C.h"
 #include "qemu/module.h"
 
-struct  fan_state //:public SoftPWMable, public Scriptable
+struct  fan_state 
 {
     SysBusDevice parent;
 	bool pulse_state;
@@ -43,7 +43,6 @@ struct  fan_state //:public SoftPWMable, public Scriptable
 	uint32_t max_rpm;
 	uint32_t current_rpm;
 	uint32_t usec_per_pulse;
-	// std::atomic_uint16_t m_uiRot {0};
 
     int last_level;
 
@@ -88,13 +87,10 @@ static void fan_pwm_change(void *opaque, int n, int level) {
     if (s->is_nonlinear)
     {
         s->current_rpm += fan_corrections[level/64];
-        // printf( "Corr: %d - ", level/64u);
     }
     float fSecPerRev = 60.0f/(float)s->current_rpm;
     float fuSPerRev = 1000000.f*fSecPerRev;
     s->usec_per_pulse = fuSPerRev/4.f; // 4 pulses per rev.
-    // if(s->label == 'E') printf("Fan %c pwm change: %d (RPM %u) uspr: %lu\n", s->label, level, s->current_rpm, s->usec_per_pulse);
-    // TRACE(printf("New PWM(%u)/RPM/cyc: %u / %u / %u\n", max_rpm, m_uiPWM.load(), current_rpm, usec_per_pulse));
     if (s->current_rpm>0) // Restart the timer if it has expired, otherwise leave it be.
     {
         timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
@@ -117,34 +113,24 @@ static void fan_softpwm_timeout(void* opaque)
 static void fan_pwm_change_soft(void *opaque, int n, int level)
 {
     fan_state *s = opaque;
-    //printf("P%d ", level);
-    // static const uint32_t timeout = 17000; // fudge factor/trigger timeout... fix this later.
     int64_t tNow = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
 	if (level & !s->last_level) // Was off, start at full, we'll update rate later.
 	{
         timer_mod(s->softpwm, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+200);
-		// if (s->cntTOn>s->cntSoftPWM)
-		// {
-		// }
-        //fan_pwm_change(s, 0, 255);
         s->tLastOn = s->tOn;
 		s->tOn = tNow;
-        //printf("New Total: %ld, last on %ld\n", s->tOn - s->tLastOn);
 	}
 	else if (!level && s->last_level)
 	{
         s->tOff = tNow;
 		uint64_t uiCycleDelta = s->tOff - s->tOn; // This is the on time in us.  
         uint64_t tTotal = 50000; // hack, based on TIM1 init config (50 ms period). //s->tOn - s->tLastOn; // Total delta between on pulese (total duty cycle)
-        //printf("New On: %lu/%lu\n",uiCycleDelta, tTotal);
-		//TRACE(printf("New soft PWM delta: %d\n",uiCycleDelta/1000));
         if (uiCycleDelta > tTotal)
         {
             uiCycleDelta %= (tTotal); // HACK: Workaround for the first "off" after the initial 100% "kickstart"
         }
 		uint16_t uiSoftPWM = 255.f*((float)uiCycleDelta/(float)tTotal); //62.5 Hz means full on is ~256k cycles.
 		fan_pwm_change(s, 0, uiSoftPWM);
-		// s->cntTOn = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
         timer_mod(s->softpwm, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+200);
 
 	}
@@ -216,7 +202,6 @@ static void fan_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, fan_properties);
-   // dc->vmsd = &vmstate_fan;
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = fan_process_action;

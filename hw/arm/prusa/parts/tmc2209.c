@@ -1,12 +1,20 @@
 /*
- * TMC2209 - heavily based on MK404 TMC2130.
- *
- * This code is licensed under the GPL.
- */
+    TMC2209 - TMC2209 simulation heavily based on MK404's TMC2130.
+	
+    Adapted for Mini404 in 2020 by VintagePC <https://github.com/vintagepc/>
 
-/* The controller can support a variety of different displays, but we only
-   implement one.  Most of the commends relating to brightness and geometry
-   setup are ignored. */
+ 	This file is part of Mini404.
+	Mini404 is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+	Mini404 is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+	You should have received a copy of the GNU General Public License
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "qemu/osdep.h"
 #include "hw/irq.h"
@@ -68,7 +76,7 @@ typedef union
         {
             uint32_t ifcnt :8;
             uint32_t :24; // unused
-        }  __attribute__ ((__packed__)) IFCNT; // 0x01
+        }  __attribute__ ((__packed__)) IFCNT; // 0x02
         uint32_t _unimplemented[61]; //0x03 - 0x6B
         struct // 0x40
         {
@@ -119,31 +127,6 @@ typedef union
         }  __attribute__ ((__packed__)) DRV_STATUS;
     }defs;
 } tmc2209_registers_t;
-
-// typedef union tmc2209_cmd_t{ 
-//     uint64_t raw;
-//     uint32_t dwords[2];
-//     struct {
-//         uint8_t crc;
-
-//     }
-//     // struct {
-//     //     uint64_t crc :8;
-//     //     uint64_t data :32;
-//     //     uint64_t rw :1;
-//     //     uint64_t address :7;
-//     //     uint64_t slave :8;
-//     //     uint64_t sync :8;
-//     // }  __attribute__ ((__packed__)) write;
-//     // struct {
-//     //     uint64_t sync :8;
-//     //     uint64_t slave :8;
-//     //     uint64_t address :7;
-//     //     uint64_t rw :1;
-//     //     uint64_t crc :8;
-//     //     uint64_t :32;
-//     // }  __attribute__ ((__packed__)) read;
-// } tmc2209_cmd;
 
 
 struct tmc2209_state {
@@ -279,7 +262,6 @@ static void tmc2209_step(void *opaque, int n, int value) {
 		// With DEDGE step on each value change
 		if (value == s->last_step) return;
 	}
-    // CancelTimer(m_fcnStandstill,this);
     if (s->dir)
 	{
         s->current_step-=s->ms_increment;
@@ -322,18 +304,13 @@ static void tmc2209_step(void *opaque, int n, int value) {
     // 2^20 comes from the datasheet.
 
     // Internal clock is 12 MHz, 2^20 cycles is ~87 msec.
-   // RegisterTimer(m_fcnStandstill,1U<<20U,this is );
-   timer_mod(s->standstill, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+87);
+    timer_mod(s->standstill, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+87);
 }
 
 static void tmc2209_dir(void *opaque, int n, int level) {
     tmc2209_state *s = opaque;
     s->dir = (level^s->is_inverted)&0x1;
 }
-
-// static void tmc2209_check_diag() {
-
-// }
 
 static void tmc2209_write(tmc2209_state *s)
 {
@@ -344,7 +321,6 @@ static void tmc2209_write(tmc2209_state *s)
         data |=s->rx_buffer[i];
     }
     s->regs.raw[s->rx_buffer[2]&0x7F] = data;
-    // if (s->address==1) printf("wrote %08x to %02x\n",data, s->rx_buffer[2]&0x7f);
     // TODO- check CRC.
     s->regs.defs.IFCNT.ifcnt++;
     
@@ -354,13 +330,10 @@ static void tmc2209_read(tmc2209_state *s)
 {
     // TODO, actually construct reply.
     uint32_t data = s->regs.raw[s->rx_buffer[2]];
-    // if (s->address==1) printf("Read from %02x: %08x\n", s->rx_buffer[2], data);
     uint8_t reply[8] = {0x05, 0xFF, s->rx_buffer[2],data>>24,data>>16,data>>8,data,0x00};
     reply[7] = tmc2209_calcCRC(reply,7);
-  //  printf("Buffer: ");
     for (int i=0; i<8; i++)
     {
-    //    printf("%02x, ",reply[i]);
         qemu_set_irq(s->byte_out, reply[i]); // 
     }
 }
@@ -443,23 +416,6 @@ static void tmc2209_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, tmc2209_properties);
     dc->realize = tmc2209_realize;
-   // dc->vmsd = &vmstate_tmc2209;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = tmc2209_process_action;
 }
-
-// static const TypeInfo tmc2209_info = {
-//     .name          = TYPE_TMC2209,
-//     .parent        = TYPE_SYS_BUS_DEVICE,
-//     .instance_size = sizeof(tmc2209_state),
-//     .class_init    = tmc2209_class_init,
-//     .instance_init = tmc2209_init
-// };
-
-// static void tmc2209_register_types(void)
-// {
-//     type_register_static(&tmc2209_info);
-// }
-
-// type_init(tmc2209_register_types)
-;

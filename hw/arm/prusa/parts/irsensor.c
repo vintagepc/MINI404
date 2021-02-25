@@ -49,26 +49,11 @@ enum {
     ACT_TOGGLE,
 };
 
-// static const VMStateDescription vmstate_irsensor = {
-//     .name = "irsensor",
-//     .version_id = 2,
-//     .minimum_version_id = 2,
-//     .fields = (VMStateField[]) {
-//         VMSTATE_STRUCT(parent_obj, IRState, 0, vmstate_adb_device, ADBDevice),
-//         VMSTATE_BUFFER(data, IRState),
-//         VMSTATE_INT32(rptr, IRState),
-//         VMSTATE_INT32(wptr, IRState),
-//         VMSTATE_INT32(count, IRState),
-//         VMSTATE_END_OF_LIST()
-//     }
-// };
-
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(IRState, irsensor, IRSENSOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
 
 
 static void irsensor_finalize(Object *obj)
 {
-    printf("IRfinalize\n");
 }
 
 static void irsensor_reset(DeviceState *dev)
@@ -123,5 +108,4 @@ static void irsensor_class_init(ObjectClass *oc, void *data)
     dc->reset = irsensor_reset;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = irsensor_process_action;
-  //  dc->vmsd = &vmstate_irsensor;
 }

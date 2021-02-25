@@ -119,8 +119,6 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
     } color;
     color.full = 0;
     uint16_t word = 0;
-   // printf("BYTE: %02x\n", data);
- 
         if (s->mode == ST7789V_CMD) {
             s->cmd = data;
             s->cmd_len=0;
@@ -128,7 +126,6 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
             s->cmd_data[s->cmd_len] = data;
             s->cmd_len++;
         }
-        //printf("cmd 0x%02x\n", s->cmd);
         switch (s->cmd) {
 #define DATA(x) if (s->cmd_len < (x)) return 0
         case CMD_NOP:
@@ -196,8 +193,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
         }
         s->cmd_len = 0;
         return 0;
-    // }
-    // return 0;
+
 }
 
 static void st7789v_update_display(void *opaque)
@@ -221,16 +217,14 @@ static void st7789v_invalidate_display(void * opaque)
     s->redraw = 1;
 }
 
-/* Command/data input.  */
 static void st7789v_cd(void *opaque, int n, int level)
 {
     st7789v_state *s = (st7789v_state *)opaque;
-    // printf("st7789v mode %s\n", level ? "Data" : "Command");
     s->mode = level ? ST7789V_DATA : ST7789V_CMD;
     s->byte_msb = false;
 }
-void st7789v_write_png(st7789v_state *s, const char* file);
-void st7789v_write_png(st7789v_state *s, const char* file)
+
+static void st7789v_write_png(st7789v_state *s, const char* file)
 {
     FILE *handle = fopen(file, "wb");
     if (!handle)
@@ -303,62 +297,6 @@ static int st7789v_process_action(P404ScriptIF *obj, unsigned int action, script
     }
 }
 
-// static int st7789v_post_load(void *opaque, int version_id)
-// {
-//     st7789v_state *s = (st7789v_state *)opaque;
-
-//     if (s->cmd_len > ARRAY_SIZE(s->cmd_data)) {
-//         return -EINVAL;
-//     }
-//     if (s->row < 0 || s->row >= 80) {
-//         return -EINVAL;
-//     }
-//     if (s->row_start < 0 || s->row_start >= 80) {
-//         return -EINVAL;
-//     }
-//     if (s->row_end < 0 || s->row_end >= 80) {
-//         return -EINVAL;
-//     }
-//     if (s->col < 0 || s->col >= 64) {
-//         return -EINVAL;
-//     }
-//     if (s->col_start < 0 || s->col_start >= 64) {
-//         return -EINVAL;
-//     }
-//     if (s->col_end < 0 || s->col_end >= 64) {
-//         return -EINVAL;
-//     }
-//     if (s->mode != ST7789V_CMD && s->mode != ST7789V_DATA) {
-//         return -EINVAL;
-//     }
-
-//     return 0;
-// }
-
-// static const VMStateDescription vmstate_st7789v = {
-//     .name = "st7789v",
-//     .version_id = 2,
-//     .minimum_version_id = 2,
-//     .post_load = st7789v_post_load,
-//     .fields      = (VMStateField []) {
-//         VMSTATE_UINT32(cmd_len, st7789v_state),
-//         VMSTATE_INT32(cmd, st7789v_state),
-//         VMSTATE_INT32_ARRAY(cmd_data, st7789v_state, 8),
-//         VMSTATE_INT32(row, st7789v_state),
-//         VMSTATE_INT32(row_start, st7789v_state),
-//         VMSTATE_INT32(row_end, st7789v_state),
-//         VMSTATE_INT32(col, st7789v_state),
-//         VMSTATE_INT32(col_start, st7789v_state),
-//         VMSTATE_INT32(col_end, st7789v_state),
-//         VMSTATE_INT32(redraw, st7789v_state),
-//         VMSTATE_INT32(remap, st7789v_state),
-//         VMSTATE_UINT32(mode, st7789v_state),
-//         VMSTATE_BUFFER(framebuffer, st7789v_state),
-//         VMSTATE_SSI_SLAVE(ssidev, st7789v_state),
-//         VMSTATE_END_OF_LIST()
-//     }
-// };
-
 static const GraphicHwOps st7789v_ops = {
     .invalidate  = st7789v_invalidate_display,
     .gfx_update  = st7789v_update_display,
@@ -399,7 +337,6 @@ static void st7789v_realize(SSISlave *d, Error **errp)
 
 static void st7789v_class_init(ObjectClass *klass, void *data)
 {
-    // DeviceClass *dc = DEVICE_CLASS(klass);
     SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
@@ -408,5 +345,4 @@ static void st7789v_class_init(ObjectClass *klass, void *data)
     k->realize = st7789v_realize;
     k->transfer = st7789v_transfer;
     k->cs_polarity = SSI_CS_LOW;
-   // dc->vmsd = &vmstate_st7789v;
 }

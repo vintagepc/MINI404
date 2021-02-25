@@ -3,9 +3,10 @@
     it just ticks the temperature "up" at a determined rate when active on PWM and down in
     in an exponential curve when off.
 
-	Copyright 2020 VintagePC <https://github.com/vintagepc/>
+	Original (C) 2020 VintagePC <https://github.com/vintagepc/>
+    Adapted to QEMU/C in 2021
 
- 	This file is part of MINI404 (Adapted from MK404 for QEMU)
+ 	This file is part of MINI404 
 
 	MINI404 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -47,7 +48,7 @@ struct heater_state {
     float thermalMass;
     float ambientTemp;
     float currentTemp;
-    // bool m_bIsBed = false;
+
     uint8_t chrLabel;
     uint16_t pwm, lastpwm, timeout_level;
 
@@ -75,16 +76,14 @@ enum {
 
 static void heater_softpwm_timeout(void* opaque)
 {
-    // printf("timeout\n");
     heater_state *s = opaque;
     s->pwm = s->timeout_level;
-        // Tickle timer if turned off.
+    // Tickle timer if turned off.
     if (!s->is_ticking) // Start the heater. 
     {
         timer_mod(s->temp_tick,qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1); 
         s->is_ticking = true;
     }
-    //s->last_on = 0;
 }
 
 
@@ -96,7 +95,7 @@ static void heater_temp_tick_expire(void *opaque)
 
     qemu_set_irq(s->pwm_out, usedpwmval);
     uint64_t tNow = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
-    if (usedpwmval || s->lastpwm>0)// || (pAVR->cycle-m_cntOff)<(pAVR->frequency/100))
+    if (usedpwmval || s->lastpwm>0)
     {
         float pwmval = (usedpwmval>s->lastpwm)? usedpwmval : s->lastpwm;
         float fDelta = (s->thermalMass*(pwmval/255.0f))*updaterate;
@@ -109,21 +108,17 @@ static void heater_temp_tick_expire(void *opaque)
         float dT = (s->currentTemp - s->ambientTemp)*pow(2.7183,-0.005*updaterate);
         s->currentTemp -= s->currentTemp - (s->ambientTemp + dT);
     }
-	// m_iDrawTemp = s->currentTemp;
 
     if (usedpwmval || s->currentTemp>s->ambientTemp+0.3)
 	{
-        //  if (s->chrLabel =='E')printf("Resched %u\n",s->pwm);
         timer_mod(s->temp_tick, tNow+250);
 	}
     else
     {
         s->is_ticking = false;
         s->currentTemp = s->ambientTemp;
-        //qemu_set_irq(s->temp_out, s->currentTemp*256.f);
     }
     qemu_set_irq(s->temp_out, s->currentTemp*256.f);
-    // printf("Temp: %f\n",s->currentTemp);
 }
 
 
@@ -134,7 +129,6 @@ static void heater_pwm_change(void* opaque, int n, int level)
     uint64_t tNow = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
     if (level)
     {
-        // if (s->last_on && s->chrLabel == 'E') printf("Total period: %lu\n", tNow - s->last_on);
         s->last_on = tNow;
         s->timeout_level = 255;
         timer_mod(s->softpwm_timeout, tNow+500);
@@ -149,7 +143,6 @@ static void heater_pwm_change(void* opaque, int n, int level)
     // Tickle timer if turned off.
     if (!s->is_ticking) // Start the heater. 
     {
-        // if (s->chrLabel =='E') printf("Tick start\n");
         timer_mod(s->temp_tick,tNow + 1); 
         s->is_ticking = true;
     }
@@ -237,7 +230,6 @@ static void heater_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = heater_reset;
     device_class_set_props(dc, heater_properties);
-    // dc->vmsd = &vmstate_heater;
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = heater_process_action;
