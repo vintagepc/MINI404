@@ -17,6 +17,9 @@
 #include "qemu/module.h"
 #include "hw/sysbus.h"
 #include "qom/object.h"
+#include "../utility/macros.h"
+#include "../utility/p404scriptable.h"
+#include "../utility/ScriptHost_C.h"
 
 //#define DEBUG_TMC2209 1
 
@@ -184,6 +187,10 @@ struct tmc2209_state {
     
 };
 
+enum {
+    ActGetPosFloat
+};
+
 #define TYPE_TMC2209 "tmc2209"
 OBJECT_DECLARE_SIMPLE_TYPE(tmc2209_state, TMC2209)
 
@@ -233,6 +240,21 @@ static float tmc2209_step_to_pos(int32_t step, uint32_t max_steps_per_mm)
 //         qemu_set_irq(s->irq_diag, value == s->regs.defs.GCONF.diag0_int_pushpull);
 // 	}
 // }
+
+static int tmc2209_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
+{
+    tmc2209_state *s = TMC2209(obj);
+    switch (action)
+    {
+        case ActGetPosFloat:
+            script_print_float(s->current_position);
+            break;
+        default:
+            return ScriptLS_Unhandled;
+
+    }
+    return ScriptLS_Finished;
+}
 
 // Fired on standstill. set the STST flag and clear DIAG
 static void tmc2209_standstill_timer(void *opaque)
@@ -360,6 +382,18 @@ static void tmc2209_receive(void *opaque, int n, int level)
     }
 }
 
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(tmc2209_state, tmc2209, TMC2209, SYS_BUS_DEVICE,{TYPE_P404_SCRIPTABLE}, {NULL});
+
+static void tmc2209_finalize(Object *obj){
+}
+
+static void tmc2209_realize(DeviceState *obj, Error **errp){
+    tmc2209_state *s = TMC2209(obj);
+    const char buffer[2] = {s->id, '\0'};
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(s), &buffer[0]);
+    script_register_action(pScript, "GetPosFloat","Reports current position in mm.",ActGetPosFloat);
+    scripthost_register_scriptable(pScript);
+}
 
 static void tmc2209_init(Object *obj){
 
@@ -391,8 +425,8 @@ static void tmc2209_init(Object *obj){
     s->standstill =
         timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)tmc2209_standstill_timer, s);
-}
 
+}
 
 static Property tmc2209_properties[] = {
     DEFINE_PROP_UINT8("axis", tmc2209_state, id,(uint8_t)' '),
@@ -408,21 +442,24 @@ static void tmc2209_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, tmc2209_properties);
+    dc->realize = tmc2209_realize;
    // dc->vmsd = &vmstate_tmc2209;
+    P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
+    sc->ScriptHandler = tmc2209_process_action;
 }
 
-static const TypeInfo tmc2209_info = {
-    .name          = TYPE_TMC2209,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(tmc2209_state),
-    .class_init    = tmc2209_class_init,
-    .instance_init = tmc2209_init
-};
+// static const TypeInfo tmc2209_info = {
+//     .name          = TYPE_TMC2209,
+//     .parent        = TYPE_SYS_BUS_DEVICE,
+//     .instance_size = sizeof(tmc2209_state),
+//     .class_init    = tmc2209_class_init,
+//     .instance_init = tmc2209_init
+// };
 
-static void tmc2209_register_types(void)
-{
-    type_register_static(&tmc2209_info);
-}
+// static void tmc2209_register_types(void)
+// {
+//     type_register_static(&tmc2209_info);
+// }
 
-type_init(tmc2209_register_types)
+// type_init(tmc2209_register_types)
 ;

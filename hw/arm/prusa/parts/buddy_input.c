@@ -193,10 +193,9 @@ static int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, sc
         case ACT_TWIST:
         {
             int dir = scripthost_get_int(args, 0);
-            if (dir<0) {
-                buddy_input_keyevent(s, 0x50);
-            } else {
-                buddy_input_keyevent(s, 0x48);
+            int keycode = dir < 0 ? 0x50 : 0x48;
+            for (dir = abs(dir); dir > 0; dir--) {
+                buddy_input_keyevent(s, keycode);
             }
             break;
         }

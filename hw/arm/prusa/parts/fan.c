@@ -1,23 +1,23 @@
 /*
-    Fan.cpp - Simple fan tach sim for Einsy Rambo
+    fan.c - Simple fan tach sim for Einsy Rambo
 
-	Copyright 2020 VintagePC <https://github.com/vintagepc/>
+	Original copyright 2020 VintagePC <https://github.com/vintagepc/> as part of MK404
+    Ported to C/QEMU in 2020.
 
- 	This file is part of MK404.
-    Modified for Qemu...
+ 	This file is part of Mini404.
 
-	MK404 is free software: you can redistribute it and/or modify
+	Mini404 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
 	the Free Software Foundation, either version 3 of the License, or
 	(at your option) any later version.
 
-	MK404 is distributed in the hope that it will be useful,
+	Mini404 is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with MK404.  If not, see <http://www.gnu.org/licenses/>.
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
@@ -59,7 +59,8 @@ struct  fan_state //:public SoftPWMable, public Scriptable
 
 enum {
     ActResume,
-    ActStall
+    ActStall,
+    ActGetRPM,
 };
 
 // FIXME/HACK - E fan is nonlinear in the RPM vs PWM.
@@ -152,14 +153,21 @@ static void fan_pwm_change_soft(void *opaque, int n, int level)
 
 static int fan_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {
     fan_state *s = FAN(obj);
-    if (action == ActStall) {
-        s->is_stalled = true;
-    } else if (action == ActResume) {
-        s->is_stalled = false;
-    } else  {
-        return ScriptLS_Unhandled;
+    switch (action) {
+        case ActStall:
+            s->is_stalled = true;
+            break;
+        case ActResume:
+            s->is_stalled = false;
+            break;
+        case ActGetRPM:
+            script_print_int( s->is_stalled? 0 : s->current_rpm);   
+            break;
+        default:
+            return ScriptLS_Unhandled;
     }
     return ScriptLS_Finished;
+
 }
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(fan_state, fan, FAN, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
@@ -187,9 +195,10 @@ static void fan_init(Object *obj){
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 
-    void* pScript = script_instance_new(P404_SCRIPTABLE(s), "fan");
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(s), "fan");
     script_register_action(pScript, "Stall","Stalls the fan tachometer",ActStall);
     script_register_action(pScript, "Resume","Resumes a stalled fan.",ActResume);
+    script_register_action(pScript, "GetRPM","Reports the current RPM",ActGetRPM);
     scripthost_register_scriptable(pScript);
 
 }

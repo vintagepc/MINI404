@@ -51,7 +51,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ScriptConsoleState, P404_SCRIPT_CONSOLE)
 
 
 extern int scripthost_run(int64_t iTime);
-extern bool scripthost_setup(const char* strScript);
+extern bool scripthost_setup(const char* strScript, void *pConsole);
 
 
 static int scriptcon_can_read(void* opaque) {
@@ -125,6 +125,12 @@ static void GCC_FMT_ATTR(2, 3) scriptcon_printf(void *opaque,
     }
     // qemu_chr_fe_write_all(&s->be, (uint8_t*)buf, strlen(buf));
     g_free(buf);
+}
+
+extern void scriptcon_print_out(void* opaque, const char *str);
+
+extern void scriptcon_print_out(void* opaque, const char *str) {
+    scriptcon_printf(opaque, "%s\n",str);
 }
 
 static void scriptcon_flush(void *opaque)
@@ -228,7 +234,7 @@ static void scriptcon_init(Object *obj)
 
     const char* script = arghelper_get_string("script");
 
-    if (scripthost_setup(script)) // TODO- move scripthost out of this input handler?
+    if (scripthost_setup(script, obj)) // TODO- move scripthost out of this input handler?
     {
         // Start script timer
         timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
