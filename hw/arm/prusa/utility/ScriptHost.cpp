@@ -763,7 +763,7 @@ std::set<std::string> ScriptHost::OnAutoComplete_C(std::string strCmd) {
 	if (pNext == m_strGLAutoC.end()) {
 		return strMatches;
 	}
-	while (pNext->rfind(strCmd,0)==0) {
+	while (pNext->rfind(strCmd,0)==0 && pNext!=m_strGLAutoC.end()) {
 		strMatches.insert(*pNext);
 		pNext++;
 	}
@@ -771,6 +771,10 @@ std::set<std::string> ScriptHost::OnAutoComplete_C(std::string strCmd) {
 }
 
 void ScriptHost::OnCommand_C(std::string strCmd) {
+	if (strCmd.empty())
+	{
+		return;
+	}
 	std::lock_guard<std::mutex> lck (m_lckScript);
 	m_script.push_back(strCmd);
 }
