@@ -32,7 +32,7 @@ struct ScriptConsoleState {
 
     CharBackend be;
 
-    char* inputtype;
+    bool disable_echo;
 
     bool is_vc;
 
@@ -96,6 +96,13 @@ static void scriptcon_autocomplete(void *opaque,
     readline_set_completion_index(s->rl_state, strlen(cmdline));
     scripthost_autocomplete(opaque, cmdline, scriptcon_auto_return);
 }
+
+// Dummy handler for disabled echo mode. 
+static void GCC_FMT_ATTR(2, 3) scriptcon_dummy_printf(void *opaque,
+                                                       const char *fmt, ...)
+                                                       {
+
+                                                       }
 
 static void GCC_FMT_ATTR(2, 3) scriptcon_printf(void *opaque,
                                                        const char *fmt, ...)
@@ -238,10 +245,17 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
         return;
     }
     qemu_chr_fe_init(&s->be, s->input_source, errp);
+    if (s->disable_echo) {
+        s->rl_state = readline_init(scriptcon_dummy_printf,
+                            scriptcon_flush,
+                            s,
+                            scriptcon_autocomplete);
+    } else {
         s->rl_state = readline_init(scriptcon_printf,
                             scriptcon_flush,
                             s,
                             scriptcon_autocomplete);
+    }
     qemu_chr_fe_set_handlers(&s->be, scriptcon_can_read, scriptcon_read, scriptcon_event, NULL, s, NULL, true);
     scriptcon_read_command(s);
 
@@ -264,7 +278,7 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 }
 
 static Property scriptcon_properties[] = {
-    DEFINE_PROP_STRING("inputtype", ScriptConsoleState, inputtype),
+    DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
