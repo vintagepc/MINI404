@@ -1,3 +1,23 @@
+/*
+    stm32f4xx_otp.c - OTP block for STM32F4xx
+
+	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+
+ 	This file is part of Mini404.
+
+	Mini404 is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	Mini404 is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "stm32f4xx_otp.h"
 #include "qemu/log.h"
@@ -24,8 +44,6 @@ stm32f4xx_otp_read(void *arg, hwaddr addr, unsigned int size)
     uint32_t value = s->data[addr];
 
     r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
-
-    //printf("otp read %" PRIx64 ", %x\n", addr, r);
 
     return r;
 }
@@ -87,11 +105,13 @@ static void
 stm32f4xx_otp_init(Object *obj)
 {
     Stm32f4xx_OTP *s = STM32F4XX_OTP(obj);
-    // memory_region_init_ram_from_file
     memory_region_init_io(&s->iomem, obj, &stm32f4xx_otp_ops, s, "otp", OTP_SIZE * 4u);
     s->iomem.readonly = true;
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
+    // Some defaults for Mini404. 
+    // TODO - abstract this out as properties or use file backend
+    // if you want anything other than blank. 
     s->data[0] = 0x00040004;
     s->data[1] = 1081065844;
     s->data[2] = 0x56207942;

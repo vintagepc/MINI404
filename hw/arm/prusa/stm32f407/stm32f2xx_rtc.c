@@ -1,5 +1,6 @@
 /*-
- * Copyright (c) 2013
+ * Copyright (c) 2013 https://github.com/pebble/qemu/
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

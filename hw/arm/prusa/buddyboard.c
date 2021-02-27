@@ -187,7 +187,6 @@ static void buddy_init(MachineState *machine)
 
         }
 
-        // qdev_connect_gpio_out_named(DEVICE(&SOC->usart2),"tmc2209_usart_cs",0, qdev_get_gpio_in_named(tmc, SSI_GPIO_CS, 0));
     }
 
     uint16_t startvals[] = {18,18, 25, 512, 512};

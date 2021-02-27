@@ -1,4 +1,23 @@
-// F4xx IWDG
+/*
+    stm32f4xx_iwdg.c - IWDG for STM32F4xx
+
+	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+
+ 	This file is part of Mini404.
+
+	Mini404 is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	Mini404 is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "stm32f4xx_iwdg.h"
 #include "stm32_rcc.h"
@@ -55,7 +74,6 @@ stm32f4xx_iwdg_read(void *arg, hwaddr addr, unsigned int size)
 }
 
 static void stm32f4xx_iwdg_fire(void *opaque) {
-    // stm32f4xx_iwdg *s = opaque;
     printf("Watchdog fired without guest update, resetting!\n");
     qapi_event_send_watchdog(WATCHDOG_ACTION_RESET);
     qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);

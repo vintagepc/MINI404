@@ -1,5 +1,7 @@
 /*-
- * Copyright (c) 2013
+ * QEMU crc emulation
+ * Copyright (c) 2013 https://github.com/pebble/qemu/
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -19,9 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-/*
- * QEMU crc emulation
- */
+
 #include "stm32f2xx_crc.h"
 #include "qemu/log.h"
 
@@ -192,17 +192,11 @@ f2xx_crc_reset(DeviceState *ds)
     s->crc = R_CRC_DR_RESET;
 }
 
-// static Property f2xx_crc_properties[] = {
-//     DEFINE_PROP_END_OF_LIST(),
-// };
-
 static void
 f2xx_crc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = f2xx_crc_reset;
-    //TODO: fix this: dc->no_user = 1;
-    // dc->props = f2xx_crc_properties;
 }
 
 static const TypeInfo

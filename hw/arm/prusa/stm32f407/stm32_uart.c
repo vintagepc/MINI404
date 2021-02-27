@@ -2,6 +2,7 @@
  * STM32 Microcontroller UART module
  *
  * Copyright (C) 2010 Andre Beckus
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Source code based on pl011.c
  * Implementation based on ST Microelectronics "RM0008 Reference Manual Rev 10"

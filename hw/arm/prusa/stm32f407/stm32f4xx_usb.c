@@ -1,7 +1,9 @@
 /*
  * OTG (STM32F4xx) USB host controller emulation
  *
- * Based on hw/usb/hcd-dwc2.c
+ * Original Copyright (c) 2020 Paul Zimmerman <pauldzim@gmail.com>
+ * Based on hw/usb/hcd-dwc2.c as shipped with QEMU
+ * Adapted for Mini404/STM32F4xx 2021 by VintagePC <http://github.com/vintagepc>
  *
  * Some useful documentation used to develop this emulation can be
  * found online (as of April 2020) at:
@@ -13,9 +15,6 @@
  * https://sourceforge.net/p/wive-ng/wive-ng-mt/ci/master/tree/docs/DataSheets/RT3050_5x_V2.0_081408_0902.pdf
  * which has a description of the controller registers starting on
  * page 130.
- *
- * Original Copyright (c) 2020 Paul Zimmerman <pauldzim@gmail.com>
- * Adapted to work with STM32F4 by VintagePC <http://github.com/vintagepc>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

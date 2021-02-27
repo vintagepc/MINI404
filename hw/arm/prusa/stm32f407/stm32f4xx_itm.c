@@ -1,27 +1,24 @@
-/*-
- * Copyright (c) 2020 VintagePC
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
 /*
- * QEMU model of the stm32f2xx ITM module
+    stm32f4xx_itm.h - ITM Debug channel for STM32
+
+	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+
+ 	This file is part of Mini404.
+
+	Mini404 is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	Mini404 is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 #include "stm32f4xx_itm.h"
 #include "hw/irq.h"
 #include "qemu/log.h"
@@ -46,7 +43,6 @@ stm32f4xx_itm_read(void *arg, hwaddr offset, unsigned int size)
 
     offset >>= 2;
     r = s->regs[offset];
-//printf("ITM unit %d reg %x return 0x%x\n", s->periph, (int)offset << 2, r);
     if (offset == R_ITM_PORT_BASE)
         r = 1; // never return 0 since we can always take data.
     return r;
@@ -71,8 +67,6 @@ stm32f4xx_itm_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
        break;
     case 2:
         qemu_log_mask(LOG_UNIMP, "f4xx-ITM - writes !=32bits are not implemented.\n");
-        //break;
-        //data = (s->regs[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
         return;
         break;
     case 4:
@@ -107,8 +101,7 @@ stm32f4xx_itm_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             break;
         default:
             qemu_log_mask(LOG_UNIMP, "f2xx ITM reg 0x%x:%d write (0x%x) unimplemented\n",
-         (int)addr << 2, offset, (int)data);
-            //s->regs[addr] = data;
+            (int)addr << 2, offset, (int)data);
             break;
     }
 }

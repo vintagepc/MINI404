@@ -1,5 +1,7 @@
 /*-
- * Copyright (c) 2013
+ * Copyright (c) 2013 <https://github.com/pebble/qemu>
+ * Adapted for Mini404 in 2020 VintagePC <github.com/vinagepc>
+ * (Significant portions rewritten and updated)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

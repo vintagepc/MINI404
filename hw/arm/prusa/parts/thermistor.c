@@ -76,8 +76,6 @@ static void thermistor_read_request(void *opaque, int n, int level) {
 				float delta = value - s->table[i+1];
 				tt = s->table[i] + (d_adc * (delta / d_temp));
 			}
-			// if (m_adc_mux_number==-1)
-			// 	printf("simAVR ADC out value: %u\n",((tt / m_oversampling) * 5000) / 0x3ff);
 			int value = (((tt / s->oversampling)));
 			qemu_set_irq(s->irq_value,value);
             return;
@@ -191,9 +189,7 @@ static void thermistor_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->reset = thermistor_reset;
-    // dc->props = thermistor_properties;
     device_class_set_props(dc, thermistor_properties);
-    // dc->vmsd = &vmstate_thermistor;
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = thermistor_process_action;

@@ -4,7 +4,7 @@
  * Based on hw/usb/hcd-dwc2.h
  *
  * Original Copyright (c) 2020 Paul Zimmerman <pauldzim@gmail.com>
- * Adapted for STM32F4xx by VintagePC <http://github.com/vintagepc>
+ * Adapted for STM32F4xx in 2021 by VintagePC <http://github.com/vintagepc>
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

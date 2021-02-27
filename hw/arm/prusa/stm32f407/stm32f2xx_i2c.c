@@ -1,7 +1,9 @@
-/*-
- * Copyright (c) 2013
- * Adapted for qemu 5.x 2020 VintagePC <github.com/vinagepc>
- * Based on pebble qemu i2c implementation.
+/*
+ * STM32F2XX I2C
+ * 
+ * Copyright (c) 2013 <https://github.com/pebble/qemu>
+ * Adapted for Mini404 in 2020 VintagePC <github.com/vinagepc>
+ * (Significant portions rewritten and updated)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,9 +22,6 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- */
-/*
- * QEMU model of the stm32f2xx I2C controller.
  */
 
 #include "qemu/osdep.h"
@@ -352,19 +351,3 @@ stm32f2xxi2c_class_init(ObjectClass *c, void *data)
     DeviceClass *dc = DEVICE_CLASS(c);
     dc->reset = stm32f2xxi2c_reset;
 }
-
-// static const TypeInfo stm32f2xxi2c_info = {
-//     .name = TYPE_STM32F2XX_I2C,
-//     .parent = TYPE_SYS_BUS_DEVICE,
-//     .instance_size = sizeof(STM32F2XXI2CState),
-//     .instance_init = stm32f2xxi2c_init,
-//     .class_init = stm32f2xxi2c_class_init
-// };
-
-// static void
-// stm32f2xxi2c_register_types(void)
-// {
-//     type_register_static(&stm32f2xxi2c_info);
-// }
-
-// type_init(stm32f2xxi2c_register_types)

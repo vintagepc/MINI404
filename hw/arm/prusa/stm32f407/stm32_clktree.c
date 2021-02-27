@@ -2,6 +2,7 @@
  * Basic Clock Tree Building Blocks
  *
  * Copyright (C) 2012 Andre Beckus
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Source code roughly based on omap_clk.c
  *
