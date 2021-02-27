@@ -1,8 +1,7 @@
 /*
- * STM32F405 SPI
- *
- * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me> 
- * Portions ported from the Pebble Qemu version.
+ * STM32F4XX SPI
+ * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Modified/bugfixed for Mini404 by VintagePC 2021 (http://github.com/vintagepc/)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

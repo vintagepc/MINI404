@@ -2,7 +2,8 @@
  * STM32 Microcontroller RCC (Reset and Clock Control) module
  *
  * Copyright (C) 2010 Andre Beckus
- *
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
+
  * Source code based on omap_clk.c
  * Implementation based on ST Microelectronics "RM0008 Reference Manual Rev 10"
  *

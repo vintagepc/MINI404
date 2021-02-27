@@ -1,7 +1,8 @@
 /*
- * STM32F405 SoC
+ * STM32F407 SoC
  *
- * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Original F405 base (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Modified and adapted for Mini404/F407 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,7 +45,6 @@
 #include "stm32f4xx_spi.h"
 #include "stm32f2xx_tim.h"
 #include "stm32f4xx_otp.h"
-// #include "tmc2209_usart.h"
 #include "stm32f4xx_usb.h"
 #include "hw/arm/armv7m.h"
 #include "stm32_uart.h"

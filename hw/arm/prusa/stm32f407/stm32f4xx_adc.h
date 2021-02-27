@@ -2,7 +2,7 @@
  * STM32F4XX ADC
  *
  * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
- * based on stock f2xx adc, Modified by vintagepc...
+ * Modified/bugfixed for Mini404 2021 by VintagePC <http://github.com/vintagepc>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

@@ -1,8 +1,8 @@
 /*
  * STM32F407 SoC
  *
- * Modified for Buddy/Prusa Mini 2020 VintagePC <github.com/vintagepc>
- * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Original F405 base (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Modified and adapted for Mini404/F407 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -99,7 +99,6 @@ static void stm32f407_soc_initfn(Object *obj)
                                 TYPE_STM32_UART);
     }
 
-    //object_initialize_child(obj, "usart2", &s->usart2, TYPE_TMC2209_USART);
 
     // object_initialize_child(obj, "uart2", &s->uart2, TYPE_STM32_UART);
 

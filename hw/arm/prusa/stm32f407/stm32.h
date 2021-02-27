@@ -2,6 +2,7 @@
  * STM32 Microcontroller
  *
  * Copyright (C) 2010 Andre Beckus
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Implementation based on ST Microelectronics "RM0008 Reference Manual Rev 10"
  *

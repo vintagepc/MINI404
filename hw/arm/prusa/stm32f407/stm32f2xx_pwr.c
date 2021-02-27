@@ -1,5 +1,7 @@
 /*-
- * Copyright (c) 2014
+ * QEMU stm32f2xx PWR emulation
+ * Copyright (c) 2014 https://github.com/pebble/qemu/
+ * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -19,9 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-/*
- * QEMU stm32f2xx PWR emulation
- */
+
 
 #include "stm32f2xx_pwr.h"
 #include "qemu/log.h"
