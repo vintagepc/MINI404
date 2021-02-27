@@ -407,10 +407,10 @@ babble:
                     memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
                     s->rx_fifo_tail += words;
                 }
-                printf("USB RX %u: ", actual);
-                for (int i=0; i<actual; i++)
-                    printf("%02x ",s->usb_buf[chan][i]);
-                printf("\n");
+                // printf("USB RX %u: ", actual);
+                // for (int i=0; i<actual; i++)
+                //     printf("%02x ",s->usb_buf[chan][i]);
+                // printf("\n");
                 s->rx_fifo_level += words;
                 assert(s->rx_fifo_tail <= 32768); // Fix this you lazy lump...
           
@@ -443,7 +443,7 @@ babble:
         } 
 
         tpcnt = actual / mps;
-        if (actual % mps) {
+        if (actual % mps || tlen==0) {
             tpcnt++;
             if (pid == USB_TOKEN_IN) {
                 done = true;
