@@ -235,7 +235,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           mv Mini404-dev Mini404-${{ steps.get_version.outputs.VERSION }}
-          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-multiplatform.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}
+          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}
 
       - name: RELEASE THE KRAKEN
         if: startsWith(github.ref, 'refs/tags/v')
@@ -244,11 +244,11 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false
           files: |
-            Mini404-${{ steps.get_version.outputs.VERSION }}-multiplatform.tar.bz2
+            Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2
 
       - name: Rebuild dev tarball
         if: steps.get_version.outcome == 'Skipped'
-        run: tar -jcvf Mini404-dev-multiplatform.tar.bz2 Mini404-dev
+        run: tar -jcvf Mini404-dev-linux.tar.bz2 Mini404-dev
 
       - name: Publish prerelease
         if: steps.get_version.outcome == 'Skipped'
@@ -259,4 +259,4 @@ jobs:
           prerelease: true
           title: "Latest (Development) Build"
           files: |
-            Mini404-dev-multiplatform.tar.bz2
+            Mini404-dev-linux.tar.bz2
