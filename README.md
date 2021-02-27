@@ -20,5 +20,8 @@ See [Platforms supported](https://github.com/vintagepc/MINI404/wiki/Supported-Op
 ### Reference documentation:
 Advanced documentation has moved to the [Wiki](https://github.com/vintagepc/MINI404/wiki):
 * [Nonstandard Argument reference](https://github.com/vintagepc/MINI404/wiki/Custom-command-line-arguments)
-
 * [Script command reference](https://github.com/vintagepc/MINI404/wiki/Scripting)
+* [Original QEMU README](README.rst)
+
+## Backporting? 
+If you are interested in pulling the STM32 support changes upstream, please see [Backporting](https://github.com/vintagepc/MINI404/wiki/Backporting-and-Upstream-Contributions)
