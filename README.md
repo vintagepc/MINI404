@@ -1,4 +1,4 @@
-# MINI404 - PRINTER NOT FOUND (AKA MK404 but for STM32/Prusa Buddy board)
+# MINI404 - PRINTER NOT FOUND
 A project/repo for simulating the Prusa Mini hardware.
 
 *Summary status:* "Mostly" functional, it runs stock firmware very close to the real thing. Be sure to check out the [wiki](https://github.com/vintagepc/MINI404/wiki) for more technical details.
