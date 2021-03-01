@@ -133,10 +133,10 @@ struct desc {
     uint16_t buffer1_size;
     uint16_t buffer2_size;
     uint32_t buffer1_addr;
-    uint32_t buffer2_addr;
+    uint32_t buffer2_nextdescaddr;
     uint32_t ext_stat;
     uint32_t res[3];
-};
+} QEMU_PACKED;
 
 #define R_MAX 0x1400/4
 
@@ -190,7 +190,7 @@ struct Stm32F4xx_Eth {
 };
 
 // static const VMStateDescription vmstate_rxtx_stats = {
-//     .name = "xgmac_stats",
+//     .name = "stm32f4xx_eth_stats",
 //     .version_id = 1,
 //     .minimum_version_id = 1,
 //     .fields = (VMStateField[]) {
@@ -214,26 +214,33 @@ struct Stm32F4xx_Eth {
 //     }
 // };
 
-static void xgmac_read_desc(Stm32F4xx_Eth *s, struct desc *d, int rx)
+static void stm32f4xx_eth_read_desc(Stm32F4xx_Eth *s, struct desc *d, int rx)
 {
     uint32_t addr = rx ? s->regs[DMA_CUR_RX_DESC_ADDR] :
         s->regs[DMA_CUR_TX_DESC_ADDR];
     cpu_physical_memory_read(addr, d, sizeof(*d));
 }
 
-static void xgmac_write_desc(Stm32F4xx_Eth *s, struct desc *d, int rx)
+static void stm32f4xx_eth_write_desc(Stm32F4xx_Eth *s, struct desc *d, int rx)
 {
     int reg = rx ? DMA_CUR_RX_DESC_ADDR : DMA_CUR_TX_DESC_ADDR;
     uint32_t addr = s->regs[reg];
+    // Need to write back to the same place, not the next slot for TX!
+    if (!rx) cpu_physical_memory_write(addr, d, sizeof(*d));
+    
+    s->regs[reg] = d->buffer2_nextdescaddr;
 
-    if (!rx && (d->ctl_stat & 0x00200000)) {
-        s->regs[reg] = s->regs[DMA_TX_BASE_ADDR];
-    } else if (rx && (d->buffer1_size & 0x8000)) {
-        s->regs[reg] = s->regs[DMA_RCV_BASE_ADDR];
-    } else {
-        s->regs[reg] += sizeof(*d);
-    }
-    cpu_physical_memory_write(addr, d, sizeof(*d));
+    // STM doesn't use these flags ATM, it is set up in "second address chained" mode. 
+    // Leaving this here in case it changes with a HAL upgrade.
+    // if (!rx && (d->ctl_stat & 0x00200000)) {
+    //     s->regs[reg] = s->regs[DMA_TX_BASE_ADDR];
+    // } else if (rx && (d->buffer1_size & 0x8000)) {
+    //     s->regs[reg] = s->regs[DMA_RCV_BASE_ADDR];
+    // } else {
+    //     s->regs[reg] += sizeof(*d);
+    // }
+
+    if (rx) cpu_physical_memory_write(addr, d, sizeof(*d));
 }
 
 static void stm32f4xx_eth_send(Stm32F4xx_Eth *s)
@@ -247,9 +254,10 @@ static void stm32f4xx_eth_send(Stm32F4xx_Eth *s)
     ptr = frame;
     frame_size = 0;
     while (1) {
-        xgmac_read_desc(s, &bd, 0);
+        stm32f4xx_eth_read_desc(s, &bd, 0);
         if ((bd.ctl_stat & 0x80000000) == 0) {
             /* Run out of descriptors to transmit. Ownership of buffer back to cpu.  */
+            s->regs[DMA_STATUS] |= DMA_STATUS_TU;
             break;
         }
         len = (bd.buffer1_size & 0xfff) + (bd.buffer2_size & 0xfff);
@@ -292,7 +300,7 @@ static void stm32f4xx_eth_send(Stm32F4xx_Eth *s)
                eth_fix_ip4_checksum(frame+14,0x14);            
             }
 
-            printf("Eth TX len %d\n", frame_size);
+            // printf("Eth TX len %d\n", frame_size);
             qemu_send_packet(qemu_get_queue(s->nic), frame, len);
             ptr = frame;
             frame_size = 0;
@@ -300,8 +308,7 @@ static void stm32f4xx_eth_send(Stm32F4xx_Eth *s)
         }
         bd.ctl_stat &= ~0x80000000;
         /* Write back the modified descriptor.  */
-        xgmac_write_desc(s, &bd, 0);
-        s->regs[DMA_STATUS] |= DMA_STATUS_TU;
+        stm32f4xx_eth_write_desc(s, &bd, 0);
     }
 }
 
@@ -355,7 +362,6 @@ static void enet_write(void *opaque, hwaddr addr,
     Stm32F4xx_Eth *s = opaque;
 
     addr >>= 2;
-    // printf("eth wr: %04lx, %" PRIx64 "\n",addr,value);
 
     switch (addr) {
         case R_MACMIIAR:
@@ -374,7 +380,6 @@ static void enet_write(void *opaque, hwaddr addr,
             s->conf.macaddr.a[4] = value;
             break;
         case R_ADDR_LOW(0):
-            printf("MAC updated\n");
             s->conf.macaddr.a[3] = value >>24;
             s->conf.macaddr.a[2] = value >>16;
             s->conf.macaddr.a[1] = value >>8;
@@ -431,7 +436,7 @@ static ssize_t eth_rx(NetClientState *nc, const uint8_t *buf, size_t size)
     if (!eth_can_rx(s)) {
         return -1;
     }
-    printf("Eth RX len %lu\n", size);
+    // printf("Eth RX len %lu\n", size);
 
     unicast = ~buf[0] & 0x1;
     broadcast = memcmp(buf, sa_bcast, 6) == 0;
@@ -442,7 +447,7 @@ static ssize_t eth_rx(NetClientState *nc, const uint8_t *buf, size_t size)
         goto out;
     }
 
-    xgmac_read_desc(s, &bd, 1);
+    stm32f4xx_eth_read_desc(s, &bd, 1);
     if ((bd.ctl_stat & 0x80000000) == 0) {
         s->regs[DMA_STATUS] |= DMA_STATUS_RU | DMA_STATUS_AIS;
         ret = size;
@@ -455,7 +460,7 @@ static ssize_t eth_rx(NetClientState *nc, const uint8_t *buf, size_t size)
     /* Add in the 4 bytes for crc (the real hw returns length incl crc) */
     size += 4;
     bd.ctl_stat = (size << 16) | 0x300;
-    xgmac_write_desc(s, &bd, 1);
+    stm32f4xx_eth_write_desc(s, &bd, 1);
 
     s->stats.rx_bytes += size;
     s->stats.rx++;
@@ -492,7 +497,7 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
     sysbus_init_irq(sbd, &s->mci_irq);
     
     // FIXME - set based on netdev presence!
-    s->is_connected = true;
+    s->is_connected = qemu_find_netdev("mini-eth")!=NULL;
     if (s->is_connected) {
         s->mii[MII_BMSR] |= MII_BMSR_LINK_ST; // link up. 
     }
@@ -510,7 +515,7 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
                                   s->conf.macaddr.a[0];
 }
 
-static Property xgmac_properties[] = {
+static Property stm32f4xx_eth_properties[] = {
     DEFINE_NIC_PROPERTIES(Stm32F4xx_Eth, conf),
     DEFINE_PROP_END_OF_LIST(),
 };
@@ -521,7 +526,7 @@ static void stm32f4xx_eth_class_init(ObjectClass *klass, void *data)
 
     dc->realize = stm32f4xx_eth_realize;
     //dc->vmsd = &vmstate_xgmac;
-    device_class_set_props(dc, xgmac_properties);
+    device_class_set_props(dc, stm32f4xx_eth_properties);
 }
 
 static const TypeInfo stm32f4xx_eth_info = {

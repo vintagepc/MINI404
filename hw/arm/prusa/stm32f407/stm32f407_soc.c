@@ -494,7 +494,11 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     qemu_check_nic_model(&nd_table[0], "stm32f4xx-ethernet");
     dev = qdev_new("stm32f4xx-ethernet");
     qdev_set_nic_properties(dev, &nd_table[0]);
-    qdev_prop_set_string(dev,"netdev","stmeth");
+    if (qemu_find_netdev("mini-eth")!=NULL){
+        qdev_prop_set_string(dev,"netdev","mini-eth");
+    } else {
+        printf("Ethernet disconnected. use -netdev id=mini-eth,[opts...] to connect it.\n");
+    }
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x40028000);
     // ETH GI = 61, Wakeup Exti = 62
