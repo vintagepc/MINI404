@@ -497,7 +497,6 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
     sysbus_init_irq(sbd, &s->mci_irq);
     
     // FIXME - set based on netdev presence!
-    s->is_connected = qemu_find_netdev("mini-eth")!=NULL;
     if (s->is_connected) {
         s->mii[MII_BMSR] |= MII_BMSR_LINK_ST; // link up. 
     }
@@ -517,6 +516,7 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
 
 static Property stm32f4xx_eth_properties[] = {
     DEFINE_NIC_PROPERTIES(Stm32F4xx_Eth, conf),
+    DEFINE_PROP_BOOL("connected", Stm32F4xx_Eth, is_connected, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 

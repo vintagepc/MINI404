@@ -496,6 +496,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     qdev_set_nic_properties(dev, &nd_table[0]);
     if (qemu_find_netdev("mini-eth")!=NULL){
         qdev_prop_set_string(dev,"netdev","mini-eth");
+        qdev_prop_set_bit(dev, "connected", true);
     } else {
         printf("Ethernet disconnected. use -netdev id=mini-eth,[opts...] to connect it.\n");
     }
