@@ -30,6 +30,7 @@
 #include "sysemu/sysemu.h"
 #include "stm32f407_soc.h"
 #include "hw/misc/unimp.h"
+#include "net/net.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "exec/ramblock.h"
 #define SYSCFG_ADD                     0x40013800
@@ -488,6 +489,22 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     }    
     sysbus_mmio_map(SYS_BUS_DEVICE(&s->otg_hs),0,0x40040000UL);
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->otg_hs), 0, qdev_get_gpio_in(armv7m, 77));
+
+
+    qemu_check_nic_model(&nd_table[0], "stm32f4xx-ethernet");
+    dev = qdev_new("stm32f4xx-ethernet");
+    qdev_set_nic_properties(dev, &nd_table[0]);
+    if (qemu_find_netdev("mini-eth")!=NULL){
+        qdev_prop_set_string(dev,"netdev","mini-eth");
+        qdev_prop_set_bit(dev, "connected", true);
+    } else {
+        printf("Ethernet disconnected. use -netdev id=mini-eth,[opts...] to connect it.\n");
+    }
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x40028000);
+    // ETH GI = 61, Wakeup Exti = 62
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(armv7m, 61));
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 1, qdev_get_gpio_in(armv7m, 62));
     // memory_region_add_subregion(system_memory, 0x40040000UL,
     //     sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->otg_hs), 0));
 
