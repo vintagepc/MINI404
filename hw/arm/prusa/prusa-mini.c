@@ -35,12 +35,9 @@
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 
-
-
-
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
-static void buddy_init(MachineState *machine)
+static void prusa_mini_init(MachineState *machine)
 {
     DeviceState *dev;
 
@@ -266,9 +263,26 @@ static void buddy_init(MachineState *machine)
 };
 
 
+static void prusa_mini_machine_init(MachineClass *mc)
+{
+    mc->desc = "Prusa Mini Board";
+    mc->init = prusa_mini_init;
+}
+
+DEFINE_MACHINE("prusa-mini", prusa_mini_machine_init)
+
+
+// TODO - remove this at some point in the future...
+
+static void buddy_init(MachineState *machine)
+{
+    error_setg(&error_fatal, "-machine prusabuddy has been deprecated. Please use -machine prusa-mini instead.\n");
+};
+
+
 static void buddy_machine_init(MachineClass *mc)
 {
-    mc->desc = "Prusa Buddy Board";
+    mc->desc = "Prusa Mini Board (Deprecated)";
     mc->init = buddy_init;
 }
 
