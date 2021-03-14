@@ -50,7 +50,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get purge clang-*
-        sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install clang-5.0 clang-tidy
+        sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install clang-6.0 clang-tidy
         sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev iwyu cppcheck
 
     - name: Cache permissions
