@@ -35,12 +35,9 @@
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 
-
-
-
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
-static void buddy_init(MachineState *machine)
+static void prusa_mini_init(MachineState *machine)
 {
     DeviceState *dev;
 
@@ -144,7 +141,7 @@ static void buddy_init(MachineState *machine)
         qdev_realize(dev, bus, &error_fatal);
     }
 
-    DeviceState *vis = qdev_new("buddy-visuals");
+    DeviceState *vis = qdev_new("mini-visuals");
     sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
    
     {
@@ -245,12 +242,11 @@ static void buddy_init(MachineState *machine)
         qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",4+i));
     }
 
-    dev = qdev_new("buddy-input");
+    dev = qdev_new("encoder-input");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    // dev_get_gpio_out_connector(dev,"buddy-enc-button",0);
-    qdev_connect_gpio_out_named(dev, "buddy-enc-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
-    qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
-    qdev_connect_gpio_out_named(dev, "buddy-enc-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
+    qdev_connect_gpio_out_named(dev, "encoder-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
+    qdev_connect_gpio_out_named(dev, "encoder-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
+    qdev_connect_gpio_out_named(dev, "encoder-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
@@ -266,9 +262,26 @@ static void buddy_init(MachineState *machine)
 };
 
 
+static void prusa_mini_machine_init(MachineClass *mc)
+{
+    mc->desc = "Prusa Mini Board";
+    mc->init = prusa_mini_init;
+}
+
+DEFINE_MACHINE("prusa-mini", prusa_mini_machine_init)
+
+
+// TODO - remove this at some point in the future...
+
+static void buddy_init(MachineState *machine)
+{
+    error_setg(&error_fatal, "-machine prusabuddy has been deprecated. Please use -machine prusa-mini instead.\n");
+};
+
+
 static void buddy_machine_init(MachineClass *mc)
 {
-    mc->desc = "Prusa Buddy Board";
+    mc->desc = "Prusa Mini Board (Deprecated)";
     mc->init = buddy_init;
 }
 

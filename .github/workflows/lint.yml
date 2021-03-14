@@ -15,7 +15,7 @@ jobs:
   # This workflow contains a single job called "build"
   cppcheck:
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -41,7 +41,7 @@ jobs:
       id: cache-pkgs
       with:
           path: "packages"
-          key: "pkgs-linting_1_0"
+          key: "pkgs-linting_1_1"
     - name: Setup cache dir
       if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
       run: mkdir -p packages/partial
@@ -49,8 +49,6 @@ jobs:
     - name: Install packages
       run: |
         sudo apt-get update
-        sudo apt-get purge clang-*
-        sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install clang-5.0 clang-tidy
         sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev iwyu cppcheck
 
     - name: Cache permissions

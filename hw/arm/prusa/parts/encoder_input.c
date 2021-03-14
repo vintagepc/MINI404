@@ -1,5 +1,5 @@
 /*
-    buddy_input.c - Knob and reset button input handler for
+    encoder_input.c - Knob and reset button input handler for
     Mini404.
 
 	Copyright 2021 VintagePC <https://github.com/vintagepc/>
@@ -36,9 +36,9 @@
 #include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-events-run-state.h"
 
-#define TYPE_BUDDY_INPUT "buddy-input"
+#define TYPE_ENCODER_INPUT "encoder-input"
 
-OBJECT_DECLARE_SIMPLE_TYPE(InputState, BUDDY_INPUT)
+OBJECT_DECLARE_SIMPLE_TYPE(InputState, ENCODER_INPUT)
 
 struct InputState {
     SysBusDevice parent_obj;
@@ -63,7 +63,7 @@ enum {
     ACT_RESET
 };
 
-static void buddy_input_keyevent(void *opaque, int keycode)
+static void encoder_input_keyevent(void *opaque, int keycode)
 {
     InputState *s = opaque;
     int dir = 0;
@@ -106,9 +106,9 @@ static void buddy_autorelease_timer_expire(void *opaque)
     qemu_set_irq(s->irq_enc_button,1);
 }
 
-static void buddy_input_timer_expire(void *opaque)
+static void encoder_input_timer_expire(void *opaque)
 {
-    static const uint8_t buddy_input_phases[4] = {0x11, 0x01, 0x00, 0x10};
+    static const uint8_t encoder_input_phases[4] = {0x11, 0x01, 0x00, 0x10};
     InputState *s = opaque;
     if (s->encoder_dir<0){
         s->phase++;
@@ -116,8 +116,8 @@ static void buddy_input_timer_expire(void *opaque)
         s->phase+=3;
     }
     s->phase = s->phase%4;
-    qemu_set_irq(s->irq_enc_a, (buddy_input_phases[s->phase]&0xF0)>0);
-    qemu_set_irq(s->irq_enc_b, (buddy_input_phases[s->phase]&0x0F)>0);
+    qemu_set_irq(s->irq_enc_a, (encoder_input_phases[s->phase]&0xF0)>0);
+    qemu_set_irq(s->irq_enc_b, (encoder_input_phases[s->phase]&0x0F)>0);
     s->encoder_ticks--;
 
     if (s->encoder_ticks>0)
@@ -127,7 +127,7 @@ static void buddy_input_timer_expire(void *opaque)
 
 }
 
-static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int buttons_state)
+static void encoder_input_mouseevent(void *opaque, int dx, int dy, int dz, int buttons_state)
 {
     InputState *s = opaque;
     int changed = buttons_state^s->last_state;
@@ -145,7 +145,7 @@ static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int but
         }
         s->encoder_ticks +=2;
         timer_mod(s->timer,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
-        // printf("phase: %d %d\n",(buddy_input_phases[s->phase]&0xF)>0,(buddy_input_phases[s->phase]&0x0F)>0);
+        // printf("phase: %d %d\n",(encoder_input_phases[s->phase]&0xF)>0,(encoder_input_phases[s->phase]&0x0F)>0);
     }
     if (changed)
     {
@@ -154,8 +154,8 @@ static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int but
 
 }
 
-// static const VMStateDescription vmstate_buddy_input = {
-//     .name = "buddy_input",
+// static const VMStateDescription vmstate_encoder_input = {
+//     .name = "encoder_input",
 //     .version_id = 2,
 //     .minimum_version_id = 2,
 //     .fields = (VMStateField[]) {
@@ -168,26 +168,26 @@ static void buddy_input_mouseevent(void *opaque, int dx, int dy, int dz, int but
 //     }
 // };
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, buddy_input, BUDDY_INPUT, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, encoder_input, ENCODER_INPUT, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
 
 
-static void buddy_input_finalize(Object *obj)
+static void encoder_input_finalize(Object *obj)
 {
     printf("Input_finalize\n");
 }
 
-static void buddy_input_reset(DeviceState *dev)
+static void encoder_input_reset(DeviceState *dev)
 {
-    InputState *s = BUDDY_INPUT(dev);
+    InputState *s = ENCODER_INPUT(dev);
     s->last_state = 0;
     s->phase = 0;
     qemu_irq_lower(s->irq_enc_a);
     qemu_irq_lower(s->irq_enc_b);
 }
 
-static int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
+static int encoder_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
-    InputState *s = BUDDY_INPUT(obj);
+    InputState *s = ENCODER_INPUT(obj);
     switch (action)
     {
         case ACT_TWIST:
@@ -195,12 +195,12 @@ static int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, sc
             int dir = scripthost_get_int(args, 0);
             int keycode = dir < 0 ? 0x50 : 0x48;
             for (dir = abs(dir); dir > 0; dir--) {
-                buddy_input_keyevent(s, keycode);
+                encoder_input_keyevent(s, keycode);
             }
             break;
         }
         case ACT_PUSH:
-            buddy_input_keyevent(s, 0x1c);
+            encoder_input_keyevent(s, 0x1c);
             break;
         case ACT_RESET:
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
@@ -211,21 +211,21 @@ static int buddy_input_process_action(P404ScriptIF *obj, unsigned int action, sc
     return ScriptLS_Finished;
 }
 
-static void buddy_input_init(Object *obj)
+static void encoder_input_init(Object *obj)
 {
-    InputState *s = BUDDY_INPUT(obj);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_button, "buddy-enc-button", 1);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "buddy-enc-a", 1);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "buddy-enc-b", 1);
-    qemu_add_mouse_event_handler(&buddy_input_mouseevent,BUDDY_INPUT(obj),false, "buddy-mouse");
-    qemu_add_kbd_event_handler(&buddy_input_keyevent,s);
+    InputState *s = ENCODER_INPUT(obj);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_button, "encoder-button", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "encoder-a", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "encoder-b", 1);
+    qemu_add_mouse_event_handler(&encoder_input_mouseevent,ENCODER_INPUT(obj),false, "encoder-mouse");
+    qemu_add_kbd_event_handler(&encoder_input_keyevent,s);
 
     s->timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
-                    (QEMUTimerCB *)buddy_input_timer_expire, s);
+                    (QEMUTimerCB *)encoder_input_timer_expire, s);
     s->release = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)buddy_autorelease_timer_expire, s);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_BUDDY_INPUT);
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_ENCODER_INPUT);
 
     script_register_action(pScript, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
     script_add_arg_int(pScript, ACT_TWIST);
@@ -235,13 +235,13 @@ static void buddy_input_init(Object *obj)
     scripthost_register_scriptable(pScript);
 }
 
-static void buddy_input_class_init(ObjectClass *oc, void *data)
+static void encoder_input_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = buddy_input_reset;
-    // dc->realize = buddy_input_realize;
-    // dc->unrealize = buddy_input_unrealize;
+    dc->reset = encoder_input_reset;
+    // dc->realize = encoder_input_realize;
+    // dc->unrealize = encoder_input_unrealize;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
-    sc->ScriptHandler = buddy_input_process_action;
-  //  dc->vmsd = &vmstate_buddy_input;
+    sc->ScriptHandler = encoder_input_process_action;
+  //  dc->vmsd = &vmstate_encoder_input;
 }
