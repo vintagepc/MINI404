@@ -242,12 +242,11 @@ static void prusa_mini_init(MachineState *machine)
         qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",4+i));
     }
 
-    dev = qdev_new("buddy-input");
+    dev = qdev_new("encoder-input");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    // dev_get_gpio_out_connector(dev,"buddy-enc-button",0);
-    qdev_connect_gpio_out_named(dev, "buddy-enc-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
-    qdev_connect_gpio_out_named(dev, "buddy-enc-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
-    qdev_connect_gpio_out_named(dev, "buddy-enc-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
+    qdev_connect_gpio_out_named(dev, "encoder-button",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),12));
+    qdev_connect_gpio_out_named(dev, "encoder-a",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),15));
+    qdev_connect_gpio_out_named(dev, "encoder-b",0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),13));
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
