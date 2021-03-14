@@ -158,7 +158,7 @@ static void stm32f407_soc_initfn(Object *obj)
 
     object_initialize_child(obj, "iwdg",&s->iwdg, TYPE_STM32F4XX_IWDG);
 
-    // // object_initialize_child(obj, "otg_fs", &s->otg_fs, TYPE_DWC2_USB);
+    object_initialize_child(obj, "otg_fs", &s->otg_fs, TYPE_STM32F4xx_USB);
     // // object_property_add_const_link(OBJECT(&s->otg_fs), "dma-mr",
     // //                             OBJECT(&s->temp_usb));
     object_initialize_child(obj, "otg_hs", &s->otg_hs, TYPE_STM32F4xx_USB);
@@ -473,12 +473,12 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     sysbus_mmio_map(busdev, 0, 0xE0000000UL);
 
     // IRQs: FS wakeup: 42 FS Global: 67
-    // if (!sysbus_realize(SYS_BUS_DEVICE(&s->otg_fs),errp))
-    // {
-    //     return;
-    // }    
-    // memory_region_add_subregion(system_memory, 0x50000000UL,
-    //     sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->otg_fs), 0));
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->otg_fs),errp))
+    {
+        return;
+    }    
+    memory_region_add_subregion(system_memory, 0x50000000UL,
+        sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->otg_fs), 0));
 
 
     // USB IRQs:
