@@ -3,10 +3,10 @@ subdir('stm32f407')
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
         'parts/encoder_input.c',
-        'parts/buddy_visuals.c',
         'parts/fan.c',
         'parts/heater.c',
         'parts/irsensor.c',
+        'parts/mini_visuals.c',
         'parts/st7789v.c',
         'parts/thermistor.c',
         'parts/tmc2209.c',

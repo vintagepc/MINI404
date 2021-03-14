@@ -141,7 +141,7 @@ static void prusa_mini_init(MachineState *machine)
         qdev_realize(dev, bus, &error_fatal);
     }
 
-    DeviceState *vis = qdev_new("buddy-visuals");
+    DeviceState *vis = qdev_new("mini-visuals");
     sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
    
     {
