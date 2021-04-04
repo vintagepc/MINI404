@@ -133,6 +133,8 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define RCC_CIR_LSIRDYF_BIT     0
 
 #define RCC_AHB1RSTR_OFFSET 0x10
+#define RCC_AHB1RSTR_OTGHSRST_BIT 29
+
 
 #define RCC_AHB2RSTR_OFFSET 0x14
 
@@ -865,7 +867,11 @@ static void stm32_rcc_writew(void *opaque, hwaddr offset,
             stm32_rcc_RCC_CIR_write(s, value, false);
             break;
         case RCC_APB1RSTR_OFFSET:
-            stm32_unimp("Unimplemented write: RCC_APB1RSTR_OFFSET 0x%x\n", (uint32_t)value);
+            if (value & RCC_AHB1RSTR_OTGHSRST_BIT) {
+                qemu_irq_pulse(s->reset[STM32_USB]);
+            } else {
+                stm32_unimp("Unimplemented write: RCC_APB1RSTR_OFFSET 0x%x\n", (uint32_t)value);
+            }
             break;
         case RCC_APB2RSTR_OFFSET:
             stm32_unimp("Unimplemented write: RCC_APB2RSTR_OFFSET 0x%x\n", (uint32_t)value);
@@ -1137,6 +1143,9 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
     s->PERIPHCLK[STM32_FSMC] =
         clktree_create_clk("FSMC", 1, 2, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
+
+    // Reset IRQs:
+    qdev_init_gpio_out_named(DEVICE(dev),s->reset,"reset",STM32_PERIPH_COUNT);
 }
 
 

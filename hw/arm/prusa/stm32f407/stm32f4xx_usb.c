@@ -1558,6 +1558,16 @@ static void STM32F4xx_reset_exit(Object *obj)
     }
 }
 
+static void stm32f4xx_usb_reset(void *opaque, int n, int level) {
+    // printf("RCC USB reset signal: %d\n",level);
+    STM32F4xxUSBState *s = STM32F4xx_USB(opaque);
+    if (level) {
+        STM32F4xx_reset_enter(OBJECT(s),RESET_TYPE_COLD);
+    } else {
+        STM32F4xx_reset_exit(OBJECT(s));
+    }
+}
+
 static void STM32F4xx_realize(DeviceState *dev, Error **errp)
 {
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
@@ -1590,6 +1600,8 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
     s->eof_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, STM32F4xx_frame_boundary, s);
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, STM32F4xx_work_timer, s);
     s->async_bh = qemu_bh_new(STM32F4xx_work_bh, s);
+
+    qdev_init_gpio_in_named(dev,stm32f4xx_usb_reset,"rcc-reset",1);
 
     sysbus_init_irq(sbd, &s->irq);
 }
