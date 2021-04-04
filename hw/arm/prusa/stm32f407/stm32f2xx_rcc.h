@@ -90,4 +90,6 @@ typedef struct Stm32f2xxRcc {
     uint16_t
     RCC_PLLI2SCFGR_PLLN;
 
+    qemu_irq reset[STM32_PERIPH_COUNT];
+
 } Stm32f2xxRcc;

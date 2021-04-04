@@ -179,7 +179,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 {
     STM32F407State *s = STM32F407_SOC(dev_soc);
     MemoryRegion *system_memory = get_system_memory();
-    DeviceState *dev, *armv7m;
+    DeviceState *dev, *armv7m, *rcc;
     SysBusDevice *busdev;
     Error *err = NULL;
     int i;
@@ -234,14 +234,14 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     uint32_t osc_freq = 12000000; /*osc_freq*/
                    //osc32_freq = 32768; /*osc2_freq*/
 
-    dev = DEVICE(&(s->rcc));
-    qdev_prop_set_uint32(dev, "osc_freq", osc_freq);
+    rcc = DEVICE(&(s->rcc));
+    qdev_prop_set_uint32(rcc, "osc_freq", osc_freq);
     //qdev_prop_set_uint32(dev, "osc32_freq", osc32_freq);
     
-    if (!sysbus_realize(SYS_BUS_DEVICE(dev), errp)) {
+    if (!sysbus_realize(SYS_BUS_DEVICE(rcc), errp)) {
         return;
     }
-    busdev = SYS_BUS_DEVICE(dev);
+    busdev = SYS_BUS_DEVICE(rcc);
     sysbus_mmio_map(busdev, 0, 0x40023800);
     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, STM32_RCC_IRQ));
 
@@ -489,6 +489,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     }    
     sysbus_mmio_map(SYS_BUS_DEVICE(&s->otg_hs),0,0x40040000UL);
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->otg_hs), 0, qdev_get_gpio_in(armv7m, 77));
+    qdev_connect_gpio_out_named(rcc,"reset",STM32_USB,qdev_get_gpio_in_named(DEVICE(&s->otg_hs),"rcc-reset",0));
 
 
     qemu_check_nic_model(&nd_table[0], "stm32f4xx-ethernet");
