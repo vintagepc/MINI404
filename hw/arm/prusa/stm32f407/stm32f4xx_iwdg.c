@@ -22,6 +22,7 @@
 #include "stm32f4xx_iwdg.h"
 #include "stm32_rcc.h"
 #include "qemu/log.h"
+#include "migration/vmstate.h"
 #include "sysemu/watchdog.h"
 #include "sysemu/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
@@ -202,10 +203,25 @@ stm32f4xx_iwdg_init(Object *obj)
 
 }
 
+static const VMStateDescription vmstate_stm32f4xx_iwdg = {
+    .name = TYPE_STM32F4XX_IWDG,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs.all,stm32f4xx_iwdg, R_IWDG_MAX),
+        VMSTATE_TIMER_PTR(timer, stm32f4xx_iwdg),
+        VMSTATE_BOOL(time_changed,stm32f4xx_iwdg),
+        VMSTATE_BOOL(started,stm32f4xx_iwdg),     
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+
 static void
 stm32f4xx_iwdg_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    dc->vmsd = &vmstate_stm32f4xx_iwdg;
     dc->reset = stm32f4xx_iwdg_reset;
 }
 

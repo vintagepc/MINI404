@@ -363,6 +363,10 @@ static const VMStateDescription vmstate_stm32f4xx_adc = {
         VMSTATE_UINT32(adc_jsqr, STM32F4XXADCState),
         VMSTATE_UINT32_ARRAY(adc_jdr, STM32F4XXADCState, 4),
         VMSTATE_UINT32(adc_dr, STM32F4XXADCState),
+        VMSTATE_INT32_ARRAY(adc_data,STM32F4XXADCState, ADC_NUM_REG_CHANNELS),
+        VMSTATE_UINT8_ARRAY(adc_sequence,STM32F4XXADCState, ADC_NUM_REG_CHANNELS),
+        VMSTATE_UINT8(adc_sequence_position,STM32F4XXADCState),
+        VMSTATE_INT32(id,STM32F4XXADCState),
         VMSTATE_END_OF_LIST()
     }
 };

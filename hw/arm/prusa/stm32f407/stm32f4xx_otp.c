@@ -20,6 +20,7 @@
  */
 
 #include "stm32f4xx_otp.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "../utility/macros.h"
 #include "hw/qdev-properties.h"
@@ -128,11 +129,22 @@ static Property stm32f4xx_otp_props[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
+static const VMStateDescription vmstate_stm32f4xx_otp = {
+    .name = TYPE_STM32F4XX_OTP,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(data,Stm32f4xx_OTP, OTP_SIZE),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void
 stm32f4xx_otp_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32f4xx_otp_realize;
+    dc->vmsd = &vmstate_stm32f4xx_otp;
     device_class_set_props(dc, stm32f4xx_otp_props);
 
 }

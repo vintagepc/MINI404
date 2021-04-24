@@ -26,6 +26,7 @@
 #include "qemu/timer.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
+#include "migration/vmstate.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
@@ -197,12 +198,35 @@ static Property fan_properties[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
+static const VMStateDescription vmstate_fan = {
+    .name = TYPE_FAN,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields      = (VMStateField []) {
+        VMSTATE_BOOL(pulse_state,fan_state),
+        VMSTATE_BOOL(is_nonlinear,fan_state),
+        VMSTATE_BOOL(is_stalled,fan_state),
+        VMSTATE_UINT8(pwm,fan_state),
+        VMSTATE_UINT8(label,fan_state),
+        VMSTATE_UINT32(max_rpm,fan_state),
+        VMSTATE_UINT32(current_rpm,fan_state),
+        VMSTATE_UINT32(usec_per_pulse,fan_state),
+        VMSTATE_INT32(last_level,fan_state),
+        VMSTATE_INT64(tOn,fan_state),
+        VMSTATE_INT64(tOff,fan_state),
+        VMSTATE_INT64(tLastOn,fan_state),
+        VMSTATE_TIMER_PTR(tach,fan_state),
+        VMSTATE_TIMER_PTR(softpwm,fan_state),
+        VMSTATE_END_OF_LIST(),
+    }
+};
+
 
 static void fan_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, fan_properties);
-
+    dc->vmsd = &vmstate_fan;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = fan_process_action;
 }
