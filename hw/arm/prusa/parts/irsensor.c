@@ -86,8 +86,6 @@ static int irsensor_process_action(P404ScriptIF *obj, unsigned int action, scrip
     return ScriptLS_Finished;
 }
 
-
-
 static void irsensor_init(Object *obj)
 {
     IRState *s = IRSENSOR(obj);
@@ -102,10 +100,21 @@ static void irsensor_init(Object *obj)
     scripthost_register_scriptable(pScript);
 }
 
+static const VMStateDescription vmstate_irsensor = {
+    .name = TYPE_IRSENSOR,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields      = (VMStateField []) {
+        VMSTATE_BOOL(state, IRState),
+        VMSTATE_END_OF_LIST(),
+    }
+};
+
 static void irsensor_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     dc->reset = irsensor_reset;
+    dc->vmsd = &vmstate_irsensor;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = irsensor_process_action;
 }

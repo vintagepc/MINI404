@@ -154,22 +154,7 @@ static void encoder_input_mouseevent(void *opaque, int dx, int dy, int dz, int b
 
 }
 
-// static const VMStateDescription vmstate_encoder_input = {
-//     .name = "encoder_input",
-//     .version_id = 2,
-//     .minimum_version_id = 2,
-//     .fields = (VMStateField[]) {
-//         VMSTATE_STRUCT(parent_obj, InputState, 0, vmstate_adb_device, ADBDevice),
-//         VMSTATE_BUFFER(data, InputState),
-//         VMSTATE_INT32(rptr, InputState),
-//         VMSTATE_INT32(wptr, InputState),
-//         VMSTATE_INT32(count, InputState),
-//         VMSTATE_END_OF_LIST()
-//     }
-// };
-
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, encoder_input, ENCODER_INPUT, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
-
 
 static void encoder_input_finalize(Object *obj)
 {
@@ -235,6 +220,35 @@ static void encoder_input_init(Object *obj)
     scripthost_register_scriptable(pScript);
 }
 
+static int encoder_post_load(void *opaque, int version_id)
+{
+    InputState *s = ENCODER_INPUT(opaque);
+
+    if (s->phase>3) {
+        return -EINVAL;
+    }
+    if (s->encoder_dir <-1 || s->encoder_dir>1)
+        return -EINVAL;
+
+    return 0;
+}
+
+static const VMStateDescription vmstate_encoder_input = {
+    .name = TYPE_ENCODER_INPUT,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = encoder_post_load,
+    .fields      = (VMStateField []) {
+        VMSTATE_INT32(last_state, InputState),
+        VMSTATE_UINT8(phase,InputState),
+        VMSTATE_INT32(encoder_ticks,InputState),
+        VMSTATE_INT8(encoder_dir,InputState),
+        VMSTATE_TIMER_PTR(timer,InputState),
+        VMSTATE_TIMER_PTR(release,InputState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void encoder_input_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
@@ -243,5 +257,5 @@ static void encoder_input_class_init(ObjectClass *oc, void *data)
     // dc->unrealize = encoder_input_unrealize;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = encoder_input_process_action;
-  //  dc->vmsd = &vmstate_encoder_input;
+    dc->vmsd = &vmstate_encoder_input;
 }
