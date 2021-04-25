@@ -415,7 +415,6 @@ static const VMStateDescription vmstate_stm32f2xx_tim = {
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_TIMER_PTR(timer,f2xx_tim),
-        VMSTATE_TIMER_PTR(pwmtimer,f2xx_tim),
         VMSTATE_UINT32_ARRAY(regs,f2xx_tim,R_TIM_MAX),
         VMSTATE_UINT8(id,f2xx_tim),
         VMSTATE_INT64(count_timebase,f2xx_tim),

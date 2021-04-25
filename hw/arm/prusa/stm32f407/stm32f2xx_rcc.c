@@ -24,6 +24,7 @@
 #include "stm32f2xx_rcc.h"
 #include "qemu-common.h"
 #include "hw/qdev-properties.h"
+#include "migration/vmstate.h"
 #include "qemu/timer.h"
 #include <stdio.h>
 #include "qemu/log.h"
@@ -1172,12 +1173,78 @@ static Property stm32_rcc_properties[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
+static const VMStateDescription vmstate_stm32f2xx_rcc_clk = {
+    .name = TYPE_STM32F2XX_RCC "-clk",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_BOOL(enabled, struct Clk),
+        VMSTATE_UINT32(input_freq,struct Clk),
+        VMSTATE_UINT32(output_freq,struct Clk),
+        VMSTATE_UINT32(max_output_freq,struct Clk),
+        VMSTATE_UINT16(multiplier,struct Clk),
+        VMSTATE_UINT16(divisor,struct Clk),
+        VMSTATE_UINT32(user_count,struct Clk),
+        VMSTATE_UINT32(output_count,struct Clk),
+        VMSTATE_UINT32(input_count,struct Clk),
+        VMSTATE_INT32(selected_input,struct Clk),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const VMStateDescription vmstate_stm32f2xx_rcc = {
+    .name = TYPE_STM32F2XX_RCC,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(osc_freq, Stm32f2xxRcc),
+        VMSTATE_UINT32(osc32_freq, Stm32f2xxRcc),
+        VMSTATE_STRUCT_ARRAY(PERIPHCLK, Stm32f2xxRcc, STM32_PERIPH_COUNT, 1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(HSICLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(HSECLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(LSECLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(LSICLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(SYSCLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(IWDGCLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(RTCCLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PLLM,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PLLCLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PLL48CLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PLLI2SM,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PLLI2SCLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(HCLK,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PCLK1,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_STRUCT(PCLK2,Stm32f2xxRcc,1, vmstate_stm32f2xx_rcc_clk,Clk),
+        VMSTATE_UINT32(RCC_CIR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_APB1ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_APB2ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_PPRE1,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_PPRE2,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_HPRE,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_AHB1ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_AHB2ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_AHB3ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_SW,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_PLLCFGR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_PLLI2SCFGR,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLCFGR_PLLM,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLCFGR_PLLP,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLCFGR_PLLSRC,Stm32f2xxRcc),
+        VMSTATE_UINT16(RCC_PLLCFGR_PLLN,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLI2SCFGR_PLLR,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLI2SCFGR_PLLQ,Stm32f2xxRcc),
+        VMSTATE_UINT16(RCC_PLLI2SCFGR_PLLN,Stm32f2xxRcc),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 
 static void stm32_rcc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32_rcc_reset;
     dc->realize = stm32_rcc_realize;
+    dc->vmsd = &vmstate_stm32f2xx_rcc;
     device_class_set_props(dc, stm32_rcc_properties);
 }
 

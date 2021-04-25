@@ -196,7 +196,7 @@ static int thermistor_post_load(void *opaque, int version_id)
     ThermistorState *s = THERMISTOR(opaque);
 
     thermistor_set_table(s);
-    if (s->table_length == 0 || s->table == NULL) {
+    if (s->table_index >0 && (s->table_length == 0 || s->table == NULL)) {
         return -EINVAL;
     }
 
