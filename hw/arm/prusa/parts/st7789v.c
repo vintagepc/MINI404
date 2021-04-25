@@ -96,12 +96,6 @@ struct st7789v_state {
     uint32_t framebuffer[DPY_ROWS * DPY_COLS];
 };
 
-union st7789v_cmd { 
-    uint16_t params[4];
-    uint16_t cmd;
-
-} st7789v_cmd;
-
 #define TYPE_ST7789V "st7789v"
 OBJECT_DECLARE_SIMPLE_TYPE(st7789v_state, ST7789V)
 
@@ -335,10 +329,42 @@ static void st7789v_realize(SSISlave *d, Error **errp)
 
 }
 
+static int st7789v_post_load(void *opaque, int version) {
+    st7789v_invalidate_display(opaque);
+    return 0;
+}
+
+static const VMStateDescription vmstate_st7789v = {
+    .name = TYPE_ST7789V,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = st7789v_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_SSI_SLAVE(ssidev,st7789v_state),
+        VMSTATE_UINT32(cmd_len,st7789v_state),
+        VMSTATE_INT32(cmd,st7789v_state),
+        VMSTATE_BOOL(byte_msb,st7789v_state),
+        VMSTATE_INT32_ARRAY(cmd_data,st7789v_state,8),
+        VMSTATE_INT32(row,st7789v_state),
+        VMSTATE_INT32(row_start,st7789v_state),
+        VMSTATE_INT32(row_end,st7789v_state),
+        VMSTATE_INT32(col,st7789v_state),
+        VMSTATE_INT32(col_start,st7789v_state),
+        VMSTATE_INT32(col_end,st7789v_state),
+        VMSTATE_INT32(redraw,st7789v_state),
+        VMSTATE_INT32(remap,st7789v_state),
+        VMSTATE_UINT32(mode,st7789v_state),
+        VMSTATE_UINT32_ARRAY(framebuffer,st7789v_state,DPY_ROWS*DPY_COLS),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void st7789v_class_init(ObjectClass *klass, void *data)
 {
-    SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    dc->vmsd = &vmstate_st7789v;
 
+    SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = st7789v_process_action;
 

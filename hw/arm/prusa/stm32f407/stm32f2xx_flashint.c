@@ -22,6 +22,7 @@
 
 #include "stm32f2xx_flashint.h"
 #include "hw/irq.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 
 //#define DEBUG_STM32_FINT
@@ -110,11 +111,23 @@ stm32f2xx_fint_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 }
 
+static const VMStateDescription vmstate_stm32f2xx_fint = {
+    .name = TYPE_STM32F2XX_FINT,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, stm32f2xx_fint,STM32_FINT_MAX),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+
 static void
 stm32f2xx_fint_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32f2xx_fint_reset;
+    dc->vmsd = &vmstate_stm32f2xx_fint;
 }
 
 static const TypeInfo stm32f2xx_fint_info = {

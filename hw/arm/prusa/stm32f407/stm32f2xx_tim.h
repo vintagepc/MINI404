@@ -33,7 +33,7 @@
 #include "hw/sysbus.h"
 #include "stm32.h"
 
-#define SHORT_REG_32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } __attribute__ ((__packed__))
+#define SHORT_REG_32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED 
 
 #define R_TIM_MAX    (0x54 / 4)
 
@@ -61,7 +61,7 @@ struct f2xx_tim {
                 uint32_t ARPE :1;
                 uint32_t CKD :2;
                 uint32_t :22; // unused.
-            } __attribute__ ((__packed__)) CR1;
+            } QEMU_PACKED  CR1;
             struct {
                 uint32_t CCPC :1;
                 uint32_t _reserved :1;
@@ -77,7 +77,7 @@ struct f2xx_tim {
                 uint32_t OIS3N :1;
                 uint32_t OIS4 :1;
                 uint32_t :32-15; // unused.
-            } __attribute__ ((__packed__)) CR2;         
+            } QEMU_PACKED  CR2;         
             struct {
                 uint32_t SMS :3;
                 uint32_t _reserved :1;
@@ -88,7 +88,7 @@ struct f2xx_tim {
                 uint32_t ECE :1;
                 uint32_t ETP :1;
                 uint32_t :32-16; // unused.
-            } __attribute__ ((__packed__)) SMCR;
+            } QEMU_PACKED  SMCR;
             struct {
                 uint32_t UIE :1;
                 uint32_t CC1IE:1;
@@ -106,7 +106,7 @@ struct f2xx_tim {
                 uint32_t COMDE:1;
                 uint32_t TDE:1;
                 uint32_t :17;
-            } __attribute__ ((__packed__))DIER;
+            } QEMU_PACKED DIER;
             struct {
                 uint32_t UIF:1;
                 uint32_t CC1IF:1;
@@ -122,7 +122,7 @@ struct f2xx_tim {
                 uint32_t CC3OF:1;
                 uint32_t CC4OF:1;
                 uint32_t :32-13;
-            } __attribute__ ((__packed__))SR;
+            } QEMU_PACKED SR;
             struct {
                 uint32_t UG:1;
                 uint32_t CC1G:1;
@@ -133,7 +133,7 @@ struct f2xx_tim {
                 uint32_t TG:1;
                 uint32_t BG:1;
                 uint32_t :32-8;
-            } __attribute__ ((__packed__))EGR;
+            } QEMU_PACKED EGR;
             struct {
                 uint32_t CC1S :2;
                 uint32_t OC1FE :1;
@@ -146,7 +146,7 @@ struct f2xx_tim {
                 uint32_t OC2M :3;
                 uint32_t OC2CE :1;
                 uint32_t :32-16;
-            } __attribute__ ((__packed__))CCMR1; // N.B this is only the OC mode, not IC
+            } QEMU_PACKED CCMR1; // N.B this is only the OC mode, not IC
             struct {
                 uint32_t CC3S :2;
                 uint32_t OC3FE :1;
@@ -159,7 +159,7 @@ struct f2xx_tim {
                 uint32_t OC4M :3;
                 uint32_t OC4CE :1;
                 uint32_t :32-16;
-            } __attribute__ ((__packed__))CCMR2;
+            } QEMU_PACKED CCMR2;
             struct {
                 uint32_t CC1E :1;
                 uint32_t CC1P :1;
@@ -176,7 +176,7 @@ struct f2xx_tim {
                 uint32_t CC4E :1;
                 uint32_t CC4P :1;
                 uint32_t :32-14;                
-            } __attribute__ ((__packed__)) CCER;
+            } QEMU_PACKED  CCER;
             SHORT_REG_32(CNT, 16);
             SHORT_REG_32(PSC, 16);
             SHORT_REG_32(ARR, 16);
@@ -195,13 +195,13 @@ struct f2xx_tim {
                 uint32_t AOE :1;
                 uint32_t MOE :1;
                 uint32_t :32-16;
-            } __attribute__ ((__packed__)) BDTR;
+            } QEMU_PACKED  BDTR;
             struct {
                 uint32_t DBA:5;
                 uint32_t _reserved :3;
                 uint32_t DBL :5;
                 uint32_t :19;
-            } __attribute__ ((__packed__))DCR;
+            } QEMU_PACKED DCR;
             uint32_t DMAR;
             SHORT_REG_32(RMP,2) OR;
         } defs;

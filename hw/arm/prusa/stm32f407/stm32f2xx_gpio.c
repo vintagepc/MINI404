@@ -25,6 +25,7 @@
 #include "stm32f2xx_gpio.h"
 #include "hw/irq.h"
 #include "qemu/log.h"
+#include "migration/vmstate.h"
 #include "hw/qdev-properties.h"
 //#include "hw/arm/stm32.h"
 
@@ -231,11 +232,26 @@ static Property stm32f2xx_gpio_properties[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
+static const VMStateDescription vmstate_stm32f2xx_gpio = {
+    .name = TYPE_STM32F2XX_GPIO,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(periph, stm32f2xx_gpio),
+        VMSTATE_UINT32(idr_mask, stm32f2xx_gpio),
+        VMSTATE_UINT32_ARRAY(regs, stm32f2xx_gpio,STM32_GPIO_MAX),
+        VMSTATE_UINT32(ccr, stm32f2xx_gpio),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+
 static void
 stm32f2xx_gpio_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32f2xx_gpio_reset;
+    dc->vmsd = &vmstate_stm32f2xx_gpio;
     device_class_set_props(dc, stm32f2xx_gpio_properties);
 }
 

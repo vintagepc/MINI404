@@ -1679,7 +1679,15 @@ const VMStateDescription vmstate_STM32F4xx_state = {
                              vmstate_STM32F4xx_state_packet, STM32F4xxPacket),
         VMSTATE_UINT8_2DARRAY(usb_buf, STM32F4xxUSBState, STM32F4xx_NB_CHAN,
                               STM32F4xx_MAX_XFER_SIZE),
-
+        VMSTATE_UINT32_ARRAY(fifo_ram,STM32F4xxUSBState, STM32F4xx_RX_FIFO_SIZE),
+        VMSTATE_UINT32_2DARRAY(tx_fifos,STM32F4xxUSBState,STM32F4xx_NB_CHAN,STM32F4xx_EP_FIFO_SIZE),
+        VMSTATE_UINT16_ARRAY(fifo_head,STM32F4xxUSBState, STM32F4xx_NB_CHAN),
+        VMSTATE_UINT16_ARRAY(fifo_level,STM32F4xxUSBState, STM32F4xx_NB_CHAN),
+        VMSTATE_UINT16_ARRAY(fifo_tail,STM32F4xxUSBState, STM32F4xx_NB_CHAN),
+        VMSTATE_UINT32(rx_fifo_head,STM32F4xxUSBState),
+        VMSTATE_UINT32(rx_fifo_tail,STM32F4xxUSBState),
+        VMSTATE_UINT32(rx_fifo_level,STM32F4xxUSBState),
+        VMSTATE_UINT8(is_ping, STM32F4xxUSBState),
         VMSTATE_END_OF_LIST()
     }
 };

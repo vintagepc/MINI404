@@ -23,6 +23,7 @@
  */
 
 #include "stm32f2xx_crc.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 
 #define R_CRC_DR            (0x00 / 4)
@@ -192,11 +193,24 @@ f2xx_crc_reset(DeviceState *ds)
     s->crc = R_CRC_DR_RESET;
 }
 
+static const VMStateDescription vmstate_stm32f2xx_crc = {
+    .name = TYPE_STM32F2XX_CRC,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(crc, f2xx_crc),
+        VMSTATE_UINT8(idr, f2xx_crc),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+
 static void
 f2xx_crc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = f2xx_crc_reset;
+    dc->vmsd = &vmstate_stm32f2xx_crc;
 }
 
 static const TypeInfo

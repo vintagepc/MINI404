@@ -26,6 +26,7 @@
  */
 
 #include "stm32f2xx_dma.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 
 static int msize_table[] = {1, 2, 4, 0};
@@ -585,17 +586,61 @@ f2xx_dma_reset(DeviceState *ds)
     }
 }
 
-// static Property f2xx_dma_properties[] = {
-//     DEFINE_PROP_END_OF_LIST(),
-// };
+static const VMStateDescription vmstate_stm32f2xx_dma_active = {
+    .name = TYPE_STM32F2XX_DMA "-active",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT8(srcsize,f2xx_dma_current_xfer),
+        VMSTATE_UINT8(srcinc,f2xx_dma_current_xfer),
+        VMSTATE_UINT8(destinc,f2xx_dma_current_xfer),
+        VMSTATE_UINT8(destsize,f2xx_dma_current_xfer),
+        VMSTATE_UINT32(src,f2xx_dma_current_xfer),
+        VMSTATE_UINT32(dest,f2xx_dma_current_xfer),
+        VMSTATE_UINT16(ndtr,f2xx_dma_current_xfer),
+        VMSTATE_UINT32(peripheral,f2xx_dma_current_xfer),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const VMStateDescription vmstate_stm32f2xx_dma_stream = {
+    .name = TYPE_STM32F2XX_DMA "-stream",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT8(id,f2xx_dma_stream),
+        VMSTATE_UINT32(cr,f2xx_dma_stream),
+        VMSTATE_UINT16(ndtr,f2xx_dma_stream),
+        VMSTATE_UINT32(par,f2xx_dma_stream),
+        VMSTATE_UINT32(m0ar,f2xx_dma_stream),
+        VMSTATE_UINT32(m1ar,f2xx_dma_stream),
+        VMSTATE_UINT8(isr,f2xx_dma_stream),
+        VMSTATE_UINT8(fcr,f2xx_dma_stream),
+        VMSTATE_STRUCT(active_transfer, f2xx_dma_stream, 1, vmstate_stm32f2xx_dma_active,f2xx_dma_current_xfer),
+        VMSTATE_INT32(usart_dmar,f2xx_dma_stream),
+        VMSTATE_TIMER_PTR(rx_timer,f2xx_dma_stream),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const VMStateDescription vmstate_stm32f2xx_dma = {
+    .name = TYPE_STM32F2XX_DMA,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_INT32(id, f2xx_dma),
+        VMSTATE_UINT32_ARRAY(ifcr, f2xx_dma,R_DMA_HIFCR - R_DMA_LIFCR + 1),
+        VMSTATE_STRUCT_ARRAY(stream, f2xx_dma, R_DMA_Sx_COUNT,1, vmstate_stm32f2xx_dma_stream, f2xx_dma_stream),
+        VMSTATE_END_OF_LIST()
+    }
+};
 
 static void
 f2xx_dma_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = f2xx_dma_reset;
-    //TODO: fix this: dc->no_user = 1;
-  //  dc->props = f2xx_dma_properties;
+    dc->vmsd = &vmstate_stm32f2xx_dma;
 }
 
 static const TypeInfo

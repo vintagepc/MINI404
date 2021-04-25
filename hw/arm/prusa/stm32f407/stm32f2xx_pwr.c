@@ -24,6 +24,7 @@
 
 
 #include "stm32f2xx_pwr.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 
 //#define DEBUG_STM32F2XX_PWR
@@ -144,11 +145,22 @@ f2xx_pwr_init(Object *obj)
     s->regs[R_PWR_CSR] = 0;
 }
 
+static const VMStateDescription vmstate_stm32f2xx_pwr = {
+    .name = TYPE_STM32F2XX_PWR,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, f2xx_pwr,R_PWR_MAX),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void
 f2xx_pwr_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = f2xx_pwr_reset;
+    dc->vmsd = &vmstate_stm32f2xx_pwr;
 }
 
 static const TypeInfo
