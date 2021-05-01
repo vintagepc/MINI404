@@ -434,7 +434,7 @@ static void stm32_uart_write(void *opaque, hwaddr addr,
     Stm32Uart *s = (Stm32Uart *)opaque;
     int offset = addr & 0x3;
     uint32_t data = 0;
-    DPRINTF("%s: addr: 0x%llx, data: 0x%lx, size: %u\n", __func__, addr, data, size);
+    DPRINTF("%s: addr: 0x%llx, data: 0x%x, size: %u\n", __func__, addr, data, size);
 
     addr >>= 2;
     if (addr >= USART_R_END) {
