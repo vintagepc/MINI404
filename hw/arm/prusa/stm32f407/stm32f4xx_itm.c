@@ -21,6 +21,7 @@
 
 #include "stm32f4xx_itm.h"
 #include "hw/irq.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 
 //#define DEBUG_STM32_ITM
@@ -136,11 +137,35 @@ stm32f4xx_itm_init(Object *obj)
     s->regs[R_ITM_TER] = 1;
 }
 
+static int stm32f4xx_post_load(void* opaque, int version) {
+    stm32f4xx_itm *s = STM32F4XX_ITM(opaque);
+    if (s->buffer_pos>= 101)
+        return -EINVAL;
+
+    return 0;
+}
+
+static const VMStateDescription vmstate_stm32f4xx_itm = {
+    .name = TYPE_STM32F4XX_ITM,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = stm32f4xx_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs,stm32f4xx_itm, R_ITM_MAX),
+        VMSTATE_UINT32_ARRAY(port_buffer,stm32f4xx_itm, 101),
+        VMSTATE_UINT8(buffer_pos, stm32f4xx_itm),
+        VMSTATE_BOOL(unlocked, stm32f4xx_itm),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+
 static void
 stm32f4xx_itm_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32f4xx_itm_reset;
+    dc->vmsd = &vmstate_stm32f4xx_itm;
 }
 
 static const TypeInfo stm32f4xx_itm_info = {

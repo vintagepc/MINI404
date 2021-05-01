@@ -22,6 +22,7 @@
 #include "stm32f4xx_iwdg.h"
 #include "stm32_rcc.h"
 #include "qemu/log.h"
+#include "migration/vmstate.h"
 #include "sysemu/watchdog.h"
 #include "sysemu/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
@@ -101,10 +102,6 @@ static void stm32f4xx_iwdg_update(stm32f4xx_iwdg *s){
         printf("Watchdog configured with timeout of %lu ms\n", delay_us/1000U);
         s->time_changed = false;
     }
-    if (s->timer==NULL)
-    {
-        s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32f4xx_iwdg_fire, s);
-    }
     timer_mod(s->timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (delay_us*1000));
 }
 
@@ -181,10 +178,10 @@ static void stm32f4xx_iwdg_reset(DeviceState *dev)
     stm32f4xx_iwdg *s = STM32F4XX_IWDG(dev);
     if (s->timer) {
         timer_del(s->timer);
+        s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32f4xx_iwdg_fire, s);
     }
     memset(&s->regs, 0, sizeof(s->regs));
     s->regs.defs.RLR.RL = 0xFFF;   
-    s->timer = NULL;
     s->time_changed = true;
     s->started = false;
 }
@@ -199,13 +196,28 @@ stm32f4xx_iwdg_init(Object *obj)
 
     memory_region_init_io(&s->iomem, obj, &stm32f4xx_iwdg_ops, s, "iwdg", 0x0c);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
-
+    s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32f4xx_iwdg_fire, s);
 }
+
+static const VMStateDescription vmstate_stm32f4xx_iwdg = {
+    .name = TYPE_STM32F4XX_IWDG,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs.all,stm32f4xx_iwdg, R_IWDG_MAX),
+        VMSTATE_TIMER_PTR(timer, stm32f4xx_iwdg),
+        VMSTATE_BOOL(time_changed,stm32f4xx_iwdg),
+        VMSTATE_BOOL(started,stm32f4xx_iwdg),     
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 
 static void
 stm32f4xx_iwdg_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    dc->vmsd = &vmstate_stm32f4xx_iwdg;
     dc->reset = stm32f4xx_iwdg_reset;
 }
 

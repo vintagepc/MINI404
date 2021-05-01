@@ -25,6 +25,7 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
 #include "thermistortables.h"
+#include "migration/vmstate.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
@@ -37,6 +38,7 @@ struct ThermistorState {
 
     qemu_irq irq_value;
 
+    uint8_t index;
     uint16_t table_index;
     const short int *table;    
     int table_length;
@@ -45,6 +47,9 @@ struct ThermistorState {
     bool use_custom;
     int8_t oversampling;
     uint16_t start_temp;
+
+    // Saving state - because there's no VMSTATE_FLOAT
+    int32_t temp_256x,custom_256x;
 };
 
 enum {
@@ -121,10 +126,7 @@ static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, scr
     return ScriptLS_Finished;
 }
 
-static void thermistor_reset(DeviceState *dev)
-{
-    ThermistorState *s = THERMISTOR(dev);
-    s->temperature = s->start_temp;
+static void thermistor_set_table(ThermistorState *s) {
     switch (s->table_index)
     {
         case 1:
@@ -141,10 +143,16 @@ static void thermistor_reset(DeviceState *dev)
             break;
         default:
             s->table = NULL;
-    s->table_length = 0;
+            s->table_length = 0;
             break;
     }
+}
 
+static void thermistor_reset(DeviceState *dev)
+{
+    ThermistorState *s = THERMISTOR(dev);
+    s->temperature = s->start_temp;
+    thermistor_set_table(s);
 }
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ThermistorState, thermistor, THERMISTOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
@@ -180,15 +188,55 @@ static void thermistor_init(Object *obj)
 static Property thermistor_properties[] = {
     DEFINE_PROP_UINT16("temp", ThermistorState, start_temp,0),
     DEFINE_PROP_UINT16("table_no", ThermistorState, table_index, 0),
+    DEFINE_PROP_UINT8("index", ThermistorState, index, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 
+
+static int thermistor_post_load(void *opaque, int version_id)
+{
+    ThermistorState *s = THERMISTOR(opaque);
+
+    thermistor_set_table(s);
+    if (s->table_index >0 && (s->table_length == 0 || s->table == NULL)) {
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+static int thermistor_pre_save(void *opaque)
+{
+    ThermistorState *s = THERMISTOR(opaque);
+
+    s->temp_256x = (s->temperature*256.f);
+    s->custom_256x = (s->custom_temp*256.f);
+    return 0;
+}
+
+static const VMStateDescription vmstate_thermistor = {
+    .name = TYPE_THERMISTOR,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = thermistor_post_load,
+    .pre_save = thermistor_pre_save,
+    .fields      = (VMStateField []) {
+        VMSTATE_UINT16(table_index,ThermistorState),
+        VMSTATE_INT32(temp_256x,ThermistorState),
+        VMSTATE_INT32(custom_256x,ThermistorState),
+        VMSTATE_BOOL(use_custom,ThermistorState),
+        VMSTATE_INT8(oversampling,ThermistorState),
+        VMSTATE_UINT16(start_temp,ThermistorState),
+        VMSTATE_END_OF_LIST(),
+    }
+};
 
 static void thermistor_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->reset = thermistor_reset;
+    dc->vmsd = &vmstate_thermistor;
     device_class_set_props(dc, thermistor_properties);
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);

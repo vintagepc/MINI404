@@ -3,9 +3,9 @@
 
 void stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph)
 {
-    Clk clk = s->PERIPHCLK[periph];
+    Clk_p clk = &s->PERIPHCLK[periph];
 
-    assert(clk != NULL);
+    assert(clk->is_initialized);
 
     if(!clktree_is_enabled(clk)) {
         /* I assume writing to a peripheral register while the peripheral clock
@@ -22,9 +22,9 @@ void stm32_rcc_set_periph_clk_irq(
         stm32_periph_t periph,
         qemu_irq periph_irq)
 {
-    Clk clk = s->PERIPHCLK[periph];
+    Clk_p clk = &s->PERIPHCLK[periph];
 
-    assert(clk != NULL);
+    assert(clk->is_initialized);
 
     clktree_adduser(clk, periph_irq);
 }
@@ -33,13 +33,9 @@ uint32_t stm32_rcc_get_periph_freq(
         Stm32Rcc *s,
         stm32_periph_t periph)
 {
-    Clk clk;
+    Clk_p clk = &s->PERIPHCLK[periph];
 
-    clk = s->PERIPHCLK[periph];
-
-    assert(clk != NULL);
+    assert(clk->is_initialized);
 
     return clktree_get_output_freq(clk);
 }
-
-

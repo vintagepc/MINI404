@@ -49,8 +49,6 @@ struct mini_visuals_state {
     shmemq_t *queue;
 #endif
     bool is_opened;
-
-    int32_t redraw;
     QEMUTimer *timer_flush;
 
 };

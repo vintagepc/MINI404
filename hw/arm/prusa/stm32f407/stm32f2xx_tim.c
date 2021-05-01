@@ -24,6 +24,7 @@
  * QEMU stm32f2xx TIM emulation
  */
 #include "stm32f2xx_tim.h"
+#include "migration/vmstate.h"
 #include "qemu-common.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
@@ -408,15 +409,24 @@ f2xx_tim_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);
 }
 
-// static Property f2xx_tim_properties[] = {
-//     DEFINE_PROP_END_OF_LIST(),
-// };
-
+static const VMStateDescription vmstate_stm32f2xx_tim = {
+    .name = TYPE_STM32F4XX_TIMER,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_TIMER_PTR(timer,f2xx_tim),
+        VMSTATE_UINT32_ARRAY(regs,f2xx_tim,R_TIM_MAX),
+        VMSTATE_UINT8(id,f2xx_tim),
+        VMSTATE_INT64(count_timebase,f2xx_tim),
+        VMSTATE_INT32(periph,f2xx_tim),
+        VMSTATE_END_OF_LIST()
+    }
+};
 static void
 f2xx_tim_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    //TODO: fix this: dc->no_user = 1;
+    dc->vmsd = &vmstate_stm32f2xx_tim;
     dc->reset = f2xx_tim_reset;
 
 }

@@ -56,3 +56,32 @@
                         MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME) \
                         OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
                             MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL}) 
+
+#define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned!")
+#define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg "size incorrect!")
+
+// Some rather ugly convenience macros for 
+// more easily debugging save state symmetry. See the RCC implementation for
+// an example how this works. (STATE_DEBUG_VAR must be defined for it to work.)
+#ifdef STATE_DEBUG_VAR
+#define DEBUG_COPY(type, size) static type STATE_DEBUG_VAR[size]
+
+#define DEBUG_INDEX(value) uint8_t index = value
+
+#define DEBUG_TAKE(src,index) memcpy(&STATE_DEBUG_VAR[index],src, sizeof(STATE_DEBUG_VAR[index]))
+#define DEBUG_CHECK(field) assert(s->field == STATE_DEBUG_VAR[index].field)
+#define DEBUG_CHECKP(field) assert(s->field == STATE_DEBUG_VAR[index]->field)
+#define DEBUG_VERIFY DEBUG_LIST 
+#define DEBUG_CAST_ONLY(cast) cast
+#undef STATE_DEBUG_VAR
+#else
+
+#define DEBUG_COPY(type, size) 
+#define DEBUG_TAKE(src,index) 
+
+#define DEBUG_INDEX(value)
+#define DEBUG_CAST_ONLY(cast)
+#define DEBUG_CHECK(field)
+#define DEBUG_VERIFY 
+
+#endif

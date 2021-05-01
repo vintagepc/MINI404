@@ -25,6 +25,7 @@
 #include "qemu/module.h"
 #include "hw/sysbus.h"
 #include "qom/object.h"
+#include "migration/vmstate.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
@@ -138,9 +139,6 @@ struct tmc2209_state {
 
     uint8_t address;
     unsigned char id;
-
-    uint64_t cmdIn; 
-    uint8_t bytePos;
 
     bool dir;
 
@@ -373,8 +371,6 @@ static void tmc2209_init(Object *obj){
     tmc2209_state *s = TMC2209(obj);
     s->id=' ';
     s->address=0;
-    s->bytePos = 0;
-    s->cmdIn = 0;
     s->dir = 0;
     s->ms_increment = 16;
     s->is_inverted = 0;
@@ -411,11 +407,49 @@ static Property tmc2209_properties[] = {
 };
 
 
+static int tmc2209_post_load(void *opaque, int version_id)
+{
+    tmc2209_state *s = TMC2209(opaque);
+    s->current_position = tmc2209_step_to_pos(s->current_step, s->max_steps_per_mm);
+
+    if (s->rx_pos > TMC2209_CMD_LEN)
+        return -EINVAL;
+    if (s->address > 3)
+        return -EINVAL;
+    return 0;
+}
+
+static const VMStateDescription vmstate_tmc2209 = {
+    .name = TYPE_TMC2209,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = tmc2209_post_load,
+    .fields      = (VMStateField []) {
+        VMSTATE_UINT32_ARRAY(regs.raw, tmc2209_state,128),
+        VMSTATE_UINT8_ARRAY(rx_buffer,tmc2209_state,TMC2209_CMD_LEN),
+        VMSTATE_UINT8(rx_pos,tmc2209_state),
+        VMSTATE_UINT8(address, tmc2209_state),
+        VMSTATE_UINT8(id,tmc2209_state),
+        VMSTATE_BOOL(dir,tmc2209_state),
+        VMSTATE_BOOL(enabled,tmc2209_state),
+        VMSTATE_BOOL(last_step,tmc2209_state),
+        VMSTATE_BOOL(stalled,tmc2209_state),
+        VMSTATE_UINT8(is_inverted, tmc2209_state),
+        VMSTATE_INT64(current_step,tmc2209_state),
+        VMSTATE_UINT64(max_step,tmc2209_state),
+        VMSTATE_UINT16(ms_increment,tmc2209_state),
+        VMSTATE_UINT32(max_steps_per_mm,tmc2209_state),
+        VMSTATE_TIMER_PTR(standstill,tmc2209_state),        
+        VMSTATE_END_OF_LIST(),
+    }
+};
+
 static void tmc2209_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, tmc2209_properties);
     dc->realize = tmc2209_realize;
+    dc->vmsd = &vmstate_tmc2209;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = tmc2209_process_action;
 }

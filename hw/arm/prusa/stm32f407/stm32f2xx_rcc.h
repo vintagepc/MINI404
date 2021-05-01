@@ -27,6 +27,7 @@
 #include "qom/object.h"
 #include "qemu-common.h"
 #include "stm32_clktree.h"
+#include "stm32_clk_type.h"
 #include "stm32_rcc.h"
 #include "stm32.h"
 
@@ -38,7 +39,7 @@ typedef struct Stm32f2xxRcc {
     STM32_RCC_COMMON
     
     /* Additional clocks */
-    Clk HSICLK,
+    Clk_t HSICLK,
     HSECLK,
     LSECLK,
     LSICLK,

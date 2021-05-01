@@ -266,7 +266,6 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         s->usart[i].periph = STM32_UART1+i;
         s->usart[i].stm32_rcc = (Stm32Rcc*)&s->rcc;
         qdev_prop_set_chr(dev, "chardev", serial_hd(i));
-        qdev_prop_set_int32(dev, "index",i+1); // Set to STM index, not 0-based
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
             return;
         }

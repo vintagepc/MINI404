@@ -41,34 +41,13 @@
             assert((count) <= (array_size));
 
 
-struct Clk {
-    const char *name;
+#include "stm32_clk_type.h"
 
-    bool enabled;
-
-    uint32_t input_freq, output_freq, max_output_freq;
-
-    uint16_t multiplier, divisor;
-
-    unsigned user_count;
-    qemu_irq user[CLKTREE_MAX_IRQ]; /* Who to notify on change */
-
-    unsigned output_count;
-    struct Clk *output[CLKTREE_MAX_OUTPUT];
-
-    unsigned input_count;
-    int selected_input;
-    struct Clk *input[CLKTREE_MAX_INPUT];
-};
-
-static void clktree_recalc_output_freq(Clk clk);
-
-
-
+static void clktree_recalc_output_freq(Clk_p clk);
 
 /* HELPER FUNCTIONS */
 
-static Clk clktree_get_input_clk(Clk clk)
+static Clk_p clktree_get_input_clk(Clk_p clk)
 {
     return clk->input[clk->selected_input + 1];
 }
@@ -90,7 +69,7 @@ static void clktree_print_state(Clk clk)
 }
 #endif
 
-static void clktree_set_input_freq(Clk clk, uint32_t input_freq)
+static void clktree_set_input_freq(Clk_p clk, uint32_t input_freq)
 {
     clk->input_freq = input_freq;
 
@@ -99,9 +78,9 @@ static void clktree_set_input_freq(Clk clk, uint32_t input_freq)
 
 /* Recalculates the output frequency based on the clock's input_freq variable.
  */
-static void clktree_recalc_output_freq(Clk clk) {
+static void clktree_recalc_output_freq(Clk_p clk) {
     int i;
-    Clk next_clk, next_clk_input;
+    Clk_p next_clk, next_clk_input;
     uint32_t new_output_freq;
 
     /* Get the output frequency, or 0 if the output is disabled. */
@@ -154,14 +133,12 @@ static void clktree_recalc_output_freq(Clk clk) {
 
 
 /* Generic create routine used by the public create routines. */
-static Clk clktree_create_generic(
+static void clktree_create_generic(Clk_p clk,
                     const char *name,
                     uint16_t multiplier,
                     uint16_t divisor,
                     bool enabled)
 {
-    Clk clk = (Clk)g_malloc(sizeof(struct Clk));
-
     clk->name = name;
 
     clk->input_freq = 0;
@@ -181,29 +158,21 @@ static Clk clktree_create_generic(
     clk->input[0] = NULL;
     clk->selected_input = CLKTREE_NO_INPUT;
 
-    return clk;
+    clk->is_initialized = true;
 }
-
-
-
-
-
-
-
-
 
 /* PUBLIC FUNCTIONS */
-bool clktree_is_enabled(Clk clk)
+bool clktree_is_enabled(Clk_p clk)
 {
-    return clk->enabled;
+    return clk->enabled && clk->is_initialized;
 }
 
-uint32_t clktree_get_output_freq(Clk clk)
+uint32_t clktree_get_output_freq(Clk_p clk)
 {
     return clk->output_freq;
 }
 
-void clktree_adduser(Clk clk, qemu_irq user)
+void clktree_adduser(Clk_p clk, qemu_irq user)
 {
     CLKTREE_ADD_LINK(
             clk->user,
@@ -213,22 +182,19 @@ void clktree_adduser(Clk clk, qemu_irq user)
 }
 
 
-Clk clktree_create_src_clk(
+void clktree_create_src_clk(Clk_p clk,
                     const char *name,
                     uint32_t src_freq,
                     bool enabled)
 {
-    Clk clk;
 
-    clk = clktree_create_generic(name, 1, 1, enabled);
+    clktree_create_generic(clk, name, 1, 1, enabled);
 
     clktree_set_input_freq(clk, src_freq);
-
-    return clk;
 }
 
 
-Clk clktree_create_clk(
+void clktree_create_clk( Clk_p clk,
                     const char *name,
                     uint16_t multiplier,
                     uint16_t divisor,
@@ -238,13 +204,13 @@ Clk clktree_create_clk(
                     ...)
 {
     va_list input_clks;
-    Clk clk, input_clk;
+    Clk_p input_clk;
 
-    clk = clktree_create_generic(name, multiplier, divisor, enabled);
+    clktree_create_generic(clk, name, multiplier, divisor, enabled);
 
     /* Add the input clock connections. */
     va_start(input_clks, selected_input);
-    while((input_clk = va_arg(input_clks, Clk)) != NULL) {
+    while((input_clk = va_arg(input_clks, Clk_p)) != NULL) {
         CLKTREE_ADD_LINK(
                 clk->input,
                 clk->input_count,
@@ -259,12 +225,10 @@ Clk clktree_create_clk(
     }
     va_end(input_clks);
     clktree_set_selected_input(clk, selected_input);
-
-    return clk;
 }
 
 
-void clktree_set_scale(Clk clk, uint16_t multiplier, uint16_t divisor)
+void clktree_set_scale(Clk_p clk, uint16_t multiplier, uint16_t divisor)
 {
     clk->multiplier = multiplier;
     clk->divisor = divisor;
@@ -273,7 +237,7 @@ void clktree_set_scale(Clk clk, uint16_t multiplier, uint16_t divisor)
 }
 
 
-void clktree_set_enabled(Clk clk, bool enabled)
+void clktree_set_enabled(Clk_p clk, bool enabled)
 {
     clk->enabled = enabled;
 
@@ -281,7 +245,7 @@ void clktree_set_enabled(Clk clk, bool enabled)
 }
 
 
-void clktree_set_selected_input(Clk clk, int selected_input)
+void clktree_set_selected_input(Clk_p clk, int selected_input)
 {
     uint32_t input_freq;
 

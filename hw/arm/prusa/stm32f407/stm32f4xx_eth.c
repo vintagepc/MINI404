@@ -189,31 +189,6 @@ struct Stm32F4xx_Eth {
     bool is_connected;
 };
 
-// static const VMStateDescription vmstate_rxtx_stats = {
-//     .name = "stm32f4xx_eth_stats",
-//     .version_id = 1,
-//     .minimum_version_id = 1,
-//     .fields = (VMStateField[]) {
-//         VMSTATE_UINT64(rx_bytes, RxTxStats),
-//         VMSTATE_UINT64(tx_bytes, RxTxStats),
-//         VMSTATE_UINT64(rx, RxTxStats),
-//         VMSTATE_UINT64(rx_bcast, RxTxStats),
-//         VMSTATE_UINT64(rx_mcast, RxTxStats),
-//         VMSTATE_END_OF_LIST()
-//     }
-// };
-
-// static const VMStateDescription vmstate_xgmac = {
-//     .name = "xgmac",
-//     .version_id = 1,
-//     .minimum_version_id = 1,
-//     .fields = (VMStateField[]) {
-//         VMSTATE_STRUCT(stats, Stm32F4xx_Eth, 0, vmstate_rxtx_stats, RxTxStats),
-//         VMSTATE_UINT32_ARRAY(regs, Stm32F4xx_Eth, R_MAX),
-//         VMSTATE_END_OF_LIST()
-//     }
-// };
-
 static void stm32f4xx_eth_read_desc(Stm32F4xx_Eth *s, struct desc *d, int rx)
 {
     uint32_t addr = rx ? s->regs[DMA_CUR_RX_DESC_ADDR] :
@@ -520,12 +495,39 @@ static Property stm32f4xx_eth_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
+static const VMStateDescription vmstate_rxtx_stats = {
+    .name = "stm32f4xx_eth_stats",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT64(rx_bytes, RxTxStats),
+        VMSTATE_UINT64(tx_bytes, RxTxStats),
+        VMSTATE_UINT64(rx, RxTxStats),
+        VMSTATE_UINT64(rx_bcast, RxTxStats),
+        VMSTATE_UINT64(rx_mcast, RxTxStats),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const VMStateDescription vmstate_stm32f4xx_eth = {
+    .name = TYPE_STM32F4XXETH,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_STRUCT(stats, Stm32F4xx_Eth, 0, vmstate_rxtx_stats, RxTxStats),
+        VMSTATE_UINT32_ARRAY(regs, Stm32F4xx_Eth, R_MAX),
+        VMSTATE_UINT16_ARRAY(mii,Stm32F4xx_Eth, 32),
+        VMSTATE_BOOL(is_connected, Stm32F4xx_Eth),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void stm32f4xx_eth_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = stm32f4xx_eth_realize;
-    //dc->vmsd = &vmstate_xgmac;
+    dc->vmsd = &vmstate_stm32f4xx_eth;
     device_class_set_props(dc, stm32f4xx_eth_properties);
 }
 

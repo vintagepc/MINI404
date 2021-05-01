@@ -30,6 +30,7 @@
 #include "hw/irq.h"
 #include "hw/i2c/i2c.h"
 #include "hw/sysbus.h"
+#include "migration/vmstate.h"
 #include "stm32_util.h"
 #include "stm32f2xx_i2c.h"
 #include "../utility/macros.h"
@@ -345,9 +346,27 @@ stm32f2xxi2c_init(Object *obj)
     s->bus = i2c_init_bus(dev, "i2c");
 }
 
+static const VMStateDescription vmstate_stm32f2xx_i2c = {
+    .name = TYPE_STM32F2XX_I2C,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT16_ARRAY(regs,STM32F2XXI2CState,R_I2C_COUNT),
+        VMSTATE_UINT8(last_read,STM32F2XXI2CState),
+        VMSTATE_UINT8(slave_address,STM32F2XXI2CState),
+        VMSTATE_UINT8(shiftreg,STM32F2XXI2CState),
+        VMSTATE_INT32(rx,STM32F2XXI2CState),
+        VMSTATE_BOOL(shift_full,STM32F2XXI2CState),
+        VMSTATE_BOOL(is_read,STM32F2XXI2CState),
+        VMSTATE_BOOL(dr_unread,STM32F2XXI2CState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void
 stm32f2xxi2c_class_init(ObjectClass *c, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(c);
+    dc->vmsd = &vmstate_stm32f2xx_i2c;
     dc->reset = stm32f2xxi2c_reset;
 }

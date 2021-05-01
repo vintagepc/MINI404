@@ -26,6 +26,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/sysbus.h"
 #include "hw/irq.h"
+#include "migration/vmstate.h"
 #include "qemu/timer.h"
 #include <math.h>
 #include "../utility/p404scriptable.h"
@@ -50,17 +51,17 @@ struct heater_state {
     float currentTemp;
 
     uint8_t chrLabel;
-    uint16_t pwm, lastpwm, timeout_level;
-
     uint8_t mass10x;
+
+    uint16_t pwm, lastpwm, timeout_level;
+    uint16_t custom_pwm;
+    int32_t current_x100, ambient_x100;
+    
+    int16_t tick_overrun;
 
     uint64_t last_tick, last_off, last_on;
 
-    int tick_overrun;
-
     bool is_ticking, use_custom_pwm;
-
-    uint16_t custom_pwm;
 
     qemu_irq temp_out, pwm_out;
     QEMUTimer *temp_tick, *softpwm_timeout;
@@ -224,11 +225,54 @@ static Property heater_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
+static int heater_pre_save(void *opaque) {
+    heater_state *s = HEATER(opaque);
+    s->ambient_x100 = 100.f * s->ambientTemp;
+    s->current_x100 = 100.f * s->currentTemp;
+    return 0;
+}
+
+static int heater_post_load(void *opaque, int version) {
+    heater_state *s = HEATER(opaque);
+    s->ambientTemp = (float)s->ambient_x100/100.f; 
+    s->currentTemp = (float)s->current_x100/100.f;
+    s->thermalMass = ((float)s->mass10x)/10.f;
+    return 0;
+}
+
+static const VMStateDescription vmstate_heater = {
+    .name = TYPE_HEATER,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .pre_save = heater_pre_save,
+    .post_load = heater_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT8(chrLabel,heater_state),
+        VMSTATE_UINT8(mass10x,heater_state),
+        VMSTATE_UINT16(pwm,heater_state),
+        VMSTATE_UINT16(lastpwm,heater_state),
+        VMSTATE_UINT16(timeout_level,heater_state),
+        VMSTATE_UINT16(custom_pwm,heater_state),
+        VMSTATE_INT32(current_x100,heater_state),
+        VMSTATE_INT32(ambient_x100,heater_state),
+        VMSTATE_INT16(tick_overrun,heater_state),
+        VMSTATE_UINT64(last_tick,heater_state),
+        VMSTATE_UINT64(last_off,heater_state),
+        VMSTATE_UINT64(last_on,heater_state),
+        VMSTATE_BOOL(is_ticking,heater_state),
+        VMSTATE_BOOL(use_custom_pwm,heater_state),
+        VMSTATE_TIMER_PTR(temp_tick,heater_state),
+        VMSTATE_TIMER_PTR(softpwm_timeout,heater_state),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 
 static void heater_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = heater_reset;
+    dc->vmsd = &vmstate_heater;
     device_class_set_props(dc, heater_properties);
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);

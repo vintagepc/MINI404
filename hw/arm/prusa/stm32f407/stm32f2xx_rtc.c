@@ -26,6 +26,7 @@
 #include "stm32f2xx_rtc.h"
 #include <sys/time.h>
 #include "qemu-common.h"
+#include "migration/vmstate.h"
 #include "hw/sysbus.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
@@ -601,18 +602,26 @@ f2xx_rtc_init(Object *obj)
     s->wu_timer = timer_new_ns(QEMU_CLOCK_REALTIME, f2xx_wu_timer, s);
 }
 
-// static Property f2xx_rtc_properties[] = {
-//     DEFINE_PROP_END_OF_LIST(),
-// };
+static const VMStateDescription vmstate_stm32f2xx_rtc = {
+    .name = TYPE_STM32F2XX_RTC,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_TIMER_PTR(timer,f2xx_rtc),
+        VMSTATE_TIMER_PTR(wu_timer,f2xx_rtc),
+        VMSTATE_INT64(host_to_target_offset_us,f2xx_rtc),
+        VMSTATE_INT64(ticks,f2xx_rtc),
+        VMSTATE_UINT32_ARRAY(regs,f2xx_rtc,R_RTC_MAX),
+        VMSTATE_INT32(wp_count,f2xx_rtc),
+        VMSTATE_END_OF_LIST()
+    }
+};
 
 static void
 f2xx_rtc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    // SysBusDeviceClass *sc = SYS_BUS_DEVICE_CLASS(klass);
-    // sc->init = f2xx_rtc_init;
-    //TODO: fix this: dc->no_user = 1;
-    //dc->props = f2xx_rtc_properties;
+    dc->vmsd = &vmstate_stm32f2xx_rtc;
     dc->reset = f2xx_rtc_reset;
 }
 

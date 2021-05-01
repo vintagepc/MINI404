@@ -38,19 +38,91 @@ struct Stm32Uart {
     /* Inherited */
     SysBusDevice busdev;
 
-    /* Properties */
-    // void *stm32_rcc_prop;
-
     /* Private */
     MemoryRegion iomem;
 
     Stm32Rcc *stm32_rcc;
 
-    int uart_index;
-
-    uint8_t reply_count;
-    uint32_t reply;
-    bool is_read;
+    union {
+        uint32_t regs[7];
+        struct {
+            struct {
+                uint32_t PE     :1;
+                uint32_t FE     :1;
+                uint32_t NF     :1;
+                uint32_t ORE    :1;
+                uint32_t IDLE   :1;
+                uint32_t RXNE   :1;
+                uint32_t TC     :1;
+                uint32_t TXE    :1;
+                uint32_t LBD    :1;
+                uint32_t CTS    :1;
+                uint32_t :22;
+            } QEMU_PACKED SR;
+            struct {
+                uint32_t DR :8;
+                uint32_t :24;
+            } QEMU_PACKED DR; // Note - this is the R DR. TXDR is separate.
+            struct {
+                uint32_t FRACT  :4;
+                uint32_t MANT   :12;
+                uint32_t :16; 
+            } QEMU_PACKED BRR;
+            struct {
+                uint32_t SBK    :1;
+                uint32_t RWU    :1;
+                uint32_t RE     :1;
+                uint32_t TE     :1;
+                uint32_t IDLEIE :1;
+                uint32_t RXNEIE :1;
+                uint32_t TCIE   :1;
+                uint32_t TXEIE   :1;
+                uint32_t PEIE   :1;
+                uint32_t PS     :1;
+                uint32_t PCE    :1;
+                uint32_t WAKE   :1;
+                uint32_t M      :1;
+                uint32_t UE     :1;
+                uint32_t _reserved :1;
+                uint32_t OVER8  :1;
+                uint16_t :16;
+            } QEMU_PACKED CR1;
+            struct {
+                uint32_t ADD    :4;
+                uint32_t _res   :1;
+                uint32_t LBDL   :1;
+                uint32_t LBDIE  :1;
+                uint32_t _res1  :1;
+                uint32_t LBCL   :1;
+                uint32_t CPHA   :1;
+                uint32_t CPOL   :1;
+                uint32_t CLKEN  :1;
+                uint32_t STOP   :2;
+                uint32_t LINEN  :1;
+                uint32_t :17;
+            } QEMU_PACKED CR2;
+            struct {
+                uint32_t EIE    :1;
+                uint32_t IREN   :1;
+                uint32_t IRLP   :1;
+                uint32_t HDSEL  :1;
+                uint32_t NACK   :1;
+                uint32_t SCEN   :1;
+                uint32_t DMAR   :1;
+                uint32_t DMAT   :1;
+                uint32_t RTSE   :1;
+                uint32_t CTSE   :1;
+                uint32_t CTSIE  :1;
+                uint32_t CNEBI  :1;
+                uint32_t :20;
+            } QEMU_PACKED CR3;
+            struct {
+                uint32_t PSC    :8;
+                uint32_t GT     :8;
+                uint32_t :16;
+            } QEMU_PACKED GPTR;
+        } QEMU_PACKED defs;
+    };
 
     stm32_periph_t periph;
 
@@ -58,27 +130,8 @@ struct Stm32Uart {
     int64_t ns_per_char;
 
     /* Register Values */
-    uint32_t
-        USART_RDR,
-        USART_TDR,
-        USART_BRR,
-        USART_CR1,
-        USART_CR2,
-        USART_CR3;
-
-    /* Register Field Values */
-    uint32_t
-        USART_SR_TXE,
-        USART_SR_TC,
-        USART_SR_RXNE,
-        USART_SR_ORE,
-        USART_CR1_UE,
-        USART_CR1_TXEIE,
-        USART_CR1_TCIE,
-        USART_CR1_RXNEIE,
-        USART_CR1_TE,
-        USART_CR1_RE;
-
+    uint32_t USART_TDR;
+        
     bool sr_read_since_ore_set;
 
     /* Indicates whether the USART is currently receiving a byte. */

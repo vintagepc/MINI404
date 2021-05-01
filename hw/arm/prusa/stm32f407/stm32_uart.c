@@ -22,17 +22,21 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "hw/irq.h"
 #include "exec/memory.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
+#include "migration/vmstate.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
 #include "stm32.h"
 #include "hw/qdev-properties.h"
 #include "stm32_uart.h"
 #include "qemu/bitops.h"
+#include "assert.h"
+#include "../utility/macros.h"
 
 
 
@@ -50,37 +54,14 @@
 #define DPRINTF(fmt, ...)
 #endif
 
-#define USART_SR_OFFSET 0x00
-#define USART_SR_TXE_BIT 7
-#define USART_SR_TC_BIT 6
-#define USART_SR_RXNE_BIT 5
-#define USART_SR_ORE_BIT 3
-
-#define USART_DR_OFFSET 0x04
-
-#define USART_BRR_OFFSET 0x08
-
-#define USART_CR1_OFFSET 0x0c
-#define USART_CR1_UE_BIT 13
-#define USART_CR1_M_BIT 12
-#define USART_CR1_PCE_BIT 10
-#define USART_CR1_PS_BIT 9
-#define USART_CR1_TXEIE_BIT 7
-#define USART_CR1_TCIE_BIT 6
-#define USART_CR1_RXNEIE_BIT 5
-#define USART_CR1_TE_BIT 3
-#define USART_CR1_RE_BIT 2
-
-#define USART_CR2_OFFSET 0x10
-#define USART_CR2_STOP_START 12
-#define USART_CR2_STOP_MASK 0x00003000
-
-#define USART_CR3_OFFSET 0x14
-#define USART_CR3_CTSE_BIT 9
-#define USART_CR3_RTSE_BIT 8
-#define USART_CR3_DMAR_BIT 6
-
-#define USART_GTPR_OFFSET 0x18
+#define USART_SR_OFFSET     0x00/4
+#define USART_DR_OFFSET     0x04/4 
+#define USART_BRR_OFFSET    0x08/4
+#define USART_CR1_OFFSET    0x0c/4
+#define USART_CR2_OFFSET    0x10/4
+#define USART_CR3_OFFSET    0x14/4
+#define USART_GTPR_OFFSET   0x18/4
+#define USART_R_END         0x1c/4
 
 /* HELPER FUNCTIONS */
 
@@ -93,10 +74,10 @@ static void stm32_uart_baud_update(Stm32Uart *s)
 
     uint64_t ns_per_bit;
 
-    if((s->USART_BRR == 0) || (clk_freq == 0)) {
+    if((s->regs[USART_BRR_OFFSET] == 0) || (clk_freq == 0)) {
         s->bits_per_sec = 0;
     } else {
-        s->bits_per_sec = clk_freq / s->USART_BRR;
+        s->bits_per_sec = clk_freq / s->regs[USART_BRR_OFFSET];
         ns_per_bit = 1000000000LL / s->bits_per_sec;
 
         /* We assume 10 bits per character.  This may not be exactly
@@ -137,10 +118,10 @@ static void stm32_uart_clk_irq_handler(void *opaque, int n, int level)
 static void stm32_uart_update_irq(Stm32Uart *s) {
     /* Note that we are not checking the ORE flag, but we should be. */
     int new_irq_level =
-       (s->USART_CR1_TCIE & s->USART_SR_TC) |
-       (s->USART_CR1_TXEIE & s->USART_SR_TXE) |
-       (s->USART_CR1_RXNEIE &
-               (s->USART_SR_ORE | s->USART_SR_RXNE));
+       (s->defs.CR1.TCIE & s->defs.SR.TC) |
+       (s->defs.CR1.TXEIE & s->defs.SR.TXE) |
+       (s->defs.CR1.RXNEIE &
+               (s->defs.SR.ORE | s->defs.SR.RXNE));
 
     /* Only trigger an interrupt if the IRQ level changes.  We probably could
      * set the level regardless, but we will just check for good measure.
@@ -149,7 +130,7 @@ static void stm32_uart_update_irq(Stm32Uart *s) {
         qemu_set_irq(s->irq, new_irq_level);
         s->curr_irq_level = new_irq_level;
     }
-    int new_dmar = s->USART_SR_RXNE && (s->USART_CR3 & (1<<USART_CR3_DMAR_BIT));
+    int new_dmar = s->defs.SR.RXNE && (s->defs.CR3.DMAR);
     if (new_dmar != s->dmar_current_level || new_dmar==1)
     {
         s->dmar_current_level = new_dmar;
@@ -167,26 +148,16 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size);
 /* Routine to be called when a transmit is complete. */
 static void stm32_uart_tx_complete(Stm32Uart *s)
 {
-    if(s->USART_SR_TXE == 1) {
+    if(s->defs.SR.TXE == 1) {
         /* If the buffer is empty, there is nothing waiting to be transmitted.
          * Mark the transmit complete. */
-        s->USART_SR_TC = 1;
-        // if (s->uart_index==2 && s->reply_count==8 && stm32_uart_can_receive(s) == USART_RCV_BUF_LEN)
-        // {
-        //     if (s->is_read){
-        //         printf("UART2 reply\n");
-        //         uint8_t reply[8] = {0x05, 0xFF, 0x01, 0x00,0x02, 0x03, 0x04};
-        //         stm32_uart_receive(s, reply, s->is_read?8 : 4);
-        //         s->is_read = false;
-        //     }
-        //     s->reply_count =0;
-        // }
+        s->defs.SR.TC = 1;
         stm32_uart_update_irq(s);
     } else {
         /* Otherwise, mark the transmit buffer as empty and
          * start transmitting the value stored there.
          */
-        s->USART_SR_TXE = 1;
+        s->defs.SR.TXE = 1;
         stm32_uart_update_irq(s);
         stm32_uart_start_tx(s, s->USART_TDR);
   
@@ -201,8 +172,7 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     /* Reset the Transmission Complete flag to indicate a transmit is in
      * progress.
      */
-    s->USART_SR_TC = 0;
-
+    s->defs.SR.TC = 0;
     /* Write the character out. */
     uint8_t chcr = '\r';
     if (ch == '\n') qemu_chr_fe_write_all(&s->chr, &chcr, 1);
@@ -211,15 +181,6 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     // if (s->chr_write_obj) {
         // s->chr_write(s->chr_write_obj, &ch, 1);
     // }
-    if (s->uart_index==2)
-    {
-        s->reply_count++;
-        if (s->reply_count == 3 && !(value & 0x80 ))
-        {
-            s->is_read = true;
-            s->reply_count += 4;
-        }
-    }
 #ifdef STM32_UART_NO_BAUD_DELAY
     /* If BAUD delays are not being simulated, then immediately mark the
      * transmission as complete.
@@ -236,7 +197,7 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
  * ready for it. */
 static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
 {
-    bool enabled = (s->USART_CR1_UE && s->USART_CR1_RE);
+    bool enabled = (s->defs.CR1.UE && s->defs.CR1.RE);
 
     /* If we have no more data, or we are emulating baud delay and it's not 
      * time yet for the next byte, return without filling the RDR */
@@ -246,7 +207,7 @@ static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
 
 #ifndef STM32_UART_ENABLE_OVERRUN
     /* If overrun is not enabled, don't overwrite the current byte in the RDR */
-    if (enabled && s->USART_SR_RXNE) {
+    if (enabled && s->defs.SR.RXNE) {
         return;
     }
 #endif
@@ -257,16 +218,16 @@ static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
 
     /* Only handle the received character if the module is enabled, */
     if (enabled) {
-        if(s->USART_SR_RXNE) {
+        if(s->defs.SR.RXNE) {
             DPRINTF("stm32_uart_receive: overrun error\n");
-            s->USART_SR_ORE = 1;
+            s->defs.SR.ORE = 1;
             s->sr_read_since_ore_set = false;
             stm32_uart_update_irq(s);
         }
 
         /* Receive the character and mark the buffer as not empty. */
-        s->USART_RDR = byte;
-        s->USART_SR_RXNE = 1;
+        s->defs.DR.DR = byte;
+        s->defs.SR.RXNE = 1;
         // Clear DMAR flag so the irq gets re-raised.
         stm32_uart_update_irq(s);
     }
@@ -328,85 +289,39 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
 
 /* REGISTER IMPLEMENTATION */
 
-static uint32_t stm32_uart_USART_SR_read(Stm32Uart *s)
-{
-    /* If the Overflow flag is set, reading the SR register is the first step
-     * to resetting the flag.
-     */
-    if(s->USART_SR_ORE) {
-        s->sr_read_since_ore_set = true;
-    }
-
-    return (s->USART_SR_TXE << USART_SR_TXE_BIT) |
-           (s->USART_SR_TC << USART_SR_TC_BIT) |
-           (s->USART_SR_RXNE << USART_SR_RXNE_BIT) |
-           (s->USART_SR_ORE << USART_SR_ORE_BIT);
-
-    qemu_chr_fe_accept_input(&s->chr);
-}
-
-
-
-
-
-static void stm32_uart_USART_SR_write(Stm32Uart *s, uint32_t new_value)
-{
-    uint32_t new_TC, new_RXNE;
-
-    new_TC = extract32(new_value, USART_SR_TC_BIT, 1);
-    /* The Transmit Complete flag can be cleared, but not set. */
-    if(new_TC) {
-        qemu_log_mask(LOG_GUEST_ERROR,"Software attempted to set USART TC bit\n");
-    } else {
-        s->USART_SR_TC = new_TC;
-    }
-
-    new_RXNE = extract32(new_value, USART_SR_RXNE_BIT, 1);
-    /* The Read Data Register Not Empty flag can be cleared, but not set. */
-    if(new_RXNE) {
-        qemu_log_mask(LOG_GUEST_ERROR,"Software attempted to set USART RXNE bit\n");
-    } else { 
-        s->USART_SR_RXNE = new_RXNE;
-    }
-
-    stm32_uart_update_irq(s);
-}
-
-
-static void stm32_uart_USART_DR_read(Stm32Uart *s, uint32_t *read_value)
+static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
 {
     /* If the Overflow flag is set, then it should be cleared if the software
      * performs an SR read followed by a DR read.
      */
 
-    if(s->USART_SR_ORE) {
+    if(s->defs.SR.ORE) {
         if(s->sr_read_since_ore_set) {
-            s->USART_SR_ORE = 0;
-
+            s->defs.SR.ORE = 0;
         }
     }
 
-    if(!s->USART_CR1_UE) {
-        qemu_log_mask(LOG_GUEST_ERROR,"Attempted to read from USART_DR while UART was disabled.");
+    if(!s->defs.CR1.UE) {
+        qemu_log_mask(LOG_GUEST_ERROR,"Attempted to read from USART_DR while UART was disabled.\n");
     }
 
-    if(!s->USART_CR1_RE) {
-        qemu_log_mask(LOG_GUEST_ERROR,"Attempted to read from USART_DR while UART receiver was disabled.");
+    if(!s->defs.CR1.RE) {
+        qemu_log_mask(LOG_GUEST_ERROR,"Attempted to read from USART_DR while UART receiver was disabled.\n");
     }
-    if(s->USART_SR_RXNE) {
+    if(s->defs.SR.RXNE) {
         /* If the receive buffer is not empty, return the value. and mark the
          * buffer as empty.
          */
-        (*read_value) = s->USART_RDR;
-
         // printf("DR read: %02x\n", *read_value);
 
-        s->USART_SR_RXNE = 0;
+        s->defs.SR.RXNE = 0;
 
+        *data_read = s->defs.DR.DR;
         /* Put next character into the RDR if we have one */
         stm32_uart_fill_receive_data_register(s);
     } else {
         printf("STM32_UART WARNING: Read value from USART_DR (%08lx) while it was empty.\n", s->iomem.addr);
+        s->defs.DR.DR = 0; // Clear value.
     }
 
     qemu_chr_fe_accept_input(&s->chr);
@@ -419,16 +334,16 @@ static void stm32_uart_USART_DR_write(Stm32Uart *s, uint32_t new_value)
     uint32_t write_value = new_value & 0x000001ff;
     //printf("uart %d: wr: %02x\n",s->uart_index, write_value);
 
-    if(!s->USART_CR1_UE) {
+    if(!s->defs.CR1.UE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART was disabled.");
     }
 
-    if(!s->USART_CR1_TE) {
+    if(!s->defs.CR1.TE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART transmitter "
                  "was disabled.");
     }
 
-    if(s->USART_SR_TC) {
+    if(s->defs.SR.TC) {
         /* If the Transmission Complete bit is set, it means the USART is not
          * currently transmitting.  This means, a transmission can immediately
          * start.
@@ -440,62 +355,15 @@ static void stm32_uart_USART_DR_write(Stm32Uart *s, uint32_t new_value)
          * If it is not empty, trigger a hardware error.  Software should check
          * to make sure it is empty before writing to the Data Register.
          */
-        if(s->USART_SR_TXE) {
+        if(s->defs.SR.TXE) {
             s->USART_TDR = write_value;
-            s->USART_SR_TXE = 0;
+            s->defs.SR.TXE = 0;
         } else {
             qemu_log_mask(LOG_GUEST_ERROR,"Wrote new value to USART_DR while it was non-empty.\n");
         }
     }
 
     stm32_uart_update_irq(s);
-}
-
-/* Update the Baud Rate Register. */
-static void stm32_uart_USART_BRR_write(Stm32Uart *s, uint32_t new_value,
-                                        bool init)
-{
-    s->USART_BRR = new_value & 0x0000ffff;
-
-    stm32_uart_baud_update(s);
-}
-
-static void stm32_uart_USART_CR1_write(Stm32Uart *s, uint32_t new_value,
-                                        bool init)
-{
-    s->USART_CR1_UE = extract32(new_value, USART_CR1_UE_BIT, 1);
-#if 0 /* XXX Does not work with f2xx yet */
-    if(s->USART_CR1_UE) {
-        /* Check to make sure the correct mapping is selected when enabling the
-         * USART.
-         */
-        if(s->afio_board_map != stm32_afio_get_periph_map(s->stm32_afio, s->periph)) {
-            hw_error("Bad AFIO mapping for %s", s->busdev.parent_obj.id);
-        }
-    }
-#endif
-
-    s->USART_CR1_TXEIE = extract32(new_value, USART_CR1_TXEIE_BIT, 1);
-    s->USART_CR1_TCIE = extract32(new_value, USART_CR1_TCIE_BIT, 1);
-    s->USART_CR1_RXNEIE = extract32(new_value, USART_CR1_RXNEIE_BIT, 1);
-
-    s->USART_CR1_TE = s->USART_SR_TC = extract32(new_value, USART_CR1_TE_BIT, 1);
-    s->USART_CR1_RE = extract32(new_value, USART_CR1_RE_BIT, 1);
-    s->USART_CR1 = new_value & 0x00003fff;
-
-     stm32_uart_update_irq(s);
-}
-
-static void stm32_uart_USART_CR2_write(Stm32Uart *s, uint32_t new_value,
-                                        bool init)
-{
-    s->USART_CR2 = new_value & 0x00007f7f;
-}
-
-static void stm32_uart_USART_CR3_write(Stm32Uart *s, uint32_t new_value,
-                                        bool init)
-{
-    s->USART_CR3 = new_value & 0x000007ff;
 }
 
 static void stm32_uart_reset(DeviceState *dev)
@@ -506,98 +374,118 @@ static void stm32_uart_reset(DeviceState *dev)
      * read-only, so we do not call the "write" routine
      * like normal.
      */
-    s->USART_SR_TXE = 1;
-    s->USART_SR_TC = 1;
-    s->USART_SR_RXNE = 0;
-    s->USART_SR_ORE = 0;
-
+    for (int i=0; i<7; i++) {
+        s->regs[i] = 0;
+    }
+    s->defs.SR.TC = 1;
+    s->defs.SR.TXE = 1;
+    
     s->dmar_current_level = -1;
 
     // Do not initialize USART_DR - it is documented as undefined at reset
     // and does not behave like normal registers.
-    stm32_uart_USART_BRR_write(s, 0x00000000, true);
-    stm32_uart_USART_CR1_write(s, 0x00000000, true);
-    stm32_uart_USART_CR2_write(s, 0x00000000, true);
-    stm32_uart_USART_CR3_write(s, 0x00000000, true);
-
-    s->reply_count=0;
-    s->reply  = 0x50FF0100;
+    //stm32_uart_USART_BRR_write(s, 0x00000000, true);
 
     stm32_uart_update_irq(s);
 }
 
-static uint64_t stm32_uart_read(void *opaque, hwaddr offset,
+static uint64_t stm32_uart_read(void *opaque, hwaddr addr,
                           unsigned size)
 {
     Stm32Uart *s = (Stm32Uart *)opaque;
-    uint32_t value = 0;
-    int start = (offset & 3) * 8;
-    int length = size * 8;
+    int offset = addr & 0x3;
+    addr >>= 2;
 
-    switch (offset & 0xfffffffc) {
-        case USART_SR_OFFSET:
-            return extract64(stm32_uart_USART_SR_read(s), start, length);
-        case USART_DR_OFFSET:
-            stm32_uart_USART_DR_read(s, &value);
-            return extract64(value, start, length);
-        case USART_BRR_OFFSET:
-            return extract64(s->USART_BRR, start, length);
-        case USART_CR1_OFFSET:
-            return extract64(s->USART_CR1, start, length);
-        case USART_CR2_OFFSET:
-            return extract64(s->USART_CR2, start, length);
-        case USART_CR3_OFFSET:
-            return extract64(s->USART_CR3, start, length);
-        case USART_GTPR_OFFSET:
-            STM32_NOT_IMPL_REG(offset, size);
-            return 0;
-        default:
-            STM32_BAD_REG(offset, size);
-            return 0;
+    if (addr >= USART_R_END) {
+        qemu_log_mask(LOG_GUEST_ERROR, "invalid read usart register 0x%x\n",
+          (unsigned int)addr << 2);
+        DPRINTF("  %s: result: 0\n", __func__);
+        return 0;
     }
+
+    switch (addr) {
+        case USART_SR_OFFSET:
+            if(s->defs.SR.ORE) {
+                s->sr_read_since_ore_set = true;
+            }
+            qemu_chr_fe_accept_input(&s->chr);
+            break;
+        case USART_DR_OFFSET:
+            {
+                uint8_t value = 0;
+                stm32_uart_USART_DR_read(s, &value);
+                return value;
+            }
+            break;
+    }
+
+    uint32_t value = s->regs[addr];
+
+    value = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
+
+    DPRINTF("%s: addr: 0x%llx, size: %u, value: 0x%x\n", __func__, addr, size, value);
+    return value;
+
 }
 
-static void stm32_uart_write(void *opaque, hwaddr offset,
+static void stm32_uart_write(void *opaque, hwaddr addr,
                        uint64_t value, unsigned size)
 {
     Stm32Uart *s = (Stm32Uart *)opaque;
-    int start = (offset & 3) * 8;
-    int length = size * 8;
+    int offset = addr & 0x3;
+    uint32_t data = 0;
+    DPRINTF("%s: addr: 0x%llx, data: 0x%x, size: %u\n", __func__, addr, data, size);
+
+    addr >>= 2;
+    if (addr >= USART_R_END) {
+        qemu_log_mask(LOG_GUEST_ERROR, "invalid write f2xx usart register 0x%x\n",
+            (unsigned int)addr << 2);
+        return;
+    }
+
+    switch(size) {
+    case 1:
+        data = (s->regs[addr] & ~(0xff << (offset * 8))) | data << (offset * 8);
+        break;
+    case 2:
+        data = (s->regs[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
+        break;
+    case 4:
+        data = value;
+        break;
+    default:
+        abort();
+    }
+
     if (s->stm32_rcc)
         stm32_rcc_check_periph_clk(s->stm32_rcc, s->periph);
 
-    switch (offset & 0xfffffffc) {
+    switch (addr) {
         case USART_SR_OFFSET:
-            stm32_uart_USART_SR_write(s,
-                  deposit64(stm32_uart_USART_SR_read(s), start, length, value));
+            // Check write mask to see if guest tried to set a clear-only bit
+            if ((value & ~(s->regs[USART_SR_OFFSET])) & 0x360) {
+                qemu_log_mask(LOG_GUEST_ERROR, "USART - guest attempted to set a clear-only SR bit with value %0" HWADDR_PRIx "\n", value);
+                value |= 0x360;
+            }
+            s->regs[addr] &= value;
+            stm32_uart_update_irq(s);
             break;
         case USART_DR_OFFSET:
-            stm32_uart_USART_DR_write(s,
-                  deposit64(0, start, length, value));
+            stm32_uart_USART_DR_write(s,value);
             break;
         case USART_BRR_OFFSET:
-            stm32_uart_USART_BRR_write(s,
-                  deposit64(s->USART_BRR, start, length, value), false);
+            s->regs[addr] = data;
+            stm32_uart_baud_update(s);
             break;
         case USART_CR1_OFFSET:
-            stm32_uart_USART_CR1_write(s,
-                  deposit64(s->USART_CR1, start, length, value), false);
-            break;
-        case USART_CR2_OFFSET:
-            stm32_uart_USART_CR2_write(s,
-                  deposit64(s->USART_CR2, start, length, value), false);
-            break;
-        case USART_CR3_OFFSET:
-            stm32_uart_USART_CR3_write(s,
-                  deposit64(s->USART_CR3, start, length, value), false);
-            break;
-        case USART_GTPR_OFFSET:
-            STM32_NOT_IMPL_REG(offset, 2U);
+            s->regs[addr] = data;
+            stm32_uart_update_irq(s);
             break;
         default:
-            STM32_BAD_REG(offset, 2U);
+            s->regs[addr] = data;
             break;
     }
+
 }
 
 static const MemoryRegionOps stm32_uart_ops = {
@@ -665,13 +553,43 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
     qemu_chr_fe_set_handlers(&s->chr, stm32_uart_can_receive, stm32_uart_receive, NULL,
             NULL,s,NULL,true);
     qemu_chr_fe_set_echo(&s->chr, true);
+    // Throw compile errors if alignment is off
+    CHECK_ALIGN(sizeof(s->defs), sizeof(s->regs), "USART");
+    CHECK_ALIGN(sizeof(uint32_t)*7, sizeof(s->regs), "USART");
+    CHECK_REG_u32(s->defs.SR);
+    CHECK_REG_u32(s->defs.DR);
+    CHECK_REG_u32(s->defs.BRR);
+    CHECK_REG_u32(s->defs.CR1);
+    CHECK_REG_u32(s->defs.CR2);
+    CHECK_REG_u32(s->defs.CR3);
+    CHECK_REG_u32(s->defs.GPTR);
 }
 
 static Property stm32_uart_properties[] = {
-    // DEFINE_PROP_PTR("stm32_rcc", Stm32Uart, stm32_rcc_prop),
     DEFINE_PROP_CHR("chardev", Stm32Uart, chr),
-    DEFINE_PROP_INT32("index", Stm32Uart, uart_index,0),
     DEFINE_PROP_END_OF_LIST()
+};
+
+static const VMStateDescription vmstate_stm32_uart = {
+    .name = TYPE_STM32_UART,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, Stm32Uart,USART_R_END),
+        VMSTATE_INT32(periph,Stm32Uart),
+        VMSTATE_UINT32(bits_per_sec,Stm32Uart),
+        VMSTATE_INT64(ns_per_char,Stm32Uart),
+        VMSTATE_UINT32(USART_TDR,Stm32Uart),
+        VMSTATE_BOOL(sr_read_since_ore_set,Stm32Uart),
+        VMSTATE_BOOL(receiving,Stm32Uart),
+        VMSTATE_TIMER_PTR(rx_timer,Stm32Uart),
+        VMSTATE_TIMER_PTR(tx_timer,Stm32Uart),
+        VMSTATE_INT32(curr_irq_level,Stm32Uart),
+        VMSTATE_INT32(dmar_current_level,Stm32Uart),
+        VMSTATE_UINT8_ARRAY(rcv_char_buf,Stm32Uart,USART_RCV_BUF_LEN),
+        VMSTATE_UINT32(rcv_char_bytes,Stm32Uart),
+        VMSTATE_END_OF_LIST()
+    }
 };
 
 static void stm32_uart_class_init(ObjectClass *klass, void *data)
@@ -680,6 +598,7 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
     dc->reset = stm32_uart_reset;
     device_class_set_props(dc, stm32_uart_properties);
     dc->realize = stm32_uart_realize;
+    dc->vmsd = &vmstate_stm32_uart;
 }
 
 static TypeInfo stm32_uart_info = {

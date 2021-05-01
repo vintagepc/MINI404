@@ -24,12 +24,14 @@
 #include "stm32f2xx_rcc.h"
 #include "qemu-common.h"
 #include "hw/qdev-properties.h"
+#include "migration/vmstate.h"
 #include "qemu/timer.h"
 #include <stdio.h>
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/irq.h"
-
+// #define STATE_DEBUG_VAR rcc_dbg
+#include "../utility/macros.h"
 
 /* DEFINITIONS*/
 
@@ -297,26 +299,8 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define SW_PLL_SELECTED 2
 
 /* HELPER FUNCTIONS */
-struct Clk {                                                                    
-    const char *name;                                                           
-                                                                                
-    bool enabled;                                                               
-                                                                                
-    uint32_t input_freq, output_freq, max_output_freq;                          
-                                                                                
-    uint16_t multiplier, divisor;                                               
-                                                                                
-    unsigned user_count;                                                        
-    qemu_irq user[CLKTREE_MAX_IRQ]; /* Who to notify on change */               
-                                                                                
-    unsigned output_count;                                                      
-    struct Clk *output[CLKTREE_MAX_OUTPUT];                                     
-                                                                                
-    unsigned input_count;                                                       
-    int selected_input;                                                         
-    struct Clk *input[CLKTREE_MAX_INPUT];                                       
-};                                                                              
-                                                                                
+
+DEBUG_COPY(Stm32f2xxRcc,1);                                                                                
 
 /* Enable the peripheral clock if the specified bit is set in the value. */
 static void stm32_rcc_periph_enable(
@@ -327,7 +311,7 @@ static void stm32_rcc_periph_enable(
                                     uint32_t bit_mask)
 {
     //printf("rcc set 0x%x %s %d %x: %sable\n", new_value, s->PERIPHCLK[periph]->name, periph, bit_mask, IS_BIT_SET(new_value, bit_mask)?"en":"dis");
-    clktree_set_enabled(s->PERIPHCLK[periph], IS_BIT_SET(new_value, bit_mask));
+    clktree_set_enabled(&s->PERIPHCLK[periph], IS_BIT_SET(new_value, bit_mask));
 }
 
 
@@ -341,10 +325,10 @@ static void stm32_rcc_periph_enable(
 static uint32_t stm32_rcc_RCC_CR_read(Stm32f2xxRcc *s)
 {
     /* Get the status of the clocks. */
-    const bool PLLON = clktree_is_enabled(s->PLLCLK);
-    const bool HSEON = clktree_is_enabled(s->HSECLK);
-    const bool HSION = clktree_is_enabled(s->HSICLK);
-    const bool PLLI2SON = clktree_is_enabled(s->PLLI2SCLK);
+    const bool PLLON = clktree_is_enabled(&s->PLLCLK);
+    const bool HSEON = clktree_is_enabled(&s->HSECLK);
+    const bool HSION = clktree_is_enabled(&s->HSICLK);
+    const bool PLLI2SON = clktree_is_enabled(&s->PLLI2SCLK);
 
     /* build the register value based on the clock states.  If a clock is on,
      * then its ready bit is always set.
@@ -374,30 +358,30 @@ static void stm32_rcc_RCC_CR_write(Stm32f2xxRcc *s, uint32_t new_value, bool ini
     bool new_PLLON, new_HSEON, new_HSION, new_PLLI2SON;
 
     new_PLLON = IS_BIT_SET(new_value, RCC_CR_PLLON_BIT);
-    if((clktree_is_enabled(s->PLLCLK) && !new_PLLON) &&
+    if((clktree_is_enabled(&s->PLLCLK) && !new_PLLON) &&
        s->RCC_CFGR_SW == SW_PLL_SELECTED) {
         printf("PLL cannot be disabled while it is selected as the system clock.");
     }
-    clktree_set_enabled(s->PLLCLK, new_PLLON);
+    clktree_set_enabled(&s->PLLCLK, new_PLLON);
 
     new_HSEON = IS_BIT_SET(new_value, RCC_CR_HSEON_BIT);
-    if((clktree_is_enabled(s->HSECLK) && !new_HSEON) &&
+    if((clktree_is_enabled(&s->HSECLK) && !new_HSEON) &&
        (s->RCC_CFGR_SW == SW_HSE_SELECTED || s->RCC_CFGR_SW == SW_PLL_SELECTED)
        ) {
         printf("HSE oscillator cannot be disabled while it is driving the system clock.");
     }
-    clktree_set_enabled(s->HSECLK, new_HSEON);
+    clktree_set_enabled(&s->HSECLK, new_HSEON);
 
     new_HSION = IS_BIT_SET(new_value, RCC_CR_HSION_BIT);
-    if((clktree_is_enabled(s->HSECLK) && !new_HSEON) &&
+    if((clktree_is_enabled(&s->HSECLK) && !new_HSEON) &&
        (s->RCC_CFGR_SW == SW_HSI_SELECTED || s->RCC_CFGR_SW == SW_PLL_SELECTED)
        ) {
         printf("HSI oscillator cannot be disabled while it is driving the system clock.");
     }
-    clktree_set_enabled(s->HSICLK, new_HSION);
+    clktree_set_enabled(&s->HSICLK, new_HSION);
 
     new_PLLI2SON = IS_BIT_SET(new_value, RCC_CR_PLLI2SON_BIT);
-    clktree_set_enabled(s->PLLI2SCLK, new_PLLI2SON);
+    clktree_set_enabled(&s->PLLI2SCLK, new_PLLI2SON);
 
     WARN_UNIMPLEMENTED(new_value, 1 << RCC_CR_CSSON_BIT, RCC_CR_RESET_VALUE);
     WARN_UNIMPLEMENTED(new_value, RCC_CR_HSICAL_MASK, RCC_CR_RESET_VALUE);
@@ -432,7 +416,7 @@ static void stm32_rcc_RCC_PLLCFGR_write(Stm32f2xxRcc *s, uint32_t new_value, boo
 
     /* Warn in case of illegal writes: */
     if (init == false) {
-        const bool are_disabled = (!clktree_is_enabled(s->PLLCLK) /* && TODO: !clktree_is_enabled(s->PLLI2SCLK) */);
+        const bool are_disabled = (!clktree_is_enabled(&s->PLLCLK) /* && TODO: !clktree_is_enabled(s->PLLI2SCLK) */);
         if (are_disabled == false) {
             const char *warning_fmt = "Can only change %s while PLL and PLLI2S are disabled";
             if (new_PLLM != s->RCC_PLLCFGR_PLLM) {
@@ -453,13 +437,13 @@ static void stm32_rcc_RCC_PLLCFGR_write(Stm32f2xxRcc *s, uint32_t new_value, boo
     /* Set the new values: */
     s->RCC_PLLCFGR_PLLM = new_PLLM;
     s->RCC_PLLCFGR_PLLN = new_PLLN;
-    clktree_set_scale(s->PLLM, new_PLLN, new_PLLM);
+    clktree_set_scale(&s->PLLM, new_PLLN, new_PLLM);
 
     s->RCC_PLLCFGR_PLLSRC = new_PLLSRC;
-    clktree_set_selected_input(s->PLLM, new_PLLSRC);
+    clktree_set_selected_input(&s->PLLM, new_PLLSRC);
 
     s->RCC_PLLCFGR_PLLP = new_PLLP;
-    clktree_set_scale(s->PLLCLK, 1, new_PLLP);
+    clktree_set_scale(&s->PLLCLK, 1, new_PLLP);
 
     WARN_UNIMPLEMENTED(new_value, RCC_PLLCFGR_PLLQ_MASK, RCC_PLLCFGR_RESET_VALUE);
 }
@@ -495,7 +479,7 @@ static void stm32_rcc_RCC_PLLI2SCFGR_write(Stm32f2xxRcc *s, uint32_t new_value, 
 
     /* Warn in case of illegal writes: */
     if (init == false) {
-        const bool are_disabled = (!clktree_is_enabled(s->PLLI2SCLK) /* && TODO: !clktree_is_enabled(s->PLLI2SCLK) */);
+        const bool are_disabled = (!clktree_is_enabled(&s->PLLI2SCLK) /* && TODO: !clktree_is_enabled(s->PLLI2SCLK) */);
         if (are_disabled == false) {
             const char *warning_fmt = "Can only change %s while PLL and PLLI2S are disabled";
             if (new_PLLR != s->RCC_PLLI2SCFGR_PLLR) {
@@ -517,9 +501,9 @@ static void stm32_rcc_RCC_PLLI2SCFGR_write(Stm32f2xxRcc *s, uint32_t new_value, 
     s->RCC_PLLI2SCFGR_PLLR = new_PLLR;
     s->RCC_PLLI2SCFGR_PLLQ = new_PLLQ;
     s->RCC_PLLI2SCFGR_PLLN = new_PLLN;
-    clktree_set_scale(s->PLLI2SM, new_PLLN, s->RCC_PLLCFGR_PLLM );
+    clktree_set_scale(&s->PLLI2SM, new_PLLN, s->RCC_PLLCFGR_PLLM );
 
-    clktree_set_scale(s->PLLI2SCLK, 1, new_PLLR);
+    clktree_set_scale(&s->PLLI2SCLK, 1, new_PLLR);
     WARN_UNIMPLEMENTED(new_value, RCC_PLLI2SCFGR_PLLQ_MASK, RCC_PLLI2SCFGR_RESET_VALUE);
 }
 
@@ -539,25 +523,25 @@ static void stm32_rcc_RCC_CFGR_write(Stm32f2xxRcc *s, uint32_t new_value, bool i
     /* PPRE2 */
     s->RCC_CFGR_PPRE2 = (new_value & RCC_CFGR_PPRE2_MASK) >> RCC_CFGR_PPRE2_START;
     if(s->RCC_CFGR_PPRE2 < 0x4) {
-        clktree_set_scale(s->PCLK2, 1, 1);
+        clktree_set_scale(&s->PCLK2, 1, 1);
     } else {
-        clktree_set_scale(s->PCLK2, 1, 2 * (s->RCC_CFGR_PPRE2 - 3));
+        clktree_set_scale(&s->PCLK2, 1, 2 * (s->RCC_CFGR_PPRE2 - 3));
     }
 
     /* PPRE1 */
     s->RCC_CFGR_PPRE1 = (new_value & RCC_CFGR_PPRE1_MASK) >> RCC_CFGR_PPRE1_START;
     if(s->RCC_CFGR_PPRE1 < 4) {
-        clktree_set_scale(s->PCLK1, 1, 1);
+        clktree_set_scale(&s->PCLK1, 1, 1);
     } else {
-        clktree_set_scale(s->PCLK1, 1, 2 * (s->RCC_CFGR_PPRE1 - 3));
+        clktree_set_scale(&s->PCLK1, 1, 2 * (s->RCC_CFGR_PPRE1 - 3));
     }
 
     /* HPRE */
     s->RCC_CFGR_HPRE = (new_value & RCC_CFGR_HPRE_MASK) >> RCC_CFGR_HPRE_START;
     if(s->RCC_CFGR_HPRE < 8) {
-        clktree_set_scale(s->HCLK, 1, 1);
+        clktree_set_scale(&s->HCLK, 1, 1);
     } else {
-        clktree_set_scale(s->HCLK, 1, 2 * (s->RCC_CFGR_HPRE - 7));
+        clktree_set_scale(&s->HCLK, 1, 2 * (s->RCC_CFGR_HPRE - 7));
     }
 
     /* SW */
@@ -566,7 +550,7 @@ static void stm32_rcc_RCC_CFGR_write(Stm32f2xxRcc *s, uint32_t new_value, bool i
         case 0x0:
         case 0x1:
         case 0x2:
-            clktree_set_selected_input(s->SYSCLK, s->RCC_CFGR_SW);
+            clktree_set_selected_input(&s->SYSCLK, s->RCC_CFGR_SW);
             break;
         default:
             printf("Invalid input selected for SYSCLK");
@@ -628,22 +612,20 @@ static uint32_t stm32_rcc_RCC_AHB3ENR_read(Stm32f2xxRcc *s)
 
 static void stm32_rcc_RCC_AHB1ENR_write(Stm32f2xxRcc *s, uint32_t new_value, bool init)
 {
-    clktree_set_enabled(s->PERIPHCLK[STM32_DMA2], IS_BIT_SET(new_value, RCC_AHB1ENR_DMA2EN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_DMA1], IS_BIT_SET(new_value, RCC_AHB1ENR_DMA1EN_BIT));
-
-    clktree_set_enabled(s->PERIPHCLK[STM32_CRC], IS_BIT_SET(new_value, RCC_AHB1ENR_CRCEN_BIT));
-
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOK], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOKEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOJ], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOJEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOI], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOIEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOH], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOHEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOG], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOGEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOF], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOFEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOE], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOEEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOD], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIODEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOC], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOCEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOB], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOBEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_GPIOA], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOAEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_DMA2], IS_BIT_SET(new_value, RCC_AHB1ENR_DMA2EN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_DMA1], IS_BIT_SET(new_value, RCC_AHB1ENR_DMA1EN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_CRC], IS_BIT_SET(new_value, RCC_AHB1ENR_CRCEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOK], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOKEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOJ], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOJEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOI], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOIEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOH], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOHEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOG], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOGEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOF], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOFEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOE], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOEEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOD], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIODEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOC], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOCEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOB], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOBEN_BIT));
+    clktree_set_enabled(&s->PERIPHCLK[STM32_GPIOA], IS_BIT_SET(new_value, RCC_AHB1ENR_GPIOAEN_BIT));
 
     s->RCC_AHB1ENR = new_value;
 
@@ -658,20 +640,20 @@ static void stm32_rcc_RCC_AHB1ENR_write(Stm32f2xxRcc *s, uint32_t new_value, boo
 
 static void stm32_rcc_RCC_AHB2ENR_write(Stm32f2xxRcc *s, uint32_t new_value, bool init)
 {
-    clktree_set_enabled(s->PERIPHCLK[STM32_DCMI_PERIPH],
+    clktree_set_enabled(&s->PERIPHCLK[STM32_DCMI_PERIPH],
                         IS_BIT_SET(new_value, RCC_AHB2ENR_DCMIEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_CRYP_PERIPH],
+    clktree_set_enabled(&s->PERIPHCLK[STM32_CRYP_PERIPH],
                         IS_BIT_SET(new_value, RCC_AHB2ENR_CRYPEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_HASH_PERIPH],
+    clktree_set_enabled(&s->PERIPHCLK[STM32_HASH_PERIPH],
                         IS_BIT_SET(new_value, RCC_AHB2ENR_HASHEN_BIT));
-    clktree_set_enabled(s->PERIPHCLK[STM32_RNG_PERIPH],
+    clktree_set_enabled(&s->PERIPHCLK[STM32_RNG_PERIPH],
                         IS_BIT_SET(new_value, RCC_AHB2ENR_RNGEN_BIT));
     s->RCC_AHB2ENR = new_value;
 }
 
 static void stm32_rcc_RCC_AHB3ENR_write(Stm32f2xxRcc *s, uint32_t new_value, bool init)
 {
-    clktree_set_enabled(s->PERIPHCLK[STM32_FSMC],
+    clktree_set_enabled(&s->PERIPHCLK[STM32_FSMC],
                         IS_BIT_SET(new_value, RCC_AHB3ENR_FSMCEN_BIT));
     s->RCC_AHB3ENR = new_value;
 }
@@ -738,7 +720,7 @@ static void stm32_rcc_RCC_APB1ENR_write(Stm32f2xxRcc *s, uint32_t new_value,
 
 static uint32_t stm32_rcc_RCC_BDCR_read(Stm32f2xxRcc *s)
 {
-    bool lseon = clktree_is_enabled(s->LSECLK);
+    bool lseon = clktree_is_enabled(&s->LSECLK);
 
     return GET_BIT_MASK(RCC_BDCR_LSERDY_BIT, lseon) |
     GET_BIT_MASK(RCC_BDCR_LSEON_BIT, lseon) | 0x100; /* XXX force LSE */
@@ -746,7 +728,7 @@ static uint32_t stm32_rcc_RCC_BDCR_read(Stm32f2xxRcc *s)
 
 static void stm32_rcc_RCC_BDCR_writeb0(Stm32f2xxRcc *s, uint8_t new_value, bool init)
 {
-    clktree_set_enabled(s->LSECLK, IS_BIT_SET(new_value, RCC_BDCR_LSEON_BIT));
+    clktree_set_enabled(&s->LSECLK, IS_BIT_SET(new_value, RCC_BDCR_LSEON_BIT));
     
     WARN_UNIMPLEMENTED(new_value, 1 << RCC_BDCR_LSEBYP_BIT, RCC_BDCR_RESET_VALUE);
 }
@@ -763,7 +745,7 @@ static void stm32_rcc_RCC_BDCR_write(Stm32f2xxRcc *s, uint32_t new_value, bool i
 /* Works the same way as stm32_rcc_RCC_CR_read */
 static uint32_t stm32_rcc_RCC_CSR_read(Stm32f2xxRcc *s)
 {
-    bool lseon = clktree_is_enabled(s->LSICLK);
+    bool lseon = clktree_is_enabled(&s->LSICLK);
 
     return GET_BIT_MASK(RCC_CSR_LSIRDY_BIT, lseon) |
     GET_BIT_MASK(RCC_CSR_LSION_BIT, lseon);
@@ -772,7 +754,7 @@ static uint32_t stm32_rcc_RCC_CSR_read(Stm32f2xxRcc *s)
 /* Works the same way as stm32_rcc_RCC_CR_write */
 static void stm32_rcc_RCC_CSR_write(Stm32f2xxRcc *s, uint32_t new_value, bool init)
 {
-    clktree_set_enabled(s->LSICLK, IS_BIT_SET(new_value, RCC_CSR_LSION_BIT));
+    clktree_set_enabled(&s->LSICLK, IS_BIT_SET(new_value, RCC_CSR_LSION_BIT));
 }
 
 
@@ -982,7 +964,7 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
     uint32_t hclk_freq = 0;
     // uint32_t ext_ref_freq = 0;
     
-    hclk_freq = clktree_get_output_freq(s->HCLK);
+    hclk_freq = clktree_get_output_freq(&s->HCLK);
 
     /* Only update the scales if the frequency is not zero. */
     if (hclk_freq > 0) {
@@ -1019,7 +1001,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
      * indexes will be used).
      */
     for(i = 0; i < STM32_PERIPH_COUNT; i++) {
-        s->PERIPHCLK[i] = NULL;
+        s->PERIPHCLK[i].is_initialized = false;
     }
 
     /* Initialize clocks */
@@ -1027,123 +1009,95 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
      * a disabled oscillator.  Enabling the clock represents
      * turning the clock on.
      */
-    s->HSICLK = clktree_create_src_clk("HSI", HSI_FREQ, false);
-    s->LSICLK = clktree_create_src_clk("LSI", LSI_FREQ, false);
-    s->HSECLK = clktree_create_src_clk("HSE", s->osc_freq, false);
-    s->LSECLK = clktree_create_src_clk("LSE", s->osc32_freq, false);
+    clktree_create_src_clk(&s->HSICLK, "HSI", HSI_FREQ, false);
+    clktree_create_src_clk(&s->LSICLK, "LSI", LSI_FREQ, false);
+    clktree_create_src_clk(&s->HSECLK, "HSE", s->osc_freq, false);
+    clktree_create_src_clk(&s->LSECLK, "LSE", s->osc32_freq, false);
 
     // Moved into PERIPHCLK so it can be queried
     // s->IWDGCLK = clktree_create_clk("IWDGCLK", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0,
     //                                 s->LSICLK, NULL);
-    s->RTCCLK = clktree_create_clk("RTCCLK", 1, 1, false, CLKTREE_NO_MAX_FREQ,
-                                   CLKTREE_NO_INPUT, s->LSECLK, s->LSICLK, s->HSECLK, NULL);
+    clktree_create_clk(&s->RTCCLK, "RTCCLK", 1, 1, false, CLKTREE_NO_MAX_FREQ,
+                                   CLKTREE_NO_INPUT, &s->LSECLK, &s->LSICLK, &s->HSECLK, NULL);
 
-    s->PLLM = clktree_create_clk("PLLM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, s->HSICLK,
-                                 s->HSECLK, NULL);
-    s->PLLCLK = clktree_create_clk("PLLCLK", 1, 2, false, 120000000, 0, s->PLLM, NULL);
-    s->PLL48CLK = clktree_create_clk("PLL48CLK", 1, 1, false, 48000000, 0, s->PLLM, NULL);
+    clktree_create_clk(&s->PLLM, "PLLM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, &s->HSICLK,
+                                 &s->HSECLK, NULL);
+    clktree_create_clk(&s->PLLCLK, "PLLCLK", 1, 2, false, 120000000, 0, &s->PLLM, NULL);
+    clktree_create_clk(&s->PLL48CLK, "PLL48CLK", 1, 1, false, 48000000, 0, &s->PLLM, NULL);
 
-    s->PLLI2SM = clktree_create_clk("PLLI2SM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, s->PLLM, NULL);
-    s->PLLI2SCLK = clktree_create_clk("PLLI2SCLK", 1, 2, false, 120000000, 0, s->PLLI2SM, NULL);
+    clktree_create_clk(&s->PLLI2SM, "PLLI2SM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, &s->PLLM, NULL);
+    clktree_create_clk(&s->PLLI2SCLK, "PLLI2SCLK", 1, 2, false, 120000000, 0, &s->PLLI2SM, NULL);
 
-    s->SYSCLK = clktree_create_clk("SYSCLK", 1, 1, true, 168000000, CLKTREE_NO_INPUT,
-                                   s->HSICLK, s->HSECLK, s->PLLCLK, NULL);
+    clktree_create_clk(&s->SYSCLK, "SYSCLK", 1, 1, true, 168000000, CLKTREE_NO_INPUT,
+                                   &s->HSICLK, &s->HSECLK, &s->PLLCLK, NULL);
 
     // HCLK: to AHB bus, core memory and DMA
-    s->HCLK = clktree_create_clk("HCLK", 0, 1, true, 168000000, 0, s->SYSCLK, NULL);
-    clktree_adduser(s->HCLK, hclk_upd_irq[0]);
+    clktree_create_clk(&s->HCLK, "HCLK", 0, 1, true, 168000000, 0, &s->SYSCLK, NULL);
+    clktree_adduser(&s->HCLK, hclk_upd_irq[0]);
 
     // Clock source for APB1 peripherals:
-    s->PCLK1 = clktree_create_clk("PCLK1", 0, 1, true, 30000000, 0, s->HCLK, NULL);
+
+    clktree_create_clk(&s->PCLK1, "PCLK1", 0, 1, true, 30000000, 0, &s->HCLK, NULL);
 
     // Clock source for APB2 peripherals:
-    s->PCLK2 = clktree_create_clk("PCLK2", 0, 1, true, 60000000, 0, s->HCLK, NULL);
+    clktree_create_clk(&s->PCLK2, "PCLK2", 0, 1, true, 60000000, 0, &s->HCLK, NULL);
 
     /* Peripheral clocks */
-    s->PERIPHCLK[STM32_GPIOA] =
-        clktree_create_clk("GPIOA", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOB] =
-        clktree_create_clk("GPIOB", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOC] =
-        clktree_create_clk("GPIOC", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOD] =
-        clktree_create_clk("GPIOD", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOE] =
-        clktree_create_clk("GPIOE", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOF] =
-        clktree_create_clk("GPIOF", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOG] =
-        clktree_create_clk("GPIOG", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOH] =
-        clktree_create_clk("GPIOH", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOI] =
-        clktree_create_clk("GPIOI", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOJ] =
-        clktree_create_clk("GPIOJ", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_GPIOK] =
-        clktree_create_clk("GPIOK", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOA], "GPIOA", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOB], "GPIOB", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOC], "GPIOC", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOD], "GPIOD", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOE], "GPIOE", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOF], "GPIOF", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOG], "GPIOG", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOH], "GPIOH", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOI], "GPIOI", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOJ], "GPIOJ", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_GPIOK], "GPIOK", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
 
-    s->PERIPHCLK[STM32_CRC] =
-        clktree_create_clk("CRC", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_CRC], "CRC", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
 
-    s->PERIPHCLK[STM32_DMA1] =
-        clktree_create_clk("DMA1", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_DMA2] =
-        clktree_create_clk("DMA2", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_DMA1], "DMA1", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_DMA2], "DMA2", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
     
-    s->PERIPHCLK[STM32_SYSCFG] =
-        clktree_create_clk("SYSCFG", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_SYSCFG], "SYSCFG", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
 
-    s->PERIPHCLK[STM32_UART1] =
-        clktree_create_clk("UART1", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_UART2] =
-        clktree_create_clk("UART2", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_UART3] =
-        clktree_create_clk("UART3", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_UART4] =
-        clktree_create_clk("UART4", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_UART5] =
-        clktree_create_clk("UART5", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_UART6] =
-        clktree_create_clk("UART6", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_UART7] =
-        clktree_create_clk("UART7", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_UART8] =
-        clktree_create_clk("UART8", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART1], "UART1", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART2], "UART2", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART3], "UART3", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART4], "UART4", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART5], "UART5", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART6], "UART6", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART7], "UART7", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_UART8], "UART8", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
     
     
     // Timers run at 2x the APB speed 
-    s->PERIPHCLK[STM32_TIM1]  = clktree_create_clk("TIM1", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_TIM2]  = clktree_create_clk("TIM2", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM3]  = clktree_create_clk("TIM3", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM4]  = clktree_create_clk("TIM4", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM5]  = clktree_create_clk("TIM5", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM6]  = clktree_create_clk("TIM6", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM7]  = clktree_create_clk("TIM7", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM8]  = clktree_create_clk("TIM8", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_TIM9]  = clktree_create_clk("TIM9", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_TIM10] = clktree_create_clk("TIM10",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_TIM11] = clktree_create_clk("TIM11",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK2, NULL);
-    s->PERIPHCLK[STM32_TIM12] = clktree_create_clk("TIM12",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM13] = clktree_create_clk("TIM13",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
-    s->PERIPHCLK[STM32_TIM14] = clktree_create_clk("TIM14",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM1], "TIM1", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM2], "TIM2", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM3], "TIM3", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM4], "TIM4", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM5], "TIM5", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM6], "TIM6", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM7], "TIM7", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM8], "TIM8", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM9], "TIM9", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM10], "TIM10",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM11], "TIM11",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM12], "TIM12",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM13], "TIM13",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_TIM14], "TIM14",2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
 
 
-    s->PERIPHCLK[STM32_IWDG] = clktree_create_clk("IWDGCLK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0,
-                                    s->LSICLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_IWDG], "IWDGCLK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0,
+                                    &s->LSICLK, NULL);
 
-    s->PERIPHCLK[STM32_DCMI_PERIPH] =
-        clktree_create_clk("DCMI", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_CRYP_PERIPH] =
-        clktree_create_clk("CRYP", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_HASH_PERIPH] =
-        clktree_create_clk("HASH", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-    s->PERIPHCLK[STM32_RNG_PERIPH] =
-        clktree_create_clk("RNG", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_DCMI_PERIPH], "DCMI", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_CRYP_PERIPH], "CRYP", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_HASH_PERIPH], "HASH", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_RNG_PERIPH], "RNG", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
 
-    s->PERIPHCLK[STM32_FSMC] =
-        clktree_create_clk("FSMC", 1, 2, false, CLKTREE_NO_MAX_FREQ, 0, s->HCLK, NULL);
-
+    clktree_create_clk(&s->PERIPHCLK[STM32_FSMC], "FSMC", 1, 2, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
     // Reset IRQs:
     qdev_init_gpio_out_named(DEVICE(dev),s->reset,"reset",STM32_PERIPH_COUNT);
 }
@@ -1172,12 +1126,142 @@ static Property stm32_rcc_properties[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
+static int rcc_pre_save(void *opaque) {
+    DEBUG_TAKE(opaque,0);
+    return 0;
+}
+
+#define DEBUG_CHK_CLK(name) \
+    DEBUG_CHECK(name.enabled); \
+    DEBUG_CHECK(name.input_freq); \
+    DEBUG_CHECK(name.output_freq); \
+    DEBUG_CHECK(name.max_output_freq); \
+    DEBUG_CHECK(name.multiplier); \
+    DEBUG_CHECK(name.divisor); \
+    DEBUG_CHECK(name.user_count); \
+    DEBUG_CHECK(name.output_count); \
+    DEBUG_CHECK(name.input_count); \
+    DEBUG_CHECK(name.selected_input); 
+
+static int rcc_post_load(void *opaque, int version) {
+    DEBUG_CAST_ONLY(Stm32f2xxRcc *s = STM32F2XX_RCC(opaque));
+    DEBUG_INDEX(0);
+    for (int i=0; i<STM32_PERIPH_COUNT; i++) {
+        DEBUG_CHK_CLK(PERIPHCLK[i]);
+    }
+    DEBUG_CHK_CLK(HSICLK);
+    DEBUG_CHK_CLK(HSECLK);
+    DEBUG_CHK_CLK(LSECLK);
+    DEBUG_CHK_CLK(LSICLK);
+    DEBUG_CHK_CLK(SYSCLK);
+    DEBUG_CHK_CLK(IWDGCLK);
+    DEBUG_CHK_CLK(RTCCLK);
+    DEBUG_CHK_CLK(PLLM);
+    DEBUG_CHK_CLK(PLLCLK);
+    DEBUG_CHK_CLK(PLL48CLK);
+    DEBUG_CHK_CLK(PLLI2SM);
+    DEBUG_CHK_CLK(PLLI2SCLK);
+    DEBUG_CHK_CLK(HCLK);
+    DEBUG_CHK_CLK(PCLK1);
+    DEBUG_CHK_CLK(PCLK2);
+    DEBUG_CHECK(osc_freq);
+    DEBUG_CHECK(osc32_freq);
+    DEBUG_CHECK(RCC_CIR);
+    DEBUG_CHECK(RCC_APB1ENR);
+    DEBUG_CHECK(RCC_APB2ENR);
+    DEBUG_CHECK(RCC_CFGR_PPRE1);
+    DEBUG_CHECK(RCC_CFGR_PPRE2);
+    DEBUG_CHECK(RCC_CFGR_HPRE);
+    DEBUG_CHECK(RCC_AHB1ENR);
+    DEBUG_CHECK(RCC_AHB2ENR);
+    DEBUG_CHECK(RCC_AHB3ENR);
+    DEBUG_CHECK(RCC_CFGR_SW);
+    DEBUG_CHECK(RCC_PLLCFGR);
+    DEBUG_CHECK(RCC_PLLI2SCFGR);
+    DEBUG_CHECK(RCC_PLLCFGR_PLLM);
+    DEBUG_CHECK(RCC_PLLCFGR_PLLP);
+    DEBUG_CHECK(RCC_PLLCFGR_PLLSRC);
+    DEBUG_CHECK(RCC_PLLCFGR_PLLN);
+    DEBUG_CHECK(RCC_PLLI2SCFGR_PLLR);
+    DEBUG_CHECK(RCC_PLLI2SCFGR_PLLQ);
+    DEBUG_CHECK(RCC_PLLI2SCFGR_PLLN);
+    return 0;
+}
+
+static const VMStateDescription vmstate_stm32f2xx_rcc_clk = {
+    .name = TYPE_STM32F2XX_RCC "-clk",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_BOOL(enabled, struct Clk),
+        VMSTATE_UINT32(input_freq,struct Clk),
+        VMSTATE_UINT32(output_freq,struct Clk),
+        VMSTATE_UINT32(max_output_freq,struct Clk),
+        VMSTATE_UINT16(multiplier,struct Clk),
+        VMSTATE_UINT16(divisor,struct Clk),
+        VMSTATE_UINT8(user_count,struct Clk),
+        VMSTATE_UINT8(output_count,struct Clk),
+        VMSTATE_UINT8(input_count,struct Clk),
+        VMSTATE_INT16(selected_input,struct Clk),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const VMStateDescription vmstate_stm32f2xx_rcc = {
+    .name = TYPE_STM32F2XX_RCC,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .pre_save = rcc_pre_save,
+    .post_load = rcc_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(osc_freq, Stm32f2xxRcc),
+        VMSTATE_UINT32(osc32_freq, Stm32f2xxRcc),
+        VMSTATE_STRUCT_ARRAY(PERIPHCLK, Stm32f2xxRcc, STM32_PERIPH_COUNT, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(HSICLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(HSECLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(LSECLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(LSICLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(SYSCLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(IWDGCLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(RTCCLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PLLM,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PLLCLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PLL48CLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PLLI2SM,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PLLI2SCLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(HCLK,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PCLK1,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(PCLK2,Stm32f2xxRcc, 1, vmstate_stm32f2xx_rcc_clk, Clk_t),
+        VMSTATE_UINT32(RCC_CIR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_APB1ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_APB2ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_PPRE1,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_PPRE2,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_HPRE,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_AHB1ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_AHB2ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_AHB3ENR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_CFGR_SW,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_PLLCFGR,Stm32f2xxRcc),
+        VMSTATE_UINT32(RCC_PLLI2SCFGR,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLCFGR_PLLM,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLCFGR_PLLP,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLCFGR_PLLSRC,Stm32f2xxRcc),
+        VMSTATE_UINT16(RCC_PLLCFGR_PLLN,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLI2SCFGR_PLLR,Stm32f2xxRcc),
+        VMSTATE_UINT8(RCC_PLLI2SCFGR_PLLQ,Stm32f2xxRcc),
+        VMSTATE_UINT16(RCC_PLLI2SCFGR_PLLN,Stm32f2xxRcc),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 
 static void stm32_rcc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32_rcc_reset;
     dc->realize = stm32_rcc_realize;
+    dc->vmsd = &vmstate_stm32f2xx_rcc;
     device_class_set_props(dc, stm32_rcc_properties);
 }
 
