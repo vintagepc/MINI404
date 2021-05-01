@@ -197,6 +197,7 @@ static void prusa_mini_init(MachineState *machine)
         if (i==1) bed = dev;
         qdev_prop_set_uint16(dev, "temp",startvals[i]);
         qdev_prop_set_uint16(dev, "table_no", tables[i]);
+        qdev_prop_set_uint8(dev, "index", i);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(DEVICE(&SOC->adc[0]),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(DEVICE(&SOC->adc[0]),"adc_data_in",channels[i]));

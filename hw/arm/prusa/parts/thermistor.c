@@ -38,6 +38,7 @@ struct ThermistorState {
 
     qemu_irq irq_value;
 
+    uint8_t index;
     uint16_t table_index;
     const short int *table;    
     int table_length;
@@ -187,6 +188,7 @@ static void thermistor_init(Object *obj)
 static Property thermistor_properties[] = {
     DEFINE_PROP_UINT16("temp", ThermistorState, start_temp,0),
     DEFINE_PROP_UINT16("table_no", ThermistorState, table_index, 0),
+    DEFINE_PROP_UINT8("index", ThermistorState, index, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 

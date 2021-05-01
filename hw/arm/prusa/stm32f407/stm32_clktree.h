@@ -25,9 +25,6 @@
 
 #include "qemu-common.h"
 
-#define CLKTREE_MAX_IRQ 16
-#define CLKTREE_MAX_OUTPUT 24
-#define CLKTREE_MAX_INPUT 24
 
 /* Use this when calling clktree_create_clk and clktree_set_selected_input */
 #define CLKTREE_NO_INPUT -1
@@ -35,23 +32,23 @@
 /* Use this when calling clktree_create_clk */
 #define CLKTREE_NO_MAX_FREQ UINT32_MAX
 
-typedef struct Clk *Clk;
+typedef struct Clk* Clk_p;
 
 /* Check if the clock output is enabled. */
-bool clktree_is_enabled(Clk clk);
+bool clktree_is_enabled(Clk_p clk);
 
 /* Get the clock's output frequency.  This will be 0 if:
  * - No clock is selected as an input.
  * - The clock output is not enabled.
  * - The multiplier is set to 0.
  */
-uint32_t clktree_get_output_freq(Clk clk);
+uint32_t clktree_get_output_freq(Clk_p clk);
 
 /* Add an IRQ to receive notifications when the clock frequency is updated. */
-void clktree_adduser(Clk clk, qemu_irq user);
+void clktree_adduser(Clk_p clk, qemu_irq user);
 
 /* Create a source clock (e.g. oscillator) with the given frequency. */
-Clk clktree_create_src_clk(
+void clktree_create_src_clk(Clk_p var,
                     const char *name,
                     uint32_t src_freq,
                     bool enabled);
@@ -59,7 +56,7 @@ Clk clktree_create_src_clk(
 /* Create a clock.  The vararg parameter specifies all of the source clocks
  * (use NULL to indicate the end of the list).  A warning will be generated if
  * the output frequency of the clock ever exceeds max_output_freq. */
-Clk clktree_create_clk(
+void clktree_create_clk( Clk_p var,
                     const char *name,
                     uint16_t multiplier,
                     uint16_t divisor,
@@ -69,15 +66,15 @@ Clk clktree_create_clk(
                     ...);
 
 /* Set the multiplier and divider scales. */
-void clktree_set_scale(Clk clk, uint16_t multiplier, uint16_t divisor);
+void clktree_set_scale(Clk_p clk, uint16_t multiplier, uint16_t divisor);
 
 /* Enable or disable the clock output. */
-void clktree_set_enabled(Clk clk, bool enabled);
+void clktree_set_enabled(Clk_p clk, bool enabled);
 
 /* Selects the specified input clock.  selected_input should be 0 to select the
  * first input clock passed in to clktree_create_clk, 1 for the second input
  * clock, and so on.  Pass in CLKTREE_NO_INPUT to not select any input
  * (i.e. input frequency will be 0). */
-void clktree_set_selected_input(Clk clk, int selected_input);
+void clktree_set_selected_input(Clk_p clk, int selected_input);
 
 #endif /* STM32_CLKTREE_H */
