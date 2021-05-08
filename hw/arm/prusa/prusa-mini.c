@@ -34,6 +34,7 @@
 #include "hw/loader.h"
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
+#include "parts/dashboard_types.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -141,9 +142,13 @@ static void prusa_mini_init(MachineState *machine)
         qdev_realize(dev, bus, &error_fatal);
     }
 
-    DeviceState *vis = qdev_new("mini-visuals");
-    sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
-   
+    // DeviceState *vis = qdev_new("mini-visuals");
+    // sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
+
+    DeviceState *gl_db = qdev_new("gl-dashboard");
+    qdev_prop_set_uint8(gl_db, "dashboard_type", 1); 
+    sysbus_realize(SYS_BUS_DEVICE(gl_db), &error_fatal);
+    
     {
         static const char names[4] = {'X','Y','Z','E'};
         static const uint8_t addresses[4] = {1, 3,0,2};
@@ -175,12 +180,12 @@ static void prusa_mini_init(MachineState *machine)
             qdev_connect_gpio_out(split_out,i, qdev_get_gpio_in_named(dev,"tmc2209-byte-in",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), step_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-step",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), dir_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-dir",0));
-            qemu_irq split_en = qemu_irq_split( qdev_get_gpio_in_named(dev,"tmc2209-enable",0),qdev_get_gpio_in_named(vis,"motor-enable",i));
+            qemu_irq split_en = qemu_irq_split( qdev_get_gpio_in_named(dev,"tmc2209-enable",0),qdev_get_gpio_in_named(gl_db,"motor-enable",i));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), en_pins[i],split_en);
-            qemu_irq split_diag = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]),qdev_get_gpio_in_named(vis,"indicator-logic",i));
+            qemu_irq split_diag = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]),qdev_get_gpio_in_named(gl_db,"motor-stall",i));
             qdev_connect_gpio_out_named(dev,"tmc2209-diag", 0, split_diag);
             if (i==2) qdev_connect_gpio_out_named(dev,"tmc2209-hard", 0, qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8));
-            qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(vis,"motor-step",i));
+            qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(gl_db,"motor-step",DB_MOTOR_X+i));
 
         }
 
@@ -210,7 +215,7 @@ static void prusa_mini_init(MachineState *machine)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
-    qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",8));
+    qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_HTR));
 
     // Bed.
     dev = qdev_new("heater");
@@ -219,7 +224,7 @@ static void prusa_mini_init(MachineState *machine)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
-    qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",9));
+    qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_BED));
 
     dev = qdev_new("ir-sensor");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -240,7 +245,7 @@ static void prusa_mini_init(MachineState *machine)
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),fan_tach_pins[i]));
         qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],qdev_get_gpio_in_named(dev, "pwm-in-soft",0));
-        qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(vis,"indicator-analog",4+i));
+        qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_PFAN+i));
     }
 
     dev = qdev_new("encoder-input");
