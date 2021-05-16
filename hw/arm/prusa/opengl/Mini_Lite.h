@@ -50,7 +50,7 @@ class Mini_Lite: public OBJCollection
 
 		// void GetBaseCenter(gsl::span<float> fTrans) override;
 
-		// float GetScaleFactor() override { return 0.210874f; }
+		float GetScaleFactor() override { return 0.210874f; }
 
 		void DrawKnob(int iRotation) override;
 
