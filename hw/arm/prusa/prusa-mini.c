@@ -184,7 +184,10 @@ static void prusa_mini_init(MachineState *machine)
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), en_pins[i],split_en);
             qemu_irq split_diag = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]),qdev_get_gpio_in_named(gl_db,"motor-stall",i));
             qdev_connect_gpio_out_named(dev,"tmc2209-diag", 0, split_diag);
-            if (i==2) qdev_connect_gpio_out_named(dev,"tmc2209-hard", 0, qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8));
+            if (i==2) { 
+                qemu_irq split_zmin = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_ZPROBE));
+                qdev_connect_gpio_out_named(dev,"tmc2209-hard", 0, split_zmin);
+            }
             qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(gl_db,"motor-step",DB_MOTOR_X+i));
 
         }
@@ -228,7 +231,8 @@ static void prusa_mini_init(MachineState *machine)
 
     dev = qdev_new("ir-sensor");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_B]),4));
+    qemu_irq split_fsensor = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_B]),4),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_FSENS));
+    qdev_connect_gpio_out(dev, 0, split_fsensor);
 
     // hotend = fan1
     // print fan = fan0

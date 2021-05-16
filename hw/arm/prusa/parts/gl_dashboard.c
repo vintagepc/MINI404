@@ -29,7 +29,7 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
 #include "dashboard_types.h"
-#include "../utility/GLDashboardMgr.h"
+#include "../opengl/GLDashboardMgr.h"
 
 #define TYPE_GLDASHBOARD "gl-dashboard"
 

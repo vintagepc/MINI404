@@ -41,5 +41,6 @@ enum {
     DB_IND_ZPROBE, 
     DB_IND_BED, 
     DB_IND_HTR,
+    DB_IND_MEDIA,
     DB_IND_COUNT,
 };

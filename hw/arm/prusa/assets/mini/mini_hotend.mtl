@@ -1,0 +1,36 @@
+# 
+# Wavefront material file
+# Created with Kaydara FBX
+# 
+
+newmtl Prusa_mini_assemblyMaterial0
+Ka 0.000000 0.000000 0.000000
+Kd 0.000000 0.000000 0.000000
+Ks 0.000000 0.000000 0.000000
+illum 2
+Ns 20.000000
+Tr 1.000000
+
+newmtl Prusa_mini_assemblyMaterial1
+Ka 0.878431 0.250980 0.000000
+Kd 0.878431 0.250980 0.000000
+Ks 0.000000 0.000000 0.000000
+illum 2
+Ns 20.000000
+Tr 1.000000
+
+newmtl Prusa_mini_assemblyMaterial2
+Ka 0.815686 0.627451 0.125490
+Kd 0.815686 0.627451 0.125490
+Ks 0.000000 0.000000 0.000000
+illum 2
+Ns 20.000000
+Tr 1.000000
+
+newmtl Prusa_mini_assemblyMaterial3
+Ka 0.690196 0.690196 0.690196
+Kd 0.690196 0.690196 0.690196
+Ks 0.000000 0.000000 0.000000
+illum 2
+Ns 20.000000
+Tr 1.000000

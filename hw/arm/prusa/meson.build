@@ -1,4 +1,7 @@
+subdir('3rdParty')
+subdir('opengl')
 subdir('stm32f407')
+subdir('assets')
 
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
@@ -15,17 +18,15 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/ScriptHost.cpp',
         'utility/p404_script_console.c',
         'utility/p404scriptable.c',
-        'utility/GLMotor.cpp',
-        'utility/IPCIndicator.cpp',
-        'parts/gl_dashboard.c',
-        'utility/GLDashboardMgr.cpp',
     ))
+
+arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: files('parts/gl_dashboard.c'))
 # Required if using Message queue IPC
 c = meson.get_compiler('c')
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('rt'))
-arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('glut'))
-arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('GLU'))
-arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('GL'))
-arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('GLEW'))
+arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('glut'))
+arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLU'))
+arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GL'))
+arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLEW'))
 
 # hw_arch += {'arm': buddy_ss}
