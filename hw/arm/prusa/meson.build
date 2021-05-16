@@ -7,6 +7,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
         'parts/encoder_input.c',
         'parts/fan.c',
+        'parts/gl_dashboard.c',
         'parts/heater.c',
         'parts/irsensor.c',
         'parts/st7789v.c',
@@ -20,7 +21,6 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/p404scriptable.c',
     ))
 
-arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: files('parts/gl_dashboard.c'))
 # Required if using Message queue IPC
 c = meson.get_compiler('c')
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('rt'))
