@@ -146,7 +146,11 @@ static void prusa_mini_init(MachineState *machine)
     // sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
 
     DeviceState *gl_db = qdev_new("gl-dashboard");
-    qdev_prop_set_uint8(gl_db, "dashboard_type", 1); 
+    if (arghelper_is_arg("gfx-full")) {
+        qdev_prop_set_uint8(gl_db, "dashboard_type", DB_MINI_FULL); 
+    } else if (arghelper_is_arg("gfx-lite")) {
+        qdev_prop_set_uint8(gl_db, "dashboard_type", DB_MINI_LITE); 
+    }
     sysbus_realize(SYS_BUS_DEVICE(gl_db), &error_fatal);
     
     {

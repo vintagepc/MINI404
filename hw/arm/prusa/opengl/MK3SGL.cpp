@@ -22,7 +22,8 @@
 #include "MK3SGL.h"
 #include "GLPrint.h"          // for GLPrint
 #include "KeyController.h"
-#include "MK3S_Lite.h"        // for MK3S_Lite
+#include "Mini_Lite.h"        // for MK3S_Lite
+#include "Mini_Full.h"        // for MK3S_Lite
 #include "Macros.h"
 #include "OBJCollection.h"    // for OBJCollection, OBJCollection::ObjClass
 #include "../3rdParty/gsl-lite.hpp"
@@ -50,7 +51,11 @@ MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), 
 	g_pMK3SGL = this;
 	if (strModel == "lite")
 	{
-		m_Objs = new MK3S_Lite(bMMU);
+		m_Objs = new Mini_Lite();
+	} 
+	else if (strModel == "full") 
+	{
+		m_Objs = new Mini_Full();
 	}
 
 	RegisterActionAndMenu("ClearPrint","Clears rendered print objects",ActClear);

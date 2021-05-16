@@ -51,36 +51,48 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(GLDashboadState, gldashboard, GLDASHBO
 static void gldashboard_realize(DeviceState *dev, Error **errp)
 {
     GLDashboadState *s = GLDASHBOARD(dev);
-    s->dashboardmgr = gl_dashboard_start(s->dashboard_type);
-    if (s->dashboardmgr) {
-        gl_dashboard_run(s->dashboardmgr);
+    if (s->dashboard_type) {
+        s->dashboardmgr = gl_dashboard_start(s->dashboard_type);
+        if (s->dashboardmgr) {
+            gl_dashboard_run(s->dashboardmgr);
+        }
     }
 }
 
 static void gldashboard_motor_in(void *opaque, int n, int level) {
     GLDashboadState *s = GLDASHBOARD(opaque);
-    gl_dashboard_update_motor(s->dashboardmgr,n,level);
+    if (s->dashboard_type) {
+        gl_dashboard_update_motor(s->dashboardmgr,n,level);
+    }
 }
 
 static void gldashboard_motor_stall_in(void *opaque, int n, int level) {
     GLDashboadState *s = GLDASHBOARD(opaque);
-    gl_dashboard_update_motor_stall(s->dashboardmgr,n,level);
+    if (s->dashboard_type) {
+        gl_dashboard_update_motor_stall(s->dashboardmgr,n,level);
+    }
 }
 
 static void gldashboard_motor_enable_in(void *opaque, int n, int level) {
     GLDashboadState *s = GLDASHBOARD(opaque);
-    gl_dashboard_update_motor_enable(s->dashboardmgr,n,level);
+    if (s->dashboard_type) {
+        gl_dashboard_update_motor_enable(s->dashboardmgr,n,level);
+    }
 }
 
 
 static void gldashboard_indicator_in(void *opaque, int n, int level) {
     GLDashboadState *s = GLDASHBOARD(opaque);
-    gl_dashboard_update_indicator(s->dashboardmgr,n,level);
+    if (s->dashboard_type) {
+        gl_dashboard_update_indicator(s->dashboardmgr,n,level);
+    }
 }
 
 static void gldashboard_indicator_logic_in(void *opaque, int n, int level) {
     GLDashboadState *s = GLDASHBOARD(opaque);
-    gl_dashboard_update_indicator(s->dashboardmgr,n,level ? 255 : 0);
+    if (s->dashboard_type) {
+        gl_dashboard_update_indicator(s->dashboardmgr,n,level ? 255 : 0);
+    }
 }
 
 static void gldashboard_finalize(Object *obj)
@@ -90,7 +102,9 @@ static void gldashboard_finalize(Object *obj)
 static void gldashboard_reset(DeviceState *dev)
 {
     GLDashboadState *s = GLDASHBOARD(dev);
-    gl_dashboard_reset(s->dashboardmgr);
+    if (s->dashboard_type) {
+        gl_dashboard_reset(s->dashboardmgr);
+    }
 }
 
 static void gldashboard_init(Object *obj)

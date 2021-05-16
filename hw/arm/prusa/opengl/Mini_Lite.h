@@ -28,10 +28,10 @@
 
 class GLObj;
 
-class MK3S_Lite: public OBJCollection
+class Mini_Lite: public OBJCollection
 {
 	public:
-		explicit MK3S_Lite(bool /*bMMU*/);
+		explicit Mini_Lite(bool bLiteExtruder = true);
 
 
 		void OnLoadComplete() override;

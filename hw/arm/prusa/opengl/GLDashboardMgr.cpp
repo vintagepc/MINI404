@@ -208,7 +208,8 @@ void GLDashboardMgr::SetupHardware() {
 	m_Htr.SetColor(0xFF000000);
 	m_Bed.SetColor(0xFF000000);
 	switch (m_iType) {
-		case DB_MINI:
+		case DB_MINI_LITE:
+		case DB_MINI_FULL:
 		{
 			m_X.SetStepsPerMM(100*16);
 			m_X.SetMaxPos(100*16*182);
@@ -270,7 +271,16 @@ void* GLDashboardMgr::RunThread(void *p) {
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable(GL_BLEND);
 	// Also set up the 3D visuals. 
-	m_p3DVis.reset(new MK3SGL("lite",false));
+	switch (m_iType) {
+		case DB_MINI_FULL:
+			m_p3DVis.reset(new MK3SGL("full",false));
+			break;
+		case DB_MINI_LITE:
+			m_p3DVis.reset(new MK3SGL("lite",false));
+			break;
+		default:
+			break;
+	}
 	glutMainLoop();
 	return p;
 }

@@ -1,5 +1,5 @@
 /*
-	MK3S_Lite.h - Object collection for the "lite" visuals.
+	Mini_Lite.h - Object collection for the "lite" visuals.
 
 	Copyright 2020 VintagePC <https://github.com/vintagepc/>
 
@@ -19,7 +19,7 @@
 	along with MK404.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "MK3S_Lite.h"
+#include "Mini_Lite.h"
 #include "GLObj.h"
 #include "OBJCollection.h"
 #include <map>              // for map
@@ -28,28 +28,26 @@
 
 constexpr float ZCorrect = -0.179;
 
-MK3S_Lite::MK3S_Lite(bool /*bMMU*/):OBJCollection("Lite")
+Mini_Lite::Mini_Lite(bool bLiteExtruder):OBJCollection("Lite")
 {
 	constexpr float XCorrect = -0.092;
-
-	AddObject(ObjClass::Y, "assets/Mini_Y.obj", MM_TO_M);
-	m_mObjs.at(ObjClass::Y).at(0).get()->ForceDissolveTo1(true);
-	m_mObjs.at(ObjClass::Y).at(0).get()->SetReverseWinding(true);
-	m_mObjs.at(ObjClass::Y).at(0).get()->SetSwapMode(GLObj::SwapMode::YMINUSZ);
-	AddObject(ObjClass::Z, "assets/Mini_X.obj",0,ZCorrect,0, MM_TO_M);
-	m_mObjs.at(ObjClass::Z).at(0).get()->ForceDissolveTo1(true);
-	m_mObjs.at(ObjClass::Z).at(0).get()->SetReverseWinding(true);
-	m_mObjs.at(ObjClass::Z).at(0).get()->SetSwapMode(GLObj::SwapMode::YMINUSZ);
 	AddObject(ObjClass::PrintSurface, "assets/Mini_Sheet.obj", MM_TO_M);
 	m_mObjs.at(ObjClass::PrintSurface).at(0).get()->ForceDissolveTo1(true);
 	m_mObjs.at(ObjClass::PrintSurface).at(0).get()->SetReverseWinding(true);
 	m_mObjs.at(ObjClass::PrintSurface).at(0).get()->SetSwapMode(GLObj::SwapMode::YMINUSZ);
 	//AddObject(ObjClass::Media, "assets/SDCard.obj",0,0,0,MM_TO_M)->SetKeepNormalsIfScaling(true);
-	m_pE = AddObject(ObjClass::X, "assets/Mini_Extruder.obj",XCorrect,ZCorrect,0, MM_TO_M);
+	if (bLiteExtruder) {
+		m_pE = AddObject(ObjClass::X, "assets/Mini_Extruder_Lite.obj",XCorrect,ZCorrect,0, MM_TO_M);
+	} else {
+		m_pE = AddObject(ObjClass::X, "assets/Mini_Extruder.obj",XCorrect,ZCorrect,0, MM_TO_M);
+	}
 	m_pE->ForceDissolveTo1(true);
 	m_pE->SetReverseWinding(true);
 	m_pE->SetSwapMode(GLObj::SwapMode::YMINUSZ);
-	//m_pKnob = AddObject(ObjClass::Other, "assets/LCD-knobR2.obj");
+	m_pKnob = AddObject(ObjClass::Other, "assets/Mini_Knob.obj", MM_TO_M);
+	m_pKnob->ForceDissolveTo1(true);
+	m_pKnob->SetReverseWinding(true);
+	m_pKnob->SetSwapMode(GLObj::SwapMode::YMINUSZ);
 	m_pPFan = AddObject(ObjClass::Other, "assets/Mini_PFan.obj",XCorrect,ZCorrect,0, MM_TO_M);
 	m_pPFan->ForceDissolveTo1(true);
 	m_pPFan->SetReverseWinding(true);
@@ -58,7 +56,6 @@ MK3S_Lite::MK3S_Lite(bool /*bMMU*/):OBJCollection("Lite")
 	m_pEFan->ForceDissolveTo1(true);
 	m_pEFan->SetReverseWinding(true);
 	m_pEFan->SetSwapMode(GLObj::SwapMode::YMINUSZ);
-	//m_pEFan->SetKeepNormalsIfScaling(true);
 	m_pEVis = AddObject(ObjClass::Other,"assets/Triangles.obj",MM_TO_M);
 	m_pEVis->SetKeepNormalsIfScaling(true);
 	m_pBaseObj = AddObject(ObjClass::Fixed, "assets/Mini_Z.obj",MM_TO_M);
@@ -67,19 +64,12 @@ MK3S_Lite::MK3S_Lite(bool /*bMMU*/):OBJCollection("Lite")
 	m_pBaseObj->SetSwapMode(GLObj::SwapMode::YMINUSZ);
 };
 
-void MK3S_Lite::OnLoadComplete()
+void Mini_Lite::OnLoadComplete()
 {
-	// m_mObjs.at(ObjClass::Y).at(0)->SetAllVisible(false);
-	// m_mObjs.at(ObjClass::Y).at(0)->SetSubobjectVisible(2); // heatbed, sheet
-	// auto pExtruder = m_mObjs.at(ObjClass::X).at(0);
-	// pExtruder->SetAllVisible(false);
-	// pExtruder->SetSubobjectVisible(19); // V6
-	// //pExtruder->SetSubobjectVisible(20);
-	// pExtruder->SetSubobjectVisible(1); // PINDA
-	// pExtruder->SetSubobjectVisible(2);
+	m_pBaseObj->SetAllVisible(false);
 }
 
-void MK3S_Lite::SetupLighting()
+void Mini_Lite::SetupLighting()
 {
 	float fAmb[] = {.7,.7,.7,1};
 	float fSpec[] = {.4,.4,.4,.5};
@@ -91,7 +81,7 @@ void MK3S_Lite::SetupLighting()
 	glLightfv(GL_LIGHT0,GL_POSITION, 	static_cast<float*>(fPos));
 }
 
-// void MK3S_Lite::GetBaseCenter(gsl::span<float> fTrans)
+// void Mini_Lite::GetBaseCenter(gsl::span<float> fTrans)
 // {
 // 	// Values stolen from the full model so we don't have to load the frame:
 // 	// m_mObjs.at(ObjClass::Y).G
@@ -100,22 +90,22 @@ void MK3S_Lite::SetupLighting()
 // 	fTrans[2] = -0.3134;
 // }
 
-void MK3S_Lite::DrawKnob(int iRotation)
+void Mini_Lite::DrawKnob(int iRotation)
 {
 	if (m_pKnob != nullptr)
 	{
+		float fTransform[3];
+		m_pKnob->GetCenteringTransform(fTransform);
 		glPushMatrix();
-			glTranslatef(0.215,0.051,0.501);
-			glRotatef(-45.f,1,0,0);
-			glPushMatrix();
-				glRotatef(static_cast<float>(iRotation),0,0,1);
-				m_pKnob->Draw();
-			glPopMatrix();
+			glTranslatef (-fTransform[0], -fTransform[1] + ZCorrect, -fTransform[2]);
+			glRotatef(static_cast<float>(iRotation),1,0,0);
+			glTranslatef (fTransform[0], fTransform[1] - ZCorrect, fTransform[2]);
+			m_pKnob->Draw();
 		glPopMatrix();
 	}
 }
 
-void MK3S_Lite::DrawEVis(float fEPos)
+void Mini_Lite::DrawEVis(float fEPos)
 {
 	float fTransform[3];
 	glTranslatef(-0.044,-0.210,0.f);
@@ -127,7 +117,7 @@ void MK3S_Lite::DrawEVis(float fEPos)
 	m_pEVis->Draw();
 }
 
-void MK3S_Lite::DrawEFan(int iRotation)
+void Mini_Lite::DrawEFan(int iRotation)
 {
 	float fTransform[3];
 	m_pEFan->GetCenteringTransform(fTransform);
@@ -139,7 +129,7 @@ void MK3S_Lite::DrawEFan(int iRotation)
 	glPopMatrix();
 }
 
-void MK3S_Lite::DrawPFan(int iRotation)
+void Mini_Lite::DrawPFan(int iRotation)
 {
 	float fTransform[3];
 	m_pPFan->GetCenteringTransform(fTransform);
