@@ -13,7 +13,6 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'parts/st7789v.c',
         'parts/thermistor.c',
         'parts/tmc2209.c',
-        '3rdParty/shmemq404/shmemq.c',
         'utility/ArgHelper.cpp',
         'utility/IScriptable.cpp',
         'utility/ScriptHost.cpp',
