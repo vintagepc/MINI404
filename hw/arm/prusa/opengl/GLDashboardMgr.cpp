@@ -210,6 +210,7 @@ void GLDashboardMgr::SetupHardware() {
 	switch (m_iType) {
 		case DB_MINI_LITE:
 		case DB_MINI_FULL:
+		case DB_MINI_DB:
 		{
 			m_X.SetStepsPerMM(100*16);
 			m_X.SetMaxPos(100*16*182);

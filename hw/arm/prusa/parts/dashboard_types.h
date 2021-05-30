@@ -23,6 +23,7 @@
 
 enum {
     DB_NONE,
+    DB_MINI_DB,
     DB_MINI_LITE,
     DB_MINI_FULL,
 };
