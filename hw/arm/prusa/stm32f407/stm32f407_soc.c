@@ -328,6 +328,8 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         busdev = SYS_BUS_DEVICE(dev);
         sysbus_mmio_map(busdev, 0, timer_desc[i].addr);
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m,timer_desc[i].irq_idx));
+        qdev_connect_gpio_out_named(rcc,"reset",STM32_TIM1+i,qdev_get_gpio_in_named(DEVICE(&s->timers[i]),"rcc-reset",0));
+
          // timer->id = stm32f4xx_periph_name_arr[periph];
         // stm32_init_periph(timer, periph, timer_desc[i].addr,
         //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));

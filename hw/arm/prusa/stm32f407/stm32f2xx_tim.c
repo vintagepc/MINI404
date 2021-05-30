@@ -328,23 +328,21 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             }
         }
         break;
-    case R_TIM_CCMR1:
-    case R_TIM_CCMR2:
-    case R_TIM_DIER:
-    case R_TIM_PSC:
+    // case R_TIM_CCMR1:
+    // case R_TIM_CCMR2:
+    // case R_TIM_DIER:
+    // case R_TIM_PSC:
     case R_TIM_ARR:
-        s->regs[addr] = data;
-        break;
+    case R_TIM_CNT:
     case R_TIM_CCR1:
     case R_TIM_CCR2:
     case R_TIM_CCR3:
     case R_TIM_CCR4:
-        s->regs[addr] = data;
-        if (addr == R_TIM_CCR4)
-        {
-            // printf("CCR4: %02x\n",data);
+        // Only timer 5 and 2 are the full 32-bit
+        if (s->id !=5 && s->id != 2) {
+            data &= 0xFFFFU; 
         }
-        break;
+        /* FALLTHRU */
     default:
         s->regs[addr] = data;
         // printf("f2xx tim unimplemented write 0x%x+%u size %u val 0x%x\n",
@@ -369,6 +367,14 @@ static void f2xx_tim_reset(DeviceState *dev)
     timer_del(s->timer);
     memset(&s->regs, 0, sizeof(s->regs));
     s->count_timebase = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+}
+
+static void stm32f2xx_tim_rcc_reset(void *opaque, int n, int level) {
+    f2xx_tim *s = STM32F4XX_TIMER(opaque);
+    if (!level) {
+        f2xx_tim_reset(DEVICE(opaque));
+        //printf("Timer %u reset\n", s->id);
+    }
 }
 
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - TIMER " name " register definition misaligned!")
@@ -407,6 +413,9 @@ f2xx_tim_init(Object *obj)
 
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);
+
+    qdev_init_gpio_in_named(dev,stm32f2xx_tim_rcc_reset,"rcc-reset",1);
+    
 }
 
 static const VMStateDescription vmstate_stm32f2xx_tim = {
