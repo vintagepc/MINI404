@@ -546,6 +546,30 @@ static const MemoryRegionOps f2xx_dma_ops = {
 };
 
 static void
+f2xx_dma_reset(DeviceState *ds)
+{
+    f2xx_dma *s = STM32F2XX_DMA(ds);
+
+    memset(&s->ifcr, 0, sizeof(s->ifcr));
+
+    int i;
+    for (i=0; i<R_DMA_Sx_COUNT; i++) {
+        qemu_irq save = s->stream[i].irq;
+        QEMUTimer *timer = s->stream[i].rx_timer;
+        memset(&s->stream[i], 0, sizeof(f2xx_dma_stream));
+        s->stream[i].irq = save;
+        s->stream[i].rx_timer = timer;
+        s->stream[i].usart_dmar = -1;
+    }
+}
+
+static void stm32f2xx_dma_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        f2xx_dma_reset(DEVICE(opaque));
+    }
+}
+
+static void
 f2xx_dma_init(Object *obj)
 {
     f2xx_dma *s = STM32F2XX_DMA(obj);
@@ -565,25 +589,8 @@ f2xx_dma_init(Object *obj)
 
     }
 
+    qdev_init_gpio_in_named(DEVICE(obj),stm32f2xx_dma_rcc_reset,"rcc-reset",1);
  
-}
-
-static void
-f2xx_dma_reset(DeviceState *ds)
-{
-    f2xx_dma *s = STM32F2XX_DMA(ds);
-
-    memset(&s->ifcr, 0, sizeof(s->ifcr));
-
-    int i;
-    for (i=0; i<R_DMA_Sx_COUNT; i++) {
-        qemu_irq save = s->stream[i].irq;
-        QEMUTimer *timer = s->stream[i].rx_timer;
-        memset(&s->stream[i], 0, sizeof(f2xx_dma_stream));
-        s->stream[i].irq = save;
-        s->stream[i].rx_timer = timer;
-        s->stream[i].usart_dmar = -1;
-    }
 }
 
 static const VMStateDescription vmstate_stm32f2xx_dma_active = {

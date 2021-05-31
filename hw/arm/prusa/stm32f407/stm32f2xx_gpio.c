@@ -212,6 +212,12 @@ f2xx_gpio_wake_set(stm32f2xx_gpio *s, unsigned pin, qemu_irq irq)
     DPRINTF("GPIO %u set cpu_wake %u irq %p\n", s->periph, pin, irq);
 }
 
+static void stm32f2xx_gpio_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        stm32f2xx_gpio_reset(DEVICE(opaque));
+    }
+}
+
 static void
 stm32f2xx_gpio_init(Object *obj)
 {
@@ -223,6 +229,8 @@ stm32f2xx_gpio_init(Object *obj)
     qdev_init_gpio_in(DEVICE(obj), f2xx_gpio_set, STM32_GPIO_PIN_COUNT);
     qdev_init_gpio_out(DEVICE(obj), s->pin, STM32_GPIO_PIN_COUNT);
     qdev_init_gpio_out_named(DEVICE(obj), s->alternate_function, "af", STM32_GPIO_PIN_COUNT);
+    qdev_init_gpio_in_named(DEVICE(obj),stm32f2xx_gpio_rcc_reset,"rcc-reset",1);
+
 
 }
 

@@ -254,7 +254,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         }
         busdev = SYS_BUS_DEVICE(dev);
         sysbus_mmio_map(busdev, 0, gpio_addr[i]);
-
+        qdev_connect_gpio_out_named(rcc,"reset",STM32_GPIOA+i,qdev_get_gpio_in_named(DEVICE(&s->gpio[i]),"rcc-reset",0));
     }
 
     // TODO - Connect EXTI and WAKEUP to the GPIOs.
@@ -349,6 +349,11 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     qdev_connect_gpio_out(DEVICE(&s->adc_irqs), 0,
                           qdev_get_gpio_in(armv7m, ADC_IRQ));
 
+
+    DeviceState* adc_reset = qdev_new("split-irq");
+    qdev_prop_set_uint16(adc_reset, "num-lines", STM_NUM_ADCS);
+    qdev_realize(adc_reset, NULL, errp);
+    qdev_connect_gpio_out_named(rcc,"reset", STM32_ADC1, qdev_get_gpio_in(adc_reset,0));
     for (i = 0; i < STM_NUM_ADCS; i++) {
         dev = DEVICE(&(s->adc[i]));
         s->adc[i].id = i+1; // STM32 id, i.e. 1-based.
@@ -359,6 +364,9 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_mmio_map(busdev, 0, adc_addr[i]);
         sysbus_connect_irq(busdev, 0,
                            qdev_get_gpio_in(DEVICE(&s->adc_irqs), i));
+        // ADCs have common reset.
+        qdev_connect_gpio_out(adc_reset,i,qdev_get_gpio_in_named(DEVICE(&s->adc[i]),"rcc-reset",0));
+
     }
 
     /* SPI devices */
@@ -370,6 +378,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         busdev = SYS_BUS_DEVICE(dev);
         sysbus_mmio_map(busdev, 0, spi_addr[i]);
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, spi_irq[i]));
+        qdev_connect_gpio_out_named(rcc,"reset",STM32_SPI1+i,qdev_get_gpio_in_named(DEVICE(&s->spi[i]),"rcc-reset",0));
     }
 
     /* I2C */
@@ -382,6 +391,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_mmio_map(busdev, 0, i2c_addr[i]);
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, i2c_ev_irq[i]));
         sysbus_connect_irq(busdev, 1, qdev_get_gpio_in(armv7m, i2c_er_irq[i]));
+        qdev_connect_gpio_out_named(rcc,"reset",STM32_I2C1+i,qdev_get_gpio_in_named(DEVICE(&s->i2c[i]),"rcc-reset",0));
     }
 
     for (i = 0; i < STM_NUM_DMAS; i++) {
@@ -398,6 +408,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
             else if (i==1)
                 sysbus_connect_irq(busdev, j, qdev_get_gpio_in(armv7m, dma2_irq[j]));
         }
+        qdev_connect_gpio_out_named(rcc,"reset",STM32_DMA1+i,qdev_get_gpio_in_named(DEVICE(&s->dma[i]),"rcc-reset",0));
     }
     for (int j=0; j<STM_NUM_USARTS; j++) // Attach the USART dmar IRQs
     {
@@ -405,6 +416,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
                                 qdev_get_gpio_in_named(DEVICE(&s->dma[0]), "usart-dmar",j),
                                 qdev_get_gpio_in_named(DEVICE(&s->dma[1]), "usart-dmar",j));
         qdev_connect_gpio_out_named(DEVICE(&s->usart[j]), "uart-dmar",0, split_usart);
+        qdev_connect_gpio_out_named(rcc,"reset",STM32_UART1+i,qdev_get_gpio_in_named(DEVICE(&s->usart[i]),"rcc-reset",0));
     }
 
 

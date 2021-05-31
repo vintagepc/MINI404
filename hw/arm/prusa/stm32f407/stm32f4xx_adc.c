@@ -371,6 +371,12 @@ static const VMStateDescription vmstate_stm32f4xx_adc = {
     }
 };
 
+static void stm32f4xx_adc_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        stm32f4xx_adc_reset(DEVICE(opaque));
+    }
+}
+
 static void stm32f4xx_adc_init(Object *obj)
 {
     STM32F4XXADCState *s = STM32F4XX_ADC(obj);
@@ -384,6 +390,9 @@ static void stm32f4xx_adc_init(Object *obj)
     memory_region_init_io(&s->mmio, obj, &stm32f4xx_adc_ops, s,
                           TYPE_STM32F4XX_ADC, 0x100);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
+
+    qdev_init_gpio_in_named(DEVICE(obj),stm32f4xx_adc_rcc_reset,"rcc-reset",1);
+
 }
 
 static void stm32f4xx_adc_class_init(ObjectClass *klass, void *data)

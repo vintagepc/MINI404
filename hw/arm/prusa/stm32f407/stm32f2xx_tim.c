@@ -370,10 +370,8 @@ static void f2xx_tim_reset(DeviceState *dev)
 }
 
 static void stm32f2xx_tim_rcc_reset(void *opaque, int n, int level) {
-    f2xx_tim *s = STM32F4XX_TIMER(opaque);
     if (!level) {
         f2xx_tim_reset(DEVICE(opaque));
-        //printf("Timer %u reset\n", s->id);
     }
 }
 
