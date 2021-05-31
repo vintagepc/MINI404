@@ -275,9 +275,11 @@ void* GLDashboardMgr::RunThread(void *p) {
 	switch (m_iType) {
 		case DB_MINI_FULL:
 			m_p3DVis.reset(new MK3SGL("full",false));
+			m_p3DVis->SetStepsPerMM(100*16, 100*16, 400*16, 320*16);
 			break;
 		case DB_MINI_LITE:
 			m_p3DVis.reset(new MK3SGL("lite",false));
+			m_p3DVis->SetStepsPerMM(100*16, 100*16, 400*16, 320*16);
 			break;
 		default:
 			break;

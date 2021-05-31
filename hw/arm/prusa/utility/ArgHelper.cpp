@@ -25,6 +25,8 @@
 #include "ScriptHost.h"
 #include <iostream>
 #include <sstream>
+#include "../opengl/Config.h"
+#include "../opengl/PrintVisualType.h"
 
 void ArgHelper::SetArgs(std::string strArgs){
 	std::istringstream s(strArgs);
@@ -51,6 +53,26 @@ bool ArgHelper::Parse() {
         ScriptHost::PrintScriptHelp(true);
         return false;
     }
+
+	if (m_map.count("colour-extrusion")) {
+		Config::Get().SetColourE(true);
+	}
+
+	if (m_map.count("extrusion")) {
+		auto &strValue = m_map.at("extrusion");
+		auto eType = PrintVisualType::LINE;
+		//Line|Quad_Avg|Quad_HR|Tube_Avg|Tube_HR
+		if (strValue=="Quad_Avg") {
+			eType = PrintVisualType::QUAD;
+		} else if (strValue=="Quad_HR") {
+			eType = PrintVisualType::QUAD_HIGHRES;
+		}else if (strValue=="Tube_Avg") {
+			eType = PrintVisualType::TUBE;
+		}else if (strValue=="Tube_HR") {
+			eType = PrintVisualType::TUBE_HIGHRES;
+		}
+		Config::Get().SetExtrusionMode(eType);
+	}
 
 	return true;
 }

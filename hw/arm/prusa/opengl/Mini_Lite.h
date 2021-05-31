@@ -46,7 +46,7 @@ class Mini_Lite: public OBJCollection
 
 		inline void ApplyBedLEDTransform() override {glTranslatef( 0.013000, 0.020000, -0.056000);};
 
-		inline void ApplyPrintTransform() override { glTranslatef(0.025,0.084,-0.279); };
+		inline void ApplyPrintTransform() override { glTranslatef(-0.151000, 0.021000, -0.131500); };
 
 		// void GetBaseCenter(gsl::span<float> fTrans) override;
 
