@@ -510,6 +510,13 @@ static void stm32_uart_rx_wrapper(void *opaque, int n, int level)
 
 /* DEVICE INITIALIZATION */
 
+static void stm32_uart_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        stm32_uart_reset(DEVICE(opaque));
+    }
+}
+
+
 static void stm32_uart_init(Object *obj)
 {
     qemu_irq *clk_irq;
@@ -543,6 +550,8 @@ static void stm32_uart_init(Object *obj)
     //stm32_uart_connect(s, &s->chr);
 
     s->rcv_char_bytes = 0;
+
+    qdev_init_gpio_in_named(DEVICE(obj),stm32_uart_rcc_reset,"rcc-reset",1);
 
     stm32_uart_reset(DEVICE(obj));
 }

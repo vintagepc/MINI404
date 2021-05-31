@@ -177,14 +177,14 @@ struct f2xx_tim {
                 uint32_t CC4P :1;
                 uint32_t :32-14;                
             } QEMU_PACKED  CCER;
-            SHORT_REG_32(CNT, 16);
+            uint32_t CNT;
             SHORT_REG_32(PSC, 16);
-            SHORT_REG_32(ARR, 16);
+            uint32_t ARR;
             SHORT_REG_32(REP,8) RCR;
-            SHORT_REG_32(CCR1, 16);
-            SHORT_REG_32(CCR2, 16);
-            SHORT_REG_32(CCR3, 16);
-            SHORT_REG_32(CCR4, 16);
+            uint32_t CCR1;
+            uint32_t CCR2;
+            uint32_t CCR3;
+            uint32_t CCR4;
             struct {
                 uint32_t DT :8;
                 uint32_t LOCK :2;

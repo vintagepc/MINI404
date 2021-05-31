@@ -31,7 +31,7 @@
 #include <string>
 #include <utility>
 #include <vector>
-// class Scriptable;
+class Scriptable;
 class ScriptHost;
 // class TelemetryHost;
 struct P404ScriptIF;
@@ -48,7 +48,7 @@ enum class ArgType
 
 class IScriptable
 {
-	//friend Scriptable;
+	friend Scriptable;
 
 
 	friend ScriptHost;

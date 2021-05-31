@@ -167,6 +167,12 @@ static void stm32f4xx_spi_write(void *opaque, hwaddr addr,
     }
 }
 
+static void stm32f4xx_spi_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        stm32f4xx_spi_reset(DEVICE(opaque));
+    }
+}
+
 static const MemoryRegionOps stm32f4xx_spi_ops = {
     .read = stm32f4xx_spi_read,
     .write = stm32f4xx_spi_write,
@@ -195,6 +201,9 @@ static void stm32f4xx_spi_init(Object *obj)
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 
     s->ssi = ssi_create_bus(dev, "ssi");
+
+    qdev_init_gpio_in_named(dev,stm32f4xx_spi_rcc_reset,"rcc-reset",1);
+
 }
 
 static void stm32f4xx_spi_class_init(ObjectClass *klass, void *data)

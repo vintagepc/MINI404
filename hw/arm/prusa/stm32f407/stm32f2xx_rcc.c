@@ -134,29 +134,49 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define RCC_CIR_LSERDYF_BIT     1
 #define RCC_CIR_LSIRDYF_BIT     0
 
+static_assert(STM32_PERIPH_COUNT<=255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
+
 #define RCC_AHB1RSTR_OFFSET 0x10
-#define RCC_AHB1RSTR_OTGHSRST_BIT 29
+static const uint8_t AHB1RST_PERIPHS[32] = {
+    STM32_GPIOA, STM32_GPIOB, STM32_GPIOC, STM32_GPIOD, STM32_GPIOE, STM32_GPIOF, STM32_GPIOG, STM32_GPIOH,
+    STM32_GPIOI, 0, 0, 0, STM32_CRC, 0, 0, 0, 
+    0, 0, 0, 0, 0, STM32_DMA1, STM32_DMA2, 0,
+    0, 0 /* TODO STM32_ETH*/, 0, 0, 0, STM32_USB, 0, 0
+};
 
 
 #define RCC_AHB2RSTR_OFFSET 0x14
+static const uint8_t AHB2RST_PERIPHS[32] = {
+    STM32_DCMI_PERIPH, 0, 0, 0, STM32_CRYP_PERIPH, STM32_HASH_PERIPH, STM32_RNG_PERIPH, 0 /*STM32_OTGFS*/,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
 
 #define RCC_AHB3RSTR_OFFSET 0x18
+static const uint8_t AHB3RST_PERIPHS[32] = {
+    STM32_FSMC, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
 
 #define RCC_APB1RSTR_OFFSET 0x20
+static const uint8_t APB1RST_PERIPHS[32] = {
+    STM32_TIM2, STM32_TIM3, STM32_TIM4, STM32_TIM5, STM32_TIM6, STM32_TIM7, STM32_TIM12, STM32_TIM13,
+    STM32_TIM14, 0, 0, STM32_WWDG, 0, 0, STM32_SPI2, STM32_SPI3, 
+    0, STM32_UART2, STM32_UART3, STM32_UART4, STM32_UART5, STM32_I2C1, STM32_I2C2, STM32_I2C3,
+    0, STM32_CAN1, STM32_CAN2, 0, STM32_PWR, STM32_DAC, 0, 0
+};
 
 #define RCC_APB2RSTR_RESET_VALUE     0x00000000
 #define RCC_APB2RSTR_OFFSET          0x24
-#define RCC_APB2RSTR_TIM11RST_BIT    18
-#define RCC_APB2RSTR_TIM10RST_BIT    17
-#define RCC_APB2RSTR_TIM9RST_BIT     16
-#define RCC_APB2RSTR_SYSCFGRST       14
-#define RCC_APB2RSTR_SPI1_BIT        12
-#define RCC_APB2RSTR_SDIORST_BIT     11
-#define RCC_APB2RSTR_ADCRST_BIT      8
-#define RCC_APB2RSTR_USART6RST       5
-#define RCC_APB2RSTR_USART1RST       4
-#define RCC_APB2RSTR_TIM8RST_BIT     1
-#define RCC_APB2RSTR_TIM1RST_BIT     0
+static const uint8_t APB2RST_PERIPHS[32] = {
+    STM32_TIM1, STM32_TIM8, 0, 0, STM32_UART1, STM32_UART6, 0, 0,
+    STM32_ADC1, 0, 0, STM32_SDIO, STM32_SPI1, 0, STM32_SYSCFG, 0, 
+    STM32_TIM9, STM32_TIM10, STM32_TIM11, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
 
 #define RCC_AHB1ENR_RESET_VALUE      0x00000000
 #define RCC_AHB1ENR_OFFSET           0x30
@@ -830,6 +850,14 @@ static void stm32_rcc_writeb(void *opaque, hwaddr offset, uint64_t value)
     }
 }
 
+static void stm32_rcc_RST_write(Stm32f2xxRcc *s, uint32_t mask, const uint8_t vectors[32]) {
+    for (int i=0; i<32; i++) {
+        if (mask & 1U<<i && vectors[i] != 0 ) {
+            qemu_irq_pulse(s->reset[vectors[i]]);
+        }
+    }
+}
+
 static void stm32_rcc_writew(void *opaque, hwaddr offset,
                              uint64_t value)
 {
@@ -849,17 +877,19 @@ static void stm32_rcc_writew(void *opaque, hwaddr offset,
             stm32_rcc_RCC_CIR_write(s, value, false);
             break;
         case RCC_APB1RSTR_OFFSET:
-            if (value & RCC_AHB1RSTR_OTGHSRST_BIT) {
-                qemu_irq_pulse(s->reset[STM32_USB]);
-            } else {
-                stm32_unimp("Unimplemented write: RCC_APB1RSTR_OFFSET 0x%x\n", (uint32_t)value);
-            }
+            stm32_rcc_RST_write(s, value, APB1RST_PERIPHS);
             break;
         case RCC_APB2RSTR_OFFSET:
-            stm32_unimp("Unimplemented write: RCC_APB2RSTR_OFFSET 0x%x\n", (uint32_t)value);
+            stm32_rcc_RST_write(s, value, APB2RST_PERIPHS);
+            break;
+        case RCC_AHB1RSTR_OFFSET:
+            stm32_rcc_RST_write(s, value, AHB1RST_PERIPHS);
+            break;
+        case RCC_AHB2RSTR_OFFSET:
+            stm32_rcc_RST_write(s, value, AHB2RST_PERIPHS);
             break;
         case RCC_AHB3RSTR_OFFSET:
-            WARN_UNIMPLEMENTED_REG(offset);
+            stm32_rcc_RST_write(s, value, AHB3RST_PERIPHS);
             break;
         case RCC_AHB1ENR_OFFSET:
             stm32_rcc_RCC_AHB1ENR_write(s, value, false);

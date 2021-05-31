@@ -323,6 +323,11 @@ stm32f2xxi2c_reset(DeviceState *dev)
     s->defs.TRISE = 2;
 }
 
+static void stm32f2xx_i2c_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        stm32f2xxi2c_reset(DEVICE(opaque));
+    }
+}
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(STM32F2XXI2CState, stm32f2xxi2c, STM32F2XX_I2C, SYS_BUS_DEVICE, {NULL});
 
 static void
@@ -344,6 +349,9 @@ stm32f2xxi2c_init(Object *obj)
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->evt_irq);
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->err_irq);
     s->bus = i2c_init_bus(dev, "i2c");
+
+    qdev_init_gpio_in_named(dev,stm32f2xx_i2c_rcc_reset,"rcc-reset",1);
+
 }
 
 static const VMStateDescription vmstate_stm32f2xx_i2c = {

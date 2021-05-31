@@ -1,0 +1,16 @@
+arm_ss.add(when: ['CONFIG_OPENGL', 'CONFIG_BUDDYBOARD'],
+ if_true: files('GLDashboardMgr.cpp',
+	'GLMotor.cpp',
+	'IPCIndicator.cpp',
+	'PLYExport.cpp',
+	'OBJCollection.cpp',
+	'GLObj.cpp',
+	'GLPrint.cpp',
+	'Mini_Lite.cpp',
+	'Mini_Full.cpp',
+	'Color.cpp',
+	'Scriptable.cpp',
+	'MK3SGL.cpp',
+	'KeyController.cpp',
+	'IKeyClient.cpp'
+))

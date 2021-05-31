@@ -139,6 +139,26 @@ f2xx_tim_timer(void *arg)
    }
 }
 
+// Called if there's an update to ARR without buffering (ARPE=0)
+static void 
+f2xx_arr_update(f2xx_tim *s) {
+    if (s->defs.CR1.CEN) {
+        if (s->defs.CR1.CMS || s->defs.CR1.DIR) {
+            printf("FIXME - non-upcounting ARR updates!\n");
+        }
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        int64_t current_count = f2xx_tim_ns_to_ticks(s, now) - s->count_timebase; 
+        int64_t ns_remaining = ((s->defs.ARR+1) - current_count) * f2xx_tim_period(s); 
+        if (ns_remaining<=0) {
+            //printf("ERR: ARR update would have caused timer %u to fire %ld in the past!\n",s->id, ((s->defs.ARR+1) - current_count));
+            // Fire at the next tick
+            //f2xx_tim_timer(s);
+            timer_mod(s->timer, now + f2xx_tim_period(s));
+        } else {
+            timer_mod(s->timer, now + ns_remaining);
+        }
+    }
+}
 
 static uint64_t
 f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
@@ -250,7 +270,10 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     if (changed==0)
         return;
 
-    // if (s->id==3) printf("Timer%d: Wrote %08x to %02x (change mask %08x)\n", s->id, data, addr, changed);
+    //if (s->id==5 && addr!=4) printf("Timer%d: Wrote %08lx to %02lx (change mask %08x)\n", s->id, data, addr, changed);
+
+    bool update_required = false;
+
     switch(addr) {
     case R_TIM_CR1:
         if (data & ~1) {
@@ -328,27 +351,31 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             }
         }
         break;
-    case R_TIM_CCMR1:
-    case R_TIM_CCMR2:
-    case R_TIM_DIER:
-    case R_TIM_PSC:
+    // case R_TIM_CCMR1:
+    // case R_TIM_CCMR2:
+    // case R_TIM_DIER:
+    // case R_TIM_PSC:
     case R_TIM_ARR:
-        s->regs[addr] = data;
-        break;
+        // Check for ARR buffering setting
+        update_required = s->defs.CR1.ARPE == 0;
+        /* FALLTHRU */
+    case R_TIM_CNT:
     case R_TIM_CCR1:
     case R_TIM_CCR2:
     case R_TIM_CCR3:
     case R_TIM_CCR4:
-        s->regs[addr] = data;
-        if (addr == R_TIM_CCR4)
-        {
-            // printf("CCR4: %02x\n",data);
+        // Only timer 5 and 2 are the full 32-bit
+        if (s->id !=5 && s->id != 2) {
+            data &= 0xFFFFU; 
         }
-        break;
+        /* FALLTHRU */
     default:
         s->regs[addr] = data;
         // printf("f2xx tim unimplemented write 0x%x+%u size %u val 0x%x\n",
         //   (unsigned int)addr << 2, offset, size, (unsigned int)data);
+    }
+    if (update_required && s->defs.ARR!=0) {
+        f2xx_arr_update(s);
     }
 
 }
@@ -369,6 +396,12 @@ static void f2xx_tim_reset(DeviceState *dev)
     timer_del(s->timer);
     memset(&s->regs, 0, sizeof(s->regs));
     s->count_timebase = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+}
+
+static void stm32f2xx_tim_rcc_reset(void *opaque, int n, int level) {
+    if (!level) {
+        f2xx_tim_reset(DEVICE(opaque));
+    }
 }
 
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - TIMER " name " register definition misaligned!")
@@ -407,6 +440,9 @@ f2xx_tim_init(Object *obj)
 
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);
+
+    qdev_init_gpio_in_named(dev,stm32f2xx_tim_rcc_reset,"rcc-reset",1);
+    
 }
 
 static const VMStateDescription vmstate_stm32f2xx_tim = {
