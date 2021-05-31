@@ -139,6 +139,26 @@ f2xx_tim_timer(void *arg)
    }
 }
 
+// Called if there's an update to ARR without buffering (ARPE=0)
+static void 
+f2xx_arr_update(f2xx_tim *s) {
+    if (s->defs.CR1.CEN) {
+        if (s->defs.CR1.CMS || s->defs.CR1.DIR) {
+            printf("FIXME - non-upcounting ARR updates!\n");
+        }
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        int64_t current_count = f2xx_tim_ns_to_ticks(s, now) - s->count_timebase; 
+        int64_t ns_remaining = ((s->defs.ARR+1) - current_count) * f2xx_tim_period(s); 
+        if (ns_remaining<=0) {
+            //printf("ERR: ARR update would have caused timer %u to fire %ld in the past!\n",s->id, ((s->defs.ARR+1) - current_count));
+            // Fire at the next tick
+            //f2xx_tim_timer(s);
+            timer_mod(s->timer, now + f2xx_tim_period(s));
+        } else {
+            timer_mod(s->timer, now + ns_remaining);
+        }
+    }
+}
 
 static uint64_t
 f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
@@ -250,7 +270,10 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     if (changed==0)
         return;
 
-    // if (s->id==3) printf("Timer%d: Wrote %08x to %02x (change mask %08x)\n", s->id, data, addr, changed);
+    //if (s->id==5 && addr!=4) printf("Timer%d: Wrote %08lx to %02lx (change mask %08x)\n", s->id, data, addr, changed);
+
+    bool update_required = false;
+
     switch(addr) {
     case R_TIM_CR1:
         if (data & ~1) {
@@ -333,6 +356,9 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     // case R_TIM_DIER:
     // case R_TIM_PSC:
     case R_TIM_ARR:
+        // Check for ARR buffering setting
+        update_required = s->defs.CR1.ARPE == 0;
+        /* FALLTHRU */
     case R_TIM_CNT:
     case R_TIM_CCR1:
     case R_TIM_CCR2:
@@ -347,6 +373,9 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         s->regs[addr] = data;
         // printf("f2xx tim unimplemented write 0x%x+%u size %u val 0x%x\n",
         //   (unsigned int)addr << 2, offset, size, (unsigned int)data);
+    }
+    if (update_required && s->defs.ARR!=0) {
+        f2xx_arr_update(s);
     }
 
 }
