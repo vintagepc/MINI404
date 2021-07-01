@@ -1,1 +1,7 @@
 theme: jekyll-theme-hacker
+show_downloads: "true"
+title: MINI404 - Printer Not Found
+description: The Prusa Mini STM32F4 counterpart to MK404 - with an appendectomy!
+github:
+  zip_url: https://github.com/vintagepc/MINI404/releases
+  tar_url: https://github.com/vintagepc/MINI404/releases
