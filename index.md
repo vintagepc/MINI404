@@ -1,12 +1,14 @@
-# Introduction
+# Mini404 - Like MK404, but with an appendix you can un-break!
 
-Mini404 is the counterpart to MK404 for Prusa's STM32-based Mini printer! It's still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It's built on QEMU this time as that was the best ARM emulation platform I could find.
+![](https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/Line.png)
+
+## Introduction
+
+Mini404 is the natural successor to [MK404](https://vintagepc.github.io/MINI404/) for Prusa's STM32-based Mini printer! It's still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It's built on QEMU this time as that was the best ARM emulation platform I could find.
 
 We feature many overlapping features with MK404, including the scripting engine, advanced arm-gdb debugging capabilities, and 3D printer visuals!
 
-![](https://user-images.githubusercontent.com/53943260/99891868-8242ae00-2c3c-11eb-91fd-7bab7657e3ee.png)
-
-![](https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/3D_model.png)
+images.githubusercontent.com/53943260/99891866-7b1ba000-2c3c-11eb-804b-427196de95df.png)![image](https://user-images.githubusercontent.com/53943260/99891868-8242ae00-2c3c-11eb-91fd-7bab7657e3ee.png)![image](https://user-images.githubusercontent.com/53943260/101267602-70770580-3728-11eb-97f5-f6258eec8e11.png)![image](https://user-images.githubusercontent.com/53943260/101993374-12967080-3c88-11eb-915a-82a25005cbed.png)![image](https://user-images.githubusercontent.com/53943260/104094225-76975f00-525d-11eb-8bba-1d2388fc085d.png)
 
 In addition, the use of QEMU gives us even more features to leverage:
 
@@ -17,6 +19,8 @@ In addition, the use of QEMU gives us even more features to leverage:
 - Emulation save states so you can snapshot the machine state and resume it later
 
 - Many more capabilities we don't explicitly use but are provided by QEMU, such as virtual consoles, host serial devices, pipes, and file-backed storage for EEPROMs and data. 
+
+![](https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/3D_model.png)
 
 ## Prusa Mini Features 
 
