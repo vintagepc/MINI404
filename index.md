@@ -4,7 +4,7 @@
 
 ## Introduction
 
-Mini404 is the natural successor to [MK404](https://vintagepc.github.io/MK404/) for Prusa's STM32-based Mini printer! It's still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It's built on QEMU this time as that was the best ARM emulation platform I could find - pr, at least, one with an ARM MCU and a barebones STM32F implementation. Be sure to check out that page for some additional background and motivation on how these projects came about. 
+Mini404 is the natural successor to [MK404](https://vintagepc.github.io/MK404/) for Prusa's STM32-based Mini printer! It's still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It's built on QEMU this time as that was the best ARM emulation platform I could find - or, at least, one with an ARM MCU and a barebones STM32F implementation. Be sure to check out the MK404 page for some additional background and motivation on how these projects came about. 
 
 We feature many overlapping features with MK404, including the scripting engine, advanced arm-gdb debugging capabilities, and 3D printer visuals!
 
