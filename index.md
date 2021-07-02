@@ -4,7 +4,7 @@
 
 ## Introduction
 
-Mini404 is the natural successor to [MK404](https://vintagepc.github.io/MK404/) for Prusa's STM32-based Mini printer! It's still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It's built on QEMU this time as that was the best ARM emulation platform I could find - pr, at least, one with an ARM MCU and a barebones STM32F implementation.
+Mini404 is the natural successor to [MK404](https://vintagepc.github.io/MK404/) for Prusa's STM32-based Mini printer! It's still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It's built on QEMU this time as that was the best ARM emulation platform I could find - pr, at least, one with an ARM MCU and a barebones STM32F implementation. Be sure to check out that page for some additional background and motivation on how these projects came about. 
 
 We feature many overlapping features with MK404, including the scripting engine, advanced arm-gdb debugging capabilities, and 3D printer visuals!
 
@@ -30,13 +30,13 @@ Name|Description|Status
 ----|-----------|------
 Bootloader/.bbf| Used to load stock images | ✔️ Works
 CDC (USB) | Serial USB control | ❌ ⚠ Not working/in progress (#29). Use a workaround to re-route serial to UART 1 and then use the serial VC. 
-EEPROM/flash | persistent storage|  ✔️ Works (`-pflash`, `-mtdblock`, see [Flash Storage Persistence](/vintagepc/MINI404/wiki/Flash-Storage-Persistence))
-Ethernet | LAN connectivity | ✔️ Appears to work, see [Ethernet](/vintagepc/MINI404/wiki/Ethernet)
+EEPROM/flash | persistent storage|  ✔️ Works (`-pflash`, `-mtdblock`, see [Flash Storage Persistence](https://github.com/vintagepc/MINI404/wiki/Flash-Storage-Persistence))
+Ethernet | LAN connectivity | ✔️ Appears to work, see [Ethernet](https://github.com/vintagepc/MINI404/wiki/Ethernet)
 Fan| Simulated fan component |✔️ Works - with tachometer feedback
 Heater| Simulated heater cartridge | ✔️ Works, feeds back temperature to thermistors.
 IRSensor| IR-based MKxS sensor | ✔️ Works.
 MINDA| Z-endstop sensor |  ⚠ Not implemented - currently using Z min "stallguard" as MINDA input.
-Print[er] Visualization |Viewing motion/print| ✔️ Works - see [Advanced Visuals](/vintagepc/MINI404/wiki/Advanced-Visuals)
+Print[er] Visualization |Viewing motion/print| ✔️ Works - see [Advanced Visuals](https://github.com/vintagepc/MINI404/wiki/Advanced-Visuals)
 RotaryEncoder| Input knob | ✔️ Works
 st25dv64k| I2C EEPROM chip | ✔️ Works 
 st7789v | SPI Display driver | ✔️ Works 
