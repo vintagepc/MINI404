@@ -61,7 +61,8 @@ See [Getting Started](https://github.com/vintagepc/MINI404/wiki/Getting-Started)
 
 # A Note on the STM architecture
 
-- The STM32F4xx architecture in Mini404's fork of QEMU has received significant expansion over the development of this project with my own peripheral implementations. So far it's the most complete one I'm aware of, and I'd like to thank both the QEMU developers/contributors for their work in the STM32 components that come "stock" with QEMU, as well as the [pebble-qemu](https://github.com/pebble/qemu) fork for their prior work Mini404 was able to leverage or adapt to make this project possible!
+- The STM32F4xx architecture in Mini404's fork of QEMU has received significant expansion over the development of this project with my own peripheral implementations. So far it's the most complete one I'm aware of, and I'd like to thank both the QEMU developers/contributors for their work in the STM32 components that come "stock" with QEMU, as well as the [pebble-qemu](https://github.com/pebble/qemu) fork for their prior work Mini404 was able to leverage or adapt to make this project possible! Long term as these implementations stabliize, I hope these improvements will make it upstream, but currently I do not have the time nor plans to do so myself. 
+
 
 # More Reading
 
