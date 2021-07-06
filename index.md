@@ -1,3 +1,4 @@
+![CI Build](https://github.com/vintagepc/MINI404/workflows/CI%20Build/badge.svg) ![Code Lint](https://github.com/vintagepc/MINI404/workflows/Code%20Lint/badge.svg)
 # Mini404 - Like MK404, but with an appendix you can un-break!
 
 ![](https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/Line.png)
