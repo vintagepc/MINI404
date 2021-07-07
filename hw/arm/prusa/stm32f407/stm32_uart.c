@@ -320,7 +320,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         /* Put next character into the RDR if we have one */
         stm32_uart_fill_receive_data_register(s);
     } else {
-        printf("STM32_UART WARNING: Read value from USART_DR (%08lx) while it was empty.\n", s->iomem.addr);
+        printf("STM32_UART WARNING: Read value from USART_DR (%08"HWADDR_PRIx") while it was empty.\n", s->iomem.addr);
         s->defs.DR.DR = 0; // Clear value.
     }
 
@@ -571,7 +571,7 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
     CHECK_REG_u32(s->defs.CR1);
     CHECK_REG_u32(s->defs.CR2);
     CHECK_REG_u32(s->defs.CR3);
-    CHECK_REG_u32(s->defs.GPTR);
+    CHECK_REG_u32(s->defs.GTPR);
 }
 
 static Property stm32_uart_properties[] = {

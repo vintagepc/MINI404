@@ -57,6 +57,10 @@
                         OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
                             MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL}) 
 
+#if !defined __cplusplus
+#define static_assert _Static_assert
+#endif
+                        
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned!")
 #define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg "size incorrect!")
 

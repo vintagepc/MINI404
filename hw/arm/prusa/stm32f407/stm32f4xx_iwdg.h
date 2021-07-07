@@ -45,22 +45,22 @@ typedef struct stm32f4xx_iwdg {
             union {
                 uint32_t KEY :16;
                 uint32_t :16;
-            }KR QEMU_PACKED;
+            } QEMU_PACKED KR;
             union {
                 uint32_t PR :3;
                 uint32_t :29;
-            }PR QEMU_PACKED;
+            } QEMU_PACKED PR;
             union {
                 uint32_t RL :12;
                 uint32_t :20;
-            }RLR QEMU_PACKED;
+            } QEMU_PACKED RLR;
             union {
                 uint32_t PVU :1;
                 uint32_t RVU :1;
                 uint32_t :30;
-            }SR QEMU_PACKED;
+            } QEMU_PACKED SR;
         } defs;
-    } regs QEMU_PACKED;
+    } QEMU_PACKED regs;
 
     QEMUTimer *timer;
 

@@ -28,7 +28,7 @@
 #include "qemu-common.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
-#include <assert.h>
+#include "../utility/macros.h"
 
 #define R_TIM_CR1    (0x00 / 4) //p
 #define R_TIM_CR2    (0x04 / 4)
@@ -404,8 +404,6 @@ static void stm32f2xx_tim_rcc_reset(void *opaque, int n, int level) {
     }
 }
 
-#define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - TIMER " name " register definition misaligned!")
-#define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg)
 
 static void
 f2xx_tim_init(Object *obj)

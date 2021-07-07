@@ -944,7 +944,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
         case 4:
             return stm32_rcc_readw(opaque, offset);
         default:
-            stm32_unimp("Unimplemented: RCC read from register at offset %lu", offset);
+            stm32_unimp("Unimplemented: RCC read from register at offset %08" HWADDR_PRIx, offset);
             return 0;
     }
 }

@@ -99,7 +99,7 @@ static void stm32f4xx_iwdg_update(stm32f4xx_iwdg *s){
     uint32_t tickrate = clkrate/prescale; // ticks per second.
     uint64_t delay_us = (1000000U* s->regs.defs.RLR.RL)/tickrate;
     if (s->time_changed) {
-        printf("Watchdog configured with timeout of %lu ms\n", delay_us/1000U);
+        printf("Watchdog configured with timeout of %"PRIu64" ms\n", delay_us/1000U);
         s->time_changed = false;
     }
     timer_mod(s->timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (delay_us*1000));

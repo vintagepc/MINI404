@@ -176,12 +176,12 @@ struct Stm32F4xx_Eth {
                 uint32_t    CR :4;
                 uint32_t    MR :5;
                 uint32_t    PA :5;
-            } MACMIIAR QEMU_PACKED;
+            } QEMU_PACKED MACMIIAR;
             struct {
                 uint32_t    MD :16;
                 uint32_t :16; // unused.
-            } MACMIIDR QEMU_PACKED;
-        } defs QEMU_PACKED;
+            } QEMU_PACKED MACMIIDR;
+        } QEMU_PACKED defs;
     };
     // LAN8742 PHY
     uint16_t mii[32];

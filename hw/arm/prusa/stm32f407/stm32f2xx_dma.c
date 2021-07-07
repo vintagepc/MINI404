@@ -154,7 +154,7 @@ static void set_DMAR_map(hwaddr src, f2xx_dma_stream *s)
             s->usart_dmar = 6;
             break;
         default:
-            printf("FIXME: Unknown DMAR source %08lx\n",src);
+            printf("FIXME: Unknown DMAR source 0x%08" HWADDR_PRIx "\n",src);
             s->usart_dmar = -1;
     }
 

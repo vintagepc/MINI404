@@ -120,7 +120,7 @@ struct Stm32Uart {
                 uint32_t PSC    :8;
                 uint32_t GT     :8;
                 uint32_t :16;
-            } QEMU_PACKED GPTR;
+            } QEMU_PACKED GTPR;
         } QEMU_PACKED defs;
     };
 

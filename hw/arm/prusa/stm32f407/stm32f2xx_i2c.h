@@ -65,7 +65,7 @@ struct STM32F2XXI2CState {
                 uint16_t ALERT :1;
                 uint16_t _res1 :1;
                 uint16_t SWRST :1;
-            } CR1 QEMU_PACKED;
+            } QEMU_PACKED CR1;
             struct {
                 uint16_t FREQ :6;
                 uint16_t _res :2;
@@ -75,19 +75,19 @@ struct STM32F2XXI2CState {
                 uint16_t DMAEN :1;                                
                 uint16_t LAST :1;
                 uint16_t :3;
-            } CR2 QEMU_PACKED;
+            } QEMU_PACKED CR2;
             struct {
                 uint16_t ADD0 :1;
                 uint16_t ADDLO  :7;
                 uint16_t ADDHI :2;
                 uint16_t _res :5;
                 uint16_t ADDMODE :1;
-            } OAR1 QEMU_PACKED;
+            } QEMU_PACKED OAR1;
             struct {
                 uint16_t ENDUAL :1;
                 uint16_t ADD2 :7;
                 uint16_t :8;
-            } OAR2 QEMU_PACKED;
+            } QEMU_PACKED OAR2;
             uint16_t DR;
             struct {
                 uint16_t SB :1;
@@ -106,7 +106,7 @@ struct STM32F2XXI2CState {
                 uint16_t :1;
                 uint16_t TIMEOUT :1;
                 uint16_t SMBALERT :1;
-            } SR1 QEMU_PACKED;
+            } QEMU_PACKED SR1;
             struct {
                 uint16_t MSL :1;
                 uint16_t BUSY :1;
@@ -117,10 +117,10 @@ struct STM32F2XXI2CState {
                 uint16_t SMBHOST:1;
                 uint16_t DUALF:1;
                 uint16_t PEC :8;
-            } SR2 QEMU_PACKED;
+            } QEMU_PACKED SR2;
             uint16_t CCR;
             uint16_t TRISE;
-        } defs QEMU_PACKED;
+        } QEMU_PACKED defs;
         uint16_t regs[R_I2C_COUNT];
     } QEMU_PACKED;
 
