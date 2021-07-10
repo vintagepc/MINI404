@@ -139,7 +139,7 @@ jobs:
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu --cross-prefix=x86_64-w64-mingw32-" 
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --cross-prefix=x86_64-w64-mingw32-
 
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404 && make -j2
