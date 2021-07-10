@@ -166,6 +166,9 @@ jobs:
           C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir"
         shell: cmd
 
+      - name: Fix CRLF Checkout
+        run: git config --global core.autocrlf false
+
       - name: Checkout ${{ github.event.pull_request.head.ref }}
         uses: actions/checkout@v2.2.0
         if: ${{ github.event.pull_request }}
