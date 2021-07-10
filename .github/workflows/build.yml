@@ -95,68 +95,6 @@ jobs:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build.tar.bz2
 
-  build_win64:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
-      if: ${{ github.event.pull_request }}
-      with:
-        repository: vintagepc/MINI404.git
-        ref: ${{ github.event.pull_request.head.sha }}
-        submodules: false
-
-    - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
-      if: ${{ !github.event.pull_request }}
-      with:
-        repository: vintagepc/MINI404.git
-        ref: ${{ github.event.ref }}
-        submodules: false
-
-    - name: Cache packages
-      uses: actions/cache@v1.0.3
-      id: cache-pkgs
-      with:
-          path: "packages"
-          key: "${{ runner.os }}-packages-mingw-1_0_0"
-          restore-keys: ${{ runner.os }}-packages-mingw-
-
-    - name: Setup cache dir
-      if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
-      run: mkdir -p packages/partial
-
-    - name: Install packages
-      run: |
-          sudo apt-get update
-          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install binutils-mingw-w64 mingw-w64 mingw-w64-x86-64-dev
-
-    - name: Cache permissions
-      run: sudo chmod -R 744 packages
-
-    - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --cross-prefix=x86_64-w64-mingw32-
-
-    - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && make -j2
-
-    - name: Assemble artifacts
-      if: ${{ !github.event.pull_request }}
-      run: |
-          cd ${{ runner.workspace }}/MINI404/build
-          mv buddy-softmmu Mini404-dev
-          tar -jhcvf Mini404-development-build.tar.bz2 Mini404-dev
-    - name: Upload artifact
-      if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
-      with:
-        name: Binaries
-        path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build.tar.bz2
-
   # build_osx:
   #   # The type of runner that the job will run on
   #   runs-on: macos-latest
@@ -201,73 +139,73 @@ jobs:
   #       name: Binaries
   #       path: ${{ runner.workspace }}/MK404/build/MK404_OSX
 
-  # build_cygwin:
-  #   # The type of runner that the job will run on
-  #   runs-on: windows-latest
-  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-  #   steps:
-  #     - uses: actions/cache@v1
-  #       with:
-  #         path: C:\tools\chococache
-  #         key: ${{ runner.os }}-cygwin-${{ github.sha }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-cygwin-
-  #     - name: Cygwin package cache
-  #       uses: actions/cache@v1
-  #       with:
-  #         path: C:\tools\cygcache
-  #         key: ${{ runner.os }}-cygwinpkgs-1_1
-  #         restore-keys: |
-  #           ${{ runner.os }}-cygwinpkgs-
-  #     - name: Install cygwin
-  #       run: |
-  #         choco config set cacheLocation C:\tools\chococache
-  #         choco install --no-progress cygwin
-  #     - name: Install cygwin dependencies
-  #       run: |
-  #         C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P cmake,make,libelf-devel,gcc-core,gcc-g++,libstdc++-6-devel,git,libglut-devel,libGLEW-devel,libSDL_sound-devel,libSDL-devel,avr-gcc,python2,libpng-devel
-  #       shell: cmd
+  build_cygwin:
+    # The type of runner that the job will run on
+    runs-on: windows-latest
+    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+    steps:
+      - uses: actions/cache@v1
+        with:
+          path: C:\tools\chococache
+          key: ${{ runner.os }}-cygwin-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-cygwin-
+      - name: Cygwin package cache
+        uses: actions/cache@v1
+        with:
+          path: C:\tools\cygcache
+          key: ${{ runner.os }}-cygwinpkgs-1_1
+          restore-keys: |
+            ${{ runner.os }}-cygwinpkgs-
+      - name: Install cygwin
+        run: |
+          choco config set cacheLocation C:\tools\chococache
+          choco install --no-progress cygwin
+      - name: Install cygwin dependencies
+        run: |
+          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir"
+        shell: cmd
 
-  #     - name: Checkout ${{ github.event.pull_request.head.ref }}
-  #       uses: actions/checkout@v2.2.0
-  #       if: ${{ github.event.pull_request }}
-  #       with:
-  #         repository: vintagepc/MK404.git
-  #         ref: ${{ github.event.pull_request.head.sha }}
-  #         submodules: true
+      - name: Checkout ${{ github.event.pull_request.head.ref }}
+        uses: actions/checkout@v2.2.0
+        if: ${{ github.event.pull_request }}
+        with:
+          repository: vintagepc/MINI404.git
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: true
 
-  #     - name: Checkout ${{ github.event.ref }}
-  #       uses: actions/checkout@v2.2.0
-  #       if: ${{ !github.event.pull_request }}
-  #       with:
-  #         repository: vintagepc/MK404.git
-  #         ref: ${{ github.event.ref }}
-  #         submodules: true
+      - name: Checkout ${{ github.event.ref }}
+        uses: actions/checkout@v2.2.0
+        if: ${{ !github.event.pull_request }}
+        with:
+          repository: vintagepc/MINI404.git
+          ref: ${{ github.event.ref }}
+          submodules: true
 
-  #     - name: Configure build
-  #       run: |
-  #         echo %USERPROFILE%
-  #         cd MK404
-  #         mkdir build
-  #         cd build
-  #         set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-  #         bash.exe -c "cmake -DCMAKE_BUILD_TYPE=RELEASE .."
-  #       shell: cmd
+      - name: Configure build
+        run: |
+          echo %USERPROFILE%
+          cd MINI404
+          mkdir build
+          cd build
+          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
+          bash.exe -c "../configure --cross=prefix=x86_64-w64-mingw32 --target-list="buddy-softmmu" --enable-gtk --enable-usb .."
+        shell: cmd
 
-  #     - name: Build
-  #       run: |
-  #         cd ${{runner.workspace}}\MK404\build
-  #         pwd
-  #         set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-  #         bash.exe -c "make -j2"
-  #       shell: cmd
+      - name: Build
+        run: |
+          cd ${{runner.workspace}}\MINI404\build
+          pwd
+          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
+          bash.exe -c "make -j2"
+        shell: cmd
 
-  #     - name: Upload Cygwin artifact
-  #       if: ${{ !github.event.pull_request }}
-  #       uses: actions/upload-artifact@v2
-  #       with:
-  #         name: Binaries
-  #         path: ${{ runner.workspace }}/MK404/build/MK404.exe
+      - name: Upload Cygwin artifact
+        if: ${{ !github.event.pull_request }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: Binaries
+          path: ${{ runner.workspace }}/MINI404/build/qemu-system-buddy*.exe
 
   Publish:
     runs-on: ubuntu-latest
