@@ -206,7 +206,7 @@ jobs:
           bash.exe -c "make -j3"
         shell: cmd
       - name: Assemble artifacts and libraries
-        if: ${{ !github.event.pull_request }}
+        #if: ${{ !github.event.pull_request }}
         run: |
           cd ${{ runner.workspace }}/MINI404/build
           mkdir Mini404-dev
