@@ -62,7 +62,7 @@ jobs:
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" 
 
     - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && make -j2
+      run: cd ${{ runner.workspace }}/MINI404 && make -j3
 
     - name: Checkout Wiki
       uses: actions/checkout@v2.2.0
@@ -87,6 +87,7 @@ jobs:
       run: |
           cd ${{ runner.workspace }}/MINI404/build
           mv buddy-softmmu Mini404-dev
+          mv assets Mini404-dev
           tar -jhcvf Mini404-development-build.tar.bz2 Mini404-dev
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
@@ -202,15 +203,27 @@ jobs:
           cd ${{runner.workspace}}\MINI404\build
           pwd
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "make -j2"
+          bash.exe -c "make -j3"
         shell: cmd
-
+      - name: Assemble artifacts and libraries
+        if: ${{ !github.event.pull_request }}
+        run: |
+          cd ${{ runner.workspace }}/MINI404/build
+          mkdir Mini404-dev
+          mv qemu-system-buddy.exe Mini404-dev
+          mv assets Mini404-dev
+          mkdir Mini404-dev/pc-bios
+          cd Mini404-dev
+          for i in `ldd qemu-system-buddy.exe | grep "not found" | cut -f2 | cut -d" " -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done
+          for i in `ldd *.dll | grep "not found" | cut -f2 | cut -d" " -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done
+          cd ..
+          tar -jhcvf Mini404-development-build-w64.tar.bz2 Mini404-dev
       - name: Upload Cygwin artifact
 #        if: ${{ !github.event.pull_request }}
         uses: actions/upload-artifact@v2
         with:
           name: Binaries
-          path: ${{ runner.workspace }}/MINI404/build/qemu-system-buddy.exe
+          path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build-w64.tar.bz
 
   Publish:
     runs-on: ubuntu-latest
