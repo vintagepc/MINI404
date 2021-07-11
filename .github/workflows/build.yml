@@ -212,21 +212,21 @@ jobs:
           mkdir Mini404-dev
           mv qemu-system-buddy.exe Mini404-dev
           mv assets Mini404-dev
-          mkdir Mini404-dev/pc-bios
           cd Mini404-dev
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
+          bash.exe -c "mkdir pc-bios && echo \"Placeholder. DO NOT DELETE THIS DIRECTORY, IT MUST EXIST OR QEMU QILL HANG ON BOOT\" > pc-bios/README.txt" 
           bash.exe -c "for i in `ldd qemu-system-buddy.exe | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done"
           bash.exe -c "for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done" 
           cd ..
-          tar -jhcvf Mini404-development-build-w64.tar.bz2 Mini404-dev
+          tar -jcvf Mini404-development-build-w64.tar.bz2 Mini404-dev
         shell: cmd
-        
+
       - name: Upload Cygwin artifact
 #        if: ${{ !github.event.pull_request }}
         uses: actions/upload-artifact@v2
         with:
           name: Binaries
-          path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build-w64.tar.bz
+          path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build-w64.tar.bz2
 
   Publish:
     runs-on: ubuntu-latest
