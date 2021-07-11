@@ -219,6 +219,8 @@ jobs:
           bash.exe -c "for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done" 
           cd ..
           tar -jhcvf Mini404-development-build-w64.tar.bz2 Mini404-dev
+        shell: cmd
+        
       - name: Upload Cygwin artifact
 #        if: ${{ !github.event.pull_request }}
         uses: actions/upload-artifact@v2
