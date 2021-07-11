@@ -192,7 +192,7 @@ jobs:
           mkdir build
           cd build
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "../configure --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
+          bash.exe -c "CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ ../configure --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
         shell: cmd
 
       - name: Build
