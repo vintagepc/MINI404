@@ -56,7 +56,7 @@ USB | Flash drive for gcode input | ✔️ Works
 
 # Supported platforms
 
-At current we only actively support Linux, and a Windows/MinGW64 build will be passively maintained via a GitHub build runner. While it should be possible to compile QEMU and probably the Mini404 components for OSX, I do not have the requisite hardware/development environment and it is not something I can support nor maintain. For either of these cases you are always welcome to report any issues you may find or submit fixes and I'll do my best to assist, but cannot make any guarantees. For Linux I recommend you compile yourself, as each distribution has its own set of libraries and until I get time to create a more portable package distributable. 
+At current we only actively support Linux, and a Windows/MinGW64 build will be passively maintained via a GitHub build runner. While it should be possible to compile QEMU and probably the Mini404 components for OSX, I do not have the requisite hardware/development environment and it is not something I can support nor maintain. For either of these cases you are always welcome to report any issues you may find or submit fixes and I'll do my best to assist, but cannot make any guarantees. For Linux I recommend you compile yourself, as each distribution has its own set of libraries. Until I get time to create a more portable package distributable, it is the best way to avoid a headache.
 
 See [Getting Started](https://github.com/vintagepc/MINI404/wiki/Getting-Started) for a primer on what you need to compile and how to get started. 
 
