@@ -50,7 +50,7 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(GLDashboadState, gldashboard, GLDASHBO
 
 static void gldashboard_realize(DeviceState *dev, Error **errp)
 {
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     GLDashboadState *s = GLDASHBOARD(dev);
     if (s->dashboard_type) {
         s->dashboardmgr = gl_dashboard_start(s->dashboard_type);
@@ -62,7 +62,7 @@ static void gldashboard_realize(DeviceState *dev, Error **errp)
 }
 
 static void gldashboard_motor_in(void *opaque, int n, int level) {
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     GLDashboadState *s = GLDASHBOARD(opaque);
     if (s->dashboard_type) {
         gl_dashboard_update_motor(s->dashboardmgr,n,level);
@@ -71,7 +71,7 @@ static void gldashboard_motor_in(void *opaque, int n, int level) {
 }
 
 static void gldashboard_motor_stall_in(void *opaque, int n, int level) {
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     GLDashboadState *s = GLDASHBOARD(opaque);
     if (s->dashboard_type) {
         gl_dashboard_update_motor_stall(s->dashboardmgr,n,level);
@@ -80,7 +80,7 @@ static void gldashboard_motor_stall_in(void *opaque, int n, int level) {
 }
 
 static void gldashboard_motor_enable_in(void *opaque, int n, int level) {
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     GLDashboadState *s = GLDASHBOARD(opaque);
     if (s->dashboard_type) {
         gl_dashboard_update_motor_enable(s->dashboardmgr,n,level);
@@ -90,7 +90,7 @@ static void gldashboard_motor_enable_in(void *opaque, int n, int level) {
 
 
 static void gldashboard_indicator_in(void *opaque, int n, int level) {
-#ifdef CONFIG_OPENGL    
+#ifdef BUDDY_HAS_GL    
     GLDashboadState *s = GLDASHBOARD(opaque);
     if (s->dashboard_type) {
         gl_dashboard_update_indicator(s->dashboardmgr,n,level);
@@ -99,7 +99,7 @@ static void gldashboard_indicator_in(void *opaque, int n, int level) {
 }
 
 static void gldashboard_indicator_logic_in(void *opaque, int n, int level) {
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     GLDashboadState *s = GLDASHBOARD(opaque);
     if (s->dashboard_type) {
         gl_dashboard_update_indicator(s->dashboardmgr,n,level ? 255 : 0);
@@ -112,7 +112,7 @@ static void gldashboard_finalize(Object *obj)
 }
 
 static void gldashboard_reset(DeviceState *dev) {
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     GLDashboadState *s = GLDASHBOARD(dev);
     if (s->dashboard_type) {
         gl_dashboard_reset(s->dashboardmgr);
