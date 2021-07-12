@@ -126,7 +126,7 @@ typedef union
             uint8_t stealth     :1;
             uint8_t stst        :1;
         }  QEMU_PACKED DRV_STATUS;
-    }defs;
+    } QEMU_PACKED defs;
 } tmc2209_registers_t;
 
 

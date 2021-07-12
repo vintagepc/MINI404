@@ -110,7 +110,7 @@ static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
             uint8_t r;
             uint8_t a;
         };
-    } color;
+    }  QEMU_PACKED color;
     color.full = 0;
     uint16_t word = 0;
         if (s->mode == ST7789V_CMD) {

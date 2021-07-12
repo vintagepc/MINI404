@@ -193,6 +193,10 @@ stm32f4xx_iwdg_init(Object *obj)
     stm32f4xx_iwdg *s = STM32F4XX_IWDG(obj);
 
     assert(sizeof(s->regs)==sizeof(s->regs.all)); // Make sure packing is correct.
+    CHECK_REG_u32(s->regs.defs.KR);
+    CHECK_REG_u32(s->regs.defs.SR);
+    CHECK_REG_u32(s->regs.defs.RLR);
+    CHECK_REG_u32(s->regs.defs.SR);
 
     memory_region_init_io(&s->iomem, obj, &stm32f4xx_iwdg_ops, s, "iwdg", 0x0c);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
