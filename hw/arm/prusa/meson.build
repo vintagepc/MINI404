@@ -3,7 +3,7 @@ if build_machine.system() == 'cygwin'
     message('Cross build, finding opengl32. libglew32 and libglu32')
     libgl = cc.find_library('libopengl32', required: false)
     libglu = cc.find_library('libglu32', required: false)
-    libglew = cc.find_library('libglewl32', required: false)
+    libglew = cc.find_library('libglew32', required: false)
 else
     message('Native build, looking for GLEW/GLU/GL')
     libgl = cc.find_library('GL', required: false)
