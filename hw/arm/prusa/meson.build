@@ -21,21 +21,32 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
     ))
 
 # Required if using Message queue IPC
-c = meson.get_compiler('c')
-#arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('rt'))
+
+libglut = cc.find_library('glut', required,false)
 if meson.is_cross_build()
-    message('Cross build, using opengl32. libglew32 and libglu32')
-    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('libopengl32'))
-    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('libglu32'))
-    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('libglew32'))
+    message('Cross build, finding opengl32. libglew32 and libglu32')
+    libgl = cc.find_library('libopengl32', required,false)
+    libglu = cc.find_library('libglu32', required,false)
+    libglew = cc.find_library('libglewl32', required,false)
+#    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('libopengl32'))
+#    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('libglu32'))
+#    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('libglew32'))
 else
-    message('Native build, using GLU/GL')
-    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLU'))
-    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GL'))
-    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLEW'))
+    message('Native build, looking for GLEW/GLU/GL')
+    libgl = cc.find_library('libopengl32', required,false)
+    libglu = cc.find_library('libglu32', required,false)
+    libglew = cc.find_library('libglewl32', required,false)
+#    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLU'))
+#    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GL'))
+#    arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLEW'))
 endif
-arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('glut'))
 
+if libglut.found() && libglu.found() && libglew.found() && libgl.found()
+    message ("OpenGL libraries found - enabling Mini404 GL extensions");
+    add_project_arguments('-DBUDDY_HAS_GL', language : 'c')
+    add_project_arguments('-DBUDDY_HAS_GL', language : 'c++')
+    arm_ss.add(when: true, if_true: libgl libglu libglut libglew)
+else
+    message ("OpenGL libraries not found. Install development packages for freeglut, glew, and mesa and re-run configure.");
 
-
-# hw_arch += {'arm': buddy_ss}
+endif
