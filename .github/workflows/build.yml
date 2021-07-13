@@ -83,18 +83,18 @@ jobs:
         git diff-index --quiet HEAD || git commit -m "Regen reference docs" && git push
 
     - name: Assemble artifacts
-      if: ${{ !github.event.pull_request }}
+ #     if: ${{ !github.event.pull_request }}
       run: |
           cd ${{ runner.workspace }}/MINI404/build
-          mv buddy-softmmu Mini404-dev
-          mv assets Mini404-dev
-          tar -jhcvf Mini404-development-build.tar.bz2 Mini404-dev
+          mv buddy-softmmu Mini404-dev-linux
+          mv assets Mini404-dev-linux
+          tar -jhcvf Mini404-dev-build-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
-      if: ${{ !github.event.pull_request }}
+#      if: ${{ !github.event.pull_request }}
       uses: actions/upload-artifact@v2
       with:
         name: Binaries
-        path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build.tar.bz2
+        path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-build-linux.tar.bz2
 
   # build_osx:
   #   # The type of runner that the job will run on
@@ -209,16 +209,16 @@ jobs:
         #if: ${{ !github.event.pull_request }}
         run: |
           cd ${{ runner.workspace }}/MINI404/build
-          mkdir Mini404-dev
-          mv qemu-system-buddy.exe Mini404-dev
-          mv assets Mini404-dev
-          cd Mini404-dev
+          mkdir Mini404-dev-w64
+          mv qemu-system-buddy.exe Mini404-dev-w64
+          mv assets Mini404-dev-w64
+          cd Mini404-dev-w64
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
           bash.exe -c "mkdir pc-bios && echo \"Placeholder. DO NOT DELETE THIS DIRECTORY, IT MUST EXIST OR QEMU WILL HANG ON BOOT\" > pc-bios/README.txt" 
           bash.exe -c "for i in `ldd qemu-system-buddy.exe | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done"
           bash.exe -c "while `ldd *.dll | grep -q \"not found\"`; do for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done; sleep 2; done" 
           cd ..
-          tar -jcvf Mini404-development-build-w64.tar.bz2 Mini404-dev
+          zip -r Mini404-dev-build-w64.zip Mini404-dev-w64
         shell: cmd
 
       - name: Upload Cygwin artifact
@@ -226,7 +226,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: Binaries
-          path: ${{ runner.workspace }}/MINI404/build/Mini404-development-build-w64.tar.bz2
+          path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-build-w64.zip
 
   Publish:
     runs-on: ubuntu-latest
@@ -238,20 +238,20 @@ jobs:
         with:
           name: Binaries
 
-      - name: Extract assets
-        run: |
-          tar -jxvf Mini404-development-build.tar.bz2
-
       - name: Check tag version
         id: get_version
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
 
-      - name: Build ${{ steps.get_version.outputs.VERSION }} tarball
+      - name: Build ${{ steps.get_version.outputs.VERSION }} archives
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          mv Mini404-dev Mini404-${{ steps.get_version.outputs.VERSION }}
-          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}
+          tar -jxvf Mini404-dev-build-linux.tar.bz2
+          unzip Mini404-dev-build-w64.zip
+          mv Mini404-dev-linux Mini404-${{ steps.get_version.outputs.VERSION }}-linux
+          mv Mini404-dev-w64 Mini404-${{ steps.get_version.outputs.VERSION }}-w64
+          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-linux
+          zip -r Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip Mini404-${{ steps.get_version.outputs.VERSION }}-w64
 
       - name: RELEASE THE KRAKEN
         if: startsWith(github.ref, 'refs/tags/v')
@@ -261,11 +261,8 @@ jobs:
           prerelease: false
           files: |
             Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2
-
-      - name: Rebuild dev tarball
-        if: steps.get_version.outcome == 'Skipped'
-        run: tar -jcvf Mini404-dev-linux.tar.bz2 Mini404-dev
-
+            Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip
+      
       - name: Publish prerelease
         if: steps.get_version.outcome == 'Skipped'
         uses: "marvinpinto/action-automatic-releases@latest"
@@ -276,3 +273,5 @@ jobs:
           title: "Latest (Development) Build"
           files: |
             Mini404-dev-linux.tar.bz2
+            Mini404-dev-w64.zip
+
