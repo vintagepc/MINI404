@@ -144,7 +144,7 @@ static void prusa_mini_init(MachineState *machine)
 
     // DeviceState *vis = qdev_new("mini-visuals");
     // sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     DeviceState *gl_db = qdev_new("gl-dashboard");
     if (arghelper_is_arg("gfx-full")) {
         qdev_prop_set_uint8(gl_db, "dashboard_type", DB_MINI_FULL); 
@@ -154,7 +154,10 @@ static void prusa_mini_init(MachineState *machine)
         qdev_prop_set_uint8(gl_db, "dashboard_type", DB_MINI_DB); 
     }
     sysbus_realize(SYS_BUS_DEVICE(gl_db), &error_fatal);
+#else
+    printf("NOTE: GL support is not compiled in, gfx-* options will be ignored.\n");
 #endif
+
     {
         static const char names[4] = {'X','Y','Z','E'};
         static const uint8_t addresses[4] = {1, 3,0,2};
@@ -186,7 +189,7 @@ static void prusa_mini_init(MachineState *machine)
             qdev_connect_gpio_out(split_out,i, qdev_get_gpio_in_named(dev,"tmc2209-byte-in",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), step_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-step",0));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), dir_pins[i], qdev_get_gpio_in_named(dev,"tmc2209-dir",0));
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
             qemu_irq split_en = qemu_irq_split( qdev_get_gpio_in_named(dev,"tmc2209-enable",0),qdev_get_gpio_in_named(gl_db,"motor-enable",i));
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), en_pins[i],split_en);
             qemu_irq split_diag = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]),qdev_get_gpio_in_named(gl_db,"motor-stall",i));
@@ -232,7 +235,7 @@ static void prusa_mini_init(MachineState *machine)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_HTR));
 #endif
 
@@ -243,13 +246,13 @@ static void prusa_mini_init(MachineState *machine)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_BED));
 #endif
 
     dev = qdev_new("ir-sensor");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
     qemu_irq split_fsensor = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_B]),4),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_FSENS));
     qdev_connect_gpio_out(dev, 0, split_fsensor);
 #else
@@ -270,7 +273,7 @@ static void prusa_mini_init(MachineState *machine)
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_E]),fan_tach_pins[i]));
         qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_E]),fan_pwm_pins[i],qdev_get_gpio_in_named(dev, "pwm-in-soft",0));
-#ifdef CONFIG_OPENGL
+#ifdef BUDDY_HAS_GL
         qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_PFAN+i));
 #endif
     }

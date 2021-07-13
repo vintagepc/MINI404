@@ -65,30 +65,30 @@ typedef union
             uint8_t multistep_filt :1;
             uint8_t test_mode   :1;
             uint32_t :22;
-        }  __attribute__ ((__packed__)) GCONF;             // 0x00
+        }  QEMU_PACKED GCONF;             // 0x00
         struct                 // 0x01
         {
             uint8_t reset   :1;
             uint8_t drv_err :1;
             uint8_t uv_cp   :1;
             uint32_t :29; // unused
-        }  __attribute__ ((__packed__)) GSTAT; // 0x01
+        }  QEMU_PACKED GSTAT; // 0x01
         struct                 // 0x01
         {
             uint32_t ifcnt :8;
             uint32_t :24; // unused
-        }  __attribute__ ((__packed__)) IFCNT; // 0x02
+        }  QEMU_PACKED IFCNT; // 0x02
         uint32_t _unimplemented[61]; //0x03 - 0x6B
         struct // 0x40
         {
             uint32_t sgthrs :8;
             uint32_t :24;
-        } __attribute__((__packed__)) SGTHRS; // 0x40
+        } QEMU_PACKED SGTHRS; // 0x40
         struct // 0x41
         {
             uint32_t sg_result :10;
             uint32_t :22;
-        } __attribute__((__packed__)) SG_RESULT; // 0x41
+        } QEMU_PACKED SG_RESULT; // 0x41
         uint32_t _unimplemented2a[42]; //0x03 - 0x6B
         struct                        //0x6C
         {
@@ -104,7 +104,7 @@ typedef union
             uint32_t dedge		:1;
             uint32_t diss2g		:1;
             uint32_t diss2vs	:1;
-        } __attribute__ ((__packed__)) CHOPCONF;
+        } QEMU_PACKED CHOPCONF;
         uint32_t _unimplemented2[2]; //0x6D - 0x6E
         struct                       //0x6F
         {
@@ -125,8 +125,8 @@ typedef union
             uint16_t _unus2      :9;
             uint8_t stealth     :1;
             uint8_t stst        :1;
-        }  __attribute__ ((__packed__)) DRV_STATUS;
-    }defs;
+        }  QEMU_PACKED DRV_STATUS;
+    } QEMU_PACKED defs;
 } tmc2209_registers_t;
 
 
@@ -369,6 +369,15 @@ static void tmc2209_realize(DeviceState *obj, Error **errp){
 static void tmc2209_init(Object *obj){
 
     tmc2209_state *s = TMC2209(obj);
+
+    CHECK_REG_u32(s->regs.defs.GCONF);
+    CHECK_REG_u32(s->regs.defs.GSTAT);
+    CHECK_REG_u32(s->regs.defs.IFCNT);
+    CHECK_REG_u32(s->regs.defs.SGTHRS);
+    CHECK_REG_u32(s->regs.defs.SG_RESULT);
+    CHECK_REG_u32(s->regs.defs.CHOPCONF);
+    CHECK_REG_u32(s->regs.defs.DRV_STATUS);
+
     s->id=' ';
     s->address=0;
     s->dir = 0;

@@ -100,7 +100,7 @@ struct STM32F4xxUSBState {
             union {
                 uint32_t grxstsr;       /* 1c */
                 rxstatus_t defs;
-            };
+            } QEMU_PACKED ;
             uint32_t grxstsp;       /* 20 */
             uint32_t grxfsiz;       /* 24 */
             union {

@@ -1,7 +1,32 @@
-subdir('3rdParty')
-subdir('opengl')
+libglut = cc.find_library('glut', required: false)
+if build_machine.system() == 'cygwin'
+    message('Cross build, finding opengl32. libglew32 and libglu32')
+    libgl = cc.find_library('libopengl32', required: false)
+    libglu = cc.find_library('libglu32', required: false)
+    libglew = cc.find_library('libglew32', required: false)
+else
+    message('Native build, looking for GLEW/GLU/GL')
+    libgl = cc.find_library('GL', required: false)
+    libglu = cc.find_library('GLU', required: false)
+    libglew = cc.find_library('GLEW', required: false)
+endif
+
+if libglut.found() and libglu.found() and libglew.found() and libgl.found()
+    message('OpenGL libraries found - enabling Mini404 GL extensions')
+    buddy_gl = declare_dependency(compile_args: '-DBUDDY_HAS_GL')
+    arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [libgl, libglu, libglut, libglew, buddy_gl])
+    subdir('3rdParty')
+    subdir('opengl')
+    subdir('assets')
+else
+    message('OpenGL libraries not found. Install development packages for freeglut, glew, and mesa and re-run configure.')
+
+endif
+
+
+
 subdir('stm32f407')
-subdir('assets')
+
 
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
@@ -21,11 +46,4 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
     ))
 
 # Required if using Message queue IPC
-c = meson.get_compiler('c')
-arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: cc.find_library('rt'))
-arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('glut'))
-arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLU'))
-arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GL'))
-arm_ss.add(when: ['CONFIG_BUDDYBOARD','CONFIG_OPENGL'], if_true: cc.find_library('GLEW'))
 
-# hw_arch += {'arm': buddy_ss}

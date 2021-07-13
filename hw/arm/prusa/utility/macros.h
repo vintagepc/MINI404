@@ -57,8 +57,12 @@
                         OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
                             MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL}) 
 
-#define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned!")
-#define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg "size incorrect!")
+#if !defined __cplusplus
+#define static_assert _Static_assert
+#endif
+#define CHECK_PRI(x,y)  #x" != "#y                      
+#define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
+#define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg " size incorrect!")
 
 // Some rather ugly convenience macros for 
 // more easily debugging save state symmetry. See the RCC implementation for

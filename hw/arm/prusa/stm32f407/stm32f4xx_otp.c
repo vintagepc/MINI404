@@ -81,7 +81,7 @@ static void stm32f4xx_otp_realize(DeviceState *dev, Error **errp)
 
         // Note - some OSes do not allow files under 1k, so as long as the source is larger it's fine. 
         if (len <= sizeof(s->data)) {
-            error_setg(errp, "%s: Backing file size %" PRId64 " != %lu",
+            error_setg(errp, "%s: Backing file size %" PRId64 " != %" PRIu64,
                        TYPE_STM32F4XX_OTP, len, sizeof(s->data));
             return;
         }

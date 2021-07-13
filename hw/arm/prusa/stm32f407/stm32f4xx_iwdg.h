@@ -40,27 +40,27 @@ typedef struct stm32f4xx_iwdg {
     MemoryRegion  iomem;
 
     union {
-        uint32_t all[R_IWDG_MAX];
         struct {
-            union {
+            struct {
                 uint32_t KEY :16;
                 uint32_t :16;
-            }KR QEMU_PACKED;
-            union {
+            } QEMU_PACKED KR;
+            struct {
                 uint32_t PR :3;
                 uint32_t :29;
-            }PR QEMU_PACKED;
-            union {
+            } QEMU_PACKED PR;
+            struct {
                 uint32_t RL :12;
                 uint32_t :20;
-            }RLR QEMU_PACKED;
-            union {
+            } QEMU_PACKED RLR;
+            struct {
                 uint32_t PVU :1;
                 uint32_t RVU :1;
                 uint32_t :30;
-            }SR QEMU_PACKED;
-        } defs;
-    } regs QEMU_PACKED;
+            } QEMU_PACKED SR;
+        } QEMU_PACKED defs;
+        uint32_t all[R_IWDG_MAX];
+    } QEMU_PACKED regs;
 
     QEMUTimer *timer;
 

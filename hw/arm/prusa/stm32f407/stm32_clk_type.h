@@ -24,6 +24,7 @@
 #define STM32_CLK_H
 
 #include "qemu/osdep.h"
+#include "../utility/macros.h"
 
 // Cannot be >255 as counts are stored in uint8_ts
 #define CLKTREE_MAX_IRQ 16

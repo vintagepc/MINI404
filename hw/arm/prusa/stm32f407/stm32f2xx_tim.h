@@ -204,7 +204,7 @@ struct f2xx_tim {
             } QEMU_PACKED DCR;
             uint32_t DMAR;
             SHORT_REG_32(RMP,2) OR;
-        } defs;
+        } QEMU_PACKED defs;
     };
     uint8_t id;
     qemu_irq pwm_ratio_changed[4];

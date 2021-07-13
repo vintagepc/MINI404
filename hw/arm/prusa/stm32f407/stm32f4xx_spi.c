@@ -94,7 +94,7 @@ static uint64_t stm32f4xx_spi_read(void *opaque, hwaddr addr,
     if (addr < R_MAX) {
         r = s->regs[addr];
     } else {
-        qemu_log_mask(LOG_GUEST_ERROR, "Out of range SPI write, addr 0x%x", (unsigned)addr<<2);
+        qemu_log_mask(LOG_GUEST_ERROR, "Out of range SPI write, addr 0x%"HWADDR_PRIx"\n", addr<<2);
     }
     switch (addr) {
     case R_DR:
@@ -114,7 +114,7 @@ static void stm32f4xx_spi_write(void *opaque, hwaddr addr,
 {
     STM32F4XXSPIState *s = opaque;
 
-    DB_PRINT("Address: 0x%" HWADDR_PRIx ", Value: 0x%lx\n", addr, data);
+    DB_PRINT("Address: 0x%" HWADDR_PRIx ", Value: 0x%"PRIx64"\n", addr, data);
 
     int offset = addr & 0x3;
 
