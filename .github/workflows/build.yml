@@ -15,7 +15,7 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  build:
+  build_linux:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
@@ -83,14 +83,14 @@ jobs:
         git diff-index --quiet HEAD || git commit -m "Regen reference docs" && git push
 
     - name: Assemble artifacts
- #     if: ${{ !github.event.pull_request }}
+      if: ${{ !github.event.pull_request }}
       run: |
           cd ${{ runner.workspace }}/MINI404/build
           mv buddy-softmmu Mini404-dev-linux
           mv assets Mini404-dev-linux
           tar -jhcvf Mini404-dev-build-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
-#      if: ${{ !github.event.pull_request }}
+      if: ${{ !github.event.pull_request }}
       uses: actions/upload-artifact@v2
       with:
         name: Binaries
@@ -164,7 +164,7 @@ jobs:
           choco install --no-progress cygwin
       - name: Install cygwin dependencies
         run: |
-          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make"
+          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make,zip"
         shell: cmd
 
       - name: Fix CRLF Checkout
@@ -206,7 +206,7 @@ jobs:
           bash.exe -c "make -j3"
         shell: cmd
       - name: Assemble artifacts and libraries
-        #if: ${{ !github.event.pull_request }}
+        if: ${{ !github.event.pull_request }}
         run: |
           cd ${{ runner.workspace }}/MINI404/build
           mkdir Mini404-dev-w64
@@ -222,7 +222,7 @@ jobs:
         shell: cmd
 
       - name: Upload Cygwin artifact
-#        if: ${{ !github.event.pull_request }}
+        if: ${{ !github.event.pull_request }}
         uses: actions/upload-artifact@v2
         with:
           name: Binaries
@@ -231,7 +231,7 @@ jobs:
   Publish:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request }}
-    needs: [build]
+    needs: [build_linux, build_cygwin]
     steps:
       - name: Retrieve platform binaries
         uses: actions/download-artifact@v2
