@@ -142,6 +142,9 @@ static void prusa_mini_init(MachineState *machine)
         qdev_realize(dev, bus, &error_fatal);
     }
 
+    DeviceState* pinda = qdev_new("pinda");
+    sysbus_realize(SYS_BUS_DEVICE(pinda), &error_fatal);
+
     // DeviceState *vis = qdev_new("mini-visuals");
     // sysbus_realize(SYS_BUS_DEVICE(vis), &error_fatal);
 #ifdef BUDDY_HAS_GL
@@ -176,6 +179,7 @@ static void prusa_mini_init(MachineState *machine)
         qdev_prop_set_uint16(split_out, "num-lines", 4);
         qdev_realize_and_unref(DEVICE(split_out),NULL,  &error_fatal);
         qdev_connect_gpio_out_named(DEVICE(&SOC->usart[1]),"uart-byte-out", 0, qdev_get_gpio_in(split_out,0));
+        
 
         for (int i=0; i<4; i++){
             dev = qdev_new("tmc2209");
@@ -194,19 +198,25 @@ static void prusa_mini_init(MachineState *machine)
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), en_pins[i],split_en);
             qemu_irq split_diag = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]),qdev_get_gpio_in_named(gl_db,"motor-stall",i));
             qdev_connect_gpio_out_named(dev,"tmc2209-diag", 0, split_diag);
-            if (i==2) { 
-                qemu_irq split_zmin = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_ZPROBE));
-                qdev_connect_gpio_out_named(dev,"tmc2209-hard", 0, split_zmin);
+            qemu_irq split_zmin = qemu_irq_split( qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_ZPROBE));
+            qdev_connect_gpio_out(pinda, 0,  split_zmin);
+            if (i<3) {
+                qemu_irq split_step = qemu_irq_split(
+                    qdev_get_gpio_in_named(pinda,"position_xyz",i),  
+                    qdev_get_gpio_in_named(gl_db,"motor-step",DB_MOTOR_X+i)
+                );
+                qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0,split_step);
+            } else {
+                qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(gl_db,"motor-step",DB_MOTOR_X+i));
             }
-            qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(gl_db,"motor-step",DB_MOTOR_X+i));
 #else
+            if (i<3) {
+                qdev_connect_gpio_out_named(dev,"tmc2209-step-out", 0, qdev_get_gpio_in_named(pinda,"position_xyz",i));
+            }
             qdev_connect_gpio_out(DEVICE(&SOC->gpio[GPIO_D]), en_pins[i],qdev_get_gpio_in_named(dev,"tmc2209-enable",0));
             qdev_connect_gpio_out_named(dev,"tmc2209-diag", 0, qdev_get_gpio_in(DEVICE(&SOC->gpio[diag_ports[i]]),diag_pins[i]));
-            if (i==2) { 
-                qdev_connect_gpio_out_named(dev,"tmc2209-hard", 0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8));
-            }
+            qdev_connect_gpio_out(pinda, 0,  qdev_get_gpio_in(DEVICE(&SOC->gpio[GPIO_A]),8));
 #endif
-
         }
 
     }

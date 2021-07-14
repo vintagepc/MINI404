@@ -35,6 +35,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'parts/gl_dashboard.c',
         'parts/heater.c',
         'parts/irsensor.c',
+        'parts/pinda.c',
         'parts/st7789v.c',
         'parts/thermistor.c',
         'parts/tmc2209.c',
