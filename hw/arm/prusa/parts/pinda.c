@@ -39,9 +39,9 @@ struct PindaState {
     SysBusDevice parent_obj;
     /*< private >*/
     /*< public >*/
-    float mesh[4][4];
-    int step_mesh[4][4];
-    int current_pos[3];
+    float mesh_mm[4][4];
+    uint32_t step_mesh[4][4];
+    int32_t current_pos[3];
     bool state;
     qemu_irq irq;
 
@@ -71,7 +71,7 @@ static void pinda_update(PindaState *s) {
     bool newstate = s->current_pos[2] < (s->step_mesh[x][y]);
     if (newstate != s->state) {
         qemu_set_irq(s->irq, newstate);
-            printf("PINDA toggled to %u at %u, %u, %u (%u,%u @ %i)\n", newstate, s->current_pos[0],s->current_pos[1],s->current_pos[2],x,y,s->step_mesh[x][y]);
+        // printf("PINDA toggled to %u at %u, %u, %u (%u,%u @ %i)\n", newstate, s->current_pos[0],s->current_pos[1],s->current_pos[2],x,y,s->step_mesh[x][y]);
         s->state = newstate;
     }
 
@@ -116,7 +116,8 @@ static void pinda_init(Object *obj)
 
     for (int i=0; i<4; i++) {
         for (int j=0; j<4; j++) {
-            s->step_mesh[i][j] = (.2F + s->mesh[i][j])*400.F*16.F;
+            s->mesh_mm[i][j] = 0.1F; //*i;
+            s->step_mesh[i][j] = (s->mesh_mm[i][j]*400.F*16.F);
         }
     }
 
@@ -127,21 +128,23 @@ static void pinda_init(Object *obj)
     scripthost_register_scriptable(pScript);
 }
 
-// static const VMStateDescription vmstate_pinda = {
-//     .name = TYPE_PINDA,
-//     .version_id = 1,
-//     .minimum_version_id = 1,
-//     .fields      = (VMStateField []) {
-//         VMSTATE_BOOL(state, PindaState),
-//         VMSTATE_END_OF_LIST(),
-//     }
-// };
+static const VMStateDescription vmstate_pinda = {
+    .name = TYPE_PINDA,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields      = (VMStateField []) {
+        VMSTATE_UINT32_2DARRAY(step_mesh,PindaState, 4,4),
+        VMSTATE_INT32_ARRAY(current_pos, PindaState, 3),
+        VMSTATE_BOOL(state, PindaState),
+        VMSTATE_END_OF_LIST(),
+    }
+};
 
 static void pinda_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     dc->reset = pinda_reset;
-    //dc->vmsd = &vmstate_pinda;
+    dc->vmsd = &vmstate_pinda;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = pinda_process_action;
 }
