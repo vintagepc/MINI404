@@ -43,14 +43,18 @@ struct PindaState {
     uint32_t step_mesh[4][4];
     int32_t current_pos[3];
     bool state;
+    bool first_fired;
     qemu_irq irq;
 
 };
 
 enum {
-    ACT_SET, 
-    ACT_TOGGLE,
+    ACT_SET_MBL, 
+
 };
+
+#define Z_MM_TO_STEPS 400.F*16.F
+#define XY_TO_STEPS 100.F*16.F
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(PindaState, pinda, PINDA, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
 
@@ -63,16 +67,20 @@ static void pinda_reset(DeviceState *dev)
 {
     PindaState *s = PINDA(dev);
     qemu_set_irq(s->irq,0);
+    s->state = false;
 }
 
 static void pinda_update(PindaState *s) {
-    uint8_t x = s->current_pos[0]/(46*100*16);
-    uint8_t y = s->current_pos[1]/(46*100*16);
-    bool newstate = s->current_pos[2] < (s->step_mesh[x][y]);
-    if (newstate != s->state) {
+    uint8_t x = s->current_pos[0]/(46*XY_TO_STEPS);
+    uint8_t y = s->current_pos[1]/(46*XY_TO_STEPS);
+    bool newstate = s->current_pos[2] <= (s->step_mesh[y][x]);
+    // if (newstate) printf("PINDA update at %u, %u, %u\n", s->current_pos[0],s->current_pos[1],s->current_pos[2]);
+
+    if (newstate != s->state || !s->first_fired) {
         qemu_set_irq(s->irq, newstate);
-        // printf("PINDA toggled to %u at %u, %u, %u (%u,%u @ %i)\n", newstate, s->current_pos[0],s->current_pos[1],s->current_pos[2],x,y,s->step_mesh[x][y]);
+        // if (newstate) printf("PINDA toggled to %u at %u, %u, %u (%u,%u @ %i)\n", newstate, s->current_pos[0],s->current_pos[1],s->current_pos[2],x,y,s->step_mesh[x][y]);
         s->state = newstate;
+        s->first_fired = true;
     }
 
 }
@@ -81,24 +89,43 @@ static void pinda_move(void *opaque, int n, int level)
 {
     PindaState *s = PINDA(opaque);
     s->current_pos[n] = level;
-    if (n==2 && level < 400*16*5) {
+    if (n==2){
         pinda_update(s);
     }
 }
+
+static void pinda_rebuild_mesh(PindaState *s) {
+    printf("MBL Grid: \n");
+    for (int i=0; i<4; i++) {
+        for (int j=0; j<4; j++) {
+            s->step_mesh[i][j] = (s->mesh_mm[i][j])*Z_MM_TO_STEPS;
+            printf("%f ",s->mesh_mm[i][j]);
+        }
+        printf("\n");
+    }
+}
+
 
 static int pinda_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
     PindaState *s = PINDA(obj);
     switch (action)
     {
-        case ACT_TOGGLE:
+        case ACT_SET_MBL:
         {
-            s->state ^=1;
+            int iX = scripthost_get_int(args, 0);
+            int iY = scripthost_get_int(args, 1);
+            float fZ = scripthost_get_float(args, 2);
+            if (iX<0 || iY <0 || iX>3 || iY>3 || fZ<-0.99) {
+                fprintf(stderr, "Scripting error - MBL argument out of range! (index 0-4, z > -1) \n");
+                return ScriptLS_Error; // Bad input. 
+            } else {
+                s->mesh_mm[iY][iX] = 1.F + fZ;
+                pinda_rebuild_mesh(s);
+            }
+
             break;
         }
-        case ACT_SET:
-            s->state = scripthost_get_bool(args, 0);
-            break;
         default:
             return ScriptLS_Unhandled;
     }
@@ -106,31 +133,57 @@ static int pinda_process_action(P404ScriptIF *obj, unsigned int action, script_a
     return ScriptLS_Finished;
 }
 
+
+// Note: Grid gets a +1.0 so that we don't hit Z stallguard before we actually trigger the pinda.
+// You can edit this to an initial grid if you want - values should NOT be <=-1 for the above reason.
+static const float pinda_start_grid[4][4] =  {
+    {0, 0, 0, 0 },
+    {0, 0, 0, 0 },
+    {0, 0, 0, 0 },
+    {0, 0, 0, 0 },
+};
+
+
+
 static void pinda_init(Object *obj)
 {
     PindaState *s = PINDA(obj);
     qdev_init_gpio_out(DEVICE(obj), &s->irq, 1);
     qdev_init_gpio_in_named(DEVICE(obj),pinda_move,"position_xyz",3);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_PINDA);
-
     for (int i=0; i<4; i++) {
         for (int j=0; j<4; j++) {
-            s->mesh_mm[i][j] = 0.1F; //*i;
-            s->step_mesh[i][j] = (s->mesh_mm[i][j]*400.F*16.F);
+            s->mesh_mm[i][j] = 1.F + pinda_start_grid[i][j];//0.5F * (i);
+        }
+    }
+    pinda_rebuild_mesh(s);
+
+    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_PINDA);
+
+
+    script_register_action(pScript, "SetMBL", "Sets the given block of the 4x4 z-trigger grid to the specified value. (x,y,mm)", ACT_SET_MBL);
+    script_add_arg_int(pScript,ACT_SET_MBL);
+    script_add_arg_int(pScript,ACT_SET_MBL);
+    script_add_arg_bool(pScript,ACT_SET_MBL);
+    scripthost_register_scriptable(pScript);
+}
+
+static int pinda_post_load(void *opaque, int version_id)
+{
+    PindaState *s = PINDA(opaque);
+    for (int i=0; i<4; i++) {
+        for (int j=0; j<4; j++) {
+            s->mesh_mm[i][j] = (float)s->step_mesh[i][j]/Z_MM_TO_STEPS;
         }
     }
 
-    //script_register_action(pScript, "Set", "Sets the IR sensor to the given value", ACT_SET);
-    //script_add_arg_bool(pScript, ACT_SET);
-    //script_register_action(pScript, "Toggle",  "Toggles IR sensor state", ACT_TOGGLE);
-
-    scripthost_register_scriptable(pScript);
+    return 0;
 }
 
 static const VMStateDescription vmstate_pinda = {
     .name = TYPE_PINDA,
     .version_id = 1,
+    .post_load = pinda_post_load,
     .minimum_version_id = 1,
     .fields      = (VMStateField []) {
         VMSTATE_UINT32_2DARRAY(step_mesh,PindaState, 4,4),

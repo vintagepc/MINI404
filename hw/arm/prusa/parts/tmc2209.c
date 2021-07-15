@@ -385,7 +385,7 @@ static void tmc2209_init(Object *obj){
     s->is_inverted = 0;
     // s->max_steps_per_mm = 256*100;
     // s->max_step  = 160*16*100;
-    s->current_step = 0 * s->ms_increment; // 10mm
+    s->current_step = 1000 * s->ms_increment; // 10mm
     s->regs.defs.SG_RESULT.sg_result = 250;
     s->regs.defs.DRV_STATUS.stst = 1;
 
