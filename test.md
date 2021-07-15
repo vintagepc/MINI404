@@ -1,1 +1,3 @@
-{% include input.html label=ALabel %}
+# Test page
+
+{% include input.html %}
