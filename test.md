@@ -1,1 +1,1 @@
-{% include input.html label=A Label %}
+{% include input.html label=ALabel %}
