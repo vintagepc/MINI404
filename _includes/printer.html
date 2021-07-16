@@ -1,0 +1,25 @@
+{% if include.optional != 1 %}
+    {% assign initVal='-' | append: include.name %}
+{% else %}
+    {% assign initVal="" %}
+{% endif %}
+{% if include.default  %} 
+    {% assign initVal= initVal | append: ' ' | append: include.default %}
+{% endif %}
+<pre class="paramItem" style="margin:0;padding:0;display:{% if include.optional == 1 %}none{% else %}block{% endif %};float:right;" id="-{{ include.name }}{{ include.index }}-val">{{ initVal }} </pre>
+{% if include.format %}
+    {% assign argFmt=include.format %}
+{% else %}
+    {% assign argFmt='-' | append: include.name | append: ' %1' |  %}
+{% endif %}
+{% if include.optional == 1 %}
+    <input type ="checkbox" id="-{{ include.name }}{{ include.index }}-enabled" value=0 onchange="updateParam('-{{ include.name }}{{ include.index }}','{{ argFmt }}')" />
+{% else %}
+    <input type ="hidden" id="-{{ include.name }}{{ include.index }}-enabled" value=1 />
+{% endif %}
+    <label for="-{{ include.name }}{{ include.index }}"> {{ include.label }}:</label>
+    <select  id="-{{ include.name }}{{ include.index }}" onchange="updateParam('-{{ include.name }}{{ include.index }}')"  {% if include.disabled == 1 %}disabled{% endif %}>
+        <option value="prusa-mini">Prusa Mini</option>
+        <option value="prusa-mk4">Prusa MK4</option> <!-- (Hehe, you found the easter egg. Wait for the printer to actually exist though, I can't simulate what I don't have! -->
+      </select>
+</p>
