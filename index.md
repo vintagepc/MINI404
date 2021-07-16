@@ -23,9 +23,9 @@ In addition, the use of QEMU gives us even more features to leverage:
 
 ![](https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/3D_model.png)
 
-## Coming Soon:
+## New Tool:
 
-- Stay tuned, soon there will be a command-line configurator to help you puzzle out the various start up options and mysteries!
+- [Command Line Configurator](https://vintagepc.github.io/MINI404/Mini404Exec.html) for helping you figure out the QEMU command line parameters you need.
 
 ## Prusa Mini Features 
 
