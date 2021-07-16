@@ -40,7 +40,7 @@ Ethernet | LAN connectivity | ✔️ Appears to work, see [Ethernet](https://git
 Fan| Simulated fan component |✔️ Works - with tachometer feedback
 Heater| Simulated heater cartridge | ✔️ Works, feeds back temperature to thermistors.
 IRSensor| IR-based MKxS sensor | ✔️ Works.
-MINDA| Z-endstop sensor |  ⚠ Not implemented - currently using Z min "stall-guard" as MINDA input.
+MINDA| Z-endstop sensor |  ✔️ Works.
 Print[er] Visualization |Viewing motion/print| ✔️ Works - see [Advanced Visuals](https://github.com/vintagepc/MINI404/wiki/Advanced-Visuals)
 RotaryEncoder| Input knob | ✔️ Works
 st25dv64k| I2C EEPROM chip | ✔️ Works 
