@@ -56,16 +56,22 @@ Note: This tool is still in development. Please report any issues you may encoun
     {% include textinput.html name="mtdblock" default="xflash.bin" label="SPI Flash Storage filename" optional=1 %}
     {% include textinput.html name="pflash" default="eeprom.bin" label="I2C Flash Storage filename" optional=1 %}
     {% include textinput.html name="pflash" default="eeprom_system.bin" index=2 label="I2C Flash System Block filename" optional=1 %}
-    {% include spinbox.html name="netdev" label="Ethernet bridge host port" optional=1 format="-netdev user,id=mini-eth,hostfwd=tcp::%1-:80" %}
-    {% include dropdown.html name="serial" index=0 label="Serial 0 (UART1)" optional=1 options="vc,stdio,pty" %}
+    {% include spinbox.html name="netdev" label="Ethernet bridge host port" optional=1 default=3333 format="-netdev user,id=mini-eth,hostfwd=tcp::%1-:80" %}
+    {% include dropdown.html name="serial" index=0 label="Serial 0 (UART1)" optional=1 options="vc@stdio@pty" %}
     {% include textinput.html excludes= "-drive" name="drive" label="USB Storage filename" optional=1 default="fat32.img" format="-drive if=none,id=usbstick,format=raw,file=%1 -device usb-storage,drive=usbstick" %}
     {% include textinput.html excludes= "-drive" name="drive" index=1 label="USB via Folder (vvfat)" optional=1 format="-drive id=usbstick,file=fat:%1 -device usb-storage,drive=usbstick" %}
-    {% include dropdown.html name="append" index=0 label="Extra Visuals" optional=1 options="gfx-2d,gfx-lite,gfx-full" %}
-    {% include dropdown.html name="append" index=1 label="Extrusion type" optional=1 options="Quad_Avg,Quad_HR,Tube_Avg,Tube_HR" format="-append extrusion=%1" %}
+    {% include dropdown.html name="append" index=0 label="Extra Visuals" optional=1 options="gfx-2d@gfx-lite@gfx-full" %}
+    {% include dropdown.html name="append" index=1 label="Extrusion type" optional=1 options="Quad_Avg@Quad_HR@Tube_Avg@Tube_HR" format="-append extrusion=%1" %}
     {% include checkbox.html name="append" index=2 label="Colour Extrusion" optional=1 format = "-append colour-extrusion" %}
-    {% include checkbox.html name="append" index=3 label="Appendix" optional=1 format="-append appendix" %}
+    {% include checkbox.html name="append" index=3 label="Appendix (Mini404 warranty void if unchecked 😉)" optional=1 format="-append appendix" %}
     {% include checkbox.html name="append" index=4 label="Print Script Help" optional=1 format="-append scripthelp" %}
     {% include textinput.html name="append" index=5 default="myscript.txt" label="Execute a script file" optional=1 format="-append script=%1" %}
+    {% include checkbox.html name="S" label="Pause CPU at startup" optional=1 %}
+    {% include spinbox.html name="s" label="Enable GDB debugging on port" optional=1 default=1234 format="-gdb tcp::%1" %}
+    {% include dropdown.html name="p404" label="Enable scripting console" optional=1 options="vc,cols=80,rows=24@pty@stdio" format="-chardev %1,id=p404-scriptcon" %}
+    {% include checkbox.html name="p404echo" label="Disable echo in P404 console" optional=1 format="-global p404-scriptcon.no_echo=true" %}
+
+    
   </form>
 </fieldset>
 <hr>
