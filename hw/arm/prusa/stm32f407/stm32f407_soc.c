@@ -260,12 +260,26 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     // TODO - Connect EXTI and WAKEUP to the GPIOs.
 
     /* Attach UART (uses USART registers) and USART controllers */
+    struct Chardev;
+
+    Chardev* chrdev_assigns[STM_NUM_USARTS];
+
+    char name[]="stm32uart0";
+
+    // First assign by ID
+    for (i = 0; i< STM_NUM_USARTS; i++) {
+        name[9] = '0' + i;
+        chrdev_assigns[i] = qemu_chr_find(name);
+        if (chrdev_assigns[i]!=NULL) {
+            printf("Found ID %s - assigned to UART %d\n",name, i+1);
+        }
+    }
     for (i = 0; i < STM_NUM_USARTS; i++) {
         // if (i==1) continue;
         dev = DEVICE(&(s->usart[i]));
         s->usart[i].periph = STM32_UART1+i;
         s->usart[i].stm32_rcc = (Stm32Rcc*)&s->rcc;
-        qdev_prop_set_chr(dev, "chardev", serial_hd(i));
+        qdev_prop_set_chr(dev, "chardev", chrdev_assigns[i]);
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
             return;
         }
