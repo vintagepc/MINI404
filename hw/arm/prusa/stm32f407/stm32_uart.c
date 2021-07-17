@@ -119,6 +119,7 @@ static void stm32_uart_update_irq(Stm32Uart *s) {
     /* Note that we are not checking the ORE flag, but we should be. */
     int new_irq_level =
        (s->defs.CR1.TCIE & s->defs.SR.TC) |
+       (s->defs.CR1.IDLEIE & s->defs.SR.IDLE) | // IDLE int check.
        (s->defs.CR1.TXEIE & s->defs.SR.TXE) |
        (s->defs.CR1.RXNEIE &
                (s->defs.SR.ORE | s->defs.SR.RXNE));
@@ -228,6 +229,8 @@ static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
         /* Receive the character and mark the buffer as not empty. */
         s->defs.DR.DR = byte;
         s->defs.SR.RXNE = 1;
+        // Unblock this IRQ
+        s->idle_interrupt_blocked = false;
         // Clear DMAR flag so the irq gets re-raised.
         stm32_uart_update_irq(s);
     }
@@ -263,14 +266,29 @@ static void stm32_uart_tx_timer_expire(void *opaque) {
     stm32_uart_tx_complete(s);
 }
 
+static void stm32_uart_idle_timer_expire(void *opaque) {
+    Stm32Uart *s = (Stm32Uart *)opaque;
+
+    if (s->idle_interrupt_blocked) return;
+
+    // if(!s->defs.SR.IDLE) printf("IDLE SET\n");
+    s->defs.SR.IDLE = 1;
+    stm32_uart_update_irq(s);
+}
+
 /* CHAR DEVICE HANDLERS */
 
 static int stm32_uart_can_receive(void *opaque)
 {
-    Stm32Uart *s = (Stm32Uart *)opaque;
+    // Note - while more than 1 byte at a time can work in theory
+    // for some reason this results in the string being
+    // reversed if the receiving end is configured with DMA (e.g ESP01). 
+    // For now, just have 1 char at a time and we'll deal with it
+    // when it becomes a bottleneck.
+    // Stm32Uart *s = (Stm32Uart *)opaque;
 
     /* How much space do we have in our buffer? */
-    return (USART_RCV_BUF_LEN - s->rcv_char_bytes);
+    return 1;// (USART_RCV_BUF_LEN - s->rcv_char_bytes);
 }
 
 static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
@@ -279,12 +297,22 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
 
     assert(size > 0);
     /* Copy the characters into our buffer first */
+    // if (s->periph==19) {
+    //     printf("UART RX: ");
+    //     for (int i=0; i<size;i++)
+    //         printf("%c",buf[i]);
+    //     printf("\n");
+    // }
     assert (size <= USART_RCV_BUF_LEN - s->rcv_char_bytes);
     memmove(s->rcv_char_buf + s->rcv_char_bytes, buf, size);
     s->rcv_char_bytes += size;
 
     /* Put next byte into RDR if the target is ready for it */
     stm32_uart_fill_receive_data_register(s);
+    //  if (s->periph==19) printf("DR: %c\n", s->defs.DR.DR);
+
+    //start no-receive idle timer.
+    timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
 }
 
 /* REGISTER IMPLEMENTATION */
@@ -299,6 +327,11 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         if(s->sr_read_since_ore_set) {
             s->defs.SR.ORE = 0;
         }
+    }
+    if (s->sr_read_since_idle_set) {
+        s->defs.SR.IDLE = 0;
+        // if (s->periph == 19) printf("IDLE cleared\n");
+        s->sr_read_since_idle_set = false;
     }
 
     if(!s->defs.CR1.UE) {
@@ -320,7 +353,9 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         /* Put next character into the RDR if we have one */
         stm32_uart_fill_receive_data_register(s);
     } else {
-        printf("STM32_UART WARNING: Read value from USART_DR (%08"HWADDR_PRIx") while it was empty.\n", s->iomem.addr);
+        // Not sure if this is a sim bug or actual HW behaviour, DMAR always seems to overread one byte. 
+        // Doesn't actually cause any problems I've observed, but leaving a note here for future reference.
+        if(!s->defs.CR3.DMAR) printf("STM32_UART WARNING: Read value from USART_DR (%08"HWADDR_PRIx") while it was empty.\n", s->iomem.addr);
         s->defs.DR.DR = 0; // Clear value.
     }
 
@@ -379,8 +414,12 @@ static void stm32_uart_reset(DeviceState *dev)
     }
     s->defs.SR.TC = 1;
     s->defs.SR.TXE = 1;
-    
     s->dmar_current_level = -1;
+
+    s->sr_read_since_idle_set = false;
+    s->idle_interrupt_blocked = false;
+
+    s->curr_irq_level = 0;
 
     // Do not initialize USART_DR - it is documented as undefined at reset
     // and does not behave like normal registers.
@@ -402,11 +441,13 @@ static uint64_t stm32_uart_read(void *opaque, hwaddr addr,
         DPRINTF("  %s: result: 0\n", __func__);
         return 0;
     }
-
     switch (addr) {
         case USART_SR_OFFSET:
             if(s->defs.SR.ORE) {
                 s->sr_read_since_ore_set = true;
+            }
+            if (s->defs.SR.IDLE) {
+                s->sr_read_since_idle_set = true;
             }
             qemu_chr_fe_accept_input(&s->chr);
             break;
@@ -417,6 +458,8 @@ static uint64_t stm32_uart_read(void *opaque, hwaddr addr,
                 return value;
             }
             break;
+        default:  
+            s->sr_read_since_idle_set = false;
     }
 
     uint32_t value = s->regs[addr];
@@ -540,6 +583,9 @@ static void stm32_uart_init(Object *obj)
     s->tx_timer =
         timer_new_ns(QEMU_CLOCK_VIRTUAL,
                   (QEMUTimerCB *)stm32_uart_tx_timer_expire, s);
+    s->idle_timer =
+        timer_new_ns(QEMU_CLOCK_VIRTUAL,
+                  (QEMUTimerCB *)stm32_uart_idle_timer_expire, s);
 
     /* Register handlers to handle updates to the USART's peripheral clock. */
     clk_irq =

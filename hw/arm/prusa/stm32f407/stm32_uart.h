@@ -132,7 +132,11 @@ struct Stm32Uart {
     /* Register Values */
     uint32_t USART_TDR;
         
-    bool sr_read_since_ore_set;
+    bool sr_read_since_ore_set, sr_read_since_idle_set;
+
+
+    // Used to prevent repeated idles unless a new RXNE happens, per datasheet.
+    bool idle_interrupt_blocked;
 
     /* Indicates whether the USART is currently receiving a byte. */
     bool receiving;
@@ -140,6 +144,7 @@ struct Stm32Uart {
     /* Timers used to simulate a delay corresponding to the baud rate. */
     struct QEMUTimer *rx_timer;
     struct QEMUTimer *tx_timer;
+    struct QEMUTimer *idle_timer;
 
     void *chr_write_obj;
     int (*chr_write)(void *chr_write_obj, const uint8_t *buf, int len);
