@@ -28,6 +28,7 @@
 #include "stm32f2xx_dma.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "stm32.h"
 
 static int msize_table[] = {1, 2, 4, 0};
 
@@ -145,17 +146,20 @@ static void set_DMAR_map(hwaddr src, f2xx_dma_stream *s)
     switch (src)
     {
         case 0x40011004: // USART1
-            s->usart_dmar = 1;
+            s->dmar = STM32_UART1;
             break;
         case 0x40004404: // USART2
-            s->usart_dmar = 2;
+            s->dmar = STM32_UART2;
             break;
         case 0x40011404: // USART6
-            s->usart_dmar = 6;
+            s->dmar = STM32_UART6;
+            break;
+        case 0x4001204c:
+            s->dmar = STM32_ADC1;
             break;
         default:
             printf("FIXME: Unknown DMAR source 0x%08" HWADDR_PRIx "\n",src);
-            s->usart_dmar = -1;
+            s->dmar = -1;
     }
 
 }
@@ -340,8 +344,7 @@ static void stm32f2xx_dma_dmar_transfer(void *opaque)
     
     f2xx_dma_current_xfer *x = &s->active_transfer;
     int transferred = 0;
-    uint8_t buf[4];
-    // printf("3Transferring from %08x to %08x\n",x->src, x->dest);
+    uint8_t buf[4] = {0,0,0,0};
     cpu_physical_memory_read(x->src, buf, x->srcsize);
     cpu_physical_memory_write(x->dest, buf, x->destsize);
     s->ndtr--;
@@ -377,17 +380,17 @@ static void stm32f2xx_dma_dmar_transfer(void *opaque)
      // TODO - reset the src/dest pointers for circ mode?
 }
 
-// Receiver for DMAR requests by USARTs.
-static void f2xx_dma_usart_dmar(void *opaque, int n, int level)
+// Receiver for DMAR requests by peripherals.
+static void f2xx_dma_dmar(void *opaque, int n, int level)
 {
-    if (level==0)
+    if (n<=0 || level == 0) // This inherently means RCC cannot be serviced but I don't think it is DMAR-capable anyway] 
     {
         return;
     };
     f2xx_dma *s = opaque;
     for (int i=0; i<R_DMA_Sx_COUNT; i++)
     {
-        if (s->stream[i].usart_dmar==n+1) // USARTs are 1-based, irqs 0-based
+        if (s->stream[i].dmar==n) //Check the level value against stored stream DMAR
         {
             // printf("Routing to stream %d\n",i);
             stm32f2xx_dma_dmar_transfer(&s->stream[i]);
@@ -559,7 +562,7 @@ f2xx_dma_reset(DeviceState *ds)
         memset(&s->stream[i], 0, sizeof(f2xx_dma_stream));
         s->stream[i].irq = save;
         s->stream[i].rx_timer = timer;
-        s->stream[i].usart_dmar = -1;
+        s->stream[i].dmar = -1;
     }
 }
 
@@ -578,7 +581,8 @@ f2xx_dma_init(Object *obj)
     memory_region_init_io(&s->iomem, obj, &f2xx_dma_ops, s, "dma", 0x400);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
-    qdev_init_gpio_in_named(DEVICE(obj),f2xx_dma_usart_dmar,"usart-dmar",7);
+    // dedicated DMAR channel per peripheral
+    qdev_init_gpio_in_named(DEVICE(obj),f2xx_dma_dmar,"dmar",STM32_PERIPH_COUNT);
 
     for (i = 0; i < R_DMA_Sx_COUNT; i++) {
         sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->stream[i].irq);
@@ -624,7 +628,7 @@ static const VMStateDescription vmstate_stm32f2xx_dma_stream = {
         VMSTATE_UINT8(isr,f2xx_dma_stream),
         VMSTATE_UINT8(fcr,f2xx_dma_stream),
         VMSTATE_STRUCT(active_transfer, f2xx_dma_stream, 1, vmstate_stm32f2xx_dma_active,f2xx_dma_current_xfer),
-        VMSTATE_INT32(usart_dmar,f2xx_dma_stream),
+        VMSTATE_INT32(dmar,f2xx_dma_stream),
         VMSTATE_TIMER_PTR(rx_timer,f2xx_dma_stream),
         VMSTATE_END_OF_LIST()
     }

@@ -103,7 +103,7 @@ static void stm32f407_soc_initfn(Object *obj)
 
     // object_initialize_child(obj, "uart2", &s->uart2, TYPE_STM32_UART);
 
-
+    object_initialize_child(obj, "adcc", &s->adc_common, TYPE_STM32F4XX_ADCC);
 
     for (i = 0; i < STM_NUM_ADCS; i++) {
         object_initialize_child(obj, "adc[*]", &s->adc[i], TYPE_STM32F4XX_ADC);
@@ -135,23 +135,12 @@ static void stm32f407_soc_initfn(Object *obj)
         object_initialize_child(obj,"dma[*]", &s->dma[i], TYPE_STM32F2XX_DMA);
     }
 
-#ifdef PARTIAL_TIMER
-    for (i = 0; i < 4; i++) {
-        object_initialize_child(obj, "basic_timer[*]", &s->basic_timers[i],
-                                TYPE_STM32F2XX_TIMER);
-    }
-    for (i=0; i < STM_NUM_TIMERS-4; i++)
-    {
-        s->timers[i].id = i+1;
-        object_initialize_child(obj, "timers[*]", &s->timers[i], TYPE_STM32F4XX_TIMER);
-    }
-#else
     for (i=0; i < STM_NUM_TIMERS; i++)
     {
         s->timers[i].id = i+1;
         object_initialize_child(obj, "timers[*]", &s->timers[i], TYPE_STM32F4XX_TIMER);
     }
-#endif
+
     object_initialize_child(obj, "itm", &s->itm, TYPE_STM32F4XX_ITM);
 
     object_initialize_child(obj,"crc",&s->crc, TYPE_STM32F2XX_CRC);
@@ -288,48 +277,6 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, usart_irq[i]));
     }
 
-    // /* Timer 2 to 5 */
-    // for (i = 0; i < STM_NUM_TIMERS; i++) {
-    //     dev = DEVICE(&(s->timer[i]));
-    //     qdev_prop_set_uint64(dev, "clock-frequency", 1000000000);
-    //     if (!sysbus_realize(SYS_BUS_DEVICE(&s->timer[i]), errp)) {
-    //         return;
-    //     }
-    //     busdev = SYS_BUS_DEVICE(dev);
-    //     sysbus_mmio_map(busdev, 0, timer_addr[i]);
-    //     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, timer_irq[i]));
-    // }
-    #ifdef PARTIAL_TIMER
-     for (i = 2; i < 6; ++i) { // Timers 2-5
-        //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
-        dev = DEVICE(&s->basic_timers[i-2]);
-        // s->timers[i].id = i;
-        if (!sysbus_realize(SYS_BUS_DEVICE(&s->basic_timers[i-2]),errp))
-            return;
-        busdev = SYS_BUS_DEVICE(dev);
-        sysbus_mmio_map(busdev, 0, timer_desc[i].addr);
-        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m,timer_desc[i].irq_idx));
-         // timer->id = stm32f4xx_periph_name_arr[periph];
-        // stm32_init_periph(timer, periph, timer_desc[i].addr,
-        //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
-    }
-    for (i = 0; i < STM_NUM_TIMERS-4; ++i) {
-        //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
-        int index =i;
-        if (i>1) index+=4; // adjust for timer gap. 
-
-        dev = DEVICE(&s->timers[i]);
-        s->timers[i].id = index+1;
-        if (!sysbus_realize(SYS_BUS_DEVICE(&s->timers[i]),errp))
-            return;
-        busdev = SYS_BUS_DEVICE(dev);
-        sysbus_mmio_map(busdev, 0, timer_desc[index].addr);
-        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m,timer_desc[index].irq_idx));
-         // timer->id = stm32f4xx_periph_name_arr[periph];
-        // stm32_init_periph(timer, periph, timer_desc[i].addr,
-        //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
-    }
-#else
     for (i = 0; i < STM_NUM_TIMERS; ++i) {
         //const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
         dev = DEVICE(&s->timers[i]);
@@ -348,7 +295,6 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
         // stm32_init_periph(timer, periph, timer_desc[i].addr,
         //                   qdev_get_gpio_in(nvic, timer_desc[i].irq_idx));
     }
-#endif 
     /* ADC device, the IRQs are ORed together */
     if (!object_initialize_child_with_props(OBJECT(s), "adc-orirq",
                                             &s->adc_irqs, sizeof(s->adc_irqs),
@@ -364,13 +310,23 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
                           qdev_get_gpio_in(armv7m, ADC_IRQ));
 
 
+    DeviceState* adcc_dev = DEVICE(&s->adc_common);
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->adc_common), errp)) {
+        return;
+    }
+    busdev = SYS_BUS_DEVICE(adcc_dev);
+    sysbus_mmio_map(busdev, 0, 0x40012300);
+
+
     DeviceState* adc_reset = qdev_new("split-irq");
     qdev_prop_set_uint16(adc_reset, "num-lines", STM_NUM_ADCS);
     qdev_realize(adc_reset, NULL, errp);
     qdev_connect_gpio_out_named(rcc,"reset", STM32_ADC1, qdev_get_gpio_in(adc_reset,0));
     for (i = 0; i < STM_NUM_ADCS; i++) {
         dev = DEVICE(&(s->adc[i]));
-        s->adc[i].id = i+1; // STM32 id, i.e. 1-based.
+        s->adc[i].id = STM32_ADC1 + i;
+        s->adc[i].rcc = (Stm32Rcc*)&s->rcc;
+        s->adc[i].common = &s->adc_common;
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->adc[i]), errp)) {
             return;
         }
@@ -427,10 +383,17 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     for (int j=0; j<STM_NUM_USARTS; j++) // Attach the USART dmar IRQs
     {
         qemu_irq split_usart =qemu_irq_split(
-                                qdev_get_gpio_in_named(DEVICE(&s->dma[0]), "usart-dmar",j),
-                                qdev_get_gpio_in_named(DEVICE(&s->dma[1]), "usart-dmar",j));
+                                qdev_get_gpio_in_named(DEVICE(&s->dma[0]), "dmar",STM32_UART1+j),
+                                qdev_get_gpio_in_named(DEVICE(&s->dma[1]), "dmar",STM32_UART1+j));
         qdev_connect_gpio_out_named(DEVICE(&s->usart[j]), "uart-dmar",0, split_usart);
         qdev_connect_gpio_out_named(rcc,"reset",STM32_UART1+i,qdev_get_gpio_in_named(DEVICE(&s->usart[i]),"rcc-reset",0));
+    }
+    for (int j=0; j<STM_NUM_ADCS; j++) // Attach the ADC dmar IRQs
+    {
+        qemu_irq split_dmar =qemu_irq_split(
+                                qdev_get_gpio_in_named(DEVICE(&s->dma[0]), "dmar",STM32_ADC1+j),
+                                qdev_get_gpio_in_named(DEVICE(&s->dma[1]), "dmar",STM32_ADC1+j));
+        qdev_connect_gpio_out_named(DEVICE(&s->adc[j]), "dmar",0, split_dmar);
     }
 
 

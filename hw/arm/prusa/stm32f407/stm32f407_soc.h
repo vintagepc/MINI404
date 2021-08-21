@@ -32,6 +32,7 @@
 #include "hw/misc/stm32f4xx_exti.h"
 #include "hw/or-irq.h"
 #include "stm32f4xx_adc.h"
+#include "stm32f4xx_adcc.h"
 #include "stm32f2xx_crc.h"
 #include "stm32f2xx_dma.h"
 #include "stm32f2xx_flashint.h"
@@ -55,7 +56,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
 
 #define STM_NUM_USARTS 7
 #define STM_NUM_TIMERS 14
-#define STM_NUM_ADCS 6
+#define STM_NUM_ADCS 3
 #define STM_NUM_SPIS 6
 #define STM_NUM_I2CS 3
 #define STM_NUM_GPIOS 11
@@ -66,7 +67,6 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
 #define SRAM_BASE_ADDRESS 0x20000000
 #define SRAM_SIZE (192 * 1024)
 
-//#define PARTIAL_TIMER
 
 // Convenience enum. 
 enum {
@@ -96,11 +96,9 @@ struct STM32F407State {
     STM32F4xxExtiState exti;
     // STM32F2XXUsartState usart[STM_NUM_USARTS];
     Stm32Uart usart[STM_NUM_USARTS];
-    #ifdef PARTIAL_TIMER
-    STM32F2XXTimerState basic_timers[4]; // Timers 2-5, use the stock ones;
-    #endif
     qemu_or_irq adc_irqs;
     STM32F4XXADCState adc[STM_NUM_ADCS];
+    STM32F4XXADCCState adc_common;
     STM32F4XXSPIState spi[STM_NUM_SPIS];
     STM32F2XXI2CState i2c[STM_NUM_I2CS];
     stm32f2xx_gpio gpio[STM_NUM_GPIOS];
@@ -114,11 +112,9 @@ struct STM32F407State {
     f2xx_pwr pwr;
 
     f2xx_dma dma[STM_NUM_DMAS];
-#ifdef PARTIAL_TIMER
-    f2xx_tim timers[STM_NUM_TIMERS-4];
-#else
+
     f2xx_tim timers[STM_NUM_TIMERS];
-#endif
+
     stm32f4xx_itm itm;
 
     f2xx_crc crc;

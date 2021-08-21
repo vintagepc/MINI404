@@ -30,6 +30,7 @@
 #include "qemu/log.h"
 // #include "sysemu/char.h"
 
+#define STM_NUM_ADCS 3
 
 #define ENUM_STRING(x) [x] = #x
 #define ARRAY_LENGTH(array) (sizeof((array))/sizeof((array)[0]))
