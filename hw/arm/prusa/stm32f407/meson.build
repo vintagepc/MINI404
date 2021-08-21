@@ -18,5 +18,6 @@ arm_ss.add(when: 'CONFIG_STM32F407_SOC',
     'stm32f4xx_spi.c',
     'stm32f2xx_crc.c',
     'stm32f4xx_adc.c',
+    'stm32f4xx_adcc.c',
     'stm32f4xx_usb.c'
 ))

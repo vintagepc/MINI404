@@ -64,6 +64,16 @@
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
 #define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg " size incorrect!")
 
+#define REG_S32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED 
+#define REG_B32(name) uint32_t name :1
+
+// Missing int32 array macro:
+#define VMSTATE_INT32_2DARRAY_V(_f, _s, _n1, _n2, _v)                \
+    VMSTATE_2DARRAY(_f, _s, _n1, _n2, _v, vmstate_info_int32, int32_t)
+
+#define VMSTATE_INT32_2DARRAY(_f, _s, _n1, _n2)                      \
+    VMSTATE_INT32_2DARRAY_V(_f, _s, _n1, _n2, 0)
+
 // Some rather ugly convenience macros for 
 // more easily debugging save state symmetry. See the RCC implementation for
 // an example how this works. (STATE_DEBUG_VAR must be defined for it to work.)

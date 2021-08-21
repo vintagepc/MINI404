@@ -103,7 +103,7 @@ typedef struct f2xx_dma_stream {
     f2xx_dma_current_xfer active_transfer;
 
     //store info for streams attached to USART DMAR.
-    int usart_dmar;
+    int dmar;
 
     struct QEMUTimer *rx_timer;
 

@@ -688,6 +688,10 @@ static void stm32_rcc_RCC_APB2ENR_write(Stm32f2xxRcc *s, uint32_t new_value,
     stm32_rcc_periph_enable(s, new_value, init, STM32_UART1, RCC_APB2ENR_USART1EN_BIT);
     stm32_rcc_periph_enable(s, new_value, init, STM32_UART6, RCC_APB2ENR_USART6EN_BIT);
 
+    stm32_rcc_periph_enable(s, new_value, init, STM32_ADC1, RCC_APB2ENR_ADC1EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_ADC2, RCC_APB2ENR_ADC2EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_ADC3, RCC_APB2ENR_ADC3EN_BIT);
+
     stm32_rcc_periph_enable(s, new_value, init, STM32_TIM1, RCC_APB2ENR_TIM1EN_BIT);
     stm32_rcc_periph_enable(s, new_value, init, STM32_TIM8, RCC_APB2ENR_TIM8EN_BIT);
     stm32_rcc_periph_enable(s, new_value, init, STM32_TIM9, RCC_APB2ENR_TIM9EN_BIT);
@@ -1102,6 +1106,10 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
     clktree_create_clk(&s->PERIPHCLK[STM32_UART8], "UART8", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
     
     
+    clktree_create_clk(&s->PERIPHCLK[STM32_ADC1], "ADC1", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_ADC2], "ADC2", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+    clktree_create_clk(&s->PERIPHCLK[STM32_ADC3], "ADC3", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+
     // Timers run at 2x the APB speed 
     clktree_create_clk(&s->PERIPHCLK[STM32_TIM1], "TIM1", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
     clktree_create_clk(&s->PERIPHCLK[STM32_TIM2], "TIM2", 2, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);

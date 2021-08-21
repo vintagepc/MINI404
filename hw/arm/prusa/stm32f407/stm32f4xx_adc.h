@@ -27,11 +27,18 @@
 #define HW_STM32F4XX_ADC_H
 
 #include "qom/object.h"
+#include "../utility/macros.h"
+#include "stm32.h"
+
+typedef struct STM32F4XXADCCState STM32F4XXADCCState;
+typedef struct Stm32Rcc Stm32Rcc;
 
 #define ADC_NUM_REG_CHANNELS 16
 
 #define TYPE_STM32F4XX_ADC "stm32f4xx-adc"
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXADCState, STM32F4XX_ADC)
+
+#define R_ADC_MAX    (0x50/4)
 
 struct STM32F4XXADCState {
     /* <private> */
@@ -40,22 +47,87 @@ struct STM32F4XXADCState {
     /* <public> */
     MemoryRegion mmio;
 
-    uint32_t adc_sr;
-    uint32_t adc_cr1;
-    uint32_t adc_cr2;
-    uint32_t adc_smpr1;
-    uint32_t adc_smpr2;
-    uint32_t adc_jofr[4];
-    uint32_t adc_htr;
-    uint32_t adc_ltr;
-    uint32_t adc_sqr1;
-    uint32_t adc_sqr2;
-    uint32_t adc_sqr3;
-    uint32_t adc_jsqr;
-    uint32_t adc_jdr[4];
-    uint32_t adc_dr;
+    union {
+        uint32_t regs[R_ADC_MAX];
+        struct {
+            struct {
+                REG_B32(AWD);
+                REG_B32(EOC);
+                REG_B32(JEOC);
+                REG_B32(JSTRT);
+                REG_B32(STRT);
+                REG_B32(OVR);
+                uint32_t :26; // unused.
+            } QEMU_PACKED  SR;
+            struct {
+                uint32_t AWDCH :5;
+                REG_B32(EOCIE);
+                REG_B32(AWDIE);
+                REG_B32(JEOCIE);
+                REG_B32(SCAN);
+                REG_B32(AWDSGL);
+                REG_B32(JAUTO);
+                REG_B32(DISCEN);
+                REG_B32(JDISCEN);
+                uint32_t DISCNUM :3;
+                uint32_t _unused :6;
+                REG_B32(JAWDEN);
+                REG_B32(AWDEN);
+                uint32_t RES :2;
+                REG_B32(OVRIE);
+                uint32_t :5; // unused.
+            } QEMU_PACKED  CR1;
+            struct {
+                REG_B32(ADON);
+                REG_B32(CONT);
+                uint32_t _unused :6;
+                REG_B32(DMA);
+                REG_B32(DDS);
+                REG_B32(EOCS);
+                REG_B32(ALIGN);
+                uint32_t _unused2 :4;
+                uint32_t JEXTSEL :4;
+                uint32_t JEXTEN :2;
+                REG_B32(JSWSTART);
+                REG_B32(_unused3);
+                uint32_t EXTSEL :4;
+                uint32_t EXTEN :2;
+                REG_B32(SWSTART);
+                REG_B32(_unused4);
+            } QEMU_PACKED  CR2;
+            uint32_t SMPR1;
+            uint32_t SMPR2;
+            REG_S32(JOFR1,12);
+            REG_S32(JOFR2,12);
+            REG_S32(JOFR3,12);
+            REG_S32(JOFR4,12);
+            REG_S32(HT,12);
+            REG_S32(LT,12);
+            struct {
+                uint32_t SQ13 :5;
+                uint32_t SQ14 :5;
+                uint32_t SQ15 :5;
+                uint32_t SQ16 :5;
+                uint32_t L :4;
+                uint32_t   :8;
+            } QEMU_PACKED SQR1;
+            uint32_t SQR[3];
+            REG_S32(JDR1,16);
+            REG_S32(JDR2,16);
+            REG_S32(JDR3,16);
+            REG_S32(JDR4,16);
+            REG_S32(DR,16);
+        } QEMU_PACKED defs;
+    };
+
+
+    uint8_t  adc_smprs[19];
+
+    Stm32Rcc *rcc;
+    STM32F4XXADCCState* common;
 
     qemu_irq irq;
+    qemu_irq dmar;
 
     qemu_irq irq_read[ADC_NUM_REG_CHANNELS]; // Set when the ADC wants to get a value from the channel.
 
@@ -63,6 +135,8 @@ struct STM32F4XXADCState {
     uint8_t adc_sequence[ADC_NUM_REG_CHANNELS];
 
     uint8_t adc_sequence_position;
+
+    QEMUTimer* next_eoc;
 
     int id;
 };
