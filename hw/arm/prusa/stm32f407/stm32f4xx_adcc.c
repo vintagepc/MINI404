@@ -81,10 +81,12 @@ static uint64_t stm32f4xx_adcc_read(void *opaque, hwaddr addr,
     switch (addr) {
         case R_CSR: 
             printf("FIXME: ADCC R_CSR read\n");
+            /* FALLTHRU */
         case R_CCR:
             return s->regs[addr];
         case R_CDR:
             printf("FIXME: ADCC R_CDR\n");
+            /* FALLTHRU */
         default:
             return 0;
     }

@@ -221,6 +221,7 @@ void GLDashboardMgr::SetupHardware() {
 			m_E.SetStepsPerMM(320*16);
 
 		}
+		break;
 		default: 
 			std::cerr << "Invalid dashboard type specified!\n";
 	}

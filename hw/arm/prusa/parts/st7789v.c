@@ -77,7 +77,7 @@ enum st7789v_mode
 };
 
 struct st7789v_state {
-    SSISlave ssidev;
+    SSIPeripheral ssidev;
     QemuConsole *con;
 
     uint32_t cmd_len;
@@ -99,7 +99,7 @@ struct st7789v_state {
 #define TYPE_ST7789V "st7789v"
 OBJECT_DECLARE_SIMPLE_TYPE(st7789v_state, ST7789V)
 
-static uint32_t st7789v_transfer(SSISlave *dev, uint32_t data)
+static uint32_t st7789v_transfer(SSIPeripheral *dev, uint32_t data)
 {
     st7789v_state *s = ST7789V(dev);
     union color{
@@ -296,7 +296,7 @@ static const GraphicHwOps st7789v_ops = {
     .gfx_update  = st7789v_update_display,
 };
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_SLAVE, {TYPE_P404_SCRIPTABLE}, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_PERIPHERAL, {TYPE_P404_SCRIPTABLE}, {NULL})
 
 static void st7789v_finalize(Object *obj)
 {
@@ -309,7 +309,7 @@ static void st7789v_init(Object *obj)
 }
 
 
-static void st7789v_realize(SSISlave *d, Error **errp)
+static void st7789v_realize(SSIPeripheral *d, Error **errp)
 {
     DeviceState *dev = DEVICE(d);
     st7789v_state *s = ST7789V(d);
@@ -340,7 +340,7 @@ static const VMStateDescription vmstate_st7789v = {
     .minimum_version_id = 1,
     .post_load = st7789v_post_load,
     .fields = (VMStateField[]) {
-        VMSTATE_SSI_SLAVE(ssidev,st7789v_state),
+        VMSTATE_SSI_PERIPHERAL(ssidev,st7789v_state),
         VMSTATE_UINT32(cmd_len,st7789v_state),
         VMSTATE_INT32(cmd,st7789v_state),
         VMSTATE_BOOL(byte_msb,st7789v_state),
@@ -364,7 +364,7 @@ static void st7789v_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_st7789v;
 
-    SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
+    SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = st7789v_process_action;
 

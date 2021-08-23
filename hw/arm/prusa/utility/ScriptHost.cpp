@@ -282,6 +282,7 @@ void ScriptHost::KeyCB(char key)
 	{
 		case 0x1b: // Esc:
 			strCmd.clear();
+			/* FALLTHRU */
 		case 0x7F: // Delete, backspace
 		case 0x08:
 			if (strCmd.size()>0)

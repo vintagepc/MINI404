@@ -271,7 +271,7 @@ static void stm32f4xx_eth_send(Stm32F4xx_Eth *s)
         if (bd.ctl_stat & 0x20000000) {
             /* Last buffer in frame.  */
             if ((bd.ctl_stat & 0x00C00000U) ==0x00C00000U) { // HW is expected to do checksum
-               net_checksum_calculate(frame, frame_size);  
+               net_checksum_calculate(frame, frame_size, CSUM_TCP);  
                eth_fix_ip4_checksum(frame+14,0x14);            
             }
 

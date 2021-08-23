@@ -33,6 +33,7 @@
 #include "chardev/char.h"
 #include "stm32.h"
 #include "hw/qdev-properties.h"
+#include "hw/qdev-properties-system.h"
 #include "stm32_uart.h"
 #include "qemu/bitops.h"
 #include "assert.h"

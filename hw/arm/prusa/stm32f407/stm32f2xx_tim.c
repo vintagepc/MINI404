@@ -182,6 +182,7 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     case R_TIM_CNT:
         r = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase; 
         // printf("Attempted to read count on timer %u (val %u)\n", s->id,r);
+        break;
     default:
         qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented read 0x%x+%u size %u val 0x%x\n",
           (unsigned int)addr << 2, offset, size, (unsigned int)r);
