@@ -464,6 +464,10 @@ static void migrate_postcopy_start(QTestState *from, QTestState *to)
 }
 
 typedef struct {
+    /*
+     * QTEST_LOG=1 may override this.  When QTEST_LOG=1, we always dump errors
+     * unconditionally, because it means the user would like to be verbose.
+     */
     bool hide_stderr;
     bool use_shmem;
     /* only launch the target process */
@@ -557,7 +561,7 @@ static int test_migrate_start(QTestState **from, QTestState **to,
 
     g_free(bootpath);
 
-    if (args->hide_stderr) {
+    if (!getenv("QTEST_LOG") && args->hide_stderr) {
         ignore_stderr = "2>/dev/null";
     } else {
         ignore_stderr = "";
@@ -652,53 +656,6 @@ static void test_migrate_end(QTestState *from, QTestState *to, bool test_dest)
     cleanup("migsocket");
     cleanup("src_serial");
     cleanup("dest_serial");
-}
-
-static void deprecated_set_downtime(QTestState *who, const double value)
-{
-    QDict *rsp;
-
-    rsp = qtest_qmp(who,
-                    "{ 'execute': 'migrate_set_downtime',"
-                    " 'arguments': { 'value': %f } }", value);
-    g_assert(qdict_haskey(rsp, "return"));
-    qobject_unref(rsp);
-    migrate_check_parameter_int(who, "downtime-limit", value * 1000);
-}
-
-static void deprecated_set_speed(QTestState *who, long long value)
-{
-    QDict *rsp;
-
-    rsp = qtest_qmp(who, "{ 'execute': 'migrate_set_speed',"
-                          "'arguments': { 'value': %lld } }", value);
-    g_assert(qdict_haskey(rsp, "return"));
-    qobject_unref(rsp);
-    migrate_check_parameter_int(who, "max-bandwidth", value);
-}
-
-static void deprecated_set_cache_size(QTestState *who, long long value)
-{
-    QDict *rsp;
-
-    rsp = qtest_qmp(who, "{ 'execute': 'migrate-set-cache-size',"
-                         "'arguments': { 'value': %lld } }", value);
-    g_assert(qdict_haskey(rsp, "return"));
-    qobject_unref(rsp);
-    migrate_check_parameter_int(who, "xbzrle-cache-size", value);
-}
-
-static void test_deprecated(void)
-{
-    QTestState *from;
-
-    from = qtest_init("-machine none");
-
-    deprecated_set_downtime(from, 0.12345);
-    deprecated_set_speed(from, 12345);
-    deprecated_set_cache_size(from, 4096);
-
-    qtest_quit(from);
 }
 
 static int migrate_postcopy_prepare(QTestState **from_ptr,
@@ -1482,7 +1439,6 @@ int main(int argc, char **argv)
 
     qtest_add_func("/migration/postcopy/unix", test_postcopy);
     qtest_add_func("/migration/postcopy/recovery", test_postcopy_recovery);
-    qtest_add_func("/migration/deprecated", test_deprecated);
     qtest_add_func("/migration/bad_dest", test_baddest);
     qtest_add_func("/migration/precopy/unix", test_precopy_unix);
     qtest_add_func("/migration/precopy/tcp", test_precopy_tcp);

@@ -25,6 +25,10 @@
 #include "trace.h"
 #include "multifd.h"
 
+#include "qemu/yank.h"
+#include "io/channel-socket.h"
+#include "yank_functions.h"
+
 /* Multiple fd's */
 
 #define MULTIFD_MAGIC 0x11223344U
@@ -736,7 +740,29 @@ static void multifd_tls_outgoing_handshake(QIOTask *task,
     } else {
         trace_multifd_tls_outgoing_handshake_complete(ioc);
     }
-    multifd_channel_connect(p, ioc, err);
+
+    if (!multifd_channel_connect(p, ioc, err)) {
+        /*
+         * Error happen, mark multifd_send_thread status as 'quit' although it
+         * is not created, and then tell who pay attention to me.
+         */
+        p->quit = true;
+        qemu_sem_post(&multifd_send_state->channels_ready);
+        qemu_sem_post(&p->sem_sync);
+    }
+}
+
+static void *multifd_tls_handshake_thread(void *opaque)
+{
+    MultiFDSendParams *p = opaque;
+    QIOChannelTLS *tioc = QIO_CHANNEL_TLS(p->c);
+
+    qio_channel_tls_handshake(tioc,
+                              multifd_tls_outgoing_handshake,
+                              p,
+                              NULL,
+                              NULL);
+    return NULL;
 }
 
 static void multifd_tls_channel_connect(MultiFDSendParams *p,
@@ -752,14 +778,13 @@ static void multifd_tls_channel_connect(MultiFDSendParams *p,
         return;
     }
 
+    object_unref(OBJECT(ioc));
     trace_multifd_tls_outgoing_handshake_start(ioc, tioc, hostname);
     qio_channel_set_name(QIO_CHANNEL(tioc), "multifd-tls-outgoing");
-    qio_channel_tls_handshake(tioc,
-                              multifd_tls_outgoing_handshake,
-                              p,
-                              NULL,
-                              NULL);
-
+    p->c = QIO_CHANNEL(tioc);
+    qemu_thread_create(&p->thread, "multifd-tls-handshake-worker",
+                       multifd_tls_handshake_thread, p,
+                       QEMU_THREAD_JOINABLE);
 }
 
 static bool multifd_channel_connect(MultiFDSendParams *p,
@@ -783,9 +808,9 @@ static bool multifd_channel_connect(MultiFDSendParams *p,
                  * function after the TLS handshake,
                  * so we mustn't call multifd_send_thread until then
                  */
-                return false;
-            } else {
                 return true;
+            } else {
+                return false;
             }
         } else {
             /* update for tls qio channel */
@@ -793,10 +818,10 @@ static bool multifd_channel_connect(MultiFDSendParams *p,
             qemu_thread_create(&p->thread, p->name, multifd_send_thread, p,
                                    QEMU_THREAD_JOINABLE);
        }
-       return false;
+       return true;
     }
 
-    return true;
+    return false;
 }
 
 static void multifd_new_send_channel_cleanup(MultiFDSendParams *p,
@@ -829,7 +854,7 @@ static void multifd_new_send_channel_async(QIOTask *task, gpointer opaque)
         p->c = QIO_CHANNEL(sioc);
         qio_channel_set_delay(p->c, false);
         p->running = true;
-        if (multifd_channel_connect(p, sioc, local_err)) {
+        if (!multifd_channel_connect(p, sioc, local_err)) {
             goto cleanup;
         }
         return;
@@ -961,6 +986,13 @@ int multifd_load_cleanup(Error **errp)
     }
     for (i = 0; i < migrate_multifd_channels(); i++) {
         MultiFDRecvParams *p = &multifd_recv_state->params[i];
+
+        if (object_dynamic_cast(OBJECT(p->c), TYPE_QIO_CHANNEL_SOCKET)
+            && OBJECT(p->c)->ref == 1) {
+            yank_unregister_function(MIGRATION_YANK_INSTANCE,
+                                     migration_yank_iochannel,
+                                     QIO_CHANNEL(p->c));
+        }
 
         object_unref(OBJECT(p->c));
         p->c = NULL;
