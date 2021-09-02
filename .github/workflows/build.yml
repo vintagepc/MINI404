@@ -164,7 +164,7 @@ jobs:
           choco install --no-progress cygwin
       - name: Install cygwin dependencies
         run: |
-          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++-10.2.0,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core-10.2.0,make,zip"
+          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "lynx,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,make,zip"
         shell: cmd
 
       - name: Fix CRLF Checkout
@@ -185,6 +185,14 @@ jobs:
           repository: vintagepc/MINI404.git
           ref: ${{ github.event.ref }}
           submodules: false
+
+      - name: Fetch GCC10.2
+        run: |
+          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
+          bash.exe -c "lynx -source rawgit.com/transcode-open/apt-cyg/master/apt-cyg > apt-cyg"
+          bash.exe -c "install apt-cyg /bin" 
+          bash.exe -c "apt-cyg install mingw64-x86_64-gcc-g++-10.2.0 gcc-core-10.2.0"
+        shell: cmd
 
         # Note we need to sed LDFLAGS_NO_PIE because mingw's LD is no-pie by default and doesn't
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
