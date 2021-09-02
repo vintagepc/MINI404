@@ -164,7 +164,7 @@ jobs:
           choco install --no-progress cygwin
       - name: Install cygwin dependencies
         run: |
-          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make,zip"
+          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++-10.2.0,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core-10.2.0,make,zip"
         shell: cmd
 
       - name: Fix CRLF Checkout
