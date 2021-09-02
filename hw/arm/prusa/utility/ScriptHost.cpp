@@ -93,6 +93,15 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 	}
 }
 
+ScriptHost::~ScriptHost() {
+	for (auto &p: m_clients) {
+		if (p.second!=this) { // Don't delete ourselves!
+			std::cout << "Freeing " << p.first << "\n";
+			delete p.second;
+		}
+	}
+}
+
 void ScriptHost::LoadScript(const std::string &strFile)
 {
 	std::string strLn;
