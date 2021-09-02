@@ -82,7 +82,7 @@ static const int exti_irq[] =  { 6, 7, 8, 9, 10, 23, 23, 23, 23, 23, 40,
 static const int i2c_ev_irq[] = { 31, 33, 72, 95};
 static const int i2c_er_irq[] = { 32, 34, 73, 96};
 
-static const int dma1_irq[] = { 11,12,13,14,15,16,17 };
+static const int dma1_irq[] = { 11,12,13,14,15,16,17, 47 };
 static const int dma2_irq[] = { 56, 57, 58, 59, 60, 68, 69, 70 };
 
 static void stm32f407_soc_initfn(Object *obj)
