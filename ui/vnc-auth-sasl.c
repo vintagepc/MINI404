@@ -111,7 +111,8 @@ size_t vnc_client_write_sasl(VncState *vs)
             g_source_remove(vs->ioc_tag);
         }
         vs->ioc_tag = qio_channel_add_watch(
-            vs->ioc, G_IO_IN, vnc_client_io, vs, NULL);
+            vs->ioc, G_IO_IN | G_IO_HUP | G_IO_ERR,
+            vnc_client_io, vs, NULL);
     }
 
     return ret;
@@ -287,7 +288,7 @@ static int protocol_client_auth_sasl_step(VncState *vs, uint8_t *data, size_t le
             goto authreject;
         }
 
-        /* Check username whitelist ACL */
+        /* Check the username access control list */
         if (vnc_auth_sasl_check_access(vs) < 0) {
             goto authreject;
         }
@@ -408,7 +409,7 @@ static int protocol_client_auth_sasl_start(VncState *vs, uint8_t *data, size_t l
             goto authreject;
         }
 
-        /* Check username whitelist ACL */
+        /* Check the username access control list */
         if (vnc_auth_sasl_check_access(vs) < 0) {
             goto authreject;
         }

@@ -33,14 +33,27 @@
 #define MAX_PHYS_ADDR_SPACE_BITS 62
 #define MAX_PHYS_ADDR            (((hwaddr)1 << MAX_PHYS_ADDR_SPACE_BITS) - 1)
 
-#define TYPE_MEMORY_REGION "qemu:memory-region"
+#define TYPE_MEMORY_REGION "memory-region"
 DECLARE_INSTANCE_CHECKER(MemoryRegion, MEMORY_REGION,
                          TYPE_MEMORY_REGION)
 
-#define TYPE_IOMMU_MEMORY_REGION "qemu:iommu-memory-region"
+#define TYPE_IOMMU_MEMORY_REGION "iommu-memory-region"
 typedef struct IOMMUMemoryRegionClass IOMMUMemoryRegionClass;
 DECLARE_OBJ_CHECKERS(IOMMUMemoryRegion, IOMMUMemoryRegionClass,
                      IOMMU_MEMORY_REGION, TYPE_IOMMU_MEMORY_REGION)
+
+#ifdef CONFIG_FUZZ
+void fuzz_dma_read_cb(size_t addr,
+                      size_t len,
+                      MemoryRegion *mr);
+#else
+static inline void fuzz_dma_read_cb(size_t addr,
+                                    size_t len,
+                                    MemoryRegion *mr)
+{
+    /* Do Nothing */
+}
+#endif
 
 extern bool global_dirty_log;
 
@@ -82,9 +95,14 @@ typedef enum {
     IOMMU_NOTIFIER_UNMAP = 0x1,
     /* Notify entry changes (newly created entries) */
     IOMMU_NOTIFIER_MAP = 0x2,
+    /* Notify changes on device IOTLB entries */
+    IOMMU_NOTIFIER_DEVIOTLB_UNMAP = 0x04,
 } IOMMUNotifierFlag;
 
-#define IOMMU_NOTIFIER_ALL (IOMMU_NOTIFIER_MAP | IOMMU_NOTIFIER_UNMAP)
+#define IOMMU_NOTIFIER_IOTLB_EVENTS (IOMMU_NOTIFIER_MAP | IOMMU_NOTIFIER_UNMAP)
+#define IOMMU_NOTIFIER_DEVIOTLB_EVENTS IOMMU_NOTIFIER_DEVIOTLB_UNMAP
+#define IOMMU_NOTIFIER_ALL (IOMMU_NOTIFIER_IOTLB_EVENTS | \
+                            IOMMU_NOTIFIER_DEVIOTLB_EVENTS)
 
 struct IOMMUNotifier;
 typedef void (*IOMMUNotify)(struct IOMMUNotifier *notifier,
@@ -100,6 +118,11 @@ struct IOMMUNotifier {
     QLIST_ENTRY(IOMMUNotifier) node;
 };
 typedef struct IOMMUNotifier IOMMUNotifier;
+
+typedef struct IOMMUTLBEvent {
+    IOMMUNotifierFlag type;
+    IOMMUTLBEntry entry;
+} IOMMUTLBEvent;
 
 /* RAM is pre-allocated and passed into qemu_ram_alloc_from_ptr */
 #define RAM_PREALLOC   (1 << 0)
@@ -123,6 +146,14 @@ typedef struct IOMMUNotifier IOMMUNotifier;
 
 /* RAM is a persistent kind memory */
 #define RAM_PMEM (1 << 5)
+
+
+/*
+ * UFFDIO_WRITEPROTECT is used on this RAMBlock to
+ * support 'write-tracking' migration type.
+ * Implies ram_state->ram_wt_enabled.
+ */
+#define RAM_UF_WRITEPROTECT (1 << 6)
 
 static inline void iommu_notifier_init(IOMMUNotifier *n, IOMMUNotify fn,
                                        IOMMUNotifierFlag flags,
@@ -221,7 +252,7 @@ enum IOMMUMemoryRegionAttr {
  * The IOMMU implementation must use the IOMMU notifier infrastructure
  * to report whenever mappings are changed, by calling
  * memory_region_notify_iommu() (or, if necessary, by calling
- * memory_region_notify_one() for each registered notifier).
+ * memory_region_notify_iommu_one() for each registered notifier).
  *
  * Conceptually an IOMMU provides a mapping from input address
  * to an output TLB entry. If the IOMMU is aware of memory transaction
@@ -382,6 +413,32 @@ struct IOMMUMemoryRegionClass {
      * @iommu: the IOMMUMemoryRegion
      */
     int (*num_indexes)(IOMMUMemoryRegion *iommu);
+
+    /**
+     * @iommu_set_page_size_mask:
+     *
+     * Restrict the page size mask that can be supported with a given IOMMU
+     * memory region. Used for example to propagate host physical IOMMU page
+     * size mask limitations to the virtual IOMMU.
+     *
+     * Optional method: if this method is not provided, then the default global
+     * page mask is used.
+     *
+     * @iommu: the IOMMUMemoryRegion
+     *
+     * @page_size_mask: a bitmask of supported page sizes. At least one bit,
+     * representing the smallest page size, must be set. Additional set bits
+     * represent supported block sizes. For example a host physical IOMMU that
+     * uses page tables with a page size of 4kB, and supports 2MB and 4GB
+     * blocks, will set mask 0x40201000. A granule of 4kB with indiscriminate
+     * block sizes is specified with mask 0xfffffffffffff000.
+     *
+     * Returns 0 on success, or a negative error. In case of failure, the error
+     * object must be created.
+     */
+     int (*iommu_set_page_size_mask)(IOMMUMemoryRegion *iommu,
+                                     uint64_t page_size_mask,
+                                     Error **errp);
 };
 
 typedef struct CoalescedMemoryRange CoalescedMemoryRange;
@@ -719,6 +776,35 @@ static inline FlatView *address_space_to_flatview(AddressSpace *as)
     return qatomic_rcu_read(&as->current_map);
 }
 
+/**
+ * typedef flatview_cb: callback for flatview_for_each_range()
+ *
+ * @start: start address of the range within the FlatView
+ * @len: length of the range in bytes
+ * @mr: MemoryRegion covering this range
+ * @offset_in_region: offset of the first byte of the range within @mr
+ * @opaque: data pointer passed to flatview_for_each_range()
+ *
+ * Returns: true to stop the iteration, false to keep going.
+ */
+typedef bool (*flatview_cb)(Int128 start,
+                            Int128 len,
+                            const MemoryRegion *mr,
+                            hwaddr offset_in_region,
+                            void *opaque);
+
+/**
+ * flatview_for_each_range: Iterate through a FlatView
+ * @fv: the FlatView to iterate through
+ * @cb: function to call for each range
+ * @opaque: opaque data pointer to pass to @cb
+ *
+ * A FlatView is made up of a list of non-overlapping ranges, each of
+ * which is a slice of a MemoryRegion. This function iterates through
+ * each range in @fv, calling @cb. The callback function can terminate
+ * iteration early by returning 'true'.
+ */
+void flatview_for_each_range(FlatView *fv, flatview_cb cb, void *opaque);
 
 /**
  * struct MemoryRegionSection: describes a fragment of a #MemoryRegion
@@ -766,7 +852,7 @@ static inline bool MemoryRegionSection_eq(MemoryRegionSection *a,
  * @size: size of the region; any subregions beyond this size will be clipped
  */
 void memory_region_init(MemoryRegion *mr,
-                        struct Object *owner,
+                        Object *owner,
                         const char *name,
                         uint64_t size);
 
@@ -814,7 +900,7 @@ void memory_region_unref(MemoryRegion *mr);
  * @size: size of the region.
  */
 void memory_region_init_io(MemoryRegion *mr,
-                           struct Object *owner,
+                           Object *owner,
                            const MemoryRegionOps *ops,
                            void *opaque,
                            const char *name,
@@ -836,7 +922,7 @@ void memory_region_init_io(MemoryRegion *mr,
  * RAM memory region to be migrated; that is the responsibility of the caller.
  */
 void memory_region_init_ram_nomigrate(MemoryRegion *mr,
-                                      struct Object *owner,
+                                      Object *owner,
                                       const char *name,
                                       uint64_t size,
                                       Error **errp);
@@ -858,7 +944,7 @@ void memory_region_init_ram_nomigrate(MemoryRegion *mr,
  * The only difference is part of the RAM region can be remapped.
  */
 void memory_region_init_ram_shared_nomigrate(MemoryRegion *mr,
-                                             struct Object *owner,
+                                             Object *owner,
                                              const char *name,
                                              uint64_t size,
                                              bool share,
@@ -884,7 +970,7 @@ void memory_region_init_ram_shared_nomigrate(MemoryRegion *mr,
  * RAM memory region to be migrated; that is the responsibility of the caller.
  */
 void memory_region_init_resizeable_ram(MemoryRegion *mr,
-                                       struct Object *owner,
+                                       Object *owner,
                                        const char *name,
                                        uint64_t size,
                                        uint64_t max_size,
@@ -910,18 +996,20 @@ void memory_region_init_resizeable_ram(MemoryRegion *mr,
  *             - RAM_PMEM: the memory is persistent memory
  *             Other bits are ignored now.
  * @path: the path in which to allocate the RAM.
+ * @readonly: true to open @path for reading, false for read/write.
  * @errp: pointer to Error*, to store an error if it happens.
  *
  * Note that this function does not do anything to cause the data in the
  * RAM memory region to be migrated; that is the responsibility of the caller.
  */
 void memory_region_init_ram_from_file(MemoryRegion *mr,
-                                      struct Object *owner,
+                                      Object *owner,
                                       const char *name,
                                       uint64_t size,
                                       uint64_t align,
                                       uint32_t ram_flags,
                                       const char *path,
+                                      bool readonly,
                                       Error **errp);
 
 /**
@@ -934,17 +1022,19 @@ void memory_region_init_ram_from_file(MemoryRegion *mr,
  * @size: size of the region.
  * @share: %true if memory must be mmaped with the MAP_SHARED flag
  * @fd: the fd to mmap.
+ * @offset: offset within the file referenced by fd
  * @errp: pointer to Error*, to store an error if it happens.
  *
  * Note that this function does not do anything to cause the data in the
  * RAM memory region to be migrated; that is the responsibility of the caller.
  */
 void memory_region_init_ram_from_fd(MemoryRegion *mr,
-                                    struct Object *owner,
+                                    Object *owner,
                                     const char *name,
                                     uint64_t size,
                                     bool share,
                                     int fd,
+                                    ram_addr_t offset,
                                     Error **errp);
 #endif
 
@@ -964,7 +1054,7 @@ void memory_region_init_ram_from_fd(MemoryRegion *mr,
  * RAM memory region to be migrated; that is the responsibility of the caller.
  */
 void memory_region_init_ram_ptr(MemoryRegion *mr,
-                                struct Object *owner,
+                                Object *owner,
                                 const char *name,
                                 uint64_t size,
                                 void *ptr);
@@ -992,7 +1082,7 @@ void memory_region_init_ram_ptr(MemoryRegion *mr,
  * (For RAM device memory regions, migrating the contents rarely makes sense.)
  */
 void memory_region_init_ram_device_ptr(MemoryRegion *mr,
-                                       struct Object *owner,
+                                       Object *owner,
                                        const char *name,
                                        uint64_t size,
                                        void *ptr);
@@ -1010,7 +1100,7 @@ void memory_region_init_ram_device_ptr(MemoryRegion *mr,
  * @size: size of the region.
  */
 void memory_region_init_alias(MemoryRegion *mr,
-                              struct Object *owner,
+                              Object *owner,
                               const char *name,
                               MemoryRegion *orig,
                               hwaddr offset,
@@ -1035,7 +1125,7 @@ void memory_region_init_alias(MemoryRegion *mr,
  * @errp: pointer to Error*, to store an error if it happens.
  */
 void memory_region_init_rom_nomigrate(MemoryRegion *mr,
-                                      struct Object *owner,
+                                      Object *owner,
                                       const char *name,
                                       uint64_t size,
                                       Error **errp);
@@ -1058,7 +1148,7 @@ void memory_region_init_rom_nomigrate(MemoryRegion *mr,
  * @errp: pointer to Error*, to store an error if it happens.
  */
 void memory_region_init_rom_device_nomigrate(MemoryRegion *mr,
-                                             struct Object *owner,
+                                             Object *owner,
                                              const MemoryRegionOps *ops,
                                              void *opaque,
                                              const char *name,
@@ -1117,7 +1207,7 @@ void memory_region_init_iommu(void *_iommu_mr,
  * If you pass a non-NULL non-device @owner then we will assert.
  */
 void memory_region_init_ram(MemoryRegion *mr,
-                            struct Object *owner,
+                            Object *owner,
                             const char *name,
                             uint64_t size,
                             Error **errp);
@@ -1144,7 +1234,7 @@ void memory_region_init_ram(MemoryRegion *mr,
  * @errp: pointer to Error*, to store an error if it happens.
  */
 void memory_region_init_rom(MemoryRegion *mr,
-                            struct Object *owner,
+                            Object *owner,
                             const char *name,
                             uint64_t size,
                             Error **errp);
@@ -1175,7 +1265,7 @@ void memory_region_init_rom(MemoryRegion *mr,
  * @errp: pointer to Error*, to store an error if it happens.
  */
 void memory_region_init_rom_device(MemoryRegion *mr,
-                                   struct Object *owner,
+                                   Object *owner,
                                    const MemoryRegionOps *ops,
                                    void *opaque,
                                    const char *name,
@@ -1188,7 +1278,7 @@ void memory_region_init_rom_device(MemoryRegion *mr,
  *
  * @mr: the memory region being queried.
  */
-struct Object *memory_region_owner(MemoryRegion *mr);
+Object *memory_region_owner(MemoryRegion *mr);
 
 /**
  * memory_region_size: get a memory region's size.
@@ -1280,39 +1370,33 @@ uint64_t memory_region_iommu_get_min_page_size(IOMMUMemoryRegion *iommu_mr);
 /**
  * memory_region_notify_iommu: notify a change in an IOMMU translation entry.
  *
- * The notification type will be decided by entry.perm bits:
- *
- * - For UNMAP (cache invalidation) notifies: set entry.perm to IOMMU_NONE.
- * - For MAP (newly added entry) notifies: set entry.perm to the
- *   permission of the page (which is definitely !IOMMU_NONE).
- *
  * Note: for any IOMMU implementation, an in-place mapping change
  * should be notified with an UNMAP followed by a MAP.
  *
  * @iommu_mr: the memory region that was changed
  * @iommu_idx: the IOMMU index for the translation table which has changed
- * @entry: the new entry in the IOMMU translation table.  The entry
- *         replaces all old entries for the same virtual I/O address range.
- *         Deleted entries have .@perm == 0.
+ * @event: TLB event with the new entry in the IOMMU translation table.
+ *         The entry replaces all old entries for the same virtual I/O address
+ *         range.
  */
 void memory_region_notify_iommu(IOMMUMemoryRegion *iommu_mr,
                                 int iommu_idx,
-                                IOMMUTLBEntry entry);
+                                IOMMUTLBEvent event);
 
 /**
- * memory_region_notify_one: notify a change in an IOMMU translation
+ * memory_region_notify_iommu_one: notify a change in an IOMMU translation
  *                           entry to a single notifier
  *
  * This works just like memory_region_notify_iommu(), but it only
  * notifies a specific notifier, not all of them.
  *
  * @notifier: the notifier to be notified
- * @entry: the new entry in the IOMMU translation table.  The entry
- *         replaces all old entries for the same virtual I/O address range.
- *         Deleted entries have .@perm == 0.
+ * @event: TLB event with the new entry in the IOMMU translation table.
+ *         The entry replaces all old entries for the same virtual I/O address
+ *         range.
  */
-void memory_region_notify_one(IOMMUNotifier *notifier,
-                              IOMMUTLBEntry *entry);
+void memory_region_notify_iommu_one(IOMMUNotifier *notifier,
+                                    IOMMUTLBEvent *event);
 
 /**
  * memory_region_register_iommu_notifier: register a notifier for changes to
@@ -1388,6 +1472,18 @@ int memory_region_iommu_attrs_to_index(IOMMUMemoryRegion *iommu_mr,
  * @iommu_mr: the memory region
  */
 int memory_region_iommu_num_indexes(IOMMUMemoryRegion *iommu_mr);
+
+/**
+ * memory_region_iommu_set_page_size_mask: set the supported page
+ * sizes for a given IOMMU memory region
+ *
+ * @iommu_mr: IOMMU memory region
+ * @page_size_mask: supported page size mask
+ * @errp: pointer to Error*, to store an error if it happens.
+ */
+int memory_region_iommu_set_page_size_mask(IOMMUMemoryRegion *iommu_mr,
+                                           uint64_t page_size_mask,
+                                           Error **errp);
 
 /**
  * memory_region_name: get a memory region's name
@@ -2442,6 +2538,7 @@ address_space_read_cached(MemoryRegionCache *cache, hwaddr addr,
                           void *buf, hwaddr len)
 {
     assert(addr < cache->len && len <= cache->len - addr);
+    fuzz_dma_read_cb(cache->xlat + addr, len, cache->mrs.mr);
     if (likely(cache->ptr)) {
         memcpy(buf, cache->ptr + addr, len);
         return MEMTX_OK;

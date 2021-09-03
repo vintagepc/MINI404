@@ -6,7 +6,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -824,8 +824,6 @@ ISABus *pnv_lpc_isa_create(PnvLpcController *lpc, bool use_cpld, Error **errp)
     ISABus *isa_bus;
     qemu_irq *irqs;
     qemu_irq_handler handler;
-    PnvMachineState *pnv = PNV_MACHINE(qdev_get_machine());
-    bool hostboot_mode = !!pnv->fw_load_addr;
 
     /* let isa_bus_new() create its own bridge on SysBus otherwise
      * devices specified on the command line won't find the bus and
@@ -850,19 +848,6 @@ ISABus *pnv_lpc_isa_create(PnvLpcController *lpc, bool use_cpld, Error **errp)
     irqs = qemu_allocate_irqs(handler, lpc, ISA_NUM_IRQS);
 
     isa_bus_irqs(isa_bus, irqs);
-
-    /*
-     * TODO: Map PNOR on the LPC FW address space on demand ?
-     */
-    memory_region_add_subregion(&lpc->isa_fw, PNOR_SPI_OFFSET,
-                                &pnv->pnor->mmio);
-    /*
-     * Start disabled. The HIOMAP protocol will activate the mapping
-     * with HIOMAP_C_CREATE_WRITE_WINDOW
-     */
-    if (!hostboot_mode) {
-        memory_region_set_enabled(&pnv->pnor->mmio, false);
-    }
 
     return isa_bus;
 }

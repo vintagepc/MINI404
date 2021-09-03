@@ -86,7 +86,7 @@ static void prusa_mini_init(MachineState *machine)
     {
         bus = qdev_get_child_bus(DEVICE(&SOC->spi[1]), "ssi");
 
-        DeviceState *lcd_dev = ssi_create_slave(bus, "st7789v");
+        DeviceState *lcd_dev = ssi_create_peripheral(bus, "st7789v");
         qemu_irq lcd_cs = qdev_get_gpio_in_named(lcd_dev, SSI_GPIO_CS, 0);
 
         /* Make sure the select pin is high.  */

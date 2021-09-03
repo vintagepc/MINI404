@@ -14,6 +14,8 @@
 #include "sysemu/block-backend.h"
 #include "hw/block/block.h"
 #include "qapi/error.h"
+#include "qapi/clone-visitor.h"
+#include "qapi/qapi-visit-block-export.h"
 #include "qapi/qapi-commands-block-export.h"
 #include "block/nbd.h"
 #include "io/channel-socket.h"
@@ -132,7 +134,12 @@ void nbd_server_start(SocketAddress *addr, const char *tls_creds,
     qio_net_listener_set_name(nbd_server->listener,
                               "nbd-listener");
 
-    if (qio_net_listener_open_sync(nbd_server->listener, addr, 1, errp) < 0) {
+    /*
+     * Because this server is persistent, a backlog of SOMAXCONN is
+     * better than trying to size it to max_connections.
+     */
+    if (qio_net_listener_open_sync(nbd_server->listener, addr, SOMAXCONN,
+                                   errp) < 0) {
         goto error;
     }
 
@@ -195,7 +202,8 @@ void qmp_nbd_server_add(NbdServerAddOptions *arg, Error **errp)
      * the device name as a default here for compatibility.
      */
     if (!arg->has_name) {
-        arg->name = arg->device;
+        arg->has_name = true;
+        arg->name = g_strdup(arg->device);
     }
 
     export_opts = g_new(BlockExportOptions, 1);
@@ -205,15 +213,13 @@ void qmp_nbd_server_add(NbdServerAddOptions *arg, Error **errp)
         .node_name              = g_strdup(bdrv_get_node_name(bs)),
         .has_writable           = arg->has_writable,
         .writable               = arg->writable,
-        .u.nbd = {
-            .has_name           = true,
-            .name               = g_strdup(arg->name),
-            .has_description    = arg->has_description,
-            .description        = g_strdup(arg->description),
-            .has_bitmap         = arg->has_bitmap,
-            .bitmap             = g_strdup(arg->bitmap),
-        },
     };
+    QAPI_CLONE_MEMBERS(BlockExportOptionsNbdBase, &export_opts->u.nbd,
+                       qapi_NbdServerAddOptions_base(arg));
+    if (arg->has_bitmap) {
+        export_opts->u.nbd.has_bitmaps = true;
+        QAPI_LIST_PREPEND(export_opts->u.nbd.bitmaps, g_strdup(arg->bitmap));
+    }
 
     /*
      * nbd-server-add doesn't complain when a read-only device should be

@@ -260,6 +260,7 @@ Scriptable::LineStatus MK3SGL::ProcessAction(unsigned int iAct, const std::vecto
 		case ActMouse:
 		case ActMouseMove:
 			m_vArgs = vArgs;
+			/* FALLTHRU */
 		case ActResetView:
 			m_iQueuedAct = iAct;
 			return LineStatus::Waiting;
@@ -309,10 +310,13 @@ void MK3SGL::ProcessAction_GL()
 	{
 		case ActResetView:
 			ResetCamera();
+			break;
 		case ActMouse:
 			MouseCB(std::stoi(m_vArgs.at(0)),std::stoi(m_vArgs.at(1)),std::stoi(m_vArgs.at(2)),std::stoi(m_vArgs.at(3)));
+			break;
 		case ActMouseMove:
 			MotionCB(std::stoi(m_vArgs.at(0)),std::stoi(m_vArgs.at(1)));
+			break;
 	}
 	m_iQueuedAct = -2;
 }

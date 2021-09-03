@@ -30,7 +30,6 @@ schemas = [
   'args-member-array-bad.json',
   'args-member-case.json',
   'args-member-unknown.json',
-  'args-name-clash.json',
   'args-union.json',
   'args-unknown.json',
   'bad-base.json',
@@ -111,7 +110,6 @@ schemas = [
   'flat-union-clash-member.json',
   'flat-union-discriminator-bad-name.json',
   'flat-union-empty.json',
-  'flat-union-inline.json',
   'flat-union-inline-invalid-dict.json',
   'flat-union-int-branch.json',
   'flat-union-invalid-branch-key.json',
@@ -145,17 +143,17 @@ schemas = [
   'oob-coroutine.json',
   'oob-test.json',
   'allow-preconfig-test.json',
-  'pragma-doc-required-crap.json',
   'pragma-extra-junk.json',
-  'pragma-name-case-whitelist-crap.json',
   'pragma-non-dict.json',
   'pragma-unknown.json',
-  'pragma-returns-whitelist-crap.json',
+  'pragma-value-not-bool.json',
+  'pragma-value-not-list-of-str.json',
+  'pragma-value-not-list.json',
   'qapi-schema-test.json',
   'quoted-structural-chars.json',
-  'redefined-builtin.json',
   'redefined-command.json',
   'redefined-event.json',
+  'redefined-predefined.json',
   'redefined-type.json',
   'reserved-command-q.json',
   'reserved-enum-q.json',
@@ -167,9 +165,9 @@ schemas = [
   'reserved-type-list.json',
   'returns-alternate.json',
   'returns-array-bad.json',
+  'returns-bad-type.json',
   'returns-dict.json',
   'returns-unknown.json',
-  'returns-whitelist.json',
   'string-code-point-31.json',
   'string-code-point-127.json',
   'struct-base-clash-deep.json',
@@ -178,9 +176,11 @@ schemas = [
   'struct-member-if-invalid.json',
   'struct-member-invalid-dict.json',
   'struct-member-invalid.json',
+  'struct-member-name-clash.json',
   'trailing-comma-list.json',
   'trailing-comma-object.json',
   'type-bypass-bad-gen.json',
+  'type-case.json',
   'unclosed-list.json',
   'unclosed-object.json',
   'unclosed-string.json',
@@ -219,53 +219,53 @@ qapi_doc = custom_target('QAPI doc',
                                     '-p', 'doc-good-', '@INPUT0@' ],
                          depend_files: qapi_gen_depends)
 
-# Test the document-comment document generation code by running a test schema
-# file through Sphinx's plain-text builder and comparing the result against
-# a golden reference. This is in theory susceptible to failures if Sphinx
-# changes its output, but the text output has historically been very stable
-# (no changes between Sphinx 1.6 and 3.0), so it is a better bet than
-# texinfo or HTML generation, both of which have had changes. We might
-# need to add more sophisticated logic here in future for some sort of
-# fuzzy comparison if future Sphinx versions produce different text,
-# but for now the simple comparison suffices.
-qapi_doc_out = custom_target('QAPI rST doc',
-                             output: ['doc-good.txt'],
-                             input: files('doc-good.json', 'doc-good.rst'),
-                             build_by_default: build_docs,
-                             depend_files: sphinx_extn_depends,
-                             # We use -E to suppress Sphinx's caching, because
-                             # we want it to always really run the QAPI doc
-                             # generation code. It also means we don't
-                             # clutter up the build dir with the cache.
-                             command: [SPHINX_ARGS,
-                                       '-b', 'text', '-E',
-                                       '-c', meson.source_root() / 'docs',
-                                       '-D', 'master_doc=doc-good',
-                                       meson.current_source_dir(),
-                                       meson.current_build_dir()])
-
-# Fix possible inconsistency in line endings in generated output and
-# in the golden reference (which could otherwise cause test failures
-# on Windows hosts). Unfortunately diff --strip-trailing-cr
-# is GNU-diff only. The odd-looking perl is because we must avoid
-# using an explicit '\' character in the command arguments to
-# a custom_target(), as Meson will unhelpfully replace it with a '/'
-# (https://github.com/mesonbuild/meson/issues/1564)
-qapi_doc_out_nocr = custom_target('QAPI rST doc newline-sanitized',
-                                  output: ['doc-good.txt.nocr'],
-                                  input: qapi_doc_out[0],
-                                  build_by_default: build_docs,
-                                  command: ['perl', '-pe', '$x = chr 13; s/$x$//', '@INPUT@'],
-                                  capture: true)
-
-qapi_doc_ref_nocr = custom_target('QAPI rST doc reference newline-sanitized',
-                                  output: ['doc-good.ref.nocr'],
-                                  input: files('doc-good.txt'),
-                                  build_by_default: build_docs,
-                                  command: ['perl', '-pe', '$x = chr 13; s/$x$//', '@INPUT@'],
-                                  capture: true)
-
 if build_docs
+  # Test the document-comment document generation code by running a test schema
+  # file through Sphinx's plain-text builder and comparing the result against
+  # a golden reference. This is in theory susceptible to failures if Sphinx
+  # changes its output, but the text output has historically been very stable
+  # (no changes between Sphinx 1.6 and 3.0), so it is a better bet than
+  # texinfo or HTML generation, both of which have had changes. We might
+  # need to add more sophisticated logic here in future for some sort of
+  # fuzzy comparison if future Sphinx versions produce different text,
+  # but for now the simple comparison suffices.
+  qapi_doc_out = custom_target('QAPI rST doc',
+                               output: ['doc-good.txt'],
+                               input: files('doc-good.json', 'doc-good.rst'),
+                               build_by_default: true,
+                               depend_files: sphinx_extn_depends,
+                               # We use -E to suppress Sphinx's caching, because
+                               # we want it to always really run the QAPI doc
+                               # generation code. It also means we don't
+                               # clutter up the build dir with the cache.
+                               command: [SPHINX_ARGS,
+                                         '-b', 'text', '-E',
+                                         '-c', meson.source_root() / 'docs',
+                                         '-D', 'master_doc=doc-good',
+                                         meson.current_source_dir(),
+                                         meson.current_build_dir()])
+
+  # Fix possible inconsistency in line endings in generated output and
+  # in the golden reference (which could otherwise cause test failures
+  # on Windows hosts). Unfortunately diff --strip-trailing-cr
+  # is GNU-diff only. The odd-looking perl is because we must avoid
+  # using an explicit '\' character in the command arguments to
+  # a custom_target(), as Meson will unhelpfully replace it with a '/'
+  # (https://github.com/mesonbuild/meson/issues/1564)
+  qapi_doc_out_nocr = custom_target('QAPI rST doc newline-sanitized',
+                                    output: ['doc-good.txt.nocr'],
+                                    input: qapi_doc_out[0],
+                                    build_by_default: true,
+                                    command: ['perl', '-pe', '$x = chr 13; s/$x$//', '@INPUT@'],
+                                    capture: true)
+
+  qapi_doc_ref_nocr = custom_target('QAPI rST doc reference newline-sanitized',
+                                    output: ['doc-good.ref.nocr'],
+                                    input: files('doc-good.txt'),
+                                    build_by_default: true,
+                                    command: ['perl', '-pe', '$x = chr 13; s/$x$//', '@INPUT@'],
+                                    capture: true)
+
   # "full_path()" needed here to work around
   # https://github.com/mesonbuild/meson/issues/7585
   test('QAPI rST doc', diff, args: ['-u', qapi_doc_ref_nocr[0].full_path(),

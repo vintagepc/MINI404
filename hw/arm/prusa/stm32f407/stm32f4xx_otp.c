@@ -24,6 +24,7 @@
 #include "qemu/log.h"
 #include "../utility/macros.h"
 #include "hw/qdev-properties.h"
+#include "hw/qdev-properties-system.h"
 #include "qapi/error.h"
 
 

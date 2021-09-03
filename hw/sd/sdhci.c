@@ -1,6 +1,8 @@
 /*
  * SD Association Host Standard Specification v2.0 controller emulation
  *
+ * Datasheet: PartA2_SD_Host_Controller_Simplified_Specification_Ver2.00.pdf
+ *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  * Mitsyanko Igor <i.mitsyanko@samsung.com>
  * Peter A.G. Crosthwaite <peter.crosthwaite@petalogix.com>
@@ -216,9 +218,14 @@ static uint8_t sdhci_slotint(SDHCIState *s)
          ((s->norintsts & SDHC_NIS_REMOVE) && (s->wakcon & SDHC_WKUP_ON_RMV));
 }
 
-static inline void sdhci_update_irq(SDHCIState *s)
+/* Return true if IRQ was pending and delivered */
+static bool sdhci_update_irq(SDHCIState *s)
 {
-    qemu_set_irq(s->irq, sdhci_slotint(s));
+    bool pending = sdhci_slotint(s);
+
+    qemu_set_irq(s->irq, pending);
+
+    return pending;
 }
 
 static void sdhci_raise_insertion_irq(void *opaque)
@@ -319,6 +326,7 @@ static void sdhci_send_command(SDHCIState *s)
     SDRequest request;
     uint8_t response[16];
     int rlen;
+    bool timeout = false;
 
     s->errintsts = 0;
     s->acmd12errsts = 0;
@@ -342,6 +350,7 @@ static void sdhci_send_command(SDHCIState *s)
             trace_sdhci_response16(s->rspreg[3], s->rspreg[2],
                                    s->rspreg[1], s->rspreg[0]);
         } else {
+            timeout = true;
             trace_sdhci_error("timeout waiting for command response");
             if (s->errintstsen & SDHC_EISEN_CMDTIMEOUT) {
                 s->errintsts |= SDHC_EIS_CMDTIMEOUT;
@@ -362,7 +371,7 @@ static void sdhci_send_command(SDHCIState *s)
 
     sdhci_update_irq(s);
 
-    if (s->blksize && (s->cmdreg & SDHC_CMD_DATA_PRESENT)) {
+    if (!timeout && s->blksize && (s->cmdreg & SDHC_CMD_DATA_PRESENT)) {
         s->data_count = 0;
         sdhci_data_transfer(s);
     }
@@ -589,9 +598,9 @@ static void sdhci_sdma_transfer_multi_blocks(SDHCIState *s)
         page_aligned = true;
     }
 
+    s->prnsts |= SDHC_DATA_INHIBIT | SDHC_DAT_LINE_ACTIVE;
     if (s->trnmod & SDHC_TRNS_READ) {
-        s->prnsts |= SDHC_DOING_READ | SDHC_DATA_INHIBIT |
-                SDHC_DAT_LINE_ACTIVE;
+        s->prnsts |= SDHC_DOING_READ;
         while (s->blkcnt) {
             if (s->data_count == 0) {
                 sdbus_read_data(&s->sdbus, s->fifo_buffer, block_size);
@@ -618,8 +627,7 @@ static void sdhci_sdma_transfer_multi_blocks(SDHCIState *s)
             }
         }
     } else {
-        s->prnsts |= SDHC_DOING_WRITE | SDHC_DATA_INHIBIT |
-                SDHC_DAT_LINE_ACTIVE;
+        s->prnsts |= SDHC_DOING_WRITE;
         while (s->blkcnt) {
             begin = s->data_count;
             if (((boundary_count + begin) < block_size) && page_aligned) {
@@ -729,6 +737,12 @@ static void sdhci_do_adma(SDHCIState *s)
     ADMADescr dscr = {};
     int i;
 
+    if (s->trnmod & SDHC_TRNS_BLK_CNT_EN && !s->blkcnt) {
+        /* Stop Multiple Transfer */
+        sdhci_end_transfer(s);
+        return;
+    }
+
     for (i = 0; i < SDHC_ADMA_DESCS_PER_DELAY; ++i) {
         s->admaerr &= ~SDHC_ADMAERR_LENGTH_MISMATCH;
 
@@ -754,8 +768,9 @@ static void sdhci_do_adma(SDHCIState *s)
 
         switch (dscr.attr & SDHC_ADMA_ATTR_ACT_MASK) {
         case SDHC_ADMA_ATTR_ACT_TRAN:  /* data transfer */
-
+            s->prnsts |= SDHC_DATA_INHIBIT | SDHC_DAT_LINE_ACTIVE;
             if (s->trnmod & SDHC_TRNS_READ) {
+                s->prnsts |= SDHC_DOING_READ;
                 while (length) {
                     if (s->data_count == 0) {
                         sdbus_read_data(&s->sdbus, s->fifo_buffer, block_size);
@@ -783,6 +798,7 @@ static void sdhci_do_adma(SDHCIState *s)
                     }
                 }
             } else {
+                s->prnsts |= SDHC_DOING_WRITE;
                 while (length) {
                     begin = s->data_count;
                     if ((length + begin) < block_size) {
@@ -825,7 +841,10 @@ static void sdhci_do_adma(SDHCIState *s)
                 s->norintsts |= SDHC_NIS_DMA;
             }
 
-            sdhci_update_irq(s);
+            if (sdhci_update_irq(s) && !(dscr.attr & SDHC_ADMA_ATTR_END)) {
+                /* IRQ delivered, reschedule current transfer */
+                break;
+            }
         }
 
         /* ADMA transfer terminates if blkcnt == 0 or by END attribute */
@@ -941,10 +960,20 @@ sdhci_buff_access_is_sequential(SDHCIState *s, unsigned byte_num)
     return true;
 }
 
+static void sdhci_resume_pending_transfer(SDHCIState *s)
+{
+    timer_del(s->transfer_timer);
+    sdhci_data_transfer(s);
+}
+
 static uint64_t sdhci_read(void *opaque, hwaddr offset, unsigned size)
 {
     SDHCIState *s = (SDHCIState *)opaque;
     uint32_t ret = 0;
+
+    if (timer_pending(s->transfer_timer)) {
+        sdhci_resume_pending_transfer(s);
+    }
 
     switch (offset & ~0x3) {
     case SDHC_SYSAD:
@@ -1089,33 +1118,51 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
     uint32_t value = val;
     value <<= shift;
 
+    if (timer_pending(s->transfer_timer)) {
+        sdhci_resume_pending_transfer(s);
+    }
+
     switch (offset & ~0x3) {
     case SDHC_SYSAD:
-        s->sdmasysad = (s->sdmasysad & mask) | value;
-        MASKED_WRITE(s->sdmasysad, mask, value);
-        /* Writing to last byte of sdmasysad might trigger transfer */
-        if (!(mask & 0xFF000000) && TRANSFERRING_DATA(s->prnsts) && s->blkcnt &&
-                s->blksize && SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA) {
-            if (s->trnmod & SDHC_TRNS_MULTI) {
-                sdhci_sdma_transfer_multi_blocks(s);
-            } else {
-                sdhci_sdma_transfer_single_block(s);
+        if (!TRANSFERRING_DATA(s->prnsts)) {
+            s->sdmasysad = (s->sdmasysad & mask) | value;
+            MASKED_WRITE(s->sdmasysad, mask, value);
+            /* Writing to last byte of sdmasysad might trigger transfer */
+            if (!(mask & 0xFF000000) && s->blkcnt && s->blksize &&
+                SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA) {
+                if (s->trnmod & SDHC_TRNS_MULTI) {
+                    sdhci_sdma_transfer_multi_blocks(s);
+                } else {
+                    sdhci_sdma_transfer_single_block(s);
+                }
             }
         }
         break;
     case SDHC_BLKSIZE:
         if (!TRANSFERRING_DATA(s->prnsts)) {
-            MASKED_WRITE(s->blksize, mask, value);
+            uint16_t blksize = s->blksize;
+
+            MASKED_WRITE(s->blksize, mask, extract32(value, 0, 12));
             MASKED_WRITE(s->blkcnt, mask >> 16, value >> 16);
-        }
 
-        /* Limit block size to the maximum buffer size */
-        if (extract32(s->blksize, 0, 12) > s->buf_maxsz) {
-            qemu_log_mask(LOG_GUEST_ERROR, "%s: Size 0x%x is larger than "
-                          "the maximum buffer 0x%x", __func__, s->blksize,
-                          s->buf_maxsz);
+            /* Limit block size to the maximum buffer size */
+            if (extract32(s->blksize, 0, 12) > s->buf_maxsz) {
+                qemu_log_mask(LOG_GUEST_ERROR, "%s: Size 0x%x is larger than "
+                              "the maximum buffer 0x%x\n", __func__, s->blksize,
+                              s->buf_maxsz);
 
-            s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
+                s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
+            }
+
+            /*
+             * If the block size is programmed to a different value from
+             * the previous one, reset the data pointer of s->fifo_buffer[]
+             * so that s->fifo_buffer[] can be filled in using the new block
+             * size in the next transfer.
+             */
+            if (blksize != s->blksize) {
+                s->data_count = 0;
+            }
         }
 
         break;
@@ -1301,9 +1348,7 @@ void sdhci_initfn(SDHCIState *s)
 
 void sdhci_uninitfn(SDHCIState *s)
 {
-    timer_del(s->insert_timer);
     timer_free(s->insert_timer);
-    timer_del(s->transfer_timer);
     timer_free(s->transfer_timer);
 
     g_free(s->fifo_buffer);

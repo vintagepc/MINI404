@@ -6,7 +6,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -293,7 +293,7 @@ void HELPER(gvec_sdot_idx_b)(void *vd, void *vn, void *vm, uint32_t desc)
     intptr_t index = simd_data(desc);
     uint32_t *d = vd;
     int8_t *n = vn;
-    int8_t *m_indexed = (int8_t *)vm + index * 4;
+    int8_t *m_indexed = (int8_t *)vm + H4(index) * 4;
 
     /* Notice the special case of opr_sz == 8, from aa64/aa32 advsimd.
      * Otherwise opr_sz is a multiple of 16.
@@ -324,7 +324,7 @@ void HELPER(gvec_udot_idx_b)(void *vd, void *vn, void *vm, uint32_t desc)
     intptr_t index = simd_data(desc);
     uint32_t *d = vd;
     uint8_t *n = vn;
-    uint8_t *m_indexed = (uint8_t *)vm + index * 4;
+    uint8_t *m_indexed = (uint8_t *)vm + H4(index) * 4;
 
     /* Notice the special case of opr_sz == 8, from aa64/aa32 advsimd.
      * Otherwise opr_sz is a multiple of 16.
@@ -1858,10 +1858,10 @@ DO_ABA(gvec_uaba_d, uint64_t)
         r2 = float16_##OP(m[H2(0)], m[H2(1)], fpst);                    \
         r3 = float16_##OP(m[H2(2)], m[H2(3)], fpst);                    \
                                                                         \
-        d[H4(0)] = r0;                                                  \
-        d[H4(1)] = r1;                                                  \
-        d[H4(2)] = r2;                                                  \
-        d[H4(3)] = r3;                                                  \
+        d[H2(0)] = r0;                                                  \
+        d[H2(1)] = r1;                                                  \
+        d[H2(2)] = r2;                                                  \
+        d[H2(3)] = r3;                                                  \
     }
 
 DO_NEON_PAIRWISE(neon_padd, add)
@@ -1937,3 +1937,51 @@ DO_VRINT_RMODE(gvec_vrint_rm_h, helper_rinth, uint16_t)
 DO_VRINT_RMODE(gvec_vrint_rm_s, helper_rints, uint32_t)
 
 #undef DO_VRINT_RMODE
+
+#ifdef TARGET_AARCH64
+void HELPER(simd_tblx)(void *vd, void *vm, void *venv, uint32_t desc)
+{
+    const uint8_t *indices = vm;
+    CPUARMState *env = venv;
+    size_t oprsz = simd_oprsz(desc);
+    uint32_t rn = extract32(desc, SIMD_DATA_SHIFT, 5);
+    bool is_tbx = extract32(desc, SIMD_DATA_SHIFT + 5, 1);
+    uint32_t table_len = desc >> (SIMD_DATA_SHIFT + 6);
+    union {
+        uint8_t b[16];
+        uint64_t d[2];
+    } result;
+
+    /*
+     * We must construct the final result in a temp, lest the output
+     * overlaps the input table.  For TBL, begin with zero; for TBX,
+     * begin with the original register contents.  Note that we always
+     * copy 16 bytes here to avoid an extra branch; clearing the high
+     * bits of the register for oprsz == 8 is handled below.
+     */
+    if (is_tbx) {
+        memcpy(&result, vd, 16);
+    } else {
+        memset(&result, 0, 16);
+    }
+
+    for (size_t i = 0; i < oprsz; ++i) {
+        uint32_t index = indices[H1(i)];
+
+        if (index < table_len) {
+            /*
+             * Convert index (a byte offset into the virtual table
+             * which is a series of 128-bit vectors concatenated)
+             * into the correct register element, bearing in mind
+             * that the table can wrap around from V31 to V0.
+             */
+            const uint8_t *table = (const uint8_t *)
+                aa64_vfp_qreg(env, (rn + (index >> 4)) % 32);
+            result.b[H1(i)] = table[H1(index % 16)];
+        }
+    }
+
+    memcpy(vd, &result, 16);
+    clear_tail(vd, oprsz, simd_maxsz(desc));
+}
+#endif

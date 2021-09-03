@@ -229,7 +229,7 @@ bool cap_disas_target(disassemble_info *info, uint64_t pc, size_t size)
 }
 
 /* Disassemble SIZE bytes at CODE for the host.  */
-bool cap_disas_host(disassemble_info *info, void *code, size_t size)
+bool cap_disas_host(disassemble_info *info, const void *code, size_t size)
 {
     csh handle;
     const uint8_t *cbuf;
@@ -286,7 +286,7 @@ bool cap_disas_monitor(disassemble_info *info, uint64_t pc, int count)
 
         /* Make certain that we can make progress.  */
         assert(tsize != 0);
-        info->read_memory_func(pc, cap_buf + csize, tsize, info);
+        info->read_memory_func(pc + csize, cap_buf + csize, tsize, info);
         csize += tsize;
 
         if (cs_disasm_iter(handle, &cbuf, &csize, &pc, insn)) {

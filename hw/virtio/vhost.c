@@ -172,16 +172,6 @@ static uint64_t vhost_get_log_size(struct vhost_dev *dev)
                                        reg->memory_size);
         log_size = MAX(log_size, last / VHOST_LOG_CHUNK + 1);
     }
-    for (i = 0; i < dev->nvqs; ++i) {
-        struct vhost_virtqueue *vq = dev->vqs + i;
-
-        if (!vq->used_phys && !vq->used_size) {
-            continue;
-        }
-
-        uint64_t last = vq->used_phys + vq->used_size - 1;
-        log_size = MAX(log_size, last / VHOST_LOG_CHUNK + 1);
-    }
     return log_size;
 }
 
@@ -714,6 +704,7 @@ static void vhost_iommu_region_add(MemoryListener *listener,
     Int128 end;
     int iommu_idx;
     IOMMUMemoryRegion *iommu_mr;
+    int ret;
 
     if (!memory_region_is_iommu(section->mr)) {
         return;
@@ -728,7 +719,7 @@ static void vhost_iommu_region_add(MemoryListener *listener,
     iommu_idx = memory_region_iommu_attrs_to_index(iommu_mr,
                                                    MEMTXATTRS_UNSPECIFIED);
     iommu_notifier_init(&iommu->n, vhost_iommu_unmap_notify,
-                        IOMMU_NOTIFIER_UNMAP,
+                        IOMMU_NOTIFIER_DEVIOTLB_UNMAP,
                         section->offset_within_region,
                         int128_get64(end),
                         iommu_idx);
@@ -736,8 +727,16 @@ static void vhost_iommu_region_add(MemoryListener *listener,
     iommu->iommu_offset = section->offset_within_address_space -
                           section->offset_within_region;
     iommu->hdev = dev;
-    memory_region_register_iommu_notifier(section->mr, &iommu->n,
-                                          &error_fatal);
+    ret = memory_region_register_iommu_notifier(section->mr, &iommu->n, NULL);
+    if (ret) {
+        /*
+         * Some vIOMMUs do not support dev-iotlb yet.  If so, try to use the
+         * UNMAP legacy message
+         */
+        iommu->n.notifier_flags = IOMMU_NOTIFIER_UNMAP;
+        memory_region_register_iommu_notifier(section->mr, &iommu->n,
+                                              &error_fatal);
+    }
     QLIST_INSERT_HEAD(&dev->iommu_list, iommu, iommu_next);
     /* TODO: can replay help performance here? */
 }
@@ -910,7 +909,7 @@ check_dev_state:
         r = 0;
     }
     if (r) {
-        /* An error is occured. */
+        /* An error occurred. */
         dev->log_enabled = false;
     }
 
@@ -1389,18 +1388,16 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
         error_report("vhost backend memory slots limit is less"
                 " than current number of present memory slots");
         r = -1;
-        if (busyloop_timeout) {
-            goto fail_busyloop;
-        } else {
-            goto fail;
-        }
+        goto fail_busyloop;
     }
 
     return 0;
 
 fail_busyloop:
-    while (--i >= 0) {
-        vhost_virtqueue_set_busyloop_timeout(hdev, hdev->vq_index + i, 0);
+    if (busyloop_timeout) {
+        while (--i >= 0) {
+            vhost_virtqueue_set_busyloop_timeout(hdev, hdev->vq_index + i, 0);
+        }
     }
 fail:
     hdev->nvqs = n_initialized_vqs;
@@ -1651,6 +1648,26 @@ int vhost_dev_load_inflight(struct vhost_inflight *inflight, QEMUFile *f)
     inflight->queue_size = qemu_get_be16(f);
 
     qemu_get_buffer(f, inflight->addr, size);
+
+    return 0;
+}
+
+int vhost_dev_prepare_inflight(struct vhost_dev *hdev, VirtIODevice *vdev)
+{
+    int r;
+
+    if (hdev->vhost_ops->vhost_get_inflight_fd == NULL ||
+        hdev->vhost_ops->vhost_set_inflight_fd == NULL) {
+        return 0;
+    }
+
+    hdev->vdev = vdev;
+
+    r = vhost_dev_set_features(hdev, hdev->log_enabled);
+    if (r < 0) {
+        VHOST_OPS_DEBUG("vhost_dev_prepare_inflight failed");
+        return r;
+    }
 
     return 0;
 }

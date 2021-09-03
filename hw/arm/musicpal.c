@@ -27,6 +27,7 @@
 #include "ui/console.h"
 #include "hw/i2c/i2c.h"
 #include "hw/irq.h"
+#include "hw/or-irq.h"
 #include "hw/audio/wm8750.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/runstate.h"
@@ -77,8 +78,7 @@
 #define MP_TIMER4_IRQ           7
 #define MP_EHCI_IRQ             8
 #define MP_ETH_IRQ              9
-#define MP_UART1_IRQ            11
-#define MP_UART2_IRQ            11
+#define MP_UART_SHARED_IRQ      11
 #define MP_GPIO_IRQ             12
 #define MP_RTC_IRQ              28
 #define MP_AUDIO_IRQ            30
@@ -512,53 +512,37 @@ static uint8_t scale_lcd_color(musicpal_lcd_state *s, uint8_t col)
     }
 }
 
-#define SET_LCD_PIXEL(depth, type) \
-static inline void glue(set_lcd_pixel, depth) \
-        (musicpal_lcd_state *s, int x, int y, type col) \
-{ \
-    int dx, dy; \
-    DisplaySurface *surface = qemu_console_surface(s->con); \
-    type *pixel = &((type *) surface_data(surface))[(y * 128 * 3 + x) * 3]; \
-\
-    for (dy = 0; dy < 3; dy++, pixel += 127 * 3) \
-        for (dx = 0; dx < 3; dx++, pixel++) \
-            *pixel = col; \
+static inline void set_lcd_pixel32(musicpal_lcd_state *s,
+                                   int x, int y, uint32_t col)
+{
+    int dx, dy;
+    DisplaySurface *surface = qemu_console_surface(s->con);
+    uint32_t *pixel =
+        &((uint32_t *) surface_data(surface))[(y * 128 * 3 + x) * 3];
+
+    for (dy = 0; dy < 3; dy++, pixel += 127 * 3) {
+        for (dx = 0; dx < 3; dx++, pixel++) {
+            *pixel = col;
+        }
+    }
 }
-SET_LCD_PIXEL(8, uint8_t)
-SET_LCD_PIXEL(16, uint16_t)
-SET_LCD_PIXEL(32, uint32_t)
 
 static void lcd_refresh(void *opaque)
 {
     musicpal_lcd_state *s = opaque;
-    DisplaySurface *surface = qemu_console_surface(s->con);
     int x, y, col;
 
-    switch (surface_bits_per_pixel(surface)) {
-    case 0:
-        return;
-#define LCD_REFRESH(depth, func) \
-    case depth: \
-        col = func(scale_lcd_color(s, (MP_LCD_TEXTCOLOR >> 16) & 0xff), \
-                   scale_lcd_color(s, (MP_LCD_TEXTCOLOR >> 8) & 0xff), \
-                   scale_lcd_color(s, MP_LCD_TEXTCOLOR & 0xff)); \
-        for (x = 0; x < 128; x++) { \
-            for (y = 0; y < 64; y++) { \
-                if (s->video_ram[x + (y/8)*128] & (1 << (y % 8))) { \
-                    glue(set_lcd_pixel, depth)(s, x, y, col); \
-                } else { \
-                    glue(set_lcd_pixel, depth)(s, x, y, 0); \
-                } \
-            } \
-        } \
-        break;
-    LCD_REFRESH(8, rgb_to_pixel8)
-    LCD_REFRESH(16, rgb_to_pixel16)
-    LCD_REFRESH(32, (is_surface_bgr(surface) ?
-                     rgb_to_pixel32bgr : rgb_to_pixel32))
-    default:
-        hw_error("unsupported colour depth %i\n",
-                 surface_bits_per_pixel(surface));
+    col = rgb_to_pixel32(scale_lcd_color(s, (MP_LCD_TEXTCOLOR >> 16) & 0xff),
+                         scale_lcd_color(s, (MP_LCD_TEXTCOLOR >> 8) & 0xff),
+                         scale_lcd_color(s, MP_LCD_TEXTCOLOR & 0xff));
+    for (x = 0; x < 128; x++) {
+        for (y = 0; y < 64; y++) {
+            if (s->video_ram[x + (y / 8) * 128] & (1 << (y % 8))) {
+                set_lcd_pixel32(s, x, y, col);
+            } else {
+                set_lcd_pixel32(s, x, y, 0);
+            }
+        }
     }
 
     dpy_gfx_update(s->con, 0, 0, 128*3, 64*3);
@@ -959,6 +943,17 @@ static void mv88w8618_pit_init(Object *obj)
     sysbus_init_mmio(dev, &s->iomem);
 }
 
+static void mv88w8618_pit_finalize(Object *obj)
+{
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
+    mv88w8618_pit_state *s = MV88W8618_PIT(dev);
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        ptimer_free(s->timer[i].ptimer);
+    }
+}
+
 static const VMStateDescription mv88w8618_timer_vmsd = {
     .name = "timer",
     .version_id = 1,
@@ -994,6 +989,7 @@ static const TypeInfo mv88w8618_pit_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(mv88w8618_pit_state),
     .instance_init = mv88w8618_pit_init,
+    .instance_finalize = mv88w8618_pit_finalize,
     .class_init    = mv88w8618_pit_class_init,
 };
 
@@ -1587,8 +1583,9 @@ static struct arm_boot_info musicpal_binfo = {
 static void musicpal_init(MachineState *machine)
 {
     ARMCPU *cpu;
-    qemu_irq pic[32];
     DeviceState *dev;
+    DeviceState *pic;
+    DeviceState *uart_orgate;
     DeviceState *i2c_dev;
     DeviceState *lcd_dev;
     DeviceState *key_dev;
@@ -1618,18 +1615,26 @@ static void musicpal_init(MachineState *machine)
                            &error_fatal);
     memory_region_add_subregion(address_space_mem, MP_SRAM_BASE, sram);
 
-    dev = sysbus_create_simple(TYPE_MV88W8618_PIC, MP_PIC_BASE,
+    pic = sysbus_create_simple(TYPE_MV88W8618_PIC, MP_PIC_BASE,
                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
-    for (i = 0; i < 32; i++) {
-        pic[i] = qdev_get_gpio_in(dev, i);
-    }
-    sysbus_create_varargs(TYPE_MV88W8618_PIT, MP_PIT_BASE, pic[MP_TIMER1_IRQ],
-                          pic[MP_TIMER2_IRQ], pic[MP_TIMER3_IRQ],
-                          pic[MP_TIMER4_IRQ], NULL);
+    sysbus_create_varargs(TYPE_MV88W8618_PIT, MP_PIT_BASE,
+                          qdev_get_gpio_in(pic, MP_TIMER1_IRQ),
+                          qdev_get_gpio_in(pic, MP_TIMER2_IRQ),
+                          qdev_get_gpio_in(pic, MP_TIMER3_IRQ),
+                          qdev_get_gpio_in(pic, MP_TIMER4_IRQ), NULL);
 
-    serial_mm_init(address_space_mem, MP_UART1_BASE, 2, pic[MP_UART1_IRQ],
+    /* Logically OR both UART IRQs together */
+    uart_orgate = DEVICE(object_new(TYPE_OR_IRQ));
+    object_property_set_int(OBJECT(uart_orgate), "num-lines", 2, &error_fatal);
+    qdev_realize_and_unref(uart_orgate, NULL, &error_fatal);
+    qdev_connect_gpio_out(DEVICE(uart_orgate), 0,
+                          qdev_get_gpio_in(pic, MP_UART_SHARED_IRQ));
+
+    serial_mm_init(address_space_mem, MP_UART1_BASE, 2,
+                   qdev_get_gpio_in(uart_orgate, 0),
                    1825000, serial_hd(0), DEVICE_NATIVE_ENDIAN);
-    serial_mm_init(address_space_mem, MP_UART2_BASE, 2, pic[MP_UART2_IRQ],
+    serial_mm_init(address_space_mem, MP_UART2_BASE, 2,
+                   qdev_get_gpio_in(uart_orgate, 1),
                    1825000, serial_hd(1), DEVICE_NATIVE_ENDIAN);
 
     /* Register flash */
@@ -1665,14 +1670,15 @@ static void musicpal_init(MachineState *machine)
                              OBJECT(get_system_memory()), &error_fatal);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, MP_ETH_BASE);
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[MP_ETH_IRQ]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
+                       qdev_get_gpio_in(pic, MP_ETH_IRQ));
 
     sysbus_create_simple("mv88w8618_wlan", MP_WLAN_BASE, NULL);
 
     sysbus_create_simple(TYPE_MUSICPAL_MISC, MP_MISC_BASE, NULL);
 
     dev = sysbus_create_simple(TYPE_MUSICPAL_GPIO, MP_GPIO_BASE,
-                               pic[MP_GPIO_IRQ]);
+                               qdev_get_gpio_in(pic, MP_GPIO_IRQ));
     i2c_dev = sysbus_create_simple("gpio_i2c", -1, NULL);
     i2c = (I2CBus *)qdev_get_child_bus(i2c_dev, "i2c");
 
@@ -1704,7 +1710,7 @@ static void musicpal_init(MachineState *machine)
                              NULL);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, MP_AUDIO_BASE);
-    sysbus_connect_irq(s, 0, pic[MP_AUDIO_IRQ]);
+    sysbus_connect_irq(s, 0, qdev_get_gpio_in(pic, MP_AUDIO_IRQ));
 
     musicpal_binfo.ram_size = MP_RAM_DEFAULT_SIZE;
     arm_load_kernel(cpu, machine, &musicpal_binfo);

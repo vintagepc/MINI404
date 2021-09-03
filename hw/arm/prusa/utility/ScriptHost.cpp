@@ -93,6 +93,15 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 	}
 }
 
+ScriptHost::~ScriptHost() {
+	for (auto &p: m_clients) {
+		if (p.second!=this) { // Don't delete ourselves!
+			std::cout << "Freeing " << p.first << "\n";
+			delete p.second;
+		}
+	}
+}
+
 void ScriptHost::LoadScript(const std::string &strFile)
 {
 	std::string strLn;
@@ -282,6 +291,7 @@ void ScriptHost::KeyCB(char key)
 	{
 		case 0x1b: // Esc:
 			strCmd.clear();
+			/* FALLTHRU */
 		case 0x7F: // Delete, backspace
 		case 0x08:
 			if (strCmd.size()>0)

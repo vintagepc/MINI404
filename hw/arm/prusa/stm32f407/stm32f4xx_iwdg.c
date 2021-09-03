@@ -136,6 +136,7 @@ stm32f4xx_iwdg_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         switch (s->regs.defs.KR.KEY){
             case 0xCCCC:
                 s->started = true;
+                /* FALLTHRU */
             case 0xAAAA:
                 stm32f4xx_iwdg_update(s);
                 break;

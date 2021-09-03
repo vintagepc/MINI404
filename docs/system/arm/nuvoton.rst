@@ -38,11 +38,18 @@ Supported devices
  * DDR4 memory controller (dummy interface indicating memory training is done)
  * OTP controllers (no protection features)
  * Flash Interface Unit (FIU; no protection features)
+ * Random Number Generator (RNG)
+ * USB host (USBH)
+ * GPIO controller
+ * Analog to Digital Converter (ADC)
+ * Pulse Width Modulation (PWM)
+ * SMBus controller (SMBF)
+ * Ethernet controller (EMC)
+ * Tachometer
 
 Missing devices
 ---------------
 
- * GPIO controller
  * LPC/eSPI host-to-BMC interface, including
 
    * Keyboard and mouse controller interface (KBCI)
@@ -52,17 +59,11 @@ Missing devices
    * Shared memory (SHM)
    * eSPI slave interface
 
- * Ethernet controllers (GMAC and EMC)
- * USB host (USBH)
+ * Ethernet controller (GMAC)
  * USB device (USBD)
- * SMBus controller (SMBF)
  * Peripheral SPI controller (PSPI)
- * Analog to Digital Converter (ADC)
  * SD/MMC host
- * Random Number Generator (RNG)
  * PECI interface
- * Pulse Width Modulation (PWM)
- * Tachometer
  * PCI and PCIe root complex and bridges
  * VDM and MCTP support
  * Serial I/O expansion
