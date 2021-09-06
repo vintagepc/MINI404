@@ -126,7 +126,12 @@ static uint16_t adc_lookup_smpr(uint8_t value) {
 static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
 {
     uint8_t channel = s->adc_sequence[s->adc_sequence_position];
-    s->defs.DR = s->adc_data[channel];// * (adc_lookup_smpr(s->adc_smprs[channel])+1); // TODO... *3 ->sample time
+    s->defs.DR = s->adc_data[channel];
+    // I'm not sure why this is yet - some sort of built in oversampling
+    // that is enabled in non-DMA mode?
+    if (!s->defs.CR2.DMA) {
+        s->defs.DR*=(adc_lookup_smpr(s->adc_smprs[channel])+1);
+    }
    
     // Mask: RES 0..3 == 12..6 bit mask.
     uint32_t mask = (0xFFF >> (s->defs.CR1.RES<<1));
@@ -145,6 +150,31 @@ static void stm32f4xx_adc_data_in(void *opaque, int n, int level){
     s->adc_data[n] = level;
     // printf("ADC: Ch %d new data: %d\n",n, level);
 }
+
+static void stm32f4xx_adc_schedule_next(STM32F4XXADCState *s) {
+    if (!s->defs.CR2.ADON)
+        return;
+    s->defs.CR2.SWSTART = 0;
+    // Calculate the clock rate 
+    uint64_t clock = 84000000;
+    if (s->rcc != NULL) 
+    {
+        clock = stm32_rcc_get_periph_freq(s->rcc, s->id);
+    }
+
+    clock /= stm32f4xx_adcc_get_adcpre(s->common);
+
+    // #bits:
+    uint32_t conv_cycles = (12U - (s->defs.CR1.RES<<1U));
+    uint8_t channel = s->adc_sequence[s->adc_sequence_position];
+    conv_cycles += adc_lookup_smpr(s->adc_smprs[channel]);
+
+    uint64_t delay_ns = 1000000000000U / (clock/conv_cycles);
+    // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
+    timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
+
+}
+
 
 static uint64_t stm32f4xx_adc_read(void *opaque, hwaddr addr,
                                      unsigned int size)
@@ -220,30 +250,6 @@ static void stm32f4xx_adc_convert(STM32F4XXADCState *s)
     qemu_irq_pulse(s->irq_read[channel]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
 }
 
-static void stm32f4xx_adc_schedule_next(STM32F4XXADCState *s) {
-    if (!s->defs.CR2.ADON)
-        return;
-    s->defs.CR2.SWSTART = 0;
-    // Calculate the clock rate 
-    uint64_t clock = 84000000;
-    if (s->rcc != NULL) 
-    {
-        clock = stm32_rcc_get_periph_freq(s->rcc, s->id);
-    }
-
-    clock /= stm32f4xx_adcc_get_adcpre(s->common);
-
-    // #bits:
-    uint32_t conv_cycles = (12U - (s->defs.CR1.RES<<1U));
-    uint8_t channel = s->adc_sequence[s->adc_sequence_position];
-    conv_cycles += adc_lookup_smpr(s->adc_smprs[channel]);
-
-    uint64_t delay_ns = 1000000000000U / (clock/conv_cycles);
-    // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
-    timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
-
-}
-
 static void stm32f4xx_adc_update_irqs(STM32F4XXADCState *s, int level) {
 
     bool bChanged = level^s->defs.SR.EOC;
@@ -265,13 +271,10 @@ static void stm32f4xx_adc_eoc_deadline(void *opaque) {
     
     STM32F4XXADCState *s = STM32F4XX_ADC(opaque);
     stm32f4xx_adc_convert(s);
-    if (s->defs.CR2.EOCS) 
+    if (s->defs.CR2.EOCS || s->adc_sequence_position==s->defs.SQR1.L) 
     {
+        // Either end of cycle or end-of-sequence.
         stm32f4xx_adc_update_irqs(s, 1);
-    }
-    else 
-    {
-        printf("%s TODO - whole-cycle EOCS\n",__FILE__);
     }
 
     if (s->defs.CR2.DMA) 
@@ -319,6 +322,12 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
             if (s->defs.CR2.SWSTART)
             {
                 stm32f4xx_adc_schedule_next(s);
+            }
+            // Ugly hack alert. This is just because we don't run the ADC scheduling
+            // at full throttle and the Mini FW BSODs if the ADC isn't quite ready in time in non_DMA mode.
+            if (!s->defs.CR2.DMA) 
+            {  
+                s->defs.SR.EOC = 1;
             }
             break;
         case R_SMPR1:

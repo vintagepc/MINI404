@@ -1,4 +1,5 @@
 /GNUmakefile
+/out/
 /build/
 *.pyc
 .sdk
