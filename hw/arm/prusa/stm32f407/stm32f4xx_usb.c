@@ -231,6 +231,11 @@ static inline void STM32F4xx_update_device_common_irq(STM32F4xxUSBState *s)
             common_val |= (1U << i);
             raise_irq |= (s->dregi[i].raw[R_OFF_DEPINT] & s->dreg0[R_DIEPMSK-R_DCFG])>0; 
         }
+        if (s->dreg_defs.INEPTXFEM & 1U<<i)
+        {
+            common_val |= (1U <<i);
+            raise_irq |= (s->dregi[i].raw[R_OFF_DEPINT]& DIEPMSK_TXFIFOEMPTY);
+        }
     }
     if (common_val^s->dreg0[R_DAINT-R_DCFG]) 
     {
@@ -567,6 +572,21 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                 STM32F4xx_raise_device_ep_out_irq(s, 1, DOEPMSK_XFERCOMPLMSK);
                 STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
             }
+            // Check if there's something to send...
+            else if (s->fifo_level[1]>0)
+            {
+                uint8_t* pBuff = (uint8_t*)s->tx_fifos[1];
+                qemu_chr_fe_write_all(&s->cdc, pBuff, s->dregi[1].DIEPTSIZ.XFRSIZ-1);
+                qemu_chr_fe_write_all(&s->cdc, (const uint8_t*)"\r\n",2);
+                s->fifo_tail[1] = 0;
+                s->fifo_level[1] = 0;
+                printf("Setting xfercompl\n");
+                STM32F4xx_lower_device_ep_in_irq(s, 1, DIEPMSK_TXFIFOEMPTY);
+                s->dreg_defs.DAINT.IEPINT &= (~2U); // todo.. figure out why this doesn't clear when the fifo level does.
+                STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
+                STM32F4xx_raise_device_ep_in_irq(s, 1, DIEPMSK_XFERCOMPLMSK);
+            }
+
         // default:            STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
 
 
@@ -1641,7 +1661,21 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
             STM32F4xx_update_device_common_irq(s);
             break;
         case R_DIEPEMPMSK:
+            printf("EPEMPMSK Write: %08x -> %"PRIx64" to addr %"HWADDR_PRIx"\n",s->dreg0[index] , val, addr<<2);
             s->dreg0[index] = val;
+            if ((s->device_state >= DEV_ST_IO_READY) && (val&2U)) 
+            {
+                STM32F4xx_raise_device_ep_in_irq(s, 1, DIEPMSK_TXFIFOEMPTY);
+            }
+            // else if (s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0) 
+            // {
+            //     s->dreg_defs.DAINT.IEPINT &= (~2U);
+            //     STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
+            // }
+            else
+            {
+                STM32F4xx_update_device_common_irq(s);
+            }
             break;
         case R_DAINT:
             qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write read-only USB DAINT register!");
@@ -1756,6 +1790,12 @@ static void STM32F4xx_dregin_write(void *ptr, hwaddr addr, int index,
         case R_OFF_DEPINT: // DIEPINT
             s->dregi[chan].raw[offset] &= ~val;
             STM32F4xx_update_device_common_irq(s);
+            if ((val & 1U) && s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0) 
+            {
+                printf("Resetting xfcrcmplin\n");
+                s->dreg_defs.DAINT.IEPINT &= (~2U);
+                STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
+            }
             break;
         default:
             s->dregi[chan].raw[offset]= val;
@@ -2076,6 +2116,10 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
     memset(s->fifo_head, 0, sizeof(s->fifo_head));
     memset(s->fifo_level, 0, sizeof(s->fifo_level));
     memset(s->fifo_tail, 0, sizeof(s->fifo_tail));
+
+    memset(s->dreg0, 0, sizeof(s->dreg0));
+    memset(s->dregi[0].raw, 0, sizeof(s->dregi));
+    memset(s->drego[0].raw, 0, sizeof(s->drego));
     // RX fifo storage is the 2nd half of the 128k... for now. 
     s->rx_fifo_head = 0;
     s->rx_fifo_tail = 0;
