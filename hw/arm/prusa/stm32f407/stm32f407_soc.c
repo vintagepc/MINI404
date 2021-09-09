@@ -462,6 +462,10 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0xE0000000UL);
 
+    dev = DEVICE(&s->otg_fs);
+    s->otg_fs.debug = true;
+    qdev_prop_set_chr(dev, "chardev", qemu_chr_find("stm32usbfscdc"));
+
     // IRQs: FS wakeup: 42 FS Global: 67
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->otg_fs),errp))
     {
@@ -469,7 +473,8 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     }    
     memory_region_add_subregion(system_memory, 0x50000000UL,
         sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->otg_fs), 0));
-
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->otg_fs), 0, qdev_get_gpio_in(armv7m, 67));
+   // qdev_connect_gpio_out_named(rcc,"reset",STM32_USB,qdev_get_gpio_in_named(DEVICE(&s->otg_hs),"rcc-reset",0));
 
     // USB IRQs:
     // Global HS: 77. WKUP: 76, EP1 in/out = 75/74.
