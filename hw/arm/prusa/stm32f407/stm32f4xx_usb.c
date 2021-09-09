@@ -570,7 +570,10 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                 }
                 s->cdc_in = 0;
                 STM32F4xx_raise_device_ep_out_irq(s, 1, DOEPMSK_XFERCOMPLMSK);
+                STM32F4xx_raise_global_irq(s, GINTSTS_OEPINT);
                 STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
+                s->device_state++;
+                timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 5000);
             }
             // Check if there's something to send...
             else if (s->fifo_level[1]>0)
@@ -585,8 +588,15 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                 s->dreg_defs.DAINT.IEPINT &= (~2U); // todo.. figure out why this doesn't clear when the fifo level does.
                 STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
                 STM32F4xx_raise_device_ep_in_irq(s, 1, DIEPMSK_XFERCOMPLMSK);
-            }
+            } else {
 
+            }
+        break;
+        case DEV_ST_IO_WAIT:
+            printf("lower\n");
+            STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
+            s->device_state--;
+        break;
         // default:            STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
 
 
