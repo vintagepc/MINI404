@@ -431,9 +431,9 @@ static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, co
 // Responsible for the initial handshake once device mode is enabled. 
 static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s) 
 {
-    // if (!qemu_chr_fe_backend_connected(&s->cdc)) {
-    //     return;
-    // }
+    if (!qemu_chr_fe_backend_connected(&s->cdc)) {
+        return;
+    }
 
     if (s->debug) printf("USB CDC enable state: %u\n", s->device_state);
     switch (s->device_state) {
