@@ -409,10 +409,10 @@ static void f4xx_usb_cdc_receive(void *opaque, const uint8_t *buf, int size)
     /* Copy the characters into our buffer first */
     // if (s->periph==19) {
     s->cdc_in = buf[0];
-        printf("CDC RX: ");
-        for (int i=0; i<size;i++)
-            printf("%c",buf[i]);
-        printf("\n");
+        // printf("CDC RX: ");
+        // for (int i=0; i<size;i++)
+        //     printf("%c",buf[i]);
+        // printf("\n");
     STM32F4xx_cdc_schedule(s);
     // }
     // TODO - forward chars to a packet.
@@ -435,7 +435,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
     //     return;
     // }
 
-    printf("USB CDC enable state: %u\n", s->device_state);
+    if (s->debug) printf("USB CDC enable state: %u\n", s->device_state);
     switch (s->device_state) {
         case DEV_ST_RESET:
         {
@@ -537,7 +537,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         case DEV_ST_SETCTLLINE:
             f4xx_usb_cdc_sendpkt(s, DEV_SETCTLLINE, sizeof(DEV_SETCTLLINE)/sizeof(uint32_t));
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
-            printf("DOEPINT: %08x (bit %u)\n", s->drego[0].raw[R_OFF_DEPINT], s->drego[0].DOEPINT.STUP);
+            //printf("DOEPINT: %08x (bit %u)\n", s->drego[0].raw[R_OFF_DEPINT], s->drego[0].DOEPINT.STUP);
             STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
             s->device_state++;
             break;
@@ -583,7 +583,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                 qemu_chr_fe_write_all(&s->cdc, (const uint8_t*)"\r\n",2);
                 s->fifo_tail[1] = 0;
                 s->fifo_level[1] = 0;
-                printf("Setting xfercompl\n");
+                // printf("Setting xfercompl\n");
                 STM32F4xx_lower_device_ep_in_irq(s, 1, DIEPMSK_TXFIFOEMPTY);
                 s->dreg_defs.DAINT.IEPINT &= (~2U); // todo.. figure out why this doesn't clear when the fifo level does.
                 STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
@@ -593,7 +593,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             }
         break;
         case DEV_ST_IO_WAIT:
-            printf("lower\n");
+            // printf("lower\n");
             STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
             s->device_state--;
         break;
@@ -775,7 +775,7 @@ babble:
             if (actual>0) {
                 trace_usb_stm_memory_write(s->rx_fifo_tail, actual);
                 rxstatus_t header = {.chnum = chan, .bcnt = actual, .dpid = hctsiz->DPID, .pktsts = 0b0010};
-                printf("packet in, size: %u\n",actual);
+                // printf("packet in, size: %u\n",actual);
                 // uint32_t orig_head =s->rx_fifo_tail;
                 uint32_t words = (actual>>2); // +1 for header.
                 if (actual%4 !=0) {
@@ -817,7 +817,7 @@ babble:
             }
             else
             {
-                printf("Incoming size 0, doping: %u\n",s->is_ping);
+                // printf("Incoming size 0, doping: %u\n",s->is_ping);
                 hctsiz->PKTCNT--;
                 // if (s->is_ping)
                 // {
@@ -1671,7 +1671,7 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
             STM32F4xx_update_device_common_irq(s);
             break;
         case R_DIEPEMPMSK:
-            printf("EPEMPMSK Write: %08x -> %"PRIx64" to addr %"HWADDR_PRIx"\n",s->dreg0[index] , val, addr<<2);
+           // printf("EPEMPMSK Write: %08x -> %"PRIx64" to addr %"HWADDR_PRIx"\n",s->dreg0[index] , val, addr<<2);
             s->dreg0[index] = val;
             if ((s->device_state >= DEV_ST_IO_READY) && (val&2U)) 
             {
@@ -1802,7 +1802,7 @@ static void STM32F4xx_dregin_write(void *ptr, hwaddr addr, int index,
             STM32F4xx_update_device_common_irq(s);
             if ((val & 1U) && s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0) 
             {
-                printf("Resetting xfcrcmplin\n");
+            //   printf("Resetting xfcrcmplin\n");
                 s->dreg_defs.DAINT.IEPINT &= (~2U);
                 STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
             }
@@ -1993,7 +1993,7 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     }
     if ( (s->fifo_level[index]) >= words_needed && packets_left>0) {
         // Enough data written to do a transfer...
-        printf("Data ready for tx on %u\n", index);
+        //printf("Data ready for tx on %u\n", index);
         if (s->device_state == DEV_ST_RESET) {
             // NOT CDC hack
             STM32F4xx_tx_packet(s, index<<3);

@@ -463,7 +463,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     sysbus_mmio_map(busdev, 0, 0xE0000000UL);
 
     dev = DEVICE(&s->otg_fs);
-    s->otg_fs.debug = true;
+    //s->otg_fs.debug = true;
     qdev_prop_set_chr(dev, "chardev", qemu_chr_find("stm32usbfscdc"));
 
     // IRQs: FS wakeup: 42 FS Global: 67
