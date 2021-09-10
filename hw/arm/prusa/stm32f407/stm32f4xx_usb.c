@@ -45,7 +45,6 @@
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "usbip.h"
 
 #define USB_HZ_FS       12000000
 #define USB_HZ_HS       96000000 // was 96, this might be wrong but STM clocks usb at 48 mhz
