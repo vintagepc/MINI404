@@ -25,6 +25,7 @@
 #include "stm32f2xx_crc.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "stm32_rcc.h"
 
 #define R_CRC_DR            (0x00 / 4)
 #define R_CRC_DR_RESET 0xffffffff
@@ -123,7 +124,14 @@ f2xx_crc_read(void *arg, hwaddr addr, unsigned int size)
     }
     switch(addr) {
     case R_CRC_DR:
-        return s->crc;
+        if (s->rcc && stm32_rcc_check_periph_clk(s->rcc, STM32_CRC)) 
+        {
+            return s->crc;
+        }
+        else
+        {
+            return 0xFFFFFFFFU;
+        }
     case R_CRC_IDR:
         return s->idr;
     }

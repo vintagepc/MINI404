@@ -29,6 +29,8 @@
 #include "qemu-common.h"
 #include "hw/sysbus.h"
 
+typedef struct Stm32Rcc Stm32Rcc;
+
 #define TYPE_STM32F2XX_CRC "stm32f2xx-crc"
 OBJECT_DECLARE_SIMPLE_TYPE(f2xx_crc,STM32F2XX_CRC);
 
@@ -38,6 +40,8 @@ typedef struct f2xx_crc {
 
     uint32_t crc;
     uint8_t idr;
+
+    Stm32Rcc* rcc;
 } f2xx_crc;
 
 #endif // STM32F2XX_CRC_H

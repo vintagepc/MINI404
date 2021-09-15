@@ -355,7 +355,7 @@ typedef struct Stm32Rcc Stm32Rcc;
 /* Checks if the specified peripheral clock is enabled.
  * Generates a hardware error if not.
  */
-void stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph);
+bool stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph);
 
 /* Sets the IRQ to be called when the specified peripheral clock changes
  * frequency. */
