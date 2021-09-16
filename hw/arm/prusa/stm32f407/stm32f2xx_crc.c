@@ -130,7 +130,7 @@ f2xx_crc_read(void *arg, hwaddr addr, unsigned int size)
         }
         else
         {
-            return 0xFFFFFFFFU;
+            return 0;
         }
     case R_CRC_IDR:
         return s->idr;
