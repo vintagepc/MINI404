@@ -1,7 +1,7 @@
 #include "stm32_rcc.h"
 /* PUBLIC FUNCTIONS */
 
-void stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph)
+bool stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph)
 {
     Clk_p clk = &s->PERIPHCLK[periph];
 
@@ -14,7 +14,9 @@ void stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph)
          */
         printf("Warning: You are attempting to use the stm32_rcc peripheral while "
                  "its clock is disabled.\n");
+        return false;
     }
+    return true;
 }
 
 void stm32_rcc_set_periph_clk_irq(

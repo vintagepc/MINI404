@@ -418,6 +418,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     sysbus_mmio_map(busdev, 0, 0x40002800);
 
     dev = DEVICE(&s->crc);
+    s->crc.rcc = (Stm32Rcc*)&s->rcc;
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->crc),errp))
         return;
     busdev = SYS_BUS_DEVICE(dev);
