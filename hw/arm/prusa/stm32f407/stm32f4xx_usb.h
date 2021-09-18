@@ -228,7 +228,7 @@ typedef union {
         uint32_t _unused; // 0x518 Padding (HCDMAB on DWC2)
         uint32_t _unused2; // 0x51C padding
     }defs;
-} QEMU_PACKED hreg_set_t;
+} hreg_set_t;
 
 struct STM32F4xxUSBState {
     /*< private >*/
