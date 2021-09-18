@@ -63,6 +63,7 @@
 #define CHECK_PRI(x,y)  #x" != "#y                      
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
 #define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg " size incorrect!")
+#define CHECK_TYPEDEF_u32(type,reg) CHECK_ALIGN(sizeof(((type*)0)->reg),sizeof(uint32_t),#reg " size incorrect!")
 
 #define REG_S32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED 
 #define REG_B32(name) uint32_t name :1
