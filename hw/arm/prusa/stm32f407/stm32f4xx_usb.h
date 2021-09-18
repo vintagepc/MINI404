@@ -564,7 +564,7 @@ struct STM32F4xxUSBState {
 
     uint8_t device_state;
 
-    pthread_t usbip_thread;
+    //pthread_t usbip_thread;
 
     bool debug;
 
