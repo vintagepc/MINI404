@@ -39,6 +39,7 @@
 #include "net/net.h"
 #include "hw/net/mii.h"
 #include "qom/object.h"
+#include "../utility/macros.h"
 
 #ifdef DEBUG_STM32F4XXETH
 #define DEBUGF_BRK(message, args...) do { \
@@ -173,9 +174,11 @@ struct Stm32F4xx_Eth {
             struct {
                 uint32_t    MB :1;
                 uint32_t    MW :1;
-                uint32_t    CR :4;
+                uint32_t    CR :3;
+                REG_B32(_unused);
                 uint32_t    MR :5;
                 uint32_t    PA :5;
+                uint32_t    :16;
             } QEMU_PACKED MACMIIAR;
             struct {
                 uint32_t    MD :16;
@@ -463,6 +466,9 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
 {
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     Stm32F4xx_Eth *s = STM32F4XXETH(dev);
+
+    CHECK_REG_u32(s->defs.MACMIIAR);
+    CHECK_REG_u32(s->defs.MACMIIDR);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &enet_mem_ops, s,
                           "stm32-eth", 0x1400);
