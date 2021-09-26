@@ -32,6 +32,8 @@
 #include "qapi/error.h"
 #include "stm32f4xx_usb.h"
 #include "hw/usb/dwc2-regs.h"
+#include "../utility/usbip_server.h"
+#include "../utility/usbip.h"
 
 #undef DCTL
 #undef DCFG
@@ -81,6 +83,7 @@ int  bsize=0;
 
 #define DEV_ADDR  4U
 static const uint32_t DEV_SETADDR[] = {0x000C0040,  (0x00000500 | (DEV_ADDR<<16)), 0x00000000};
+// static const uint32_t DEV_GETDEV[] = {0x000C0040, 0x01000680, 0x00120000};
 static const uint32_t DEV_GETDESC[] = {0x000C0040, 0x03020680, 0x00FF0000};
 static const uint32_t DEV_GETDESC2[] = {0x000C0040, 0x03010680, 0x00FF0000};
 static const uint32_t DEV_GETDESC3[] = {0x000C0040, 0x03030680, 0x00FF0000};
@@ -94,6 +97,33 @@ static const uint32_t DEV_OUT_AT[] = {0x00040021, 0x00000a0d};
 
 #define DEVSTATE(name) DEV_ST_##name, DEV_ST_##name##_WAIT,
 
+typedef union {
+    uint32_t raw;
+    struct {
+        uint32_t CHNUM :4;
+        uint32_t BCNT :11;
+        uint32_t DPID :2;
+        uint32_t PKTSTS :4;
+        uint32_t :11;
+    } HOST QEMU_PACKED;
+    struct {
+        uint32_t EPNUM :4;
+        uint32_t BCNT :11;
+        uint32_t DPID :2;
+        uint32_t PKTSTS :4;
+        uint32_t FRMNUM :4;
+        uint32_t :6;
+        REG_B32(INCOMPLETE); // NB- this isn't used by the device, rather by us to handle multi-packet IN transfers.
+    } DEV QEMU_PACKED;
+} buffer_header_t;
+
+enum {
+    BUFFER_PKTSTS_GNAK = 1U,
+    BUFFER_PKTSTS_OUT = 2U,
+    BUFFER_PKTSTS_OUTCPLT = 3U, 
+    BUFFER_PKTSTS_SETUPCPLT = 4U,
+    BUFFER_PKTSTS_SETUP = 6U
+};
 
 enum {
     DEVSTATE(RESET)
@@ -105,6 +135,8 @@ enum {
     DEVSTATE(LINECODING)
     DEVSTATE(LINECODING_DATA)
     DEVSTATE(SETCTLLINE)
+    DEV_ST_USBIP,
+    DEVSTATE(USBIP_DATA)
     DEV_ST_IO_READY,
     DEVSTATE(IO)
 };
@@ -236,28 +268,32 @@ static inline void STM32F4xx_update_device_common_irq(STM32F4xxUSBState *s)
             raise_irq |= (s->dregi[i].raw[R_OFF_DEPINT]& DIEPMSK_TXFIFOEMPTY);
         }
     }
-    if (common_val^s->dreg0[R_DAINT-R_DCFG]) 
+    // if (common_val^s->dreg0[R_DAINT-R_DCFG]) 
     {
         // There's a change in the common reg. Update global accordingly. 
         s->dreg0[R_DAINT-R_DCFG] = common_val;
-        if (!raise_irq)  // Stop here if IRQs are masked.
+        // if (!raise_irq)  // Stop here if IRQs are masked.
+        // {
+        //     return;
+        // }
+        if (raise_irq && (s->dreg_defs.DAINT.OEPINT & s->dreg_defs.DAINTMSK.OEPM)) 
         {
-            return;
-        }
-        if (s->dreg_defs.DAINT.OEPINT & s->dreg_defs.DAINTMSK.OEPM) 
-        {
+            printf("Raising OEPINT\n");
             STM32F4xx_raise_global_irq(s, GINTSTS_OEPINT);
         }
         else 
         {
+            printf("Lowering OEPINT\n");
             STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
         }
-        if (s->dreg_defs.DAINT.IEPINT & s->dreg_defs.DAINTMSK.IEPM) 
+        if (raise_irq && (s->dreg_defs.DAINT.IEPINT & s->dreg_defs.DAINTMSK.IEPM))
         {
+            printf("Raising IEPINT\n");
             STM32F4xx_raise_global_irq(s, GINTSTS_IEPINT);
         }
         else 
         {
+            printf("Lowering IEPINT\n");
             STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
         }
     }
@@ -267,6 +303,7 @@ static inline void STM32F4xx_raise_device_ep_out_irq(STM32F4xxUSBState *s, int e
 {
     if (!(s->drego[ep].raw[R_OFF_DEPINT] & dev_intr)) 
     {
+        printf ("EP out %d %06X v-> %06X\n", ep,  s->drego[ep].raw[R_OFF_DEPINT], s->drego[ep].raw[R_OFF_DEPINT] | ~dev_intr);
         s->drego[ep].raw[R_OFF_DEPINT] |= dev_intr;
         STM32F4xx_update_device_common_irq(s);
     }
@@ -276,6 +313,7 @@ static inline void STM32F4xx_lower_device_ep_out_irq(STM32F4xxUSBState *s, int e
 {
     if (s->drego[ep].raw[R_OFF_DEPINT] & dev_intr) 
     {
+        printf ("EP out %d %06X v-> %06X\n", ep,  s->drego[ep].raw[R_OFF_DEPINT], s->drego[ep].raw[R_OFF_DEPINT] & ~dev_intr);
         s->drego[ep].raw[R_OFF_DEPINT] &= ~dev_intr;
         STM32F4xx_update_device_common_irq(s);
     }
@@ -285,6 +323,7 @@ static inline void STM32F4xx_raise_device_ep_in_irq(STM32F4xxUSBState *s, int ep
 {
     if (!(s->dregi[ep].raw[R_OFF_DEPINT] & dev_intr)) 
     {
+        printf ("EP in %d %06X ^-> %06X\n", ep,  s->dregi[ep].raw[R_OFF_DEPINT], s->dregi[ep].raw[R_OFF_DEPINT] | ~dev_intr);
         s->dregi[ep].raw[R_OFF_DEPINT] |= dev_intr;
         STM32F4xx_update_device_common_irq(s);
     }
@@ -294,6 +333,7 @@ static inline void STM32F4xx_lower_device_ep_in_irq(STM32F4xxUSBState *s, int ep
 {
     if (s->dregi[ep].raw[R_OFF_DEPINT] & dev_intr) 
     {
+        printf ("EP in %d %06X v-> %06X\n", ep,  s->dregi[ep].raw[R_OFF_DEPINT], s->dregi[ep].raw[R_OFF_DEPINT] & ~dev_intr);
         s->dregi[ep].raw[R_OFF_DEPINT] &= ~dev_intr;
         STM32F4xx_update_device_common_irq(s);
     }
@@ -427,13 +467,8 @@ static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, co
     }
 }
 
-// Responsible for the initial handshake once device mode is enabled. 
-static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s) 
+static void f4xx_usb_cdc_setup_chardev(STM32F4xxUSBState *s) 
 {
-    if (!qemu_chr_fe_backend_connected(&s->cdc)) {
-        return;
-    }
-
     if (s->debug) printf("USB CDC enable state: %u\n", s->device_state);
     switch (s->device_state) {
         case DEV_ST_RESET:
@@ -495,7 +530,14 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             s->fifo_level[0]=0;
             s->fifo_tail[0]=0;
             s->dregi[0].DIEPCTL.EPENA = 0;
-            s->device_state++;
+            if (s->cdc_mode == CDC_CHARDEV) 
+            {
+                s->device_state++;
+            }
+            else
+            {
+                s->device_state = DEV_ST_USBIP;
+            }
             STM32F4xx_cdc_schedule(s);
         break;
         case DEV_ST_SETCFG:
@@ -543,7 +585,8 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         case DEV_ST_SETCTLLINE_WAIT:
             qemu_chr_fe_write_all(&s->cdc, (const uint8_t*)"Control line set\r\n",18);
             s->device_state++;
-            STM32F4xx_cdc_schedule(s);
+            // STM32F4xx_cdc_schedule(s);
+            timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
             break;
         case DEV_ST_IO_READY:
             STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
@@ -596,15 +639,210 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
             s->device_state--;
         break;
+    }
+}
+
+static void f4xx_usb_cdc_setup_usbip(STM32F4xxUSBState *s) 
+{
+    //if (s->debug) printf("USB CDC usbip enable state: %u\n", s->device_state);
+    switch (s->device_state) {
+        case DEV_ST_RESET:
+        {
+            STM32F4xx_raise_global_irq(s, GINTSTS_CONIDSTSCHNG | GINTSTS_USBRST | GINTSTS_ENUMDONE);
+            s->device_state = DEV_ST_RESET_WAIT;
+        }
+        break;
+        case DEV_ST_SETUP:
+        {
+            s->device_state = DEV_ST_SETUP_WAIT;
+            // Construct ctl set address packet:
+            f4xx_usb_cdc_sendpkt(s, DEV_SETADDR, sizeof(DEV_SETADDR)/sizeof(uint32_t));
+            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+            STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
+            if (s->debug) printf("Setup address packet sent\n");
+        }
+        break;
+        case DEV_ST_SETUP_WAIT:
+            s->dregi[0].DIEPCTL.EPENA = 0;
+            s->device_state = DEV_ST_USBIP;
+            STM32F4xx_cdc_schedule(s);
+            break;
+        case DEV_ST_USBIP:
+            // Setup for USBIP thread:
+            if (s->usbip_thread)
+            {
+                printf("USBIP thread already running...\n");
+            }
+            else
+            {
+                printf("Starting USB IP thread...\n");
+                pthread_create(&s->usbip_thread, NULL, usbip_thread_run, (void*)&s->usbip_cfg);
+            }
+            s->device_state = DEV_ST_USBIP_DATA;
+            timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
+        break;
+        case DEV_ST_USBIP_DATA:
+        // Idle loop to check for new data:
+        {
+            bool has_data = false;
+            uint32_t data_len = 0;
+            bool do_ack = false;
+            pthread_mutex_lock(&s->usbip_rx_mtx);
+                data_len = s->usbip_rx_level;
+                if (data_len) 
+                {
+                    s->rx_fifo_head = 0;
+                    memcpy(&s->fifo_ram[s->rx_fifo_head], s->usbip_rx_buffer, s->usbip_rx_level*sizeof(uint32_t));
+                    s->usbip_rx_level = 0;
+                    has_data = true;
+                }
+            pthread_mutex_unlock(&s->usbip_rx_mtx);
+            if (has_data)
+            {
+                // There is data ready. Fire the interrupts. 
+                buffer_header_t h = {.raw = s->fifo_ram[s->rx_fifo_head]};
+                s->rx_fifo_level = data_len;
+                switch (h.DEV.PKTSTS)
+                {
+                    case BUFFER_PKTSTS_SETUP:
+                    {
+                        if (h.DEV.INCOMPLETE) 
+                        {
+                            s->device_state = DEV_ST_USBIP_DATA_WAIT;
+                            s->rx_next_packet = 3 + ((h.DEV.BCNT+3U)/4U);
+                        }
+                        STM32F4xx_raise_device_ep_out_irq(s,0,DOEPMSK_SETUPMSK);
+                        STM32F4xx_raise_global_irq(s,GINTSTS_RXFLVL);
+                    }
+                    break;
+                    case BUFFER_PKTSTS_SETUPCPLT:
+                        STM32F4xx_raise_global_irq(s,GINTSTS_RXFLVL);
+                        STM32F4xx_raise_device_ep_out_irq(s,0,DOEPMSK_SETUPMSK);
+                        break;
+                    case BUFFER_PKTSTS_OUT:
+                        STM32F4xx_raise_global_irq(s,GINTSTS_RXFLVL);
+                        STM32F4xx_raise_device_ep_out_irq(s,h.DEV.EPNUM,DOEPMSK_XFERCOMPLMSK);
+                        do_ack = h.DEV.EPNUM>0;
+                        break;
+                    default:
+                        printf("UNHANDLED PKTSTS for IRQ\n");
+                }
+
+            }
+            else 
+            {
+                // Only reschedule if no data in; outgoing transfer is setup by the TX fifo reaching the required level.
+            }
+            pthread_mutex_lock(&s->usbip_tx_mtx);
+            for (int ep=0; ep< STM32F4xx_NB_DEVCHAN; ep++) 
+            {
+                // Is there outgoing data?
+                if (s->fifo_level[ep] > 0 && s->fifo_level[ep] == s->usbip_pending_tx_size[ep])
+                {
+                    buffer_header_t h = {.raw = 0};
+                    h.DEV.EPNUM = ep;
+                    if (s->usbip_tx_level == 0) // For packets larger than EP max size, only put header on first buffer. 
+                    {
+                        h.DEV.BCNT = s->usbip_pending_tx_bytes[ep];
+                        s->usbip_tx_buffer[s->usbip_tx_level++] = h.raw;
+                    }
+                    else
+                    {
+                        h.raw = s->usbip_tx_buffer[0];
+                        if (s->debug) printf("Appending packet: %d ->",h.DEV.BCNT);
+                        h.DEV.BCNT += s->usbip_pending_tx_bytes[ep];
+                        if (s->debug) printf("%d \n",h.DEV.BCNT);
+                        s->usbip_tx_buffer[0] = h.raw;
+                    }
+                    for (int wcnt=0; wcnt<s->fifo_level[ep]; wcnt++) {
+                        s->usbip_tx_buffer[s->usbip_tx_level++] = (s->tx_fifos[ep][s->fifo_head[ep]+wcnt]);
+                    }
+                    // Reset the fifo.
+                    s->fifo_level[ep] = 0; 
+                    s->fifo_tail[ep] = 0;
+                    //memcpy(&s->usbip_tx_buffer[s->usbip_tx_level],&s->tx_fifos[i][s->fifo_head[i]], s->fifo_level[i]*sizeof(uint32_t));
+                    if (s->usbip_tx_wlen == h.DEV.BCNT || (ep == 0 && h.DEV.BCNT < 64U)) 
+                    {
+                        printf("Outgoing USBIP data on EP %d (%u words)\n", ep, h.DEV.BCNT);
+                        pthread_cond_signal(&s->usip_reply_ready);
+                    }
+                    else
+                    {
+                        // Fake fifo empty interruptso we can receive more packets.
+                        // TODO: figure out why this hack is necessary and the int is disabled after the first 64B
+                        printf("Second half transfer prep\n");
+                        //s->dreg_defs.INEPTXFEM |=1;
+                        STM32F4xx_raise_device_ep_in_irq(s, ep, DIEPMSK_TXFIFOEMPTY);
+                        STM32F4xx_raise_device_ep_in_irq(s, ep, DIEPMSK_XFERCOMPLMSK);
+                    }
+                } 
+                else if (do_ack || (s->dregi[ep].DIEPCTL.EPENA && s->dregi[ep].DIEPTSIZ.XFRSIZ == 0 && s->dregi[ep].DIEPTSIZ.PKTCNT > 0))
+                {
+                    // For ACKs that don't send data.
+                    s->usbip_tx_buffer[0] = 0;
+                    s->dregi[ep].DIEPCTL.EPENA = 0;
+                    s->dregi[ep].DIEPTSIZ.PKTCNT--;
+                    printf("Outgoing USBIP ack on EP %d\n", ep);
+                    pthread_cond_signal(&s->usip_reply_ready);
+
+                }
+                else 
+                {
+                    STM32F4xx_raise_device_ep_in_irq(s, ep, DIEPMSK_TXFIFOEMPTY);
+                }
+            }
+            pthread_mutex_unlock(&s->usbip_tx_mtx);
+
+        }
+        timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
+        break;
+        case DEV_ST_USBIP_DATA_WAIT:
+        {
+            if (s->rx_next_packet && s->rx_next_packet == s->rx_fifo_tail)
+            {
+                buffer_header_t h = {.raw = s->fifo_ram[s->rx_fifo_tail]};
+                if (!h.DEV.INCOMPLETE && h.DEV.PKTSTS == BUFFER_PKTSTS_OUT) {
+                    {
+                        printf("Second packet reached\n");
+                        STM32F4xx_raise_device_ep_out_irq(s,0,DOEPMSK_SETUPMSK);
+                        // STM32F4xx_raise_device_ep_out_irq(s,0,DOEPMSK_XFERCOMPLMSK);
+                        s->rx_next_packet = 0;
+                    }
+
+                }
+            }
+            else if (s->rx_fifo_level == 0)
+            {
+                // Resume normal operations, packets have been read.
+                printf("Second packet finished\n");
+                STM32F4xx_raise_device_ep_out_irq(s,0,DOEPMSK_XFERCOMPLMSK);
+                s->device_state = DEV_ST_USBIP_DATA;
+            }
+        }
+        timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
+        break;
         // default:            STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
 
 
     }
-    // Set address
-    // Get descroptors
-    // Set config
-    // Set line control
-    // Done - free to send/receive serial data.
+}
+
+// Responsible for the initial handshake once device mode is enabled. 
+static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s) 
+{
+    switch (s->cdc_mode)
+    {
+        case CDC_USBIP:
+            f4xx_usb_cdc_setup_usbip(s);
+            break;
+        case CDC_CHARDEV:
+            f4xx_usb_cdc_setup_chardev(s);
+            break;
+        default:
+        case CDC_NONE:
+            break;
+
+    }
 }
 
 static void STM32F4xx_cdc_helper(void* opaque) {
@@ -612,6 +850,98 @@ static void STM32F4xx_cdc_helper(void* opaque) {
 }
 
 // end CDC handlers.
+
+static void STM32F4xx_usbip_handle_packet(USBIPIF *self, USBIP_CMD_SUBMIT* cmd, USBIP_RET_SUBMIT* usb_req)
+{
+    printf("Handle packet called: Setup: %llx\n", cmd->setup);
+    STM32F4xxUSBState* s = STM32F4xx_USB(self);
+    buffer_header_t header;
+    char payload[255];
+    uint8_t payload_size = 0;
+    bool has_setup = false;
+    header.raw = 0;
+    header.DEV.EPNUM = usb_req->ep;
+    header.DEV.BCNT = usb_req->actual_length;
+    if (usb_req->direction && usb_req->ep == 0 && usb_req->actual_length == 0)
+    {
+        header.DEV.PKTSTS = BUFFER_PKTSTS_SETUP;
+        has_setup = true;
+    }
+    else if (!usb_req->direction && usb_req->ep == 0 && usb_req->actual_length == 0) 
+    {
+        if (cmd->transfer_buffer_length)
+        {
+            header.DEV.PKTSTS = BUFFER_PKTSTS_SETUP;
+            header.DEV.INCOMPLETE = 1;
+        }
+        else
+        {
+            header.DEV.PKTSTS = BUFFER_PKTSTS_SETUP;
+        }
+        has_setup = true;
+    }
+    else if (usb_req->ep == 2 || usb_req->direction == 1)
+    {
+        // temporarily ignore EP2 interrupts and IN bulk
+        return;
+    }
+    else if (usb_req->ep > 0 && usb_req->actual_length == 0)
+    {
+        header.DEV.PKTSTS = BUFFER_PKTSTS_OUT;
+    }
+    else
+    {
+        printf("UNHANDLED PKTSTS!\n");
+    }
+    if (cmd->transfer_buffer_length !=0 && cmd->direction == 0)
+    {
+        if (usbip_read_payload(&s->usbip_cfg, payload, cmd->transfer_buffer_length))
+        {
+            payload_size = cmd->transfer_buffer_length;
+        }
+        else
+        {
+            printf("XFER BUF LENGTH ERR\n");
+        }
+    }
+    uint32_t word_count = sizeof(usb_req->setup)/sizeof(uint32_t);
+    uint32_t* setup_words = (uint32_t*)&usb_req->setup;
+    pthread_mutex_lock(&s->usbip_rx_mtx);
+        s->usbip_rx_buffer[0] = header.raw;
+        if (has_setup) 
+        {
+            for (int i=0; i<word_count; i++)
+            {
+                s->usbip_rx_buffer[word_count-i] = ntohl(setup_words[i]);
+            }
+            // memcpy(&s->usbip_rx_buffer[1], &usb_req.setup, sizeof(usb_req.setup));
+            s->usbip_rx_level = 1U + word_count;
+        }
+        if (payload_size)
+        {
+            // Add the data as an immediate second packet.
+            assert(payload_size<255);
+            header.DEV.BCNT = payload_size;
+            header.DEV.INCOMPLETE = 0;
+            header.DEV.PKTSTS = BUFFER_PKTSTS_OUT;
+            s->usbip_rx_buffer[s->usbip_rx_level++] = header.raw;
+            memcpy(&s->usbip_rx_buffer[s->usbip_rx_level], payload, payload_size);
+            s->usbip_rx_level += ((payload_size+3)/4U);
+        }
+    pthread_mutex_unlock(&s->usbip_rx_mtx);
+    pthread_mutex_lock(&s->usbip_tx_mtx);
+    s->usbip_tx_wlen = cmd->transfer_buffer_length;
+    // if (reply_required) 
+    // {
+        pthread_cond_wait(&s->usip_reply_ready, &s->usbip_tx_mtx);
+    // }
+    //printf("Reply ready\n");
+    header.raw = s->usbip_tx_buffer[0];
+    usbip_send_reply(&s->usbip_cfg, usb_req, (char*)&s->usbip_tx_buffer[1],header.DEV.BCNT,0);
+    // Wipe data from buffer.
+    s->usbip_tx_level = 0;
+    pthread_mutex_unlock(&s->usbip_tx_mtx);
+}
 
 static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDevice *dev,
                                USBEndpoint *ep, uint32_t index, bool send)
@@ -1182,10 +1512,15 @@ static uint64_t STM32F4xx_glbreg_read(void *ptr, hwaddr addr, int index,
         s->glbreg[index] = val;
         break;
     case GRXSTSP:
-        if (s->debug) printf("RX fifo pop (STSP): %08x @ %u\n", s->fifo_ram[s->rx_fifo_head], s->rx_fifo_head);
+        if (s->debug) 
+            printf("RX fifo pop (STSP): %08x @ %u\n", s->fifo_ram[s->rx_fifo_head], s->rx_fifo_head);
         if(s->rx_fifo_level>0) {
             val = s->fifo_ram[s->rx_fifo_head++];
             s->rx_fifo_level--;
+            if (s->rx_fifo_level == 0)
+            {
+                STM32F4xx_lower_global_irq(s,GINTSTS_RXFLVL);
+            }
         } // else: val will be 0 from s->GRXSTSP;
         break;
     case GRXSTSR:
@@ -1303,6 +1638,8 @@ static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t v
         {
             printf("FIXME: USB dma not implemented!\n");
         }
+        if (val & GAHBCFG_NP_TXF_EMP_LVL)
+            printf("FIXME: TXFE flag w/ half-empty config\n");
         break;
     case GUSBCFG: 
         if (val & GUSBCFG_FORCEDEVMODE) {
@@ -1658,7 +1995,16 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
                 //DC connected, start setup. 
                 if (s->dreg_defs.DCTL.SDIS) {
                     s->device_state = DEV_ST_RESET;
-                } else {
+                } else if (!s->usbip_cfg.self) {
+                    if (qemu_chr_fe_backend_connected(&s->cdc))
+                    {
+                        s->cdc_mode = CDC_CHARDEV;
+                    } 
+                    else
+                    {
+                        s->usbip_cfg.self = USBIP_SERVER(s);
+                        s->cdc_mode = CDC_USBIP;
+                    }
                     f4xx_usb_cdc_setup(s);
                 }
             }
@@ -1672,9 +2018,17 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
         case R_DIEPEMPMSK:
            // printf("EPEMPMSK Write: %08x -> %"PRIx64" to addr %"HWADDR_PRIx"\n",s->dreg0[index] , val, addr<<2);
             s->dreg0[index] = val;
-            if ((s->device_state >= DEV_ST_IO_READY) && (val&2U)) 
+            uint8_t mask = val & 0xFU;
+            if ((s->device_state > DEV_ST_SETCTLLINE_WAIT) && mask) 
             {
-                STM32F4xx_raise_device_ep_in_irq(s, 1, DIEPMSK_TXFIFOEMPTY);
+                for (int i=0; i<STM32F4xx_NB_DEVCHAN; i++)
+                {
+                    if (mask & (1U << i)) {
+                        STM32F4xx_raise_device_ep_in_irq(s, i, DIEPMSK_TXFIFOEMPTY);
+                    } else {
+                        STM32F4xx_lower_device_ep_in_irq(s, i, DIEPMSK_TXFIFOEMPTY);
+                    }
+                }
             }
             // else if (s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0) 
             // {
@@ -1748,6 +2102,7 @@ static void STM32F4xx_dregout_write(void *ptr, hwaddr addr, int index,
             }
             break;
         case R_OFF_DEPINT: // DOEPINT
+            printf("DREGout int write %"PRIX64"\n",val);
             s->drego[chan].raw[offset] &= ~val;
             STM32F4xx_update_device_common_irq(s);
             break;
@@ -1768,11 +2123,17 @@ static uint64_t STM32F4xx_dregin_read(void *ptr, hwaddr addr, int index,
     assert(chan<=4);
     assert(offset <=0x20);
 
-    val = s->dregi[chan].raw[offset];
+
     switch (offset) {
         case R_OFF_DTXFSTS:
             val = STM32F4xx_EP_FIFO_SIZE - s->fifo_level[chan];
             break;
+        case R_OFF_DEPINT:
+            s->dregi[chan].DIEPINT.TXFE = s->fifo_level[chan] == 0;
+            printf("DEPINT read %d: %"PRIx32"\n",chan, s->dregi[chan].raw[offset]);
+            /* FALLTHRU */
+        default:
+            val = s->dregi[chan].raw[offset];
     }
 
     //printf("DREGIN read: %"HWADDR_PRIx ": %"PRIx32" \n", addr, val );
@@ -1974,6 +2335,8 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     // %size ensures we automatically loop back around. 
     s->fifo_tail[index] %= STM32F4xx_EP_FIFO_SIZE;
     s->fifo_level[index]++;
+    printf("TX fifo write EP %u val %08"PRIx64"\n",index,val);
+    STM32F4xx_lower_device_ep_in_irq(s, index, DIEPMSK_TXFIFOEMPTY);
     assert(s->fifo_tail[index]<STM32F4xx_EP_FIFO_SIZE); // laziness ftw
     uint32_t bytes_needed;
     int packets_left;
@@ -1990,6 +2353,8 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     {
         words_needed++;
     }
+    s->usbip_pending_tx_size[index] = words_needed;
+
     if ( (s->fifo_level[index]) >= words_needed && packets_left>0) {
         // Enough data written to do a transfer...
         //printf("Data ready for tx on %u\n", index);
@@ -1997,6 +2362,7 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
             // NOT CDC hack
             STM32F4xx_tx_packet(s, index<<3);
         } else {
+            s->usbip_pending_tx_bytes[index] = bytes_needed;
             STM32F4xx_cdc_schedule(s);
         }
     }
@@ -2134,6 +2500,10 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
     s->rx_fifo_tail = 0;
     s->rx_fifo_level = 0;
 
+    STM32F4xx_update_device_common_irq(s);
+
+    s->device_state = DEV_ST_RESET;
+
     
 }
 
@@ -2261,10 +2631,11 @@ static void STM32F4xx_init(Object *obj)
     // memory_region_add_subregion(&s->container, 0x20000, &s->dma_mr);
     //memory_region_init_io(&s->dma_mr, obj, NULL, s, "f4xx-usb.dma", 0x1FFFF);
 
-    // printf("Starting USB IP thread...\n");
-    // pthread_create(&s->usbip_thread, NULL, usbip_run, NULL);
-
-
+    pthread_mutex_init(&s->usbip_rx_mtx, NULL);
+    pthread_mutex_init(&s->usbip_tx_mtx, NULL);
+    pthread_cond_init(&s->usip_reply_ready, NULL);
+    s->usbip_cfg.port = 3240;
+    // s->usbip_cfg.self = USBIP_SERVER(obj);
 }
 
 static const VMStateDescription vmstate_STM32F4xx_state_packet = {
@@ -2349,6 +2720,9 @@ static void STM32F4xx_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, STM32F4xx_usb_properties);
     resettable_class_set_parent_phases(rc, STM32F4xx_reset_enter, STM32F4xx_reset_hold,
                                        STM32F4xx_reset_exit, &c->parent_phases);
+
+    USBIPServerClass *sc = USBIP_SERVER_CLASS(dc);
+    sc->usbip_handle_packet = STM32F4xx_usbip_handle_packet;                                       
 }
 
 static const TypeInfo STM32F4xx_usb_type_info = {
@@ -2358,6 +2732,10 @@ static const TypeInfo STM32F4xx_usb_type_info = {
     .instance_init = STM32F4xx_init,
     .class_size    = sizeof(STM32F4xxClass),
     .class_init    = STM32F4xx_class_init,
+    .interfaces = (InterfaceInfo[]) {
+        { TYPE_USBIP_SERVER },
+        { }
+    }
 };
 
 static void STM32F4xx_usb_register_types(void)

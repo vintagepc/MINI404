@@ -44,6 +44,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/ScriptHost.cpp',
         'utility/p404_script_console.c',
         'utility/p404scriptable.c',
+        'utility/usbip_server.c',
     ))
 
 # Required if using Message queue IPC

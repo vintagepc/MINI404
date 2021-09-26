@@ -31,6 +31,8 @@
 #include "qom/object.h"
 #include "hw/qdev-properties-system.h"
 #include "../utility/macros.h"
+#include "pthread.h"
+#include "../utility/usbip_server.h"
 
 #define STM32F4xx_MMIO_SIZE      0xCFFF // CSRs and FIFOs
 
@@ -161,7 +163,7 @@ typedef union {
     struct {
         depctl_t DIEPCTL; // 0x900
         uint32_t _unused;  // 0x904
-        doepint_t DIEPINT; // 0x908
+        diepint_t DIEPINT; // 0x908
         uint32_t _unused2; // 0x90C
         deptsiz_t DIEPTSIZ; // 0x910
         uint32_t _unused3;// 0x914
@@ -563,8 +565,25 @@ struct STM32F4xxUSBState {
     uint8_t is_ping;
 
     uint8_t device_state;
+    uint8_t rx_next_packet;
 
-    //pthread_t usbip_thread;
+    // ALERT: this stuff crosses thread boundaries!
+        pthread_t usbip_thread;
+        pthread_mutex_t usbip_rx_mtx;
+        uint32_t usbip_rx_buffer[STM32F4xx_EP_FIFO_SIZE];
+        uint32_t usbip_rx_level;
+        uint32_t usbip_tx_wlen;
+        pthread_mutex_t usbip_tx_mtx;
+        uint32_t usbip_tx_buffer[STM32F4xx_EP_FIFO_SIZE];
+        uint32_t usbip_tx_level;
+        uint16_t usbip_pending_tx_size[STM32F4xx_NB_CHAN];
+        uint16_t usbip_pending_tx_bytes[STM32F4xx_NB_CHAN];
+        pthread_cond_t usip_reply_ready;
+        usbip_cfg_t usbip_cfg;
+    // END ALERT
+
+
+    uint8_t cdc_mode;
 
     bool debug;
 
@@ -572,6 +591,12 @@ struct STM32F4xxUSBState {
 
     CharBackend cdc;
 
+};
+
+enum {
+    CDC_NONE = 0,
+    CDC_CHARDEV,
+    CDC_USBIP,
 };
 
 struct STM32F4xxClass {
