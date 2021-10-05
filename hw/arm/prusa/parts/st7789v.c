@@ -222,7 +222,7 @@ static void st7789v_write_png(st7789v_state *s, const char* file)
 {
     FILE *handle = fopen(file, "wb");
     if (!handle)
-        printf("Screenshot failed - could not open file %s\n",file);
+        printf("Screenshot failed - could not open file %s (%s)\n",file, strerror(errno));
     
     png_structrp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
 
