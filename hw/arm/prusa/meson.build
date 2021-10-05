@@ -20,13 +20,9 @@ if libglut.found() and libglu.found() and libglew.found() and libgl.found()
     subdir('assets')
 else
     message('OpenGL libraries not found. Install development packages for freeglut, glew, and mesa and re-run configure.')
-
 endif
 
-
-
 subdir('stm32f407')
-
 
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
@@ -45,6 +41,3 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/p404_script_console.c',
         'utility/p404scriptable.c',
     ))
-
-# Required if using Message queue IPC
-
