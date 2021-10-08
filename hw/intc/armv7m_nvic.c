@@ -2834,7 +2834,13 @@ static void armv7m_nvic_realize(DeviceState *dev, Error **errp)
     /* include space for internal exception vectors */
     s->num_irq += NVIC_FIRST_IRQ;
 
+#ifdef CONFIG_PRUSA_STM32_HACKS
+    // TODO: change to a priority to be overridden in the final target
+    // as done for num-irq above
+    s->num_prio_bits = 4;
+#else
     s->num_prio_bits = arm_feature(&s->cpu->env, ARM_FEATURE_V7) ? 8 : 2;
+#endif
 
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->systick[M_REG_NS]), errp)) {
         return;
