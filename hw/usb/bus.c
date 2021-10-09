@@ -444,15 +444,18 @@ void usb_claim_port(USBDevice *dev, Error **errp)
         }
     } else {
         // HACK ALERT - disable addition of hubs, mini doesn't like them!
-#ifndef CONFIG_PRUSA_STM32_HACKS
+#ifdef CONFIG_PRUSA_STM32_HACKS
+        if (false)  {
+#else
         if (bus->nfree == 1 && strcmp(object_get_typename(OBJECT(dev)), "usb-hub") != 0) {
+#endif 
             /* Create a new hub and chain it on */
             hub = usb_try_new("usb-hub");
             if (hub) {
                 usb_realize_and_unref(hub, bus, NULL);
             }
         }
-#endif 
+        
         if (bus->nfree == 0) {
             error_setg(errp, "tried to attach usb device %s to a bus "
                        "with no free ports", dev->product_desc);
