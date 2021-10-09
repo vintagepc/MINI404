@@ -45,3 +45,4 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
 # Use CONFIG_PRUSA_STM32_HACKS when building our target to enable our specific workarounds
 prusa_hacks = declare_dependency(compile_args: '-DCONFIG_PRUSA_STM32_HACKS')
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [prusa_hacks])
+softmmu_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [prusa_hacks])
