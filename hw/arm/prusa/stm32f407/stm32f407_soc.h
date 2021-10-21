@@ -46,6 +46,7 @@
 #include "stm32f4xx_spi.h"
 #include "stm32f2xx_tim.h"
 #include "stm32f4xx_otp.h"
+#include "stm32f4xx_rng.h"
 #include "stm32f4xx_usb.h"
 #include "hw/arm/armv7m.h"
 #include "stm32_uart.h"
@@ -125,6 +126,8 @@ struct STM32F407State {
     // TMC2209UsartState usart2;
 
     Stm32f4xx_OTP otp;
+
+    Stm32f4xxRNGState rng;
 
     MemoryRegion sram;
     MemoryRegion flash;
