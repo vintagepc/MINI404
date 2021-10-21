@@ -85,6 +85,8 @@ static const int i2c_er_irq[] = { 32, 34, 73, 96};
 static const int dma1_irq[] = { 11,12,13,14,15,16,17, 47 };
 static const int dma2_irq[] = { 56, 57, 58, 59, 60, 68, 69, 70 };
 
+#define HASH_RNG_IRQ 80
+
 static void stm32f407_soc_initfn(Object *obj)
 {
     STM32F407State *s = STM32F407_SOC(obj);
@@ -155,6 +157,9 @@ static void stm32f407_soc_initfn(Object *obj)
     //                             OBJECT(&s->temp_usb));
 
     object_initialize_child(obj, "otp", &s->otp, TYPE_STM32F4XX_OTP);
+
+    object_initialize_child(obj, "rng", &s->rng, TYPE_STM32F4XX_RNG);
+
 
 }
 
@@ -456,6 +461,16 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x1FFF7800);
 
+    // RNG @ 0x50060800;
+    dev = DEVICE(&s->rng);
+    s->rng.rcc = (Stm32Rcc*)&s->rcc;;
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->rng),errp))
+        return;
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, 0x50060800);
+    // sysbus_connect_irq(SYS_BUS_DEVICE(&s->rng), 0, qdev_get_gpio_in(armv7m, HASH_RNG_IRQ));
+
+
     // ITM@ (0xE0000000UL) 
     dev = DEVICE(&s->itm);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->itm),errp))
@@ -535,7 +550,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 //    create_unimplemented_device("USB OTG HS",  0x40040000, 0x30000);
     create_unimplemented_device("USB OTG FS",  0x50000000, 0x31000); // Note - FS is the serial port/micro-usb connector
     create_unimplemented_device("DCMI",        0x50050000, 0x400);
-    create_unimplemented_device("RNG",         0x50060800, 0x400);
+    // create_unimplemented_device("RNG",         0x50060800, 0x400);
     create_unimplemented_device("SYSRAM/RSVD",         0x1FFF0000, 0x8000);
     // create_unimplemented_device("OTP",         0x1FFF7800, 0x21F);
   //  create_unimplemented_device("EXTERNAL",    0xA0000000, 0x3FFFFFFF);
