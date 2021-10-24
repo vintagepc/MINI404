@@ -121,7 +121,7 @@ class ScriptHost: public IScriptable
 		//We can't register ourselves as a scriptable so just fake it with a processing func.
 		LineStatus ProcessAction(unsigned int ID, const std::vector<std::string> &vArgs) override;
 
-		ScriptHost():IScriptable("ScriptHost"){}
+		ScriptHost():IScriptable("ScriptHost", false){}
 
         ~ScriptHost();
 

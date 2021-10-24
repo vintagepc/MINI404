@@ -34,7 +34,7 @@ KeyController& KeyController::GetController()
 }
 
 
-KeyController::KeyController():Scriptable("KeyCtl")
+KeyController::KeyController():Scriptable("KeyCtl", false)
 {
 	RegisterAction("Key","Simulates a keypress",0, {ArgType::String});
 }

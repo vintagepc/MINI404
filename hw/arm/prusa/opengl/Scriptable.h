@@ -31,7 +31,7 @@ class Scriptable: public IScriptable
 {
 	friend ScriptHost;
     public:
-		explicit Scriptable(const std::string &strName="Unnamed"):IScriptable(strName){};
+		explicit Scriptable(const std::string &strName="Unnamed", bool bCanDelete = true):IScriptable(strName,bCanDelete){};
 
     protected:
 		// Registers a new no-argument Scriptable action with the given function, description, and an ID that will be

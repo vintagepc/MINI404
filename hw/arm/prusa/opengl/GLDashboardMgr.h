@@ -68,6 +68,8 @@ class GLDashboardMgr
 
         int m_iWindow = 0;
         pthread_t m_glThread;
+        pthread_cond_t m_glReady;
+        pthread_mutex_t m_glMtx;
 
         void (*m_fcnTimer)(int i) = nullptr;
 

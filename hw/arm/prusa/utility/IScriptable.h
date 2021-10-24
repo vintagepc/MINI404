@@ -54,7 +54,7 @@ class IScriptable
 	friend ScriptHost;
 	//friend TelemetryHost;
     public:
-		explicit IScriptable(std::string strName, P404ScriptIF *obj = nullptr):m_strName(std::move(strName)),m_obj(obj){}
+		explicit IScriptable(std::string strName, bool bCanDelete = true, P404ScriptIF *obj = nullptr):m_strName(std::move(strName)),m_obj(obj),m_bCanDelete(bCanDelete){}
         virtual ~IScriptable() = default;
 
 	enum class LineStatus
@@ -100,10 +100,14 @@ class IScriptable
 
 		static const std::map<ArgType,std::string>& GetArgTypeNames();
 
+        // Is it safe for ScriptHost to clean up this class?
+        virtual bool CanBeDeleted() { return m_bCanDelete; }
+
     private:
 		std::string m_strName;
         P404ScriptIF *m_obj;
 		bool m_bRegistered = false;
+        bool m_bCanDelete = true;
 		std::map<unsigned int, std::vector<ArgType>> m_ActionArgs;
 		std::map<std::string, unsigned int> m_ActionIDs;
 		std::map<unsigned int,std::string> m_mHelp;

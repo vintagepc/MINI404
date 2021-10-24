@@ -116,7 +116,13 @@ GLDashboardMgr::~GLDashboardMgr() {
 
 void GLDashboardMgr::Start() {
 	auto fcnRun = [](void *p) { return g_pGLDashboardMgr->RunThread(p); };
+	pthread_cond_init(&m_glReady, nullptr);
+	pthread_mutex_init(&m_glMtx, nullptr);
 	pthread_create(&m_glThread, nullptr, fcnRun, nullptr);
+	// Wait for the GL thread to start so that the script host can be set up. 
+	pthread_mutex_lock(&m_glMtx);
+	pthread_cond_wait(&m_glReady, &m_glMtx);
+	pthread_mutex_unlock(&m_glMtx);
 }
 
 void GLDashboardMgr::UpdateMotor(int motor, int pos) {
@@ -285,6 +291,7 @@ void* GLDashboardMgr::RunThread(void *p) {
 		default:
 			break;
 	}
+	pthread_cond_signal(&m_glReady);
 	glutMainLoop();
 	return p;
 }

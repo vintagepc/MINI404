@@ -95,7 +95,7 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 
 ScriptHost::~ScriptHost() {
 	for (auto &p: m_clients) {
-		if (p.second!=this) { // Don't delete ourselves!
+		if (p.second->CanBeDeleted()) { // Don't delete things we shouldn't - ourselves, statics...
 			std::cout << "Freeing " << p.first << "\n";
 			delete p.second;
 		}
