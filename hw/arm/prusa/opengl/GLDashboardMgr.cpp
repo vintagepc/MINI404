@@ -155,8 +155,9 @@ void GLDashboardMgr::UpdateMotorStall(int motor, int pos) {
 
 void GLDashboardMgr::UpdateIndicator(int iInd, int level) {
 	bool bIsFan = iInd == DB_IND_EFAN || iInd == DB_IND_PFAN;
+	bool bIsDigital = iInd == DB_IND_FSENS || iInd == DB_IND_ZPROBE;
 	if (iInd>=0 && iInd<DB_IND_COUNT) {
-		m_indicators.at(iInd)->SetValue(gsl::narrow<uint8_t>(level));
+		m_indicators.at(iInd)->SetValue(gsl::narrow<uint8_t>(bIsDigital ? level*255U : level));
 
 		if (m_p3DVis) {
 			m_p3DVis->OnBoolChanged(iInd, bIsFan ? level : level>0);

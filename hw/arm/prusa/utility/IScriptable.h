@@ -54,7 +54,8 @@ class IScriptable
 	friend ScriptHost;
 	//friend TelemetryHost;
     public:
-		explicit IScriptable(std::string strName, bool bCanDelete = true, P404ScriptIF *obj = nullptr):m_strName(std::move(strName)),m_obj(obj),m_bCanDelete(bCanDelete){}
+        explicit IScriptable(std::string strName, P404ScriptIF *obj = nullptr):m_strName(std::move(strName)),m_obj(obj),m_bCanDelete(true){}
+		explicit IScriptable(std::string strName, bool bCanDelete = true):m_strName(std::move(strName)),m_obj(nullptr),m_bCanDelete(bCanDelete){}
         virtual ~IScriptable() = default;
 
 	enum class LineStatus
