@@ -21,6 +21,7 @@
 
 #include "KeyController.h"
 #include "IKeyClient.h"
+#include <algorithm>
 #include <iostream>
 #include <scoped_allocator>  // for allocator_traits<>::value_type
 #include <string>
@@ -33,6 +34,58 @@ KeyController& KeyController::GetController()
 	return k;
 }
 
+
+KeyController::~KeyController() {
+	// Remove the pointers too.
+	for (auto &p: m_vAllClients) {
+		delete p;
+	}
+}
+
+extern "C"
+{
+	extern void p404_keyctl_handle_key(int keycode)
+	{
+		KeyController::GetController().OnKeyPressed_C(keycode);
+	}
+}
+
+void KeyController::AddNewClient_C(IKeyClient* src)
+{
+	if (!std::count(m_vAllClients.begin(), m_vAllClients.end(), src))
+	{
+		m_vAllClients.push_back(src);
+	}
+}
+
+void KeyController::OnKeyPressed_C(int keycode)
+{
+	// Maps qemu keys to standard character types:
+	if (keycode == 42) 
+	{
+		m_bShift = true;
+	}
+	else if (keycode == 170)
+	{
+		m_bShift = false;
+	}	
+	else if (!m_qemu2char.count({keycode, m_bShift}))
+	{
+		// std::cout << "KeyController: Unknown QEMU keycode " << std::to_string(keycode) << "\n";
+	}
+	else if (m_mClients.count(m_qemu2char.at({keycode, m_bShift})))
+	{
+		auto key = m_qemu2char.at({keycode, m_bShift});
+		for (auto c : m_mClients.at(key))
+		{
+			if (c->IsP404KeyInput()) // This can happen here because it's already the same thread, and the GL event loop may not be running.
+			{
+				c->OnKeyPress(key);
+			}
+		}
+		KeyController::GetController().OnKeyPressed(m_qemu2char.at({keycode, m_bShift}));
+	}
+}
 
 KeyController::KeyController():Scriptable("KeyCtl", false)
 {
@@ -100,7 +153,10 @@ void KeyController::OnAVRCycle()
 		std::vector<IKeyClient*>& vClients = m_mClients.at(key);
 		for (auto c: vClients)
 		{
-			c->OnKeyPress(key);
+			if (!c->IsP404KeyInput())
+			{
+				c->OnKeyPress(key);
+			}
 		}
 	}
 }

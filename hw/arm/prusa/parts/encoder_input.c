@@ -22,6 +22,7 @@
 
 #include "qemu/osdep.h"
 #include "../utility/p404scriptable.h"
+#include "../utility/p404_keyclient.h"
 #include "../utility/macros.h"
 #include "../utility/ScriptHost_C.h"
 #include "../utility/ArgHelper.h"
@@ -63,32 +64,26 @@ enum {
     ACT_RESET
 };
 
-static void encoder_input_keyevent(void *opaque, int keycode)
+static void encoder_input_handle_key(P404KeyIF *opaque, Key keycode)
 {
-    InputState *s = opaque;
+    InputState *s = ENCODER_INPUT(opaque);
     int dir = 0;
     // printf("Key: %04x\n",keycode);
     switch (keycode)
     {
-        case 0x50: // down
+        case 's': // down
             dir = 1;
             break;
-        case 0x48: // up
+        case 'w': // up
             dir = -1;
             break;
-        case 0x1c: // enter
+        case 0x13: // enter
             qemu_set_irq(s->irq_enc_button,0);
             timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
             // printf("return\n");
             break;
 
     }
-    if (keycode == QEMU_KEY_UP)
-    {
-        dir = 1;
-    } else if (keycode == QEMU_KEY_DOWN) {
-        dir = -1;
-    } 
     if (dir) {
         if (s->encoder_dir != dir) // direction change
         {
@@ -154,7 +149,7 @@ static void encoder_input_mouseevent(void *opaque, int dx, int dy, int dz, int b
 
 }
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, encoder_input, ENCODER_INPUT, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, encoder_input, ENCODER_INPUT, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_KEYCLIENT}, {NULL})
 
 static void encoder_input_finalize(Object *obj)
 {
@@ -172,20 +167,19 @@ static void encoder_input_reset(DeviceState *dev)
 
 static int encoder_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
 {
-    InputState *s = ENCODER_INPUT(obj);
     switch (action)
     {
         case ACT_TWIST:
         {
             int dir = scripthost_get_int(args, 0);
-            int keycode = dir < 0 ? 0x50 : 0x48;
+            Key keycode = dir < 0 ? 's' : 'w';
             for (dir = abs(dir); dir > 0; dir--) {
-                encoder_input_keyevent(s, keycode);
+                encoder_input_handle_key(P404_KEYCLIENT(obj), keycode);
             }
             break;
         }
         case ACT_PUSH:
-            encoder_input_keyevent(s, 0x1c);
+            encoder_input_handle_key(P404_KEYCLIENT(obj), 0x13);
             break;
         case ACT_RESET:
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
@@ -203,7 +197,7 @@ static void encoder_input_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "encoder-a", 1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "encoder-b", 1);
     qemu_add_mouse_event_handler(&encoder_input_mouseevent,ENCODER_INPUT(obj),false, "encoder-mouse");
-    qemu_add_kbd_event_handler(&encoder_input_keyevent,s);
+    // qemu_add_kbd_event_handler(&encoder_input_keyevent,s);
 
     s->timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
                     (QEMUTimerCB *)encoder_input_timer_expire, s);
@@ -218,6 +212,12 @@ static void encoder_input_init(Object *obj)
     script_register_action(pScript, "Reset", "Resets the printer", ACT_RESET);
 
     scripthost_register_scriptable(pScript);
+
+    p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(obj));
+    p404_register_keyhandler(pKey, 'w',"Twists encoder up");
+    p404_register_keyhandler(pKey, 's',"Twists encoder down");
+    p404_register_keyhandler(pKey, 0xd,"Presses encoder button");
+
 }
 
 static int encoder_post_load(void *opaque, int version_id)
@@ -257,5 +257,9 @@ static void encoder_input_class_init(ObjectClass *oc, void *data)
     // dc->unrealize = encoder_input_unrealize;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = encoder_input_process_action;
+
+    P404KeyIFClass *kc = P404_KEYCLIENT_CLASS(oc);
+    kc->KeyHandler = encoder_input_handle_key;
+
     dc->vmsd = &vmstate_encoder_input;
 }

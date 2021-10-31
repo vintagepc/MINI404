@@ -29,6 +29,7 @@
 class KeyController;
 
 using Key = unsigned char;
+using P404KeyIF = struct P404KeyIF;
 
 
 class IKeyClient
@@ -36,10 +37,23 @@ class IKeyClient
 	friend KeyController;
 
     public: 
-        virtual ~IKeyClient() = default;
+        explicit IKeyClient(P404KeyIF* src = nullptr):m_pObj(src){};
+        virtual ~IKeyClient() = default; // member pointer should be left alone, it's not ours to delete!
+
+        inline void OnKeyPress_C(const Key& uiKey) { OnKeyPress(uiKey); }
+
+        inline void RegisterKeyHandler_C(const Key& uiKey, const std::string strDesc)
+        {
+            RegisterKeyHandler(uiKey, strDesc);
+        }
+
+        inline bool IsP404KeyInput(){ return m_pObj != nullptr; }
 
 	protected:
-		virtual void OnKeyPress(const Key &uiKey) = 0;
+		virtual void OnKeyPress(const Key &uiKey);
 
 		void RegisterKeyHandler(const Key uiKey, const std::string &strDesc);
+
+        P404KeyIF* m_pObj = nullptr;
 };
+

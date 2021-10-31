@@ -25,9 +25,36 @@
 #include "IKeyClient.h"
 #include "KeyController.h"
 #include <string>
-
+#include "../utility/p404_keyclient.h"
 
 void IKeyClient::RegisterKeyHandler(const Key uiKey, const std::string &strDesc)
 {
 	KeyController::GetController().AddKeyClient(this, uiKey, strDesc);
 };
+
+
+extern "C"
+{
+
+    extern p404_key_handle p404_new_keyhandler(P404KeyIF* src){
+        auto p = new IKeyClient(src);
+		KeyController::GetController().AddNewClient_C(p);
+		return p;
+    }
+
+    extern void p404_register_keyhandler(p404_key_handle src, const Key key, const char* description)
+    {
+        IKeyClient* p = static_cast<IKeyClient*>(src);
+        p->RegisterKeyHandler_C(key, description);
+    }
+
+	extern void p404_call_keyfunc(P404KeyIF *dst, const Key key);
+}
+
+
+void IKeyClient::OnKeyPress(const Key &uiKey) {
+	if (m_pObj)
+	{
+		p404_call_keyfunc(m_pObj, uiKey);
+	}
+}

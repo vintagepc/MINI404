@@ -80,6 +80,10 @@ static void prusa_mini_init(MachineState *machine)
                             FLASH_SIZE);
         }
     }
+
+    DeviceState* key_in = qdev_new("p404-key-input");
+    sysbus_realize(SYS_BUS_DEVICE(key_in), &error_fatal);
+
     /* Wire up display */
 
     void *bus;
