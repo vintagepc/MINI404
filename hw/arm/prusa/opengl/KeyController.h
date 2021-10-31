@@ -70,7 +70,7 @@ class KeyController: private Scriptable
             { {0xe141 ,false} , 'w'}, // shared with arrow keys for up/down
             { {0x1F   ,false} , 's'},
             { {0xe142 ,false} , 's'},
-            { {0x1c   ,false} ,  0x13}
+            { {0x1c   ,false} ,  0xd}
         };
 		std::atomic_uchar m_key {0};
         bool m_bShift = false;

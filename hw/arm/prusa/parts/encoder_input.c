@@ -216,7 +216,7 @@ static void encoder_input_init(Object *obj)
     p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(obj));
     p404_register_keyhandler(pKey, 'w',"Twists encoder up");
     p404_register_keyhandler(pKey, 's',"Twists encoder down");
-    p404_register_keyhandler(pKey, 0x13,"Presses encoder button");
+    p404_register_keyhandler(pKey, 0xd,"Presses encoder button");
 
 }
 

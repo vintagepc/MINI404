@@ -26,6 +26,7 @@
 #include <iostream>
 #include <sstream>
 #include "../opengl/Config.h"
+#include "../opengl/KeyController.h"
 #include "../opengl/PrintVisualType.h"
 
 void ArgHelper::SetArgs(std::string strArgs){
@@ -52,7 +53,13 @@ bool ArgHelper::Parse() {
 	} else if (m_map.count("scripthelpmd")) {
         ScriptHost::PrintScriptHelp(true);
         return false;
-    }
+    } else if (m_map.count("keyhelp")) {
+		KeyController::GetController().PrintKeys(false);
+		return false;
+	} else if (m_map.count("keyhelpmd")) {
+		KeyController::GetController().PrintKeys(true);
+		return false;
+	}
 
 	if (m_map.count("colour-extrusion")) {
 		Config::Get().SetColourE(true);
