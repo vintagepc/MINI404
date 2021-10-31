@@ -28,6 +28,7 @@
 #include "qom/object.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
+#include "../utility/p404_keyclient.h"
 #include "../utility/ScriptHost_C.h"
 
 #include "png.h"
@@ -291,12 +292,25 @@ static int st7789v_process_action(P404ScriptIF *obj, unsigned int action, script
     }
 }
 
+static void st7789v_handle_key(P404KeyIF *obj, Key keycode)
+{
+    if (keycode == 'S') // S release
+    {
+        char file[100] = {0};
+        time_t now = time(NULL);
+	    struct tm *t = localtime(&now);
+        strftime(file, sizeof(file)-1, "Snap %d %m %Y %H:%M:%S.png", t);
+        printf("Saving screenshot to: %s\n",file);
+        st7789v_write_png(ST7789V(obj), file);
+    }
+}
+
 static const GraphicHwOps st7789v_ops = {
     .invalidate  = st7789v_invalidate_display,
     .gfx_update  = st7789v_update_display,
 };
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_PERIPHERAL, {TYPE_P404_SCRIPTABLE}, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_PERIPHERAL, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_KEYCLIENT}, {NULL})
 
 static void st7789v_finalize(Object *obj)
 {
@@ -326,6 +340,9 @@ static void st7789v_realize(SSIPeripheral *d, Error **errp)
     script_register_action(pScript, "Screenshot", "Takes a screenshot to the specified file.", 0);
     script_add_arg_string(pScript, 0);
     scripthost_register_scriptable(pScript);
+
+    p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(d));
+    p404_register_keyhandler(pKey, 'S', "Takes a screenshot of the LCD with the current time as the filename.");
 
 }
 
@@ -367,6 +384,9 @@ static void st7789v_class_init(ObjectClass *klass, void *data)
     SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = st7789v_process_action;
+
+    P404KeyIFClass *kc = P404_KEYCLIENT_CLASS(klass);
+    kc->KeyHandler = st7789v_handle_key;
 
     k->realize = st7789v_realize;
     k->transfer = st7789v_transfer;

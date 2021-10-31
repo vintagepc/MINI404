@@ -31,6 +31,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'parts/gl_dashboard.c',
         'parts/heater.c',
         'parts/irsensor.c',
+        'parts/p404_key_input.c',
         'parts/pinda.c',
         'parts/st7789v.c',
         'parts/thermistor.c',
@@ -40,6 +41,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/ScriptHost.cpp',
         'utility/p404_script_console.c',
         'utility/p404scriptable.c',
+        'utility/p404_keyclient.c',
     ))
 
 # Use CONFIG_PRUSA_STM32_HACKS when building our target to enable our specific workarounds

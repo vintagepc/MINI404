@@ -40,6 +40,8 @@ class KeyController: private Scriptable
 		// Called by the key handler to notify a key was pressed.
 		inline void OnKeyPressed(unsigned char key) { m_key.store(key); };
 
+        void OnKeyPressed_C(int keycode);
+
 		// Called by the printer so key events happen "safely" on AVR cycles.
 		void OnAVRCycle();
 
@@ -59,8 +61,21 @@ class KeyController: private Scriptable
 	private:
 		void PutNiceKeyName(unsigned char key);
 
-		std::map<unsigned char, std::vector<IKeyClient*>> m_mClients {};
+		std::map<unsigned char, std::vector<IKeyClient*> > m_mClients {};
 		std::map<unsigned char, std::string> m_mDescrs {};
+        std::map<std::pair<int,bool>, unsigned char> m_qemu2char 
+        {   
+            { {0x009F ,true} , 'S'},
+            { {0x11   ,false} , 'w'}, // shared with arrow keys for up/down
+            { {0xe141 ,false} , 'w'}, // shared with arrow keys for up/down
+            { {0x1F   ,false} , 's'},
+            { {0xe142 ,false} , 's'},
+            { {0x1c   ,false} ,  0x13}
+        };
 		std::atomic_uchar m_key {0};
+        bool m_bShift = false;
 
 };
+
+// extern void p404_keyctl_handle_key(int keycode);
+

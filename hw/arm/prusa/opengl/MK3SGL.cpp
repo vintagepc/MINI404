@@ -95,7 +95,8 @@ MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), 
 	std::string strTitle = std::string("Fancy Graphics: ") + m_Objs->GetName();
 	m_iWindow = glutCreateWindow(strTitle.c_str());	/* create window */
 
-	auto fcnDraw = []() { g_pMK3SGL->Draw();};
+	auto fcnDraw = []() { if (g_pMK3SGL) g_pMK3SGL->Draw
+	();};
 	glutDisplayFunc(fcnDraw);
 
 	glutKeyboardFunc(KeyController::GLKeyReceiver); // same func as main window.
