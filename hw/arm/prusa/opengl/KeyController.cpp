@@ -21,6 +21,7 @@
 
 #include "KeyController.h"
 #include "IKeyClient.h"
+#include <algorithm>
 #include <iostream>
 #include <scoped_allocator>  // for allocator_traits<>::value_type
 #include <string>
@@ -33,6 +34,14 @@ KeyController& KeyController::GetController()
 	return k;
 }
 
+
+KeyController::~KeyController() {
+	// Remove the pointers too.
+	for (auto &p: m_vAllClients) {
+		delete p;
+	}
+}
+
 extern "C"
 {
 	extern void p404_keyctl_handle_key(int keycode)
@@ -41,6 +50,13 @@ extern "C"
 	}
 }
 
+void KeyController::AddNewClient_C(IKeyClient* src)
+{
+	if (!std::count(m_vAllClients.begin(), m_vAllClients.end(), src))
+	{
+		m_vAllClients.push_back(src);
+	}
+}
 
 void KeyController::OnKeyPressed_C(int keycode)
 {

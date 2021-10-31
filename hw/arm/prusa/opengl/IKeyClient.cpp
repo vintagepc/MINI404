@@ -37,7 +37,9 @@ extern "C"
 {
 
     extern p404_key_handle p404_new_keyhandler(P404KeyIF* src){
-        return new IKeyClient(src);
+        auto p = new IKeyClient(src);
+		KeyController::GetController().AddNewClient_C(p);
+		return p;
     }
 
     extern void p404_register_keyhandler(p404_key_handle src, const Key key, const char* description)

@@ -26,7 +26,6 @@
 
 #include <string>
 
-
 class KeyController;
 
 using Key = unsigned char;
@@ -39,7 +38,7 @@ class IKeyClient
 
     public: 
         explicit IKeyClient(P404KeyIF* src = nullptr):m_pObj(src){};
-        virtual ~IKeyClient() = default;
+        virtual ~IKeyClient() = default; // member pointer should be left alone, it's not ours to delete!
 
         inline void OnKeyPress_C(const Key& uiKey) { OnKeyPress(uiKey); }
 

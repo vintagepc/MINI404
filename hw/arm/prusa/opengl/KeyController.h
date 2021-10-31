@@ -42,6 +42,9 @@ class KeyController: private Scriptable
 
         void OnKeyPressed_C(int keycode);
 
+        // Keep unique clients so they can be cleaned up later.
+        void AddNewClient_C(IKeyClient* src);
+
 		// Called by the printer so key events happen "safely" on AVR cycles.
 		void OnAVRCycle();
 
@@ -51,7 +54,7 @@ class KeyController: private Scriptable
 
 	protected:
 		KeyController();
-		~KeyController() override = default;
+		~KeyController();
 
 		// Invoked by IKeyClient to add a client.
 		void AddKeyClient(IKeyClient *pClient, const unsigned char key, const std::string &strDesc);
@@ -63,6 +66,7 @@ class KeyController: private Scriptable
 
 		std::map<unsigned char, std::vector<IKeyClient*> > m_mClients {};
 		std::map<unsigned char, std::string> m_mDescrs {};
+        std::vector<IKeyClient*> m_vAllClients {};
         std::map<std::pair<int,bool>, unsigned char> m_qemu2char 
         {   
             { {0x009F ,true} , 'S'},
