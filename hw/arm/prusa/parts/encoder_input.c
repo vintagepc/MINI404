@@ -77,7 +77,7 @@ static void encoder_input_handle_key(P404KeyIF *opaque, Key keycode)
         case 'w': // up
             dir = -1;
             break;
-        case 0x13: // enter
+        case 13: // enter
             qemu_set_irq(s->irq_enc_button,0);
             timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
             // printf("return\n");
