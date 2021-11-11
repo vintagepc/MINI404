@@ -26,7 +26,7 @@
 #include <iostream>
 #include <sstream>
 #include "../opengl/Config.h"
-#include "../opengl/KeyController.h"
+#include "KeyController.h"
 #include "../opengl/PrintVisualType.h"
 
 void ArgHelper::SetArgs(std::string strArgs){

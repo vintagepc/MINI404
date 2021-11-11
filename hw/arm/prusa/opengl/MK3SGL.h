@@ -24,9 +24,9 @@
 //#include "GLHelper.h"
 #include "GLObj.h"           // for GLObj
 #include "GLPrint.h"         // for GLPrint
-#include "IKeyClient.h"
+#include "../utility/IKeyClient.h"
 #include "../utility/IScriptable.h"     // for IScriptable::LineStatus
-#include "Scriptable.h"      // for Scriptable
+#include "../utility/Scriptable.h"      // for Scriptable
 #include <GL/glew.h>         // NOLINT for glTranslatef
 #include <GL/freeglut_std.h> //
 #include <atomic>            // for atomic, atomic_bool, atomic_int

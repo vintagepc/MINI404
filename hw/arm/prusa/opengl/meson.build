@@ -9,8 +9,5 @@ arm_ss.add(when: ['CONFIG_BUDDYBOARD'],
 	'Mini_Lite.cpp',
 	'Mini_Full.cpp',
 	'Color.cpp',
-	'Scriptable.cpp',
 	'MK3SGL.cpp',
-	'KeyController.cpp',
-	'IKeyClient.cpp'
 ))

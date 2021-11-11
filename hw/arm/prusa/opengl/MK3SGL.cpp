@@ -21,7 +21,7 @@
 
 #include "MK3SGL.h"
 #include "GLPrint.h"          // for GLPrint
-#include "KeyController.h"
+#include "../utility/KeyController.h"
 #include "Mini_Lite.h"        // for MK3S_Lite
 #include "Mini_Full.h"        // for MK3S_Lite
 #include "Macros.h"
