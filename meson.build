@@ -2130,6 +2130,7 @@ common_all = common_ss.apply(config_all, strict: false)
 common_all = static_library('common',
                             build_by_default: false,
                             sources: common_all.sources() + genh,
+                            implicit_include_directories: false,
                             dependencies: common_all.dependencies(),
                             name_suffix: 'fa')
 
@@ -2218,6 +2219,7 @@ foreach target : target_dirs
                  dependencies: arch_deps,
                  objects: objects,
                  include_directories: target_inc,
+                 implicit_include_directories: false,
                  c_args: c_args,
                  build_by_default: false,
                  name_suffix: 'fa')
