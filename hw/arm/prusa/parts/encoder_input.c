@@ -179,7 +179,7 @@ static int encoder_input_process_action(P404ScriptIF *obj, unsigned int action, 
             break;
         }
         case ACT_PUSH:
-            encoder_input_handle_key(P404_KEYCLIENT(obj), 0x13);
+            encoder_input_handle_key(P404_KEYCLIENT(obj), 0xd);
             break;
         case ACT_RESET:
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
