@@ -53,7 +53,7 @@ static void
 stm32f4xx_itm_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 {
     stm32f4xx_itm *s = arg;
-    int offset = addr % 3;  
+    int offset = addr & 0x03;  
 
     addr >>= 2;
     if (addr > R_ITM_MAX) {
