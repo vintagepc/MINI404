@@ -50,7 +50,11 @@ static void prusa_mini_init(MachineState *machine)
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU. 
     // Parse those now. 
     arghelper_setargs(machine->kernel_cmdline);
-    
+    int default_flash_size = FLASH_SIZE;
+    if (arghelper_is_arg("4x_flash"))
+    {
+        default_flash_size <<=2; // quadruple the flash size for debug code.
+    }
     if (arghelper_is_arg("appendix")) {
         SOC->gpio[GPIO_A].idr_mask |= 0x2000;
     }
@@ -72,13 +76,13 @@ static void prusa_mini_init(MachineState *machine)
             load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
             armv7m_load_kernel(ARM_CPU(first_cpu),
                 BOOTLOADER_IMAGE,
-                FLASH_SIZE);
+                default_flash_size);
         } 
         else // Raw bin or ELF file, load directly.
         {
             armv7m_load_kernel(ARM_CPU(first_cpu),
                             machine->kernel_filename,
-                            FLASH_SIZE);
+                            default_flash_size);
         }
     }
 
