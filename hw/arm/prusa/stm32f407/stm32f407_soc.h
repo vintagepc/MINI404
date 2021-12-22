@@ -28,7 +28,7 @@
 
 #include "hw/misc/stm32f4xx_syscfg.h"
 #include "hw/timer/stm32f2xx_timer.h"
-// #include "hw/char/stm32f2xx_usart.h"
+#include "qemu/units.h"
 #include "hw/misc/stm32f4xx_exti.h"
 #include "hw/or-irq.h"
 #include "stm32f4xx_adc.h"
@@ -64,9 +64,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
 #define STM_NUM_DMAS 2
 
 #define FLASH_BASE_ADDRESS 0x08000000
-#define FLASH_SIZE (1024 * 1024)
+#define FLASH_SIZE (1U *MiB)
 #define SRAM_BASE_ADDRESS 0x20000000
-#define SRAM_SIZE (192 * 1024)
+#define F407_SRAM_SIZE (192 * KiB)
 
 
 // Convenience enum. 
@@ -134,6 +134,8 @@ struct STM32F407State {
     MemoryRegion flash_alias;
     MemoryRegion ccmsram;
     MemoryRegion temp_usb;
+
+    uint32_t ram_size;
 
 };
 

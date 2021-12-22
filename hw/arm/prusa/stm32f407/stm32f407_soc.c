@@ -33,6 +33,7 @@
 #include "net/net.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "exec/ramblock.h"
+#include "hw/qdev-properties.h"
 #define SYSCFG_ADD                     0x40013800
 static const uint32_t usart_addr[] = { 0x40011000, 0x40004400, 0x40004800,
                                        0x40004C00, 0x40005000, 0x40011400,
@@ -194,7 +195,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
     memory_region_add_subregion(system_memory, FLASH_BASE_ADDRESS, &s->flash);
     memory_region_add_subregion(system_memory, 0, &s->flash_alias);
 
-    memory_region_init_ram(&s->sram, NULL, "STM32F407.sram", SRAM_SIZE,
+    memory_region_init_ram(&s->sram, NULL, "STM32F407.sram", s->ram_size,
                            &err);
     if (err != NULL) {
         error_propagate(errp, err);
@@ -560,6 +561,7 @@ static void stm32f407_soc_realize(DeviceState *dev_soc, Error **errp)
 
 static Property stm32f407_soc_properties[] = {
     DEFINE_PROP_STRING("cpu-type", STM32F407State, cpu_type),
+    DEFINE_PROP_UINT32("sram-size",STM32F407State, ram_size, 192*KiB),
     DEFINE_PROP_END_OF_LIST(),
 };
 
