@@ -44,12 +44,17 @@ static void prusa_mini_init(MachineState *machine)
 
     dev = qdev_new(TYPE_STM32F407_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
+    qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     STM32F407State *SOC = STM32F407_SOC(dev);
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU. 
     // Parse those now. 
     arghelper_setargs(machine->kernel_cmdline);
-    
+    int default_flash_size = FLASH_SIZE;
+    if (arghelper_is_arg("4x_flash"))
+    {
+        default_flash_size <<=2; // quadruple the flash size for debug code.
+    }
     if (arghelper_is_arg("appendix")) {
         SOC->gpio[GPIO_A].idr_mask |= 0x2000;
     }
@@ -71,13 +76,13 @@ static void prusa_mini_init(MachineState *machine)
             load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
             armv7m_load_kernel(ARM_CPU(first_cpu),
                 BOOTLOADER_IMAGE,
-                FLASH_SIZE);
+                default_flash_size);
         } 
         else // Raw bin or ELF file, load directly.
         {
             armv7m_load_kernel(ARM_CPU(first_cpu),
                             machine->kernel_filename,
-                            FLASH_SIZE);
+                            default_flash_size);
         }
     }
 
@@ -314,25 +319,17 @@ static void prusa_mini_init(MachineState *machine)
 
 static void prusa_mini_machine_init(MachineClass *mc)
 {
-    mc->desc = "Prusa Mini Board";
+    mc->desc = "Prusa Mini";
     mc->init = prusa_mini_init;
+    mc->default_ram_size = F407_SRAM_SIZE;
 }
 
 DEFINE_MACHINE("prusa-mini", prusa_mini_machine_init)
 
-
-// TODO - remove this at some point in the future...
-
-static void buddy_init(MachineState *machine)
-{
-    error_setg(&error_fatal, "-machine prusabuddy has been deprecated. Please use -machine prusa-mini instead.\n");
-};
-
-
 static void buddy_machine_init(MachineClass *mc)
 {
-    mc->desc = "Prusa Mini Board (Deprecated)";
-    mc->init = buddy_init;
+    mc->desc = "Prusa Mini Board";
+    mc->deprecation_reason = "prusabuddy has been deprecated because it's a board, not a machine. Use -machine prusa-mini instead";
 }
 
 DEFINE_MACHINE("prusabuddy", buddy_machine_init)
