@@ -78,8 +78,10 @@ Note: This tool is still in development. Please report any issues you may encoun
     {% include checkbox.html name="append" index=3 label="Appendix (Mini404 warranty void if unchecked 😉)" optional=1 format="-append appendix" %}
     {% include checkbox.html name="append" index=4 label="Print Script Help" optional=1 format="-append scripthelp" %}
     {% include textinput.html name="append" index=5 default="myscript.txt" label="Execute a script file" optional=1 format="-append script=%1" %}
+    {% include checkbox.html name="append" index=6 label="4x default flash storage" optional=1 format = "-append 4x_flash" %}
     {% include checkbox.html name="S" label="Pause CPU at startup" optional=1 %}
     {% include spinbox.html name="s" label="Enable GDB debugging on port" optional=1 default=1234 format="-gdb tcp::%1" %}
+    {% include textinput.html name="m" default="196608" label="SRAM size in bytes" optional=1 %}
     {% include dropdown.html name="p404" label="Enable scripting console" optional=1 options="vc,cols=80,rows=24@pty@stdio" format="-chardev %1,id=p404-scriptcon" %}
     {% include checkbox.html name="p404echo" label="Disable echo in P404 console" optional=1 format="-global p404-scriptcon.no_echo=true" %}
 
