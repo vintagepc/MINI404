@@ -49,7 +49,7 @@ struct  fan_state
 
 	uint8_t label;
 
-    qemu_irq tach_pulse, pwm_out;
+    qemu_irq tach_pulse, pwm_out, rpm_out;
 
 	QEMUTimer *tach;
 	QEMUTimer *softpwm;
@@ -100,6 +100,7 @@ static void fan_pwm_change(void *opaque, int n, int level) {
     {
         timer_del(s->tach);
     }
+    qemu_set_irq(s->rpm_out, s->current_rpm);
 }
 
 
@@ -159,6 +160,11 @@ static int fan_process_action(P404ScriptIF *obj, unsigned int action, script_arg
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(fan_state, fan, FAN, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
 
+static void fan_reset(DeviceState *dev)
+{
+    fan_state *s = FAN(dev);
+   qemu_set_irq(s->rpm_out, s->current_rpm);
+}
 
 static void fan_finalize(Object *obj){
 
@@ -179,6 +185,7 @@ static void fan_init(Object *obj){
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->tach_pulse, "tach-out",1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out",1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->rpm_out, "rpm-out",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 
@@ -227,6 +234,7 @@ static void fan_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, fan_properties);
     dc->vmsd = &vmstate_fan;
+    dc->reset = fan_reset;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = fan_process_action;
 }

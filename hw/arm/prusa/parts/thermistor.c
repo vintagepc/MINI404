@@ -36,7 +36,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ThermistorState, THERMISTOR)
 struct ThermistorState {
     SysBusDevice parent;
 
-    qemu_irq irq_value;
+    qemu_irq irq_value, temp_out;
 
     uint8_t index;
     uint16_t table_index;
@@ -70,7 +70,7 @@ static void thermistor_read_request(void *opaque, int n, int level) {
         return;
     }
     float value = s->use_custom ? s->custom_temp : s->temperature;
-
+    qemu_set_irq(s->temp_out, 256U*value);
 	for (uint16_t i= 0; i<s->table_length; i+=2) {
 		if (s->table[i+1] <= value) {
 			int16_t tt = s->table[i];
@@ -153,6 +153,7 @@ static void thermistor_reset(DeviceState *dev)
     ThermistorState *s = THERMISTOR(dev);
     s->temperature = s->start_temp;
     thermistor_set_table(s);
+    qemu_set_irq(s->temp_out, 256U*s->temperature);
 }
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ThermistorState, thermistor, THERMISTOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
@@ -167,6 +168,7 @@ static void thermistor_init(Object *obj)
     ThermistorState *s = THERMISTOR(obj);
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_value, "thermistor_value", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->temp_out, "temp_out_256x", 1);
 
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_read_request, "thermistor_read_request", 1);
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_temp_in, "thermistor_set_temperature", 1);
