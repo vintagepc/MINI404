@@ -339,6 +339,8 @@ static void prusa_mini_machine_init(MachineClass *mc)
     mc->desc = "Prusa Mini";
     mc->init = prusa_mini_init;
     mc->default_ram_size = F407_SRAM_SIZE;
+    mc->no_parallel = 1;
+	mc->no_serial = 1;
 }
 
 DEFINE_MACHINE("prusa-mini", prusa_mini_machine_init)
