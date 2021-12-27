@@ -61,8 +61,8 @@ Note: This tool is still in development. Please report any issues you may encoun
     Note: Correct assignment of the serial ports requires a build that supports assignment by chardev ID; otherwise handles will be assigned and filled starting from the lowest ID (so if you need access to UART6 on older builds, 1-5 must also be attached)
     Note- STM numbers UARTs starting at 1, but internally my indexing starts at zero, hence the off-by-one counting seen here. <br/><br/>If you choose "Serial" or "TTY" be sure to edit the device path <pre style="display:inline">/dev/tty???</pre> to point to the correct device - e.g. <pre style="display:inline"p>/dev/tty[USB0|ACM0|S0|S1...]</pre>!
     <br/><br/>
-    {% include dropdown.html name="serial" index=1 label="Serial 1 (UART2)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart1" %}
     {% include dropdown.html name="serial" index=0 label="Serial 0 (UART1)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart0" %}
+    {% include dropdown.html name="serial" index=1 label="Serial 1 (UART2)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart1" %}
     {% include dropdown.html name="serial" index=2 label="Serial 2 (UART3)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart2" %}
     {% include dropdown.html name="serial" index=3 label="Serial 3 (UART4)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart3" %}
     {% include dropdown.html name="serial" index=4 label="Serial 4 (UART5)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart4" %}
