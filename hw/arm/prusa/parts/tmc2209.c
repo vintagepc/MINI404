@@ -1,6 +1,6 @@
 /*
     TMC2209 - TMC2209 simulation heavily based on MK404's TMC2130.
-	
+
     Adapted for Mini404 in 2020 by VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
@@ -49,7 +49,7 @@ do { fprintf(stderr, "tmc2209: error: " fmt , ## __VA_ARGS__);} while (0)
 #define TMC2209_CMD_LEN 8
 
 // the internal programming registers.
-typedef union 
+typedef union
 {
     uint32_t raw[128]; // There are 128, 7-bit addressing.
     // Add fields for specific ones down the line as you see fit...
@@ -151,27 +151,31 @@ typedef struct tmc2209_state {
     bool last_step;
 
     bool stalled;
-    
-    uint8_t is_inverted; 
 
-    int64_t current_step; 
+    uint8_t is_inverted;
+
+    int64_t current_step;
     uint64_t max_step;
     uint16_t ms_increment;
     uint32_t max_steps_per_mm;   // Maximum number of steps/mm at full microstep resolution.
 
     float current_position; // Current position, in mm.
 
-    tmc2209_registers_t regs; // The programming registers. 
+    tmc2209_registers_t regs; // The programming registers.
 
     qemu_irq irq_diag;
     qemu_irq hard_out;
     qemu_irq byte_out;
-    qemu_irq position_out;
+    qemu_irq position_out, um_out;
+	qemu_irq stall_indicator; // For indicator, regardless of polarity of DIAG pin.
+
 
     p404_motorif_status_t vis;
 
     QEMUTimer *standstill;
-    
+
+	script_handle handle;
+
 } tmc2209_state;
 
 enum {
@@ -180,7 +184,7 @@ enum {
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(tmc2209_state, tmc2209, TMC2209, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_MOTOR_IF}, {NULL});
 
-// Unceremoniously lifted directly from the TMC buddy firmware code. 
+// Unceremoniously lifted directly from the TMC buddy firmware code.
 static uint8_t tmc2209_calcCRC(uint8_t datagram[], uint8_t len) {
 	uint8_t crc = 0;
 	for (uint8_t i = 0; i < len; i++) {
@@ -254,7 +258,7 @@ static void tmc2209_standstill_timer(void *opaque)
 }
 
 static void tmc2209_step(void *opaque, int n, int value) {
-    
+
     tmc2209_state *s = opaque;
     if (!s->enabled) return;
 	if (!s->regs.defs.CHOPCONF.dedge)
@@ -266,6 +270,7 @@ static void tmc2209_step(void *opaque, int n, int value) {
 	{
 		// With DEDGE step on each value change
 		if (value == s->last_step) return;
+        s->last_step = value;
 	}
     if (s->dir)
 	{
@@ -294,12 +299,14 @@ static void tmc2209_step(void *opaque, int n, int value) {
     s->vis.current_pos = s->current_position;
     s->vis.status.changed |= true;
     qemu_set_irq(s->position_out, s->current_step);
+    qemu_set_irq(s->um_out, s->current_position*1000.f);
 	bStall |= s->stalled;
     s->vis.status.stalled = bStall;
     s->vis.status.changed |= true;
     if (bStall)
     {
         if (s->current_step==0) qemu_set_irq(s->hard_out,1);
+		qemu_set_irq(s->stall_indicator,1);
         qemu_set_irq(s->irq_diag,1);
         s->regs.defs.SG_RESULT.sg_result = 0;
     }
@@ -307,6 +314,7 @@ static void tmc2209_step(void *opaque, int n, int value) {
     {
             qemu_set_irq(s->hard_out,0);
             qemu_set_irq(s->irq_diag,0);
+			qemu_set_irq(s->stall_indicator,0);
           s->regs.defs.SG_RESULT.sg_result = 250;
     }
     s->regs.defs.DRV_STATUS.stst = false;
@@ -332,7 +340,7 @@ static void tmc2209_write(tmc2209_state *s)
     s->regs.raw[s->rx_buffer[2]&0x7F] = data;
     // TODO- check CRC.
     s->regs.defs.IFCNT.ifcnt++;
-    
+
 }
 
 static void tmc2209_read(tmc2209_state *s)
@@ -343,7 +351,7 @@ static void tmc2209_read(tmc2209_state *s)
     reply[7] = tmc2209_calcCRC(reply,7);
     for (int i=0; i<8; i++)
     {
-        qemu_set_irq(s->byte_out, reply[i]); // 
+        qemu_set_irq(s->byte_out, reply[i]); //
     }
 }
 
@@ -367,9 +375,9 @@ static void tmc2209_receive(void *opaque, int n, int level)
 static void tmc2209_realize(DeviceState *obj, Error **errp){
     tmc2209_state *s = TMC2209(obj);
     const char buffer[2] = {s->id, '\0'};
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(s), &buffer[0]);
-    script_register_action(pScript, "GetPosFloat","Reports current position in mm.",ActGetPosFloat);
-    scripthost_register_scriptable(pScript);
+    s->handle = script_instance_new(P404_SCRIPTABLE(s), &buffer[0]);
+    script_register_action(s->handle, "GetPosFloat","Reports current position in mm.",ActGetPosFloat);
+    scripthost_register_scriptable(s->handle);
 
     s->vis.label = s->id;
     s->vis.max_pos = (float)s->max_step/(float)s->max_steps_per_mm;
@@ -466,7 +474,7 @@ static const VMStateDescription vmstate_tmc2209 = {
         VMSTATE_UINT64(max_step,tmc2209_state),
         VMSTATE_UINT16(ms_increment,tmc2209_state),
         VMSTATE_UINT32(max_steps_per_mm,tmc2209_state),
-        VMSTATE_TIMER_PTR(standstill,tmc2209_state),        
+        VMSTATE_TIMER_PTR(standstill,tmc2209_state),
         VMSTATE_END_OF_LIST(),
     }
 };

@@ -32,7 +32,7 @@
 #include "../utility/ScriptHost_C.h"
 #include "qemu/module.h"
 
-struct  fan_state 
+struct  fan_state
 {
     SysBusDevice parent;
 	bool pulse_state;
@@ -54,6 +54,8 @@ struct  fan_state
 	QEMUTimer *tach;
 	QEMUTimer *softpwm;
     int64_t tOn, tOff, tLastOn;
+
+	script_handle handle;
 
 };
 
@@ -125,7 +127,7 @@ static void fan_pwm_change_soft(void *opaque, int n, int level)
 	else if (!level && s->last_level)
 	{
         s->tOff = tNow;
-		uint64_t uiCycleDelta = s->tOff - s->tOn; // This is the on time in us.  
+		uint64_t uiCycleDelta = s->tOff - s->tOn; // This is the on time in us.
         uint64_t tTotal = 50000; // hack, based on TIM1 init config (50 ms period). //s->tOn - s->tLastOn; // Total delta between on pulese (total duty cycle)
         if (uiCycleDelta > tTotal)
         {
@@ -149,7 +151,7 @@ static int fan_process_action(P404ScriptIF *obj, unsigned int action, script_arg
             s->is_stalled = false;
             break;
         case ActGetRPM:
-            script_print_int( s->is_stalled? 0 : s->current_rpm);   
+            script_print_int( s->is_stalled? 0 : s->current_rpm);
             break;
         default:
             return ScriptLS_Unhandled;
@@ -189,11 +191,11 @@ static void fan_init(Object *obj){
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(s), "fan");
-    script_register_action(pScript, "Stall","Stalls the fan tachometer",ActStall);
-    script_register_action(pScript, "Resume","Resumes a stalled fan.",ActResume);
-    script_register_action(pScript, "GetRPM","Reports the current RPM",ActGetRPM);
-    scripthost_register_scriptable(pScript);
+    s->handle = script_instance_new(P404_SCRIPTABLE(s), "fan");
+    script_register_action(s->handle, "Stall","Stalls the fan tachometer",ActStall);
+    script_register_action(s->handle, "Resume","Resumes a stalled fan.",ActResume);
+    script_register_action(s->handle, "GetRPM","Reports the current RPM",ActGetRPM);
+    scripthost_register_scriptable(s->handle);
 
 }
 

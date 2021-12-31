@@ -1,7 +1,7 @@
 /*
 	thermistor.c
 	Based on thermistor.c (C) 2008-2012 Michel Pollet <buserror@gmail.com>
-	
+
     Rewritten for MK404/C++ in 2020 by VintagePC <https://github.com/vintagepc/>
     Backported to C again for QEMU in Mini404 in 2021
 
@@ -40,7 +40,7 @@ struct ThermistorState {
 
     uint8_t index;
     uint16_t table_index;
-    const short int *table;    
+    const short int *table;
     int table_length;
     float temperature;
     float custom_temp;
@@ -50,12 +50,14 @@ struct ThermistorState {
 
     // Saving state - because there's no VMSTATE_FLOAT
     int32_t temp_256x,custom_256x;
+
+	script_handle handle;
 };
 
 enum {
     ActShort,
-    ActDisconnect, 
-    ActNormal, 
+    ActDisconnect,
+    ActNormal,
     ActSet,
     ActGetTemp,
 };
@@ -94,6 +96,7 @@ static void thermistor_temp_in(void *opaque, int n, int level)
 	ThermistorState *s = opaque;
 	float fv = (float)(level) / 256.f;
 	s->temperature = fv;
+	qemu_set_irq(s->temp_out, level);
 }
 
 static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -175,16 +178,16 @@ static void thermistor_init(Object *obj)
 
     s->oversampling = OVERSAMPLENR;
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_THERMISTOR);
-    script_register_action(pScript, "Short","Shorts the thermistor",ActShort);
-    script_register_action(pScript, "Disconnect","Disconnects the thermistor",ActDisconnect);
-    script_register_action(pScript, "Restore","Restores the thermistor to normal (unshorted, heater-operated) state",ActNormal);
-    script_register_action(pScript, "Set","Sets the temperature to a given value.",ActSet);
-    script_add_arg_float(pScript, ActSet);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_THERMISTOR);
+    script_register_action(s->handle, "Short","Shorts the thermistor",ActShort);
+    script_register_action(s->handle, "Disconnect","Disconnects the thermistor",ActDisconnect);
+    script_register_action(s->handle, "Restore","Restores the thermistor to normal (unshorted, heater-operated) state",ActNormal);
+    script_register_action(s->handle, "Set","Sets the temperature to a given value.",ActSet);
+    script_add_arg_float(s->handle, ActSet);
 
-    script_register_action(pScript, "GetTemp","Prints the current temperature",ActGetTemp);
+    script_register_action(s->handle, "GetTemp","Prints the current temperature",ActGetTemp);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 }
 
 static Property thermistor_properties[] = {

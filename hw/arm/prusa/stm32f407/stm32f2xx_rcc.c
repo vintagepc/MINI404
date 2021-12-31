@@ -1026,7 +1026,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 {
     Stm32f2xxRcc *s = STM32F2XX_RCC(dev);
     int i;
-    qemu_irq *hclk_upd_irq =
+    s->hclk_upd_irq =
     qemu_allocate_irqs(stm32_rcc_hclk_upd_irq_handler, s, 1);
 
     /* Make sure all the peripheral clocks are null initially.
@@ -1067,7 +1067,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
     // HCLK: to AHB bus, core memory and DMA
     clktree_create_clk(&s->HCLK, "HCLK", 0, 1, true, 168000000, 0, &s->SYSCLK, NULL);
-    clktree_adduser(&s->HCLK, hclk_upd_irq[0]);
+    clktree_adduser(&s->HCLK, s->hclk_upd_irq[0]);
 
     // Clock source for APB1 peripherals:
 

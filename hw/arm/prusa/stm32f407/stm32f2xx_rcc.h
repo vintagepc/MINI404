@@ -93,4 +93,6 @@ typedef struct Stm32f2xxRcc {
 
     qemu_irq reset[STM32_PERIPH_COUNT];
 
+    qemu_irq *hclk_upd_irq;
+
 } Stm32f2xxRcc;

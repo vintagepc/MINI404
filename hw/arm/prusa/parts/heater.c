@@ -6,7 +6,7 @@
 	Original (C) 2020 VintagePC <https://github.com/vintagepc/>
     Adapted to QEMU/C in 2021
 
- 	This file is part of MINI404 
+ 	This file is part of MINI404
 
 	MINI404 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -44,7 +44,7 @@
 OBJECT_DECLARE_SIMPLE_TYPE(heater_state, HEATER)
 
 struct heater_state {
-    SysBusDevice parent; 
+    SysBusDevice parent;
 
     float thermalMass;
     float ambientTemp;
@@ -56,7 +56,7 @@ struct heater_state {
     uint16_t pwm, lastpwm, timeout_level;
     uint16_t custom_pwm;
     int32_t current_x100, ambient_x100;
-    
+
     int16_t tick_overrun;
 
     uint64_t last_tick, last_off, last_on;
@@ -65,6 +65,8 @@ struct heater_state {
 
     qemu_irq temp_out, pwm_out;
     QEMUTimer *temp_tick, *softpwm_timeout;
+
+	script_handle handle;
 };
 
 enum {
@@ -80,9 +82,9 @@ static void heater_softpwm_timeout(void* opaque)
     heater_state *s = opaque;
     s->pwm = s->timeout_level;
     // Tickle timer if turned off.
-    if (!s->is_ticking) // Start the heater. 
+    if (!s->is_ticking) // Start the heater.
     {
-        timer_mod(s->temp_tick,qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1); 
+        timer_mod(s->temp_tick,qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1);
         s->is_ticking = true;
     }
 }
@@ -102,7 +104,7 @@ static void heater_temp_tick_expire(void *opaque)
         float fDelta = (s->thermalMass*(pwmval/255.0f))*updaterate;
         s->currentTemp += fDelta;
         DBG printf("Temp: %f %f\n", s->currentTemp, fDelta);
-        s->tick_overrun = 4; 
+        s->tick_overrun = 4;
         s->lastpwm = usedpwmval;
         s->last_tick = tNow;
      } else {// Cooling - do a little exponential decay
@@ -122,8 +124,20 @@ static void heater_temp_tick_expire(void *opaque)
     qemu_set_irq(s->temp_out, s->currentTemp*256.f);
 }
 
-
 static void heater_pwm_change(void* opaque, int n, int level)
+{
+    heater_state *s = opaque;
+	s->pwm = level;
+	// Tickle timer if turned off.
+	uint64_t tNow = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+    if (!s->is_ticking) // Start the heater.
+    {
+        timer_mod(s->temp_tick,tNow + 1);
+        s->is_ticking = true;
+    }
+}
+
+static void heater_soft_pwm_change(void* opaque, int n, int level)
 {
     heater_state *s = opaque;
     uint16_t tOn = 0;
@@ -142,9 +156,9 @@ static void heater_pwm_change(void* opaque, int n, int level)
         s->pwm = tOn & 0xFF;
     }
     // Tickle timer if turned off.
-    if (!s->is_ticking) // Start the heater. 
+    if (!s->is_ticking) // Start the heater.
     {
-        timer_mod(s->temp_tick,tNow + 1); 
+        timer_mod(s->temp_tick,tNow + 1);
         s->is_ticking = true;
     }
 }
@@ -173,7 +187,7 @@ static int heater_process_action(P404ScriptIF *obj, unsigned int action, script_
             }
             break;
         case ActOpen:
-            s->custom_pwm = 0; 
+            s->custom_pwm = 0;
             s->use_custom_pwm = true;
             break;
         case ActSet:
@@ -201,21 +215,23 @@ static void heater_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out", 1);
 
 
-    qdev_init_gpio_in_named(DEVICE(obj),heater_pwm_change, "pwm_in", 1);
+	// TODO - fix these names so soft is explicit and raw is default.
+    qdev_init_gpio_in_named(DEVICE(obj),heater_soft_pwm_change, "pwm_in", 1);
+    qdev_init_gpio_in_named(DEVICE(obj),heater_pwm_change, "raw-pwm-in", 1);
 
     s->temp_tick = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)heater_temp_tick_expire, s);
     s->softpwm_timeout = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)heater_softpwm_timeout, s);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_HEATER);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_HEATER);
 
-    script_register_action(pScript, "Open","Sets heater as open-circuit", ActOpen);
-    script_register_action(pScript, "Runaway","Sets heater as if in thermal runaway", ActRunaway);
-    script_register_action(pScript, "Restore","Restores normal (non-open or runaway) state", ActNormal);
-    script_register_action(pScript, "SetTemp","Sets the current temperature the heater uses to update the thermistor", ActSet);
-    script_add_arg_float(pScript, ActSet);
-    scripthost_register_scriptable(pScript);
+    script_register_action(s->handle, "Open","Sets heater as open-circuit", ActOpen);
+    script_register_action(s->handle, "Runaway","Sets heater as if in thermal runaway", ActRunaway);
+    script_register_action(s->handle, "Restore","Restores normal (non-open or runaway) state", ActNormal);
+    script_register_action(s->handle, "SetTemp","Sets the current temperature the heater uses to update the thermistor", ActSet);
+    script_add_arg_float(s->handle, ActSet);
+    scripthost_register_scriptable(s->handle);
 
 }
 
@@ -234,7 +250,7 @@ static int heater_pre_save(void *opaque) {
 
 static int heater_post_load(void *opaque, int version) {
     heater_state *s = HEATER(opaque);
-    s->ambientTemp = (float)s->ambient_x100/100.f; 
+    s->ambientTemp = (float)s->ambient_x100/100.f;
     s->currentTemp = (float)s->current_x100/100.f;
     s->thermalMass = ((float)s->mass10x)/10.f;
     return 0;

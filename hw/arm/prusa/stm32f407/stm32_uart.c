@@ -563,7 +563,6 @@ static void stm32_uart_rcc_reset(void *opaque, int n, int level) {
 
 static void stm32_uart_init(Object *obj)
 {
-    qemu_irq *clk_irq;
     Stm32Uart *s = STM32_UART(obj);
 
     // s->stm32_rcc = (Stm32Rcc *)s->stm32_rcc_prop;
@@ -589,10 +588,10 @@ static void stm32_uart_init(Object *obj)
                   (QEMUTimerCB *)stm32_uart_idle_timer_expire, s);
 
     /* Register handlers to handle updates to the USART's peripheral clock. */
-    clk_irq =
+    s->clk_irq =
           qemu_allocate_irqs(stm32_uart_clk_irq_handler, (void *)s, 1);
     if (s->stm32_rcc)
-        stm32_rcc_set_periph_clk_irq(s->stm32_rcc, s->periph, clk_irq[0]);
+        stm32_rcc_set_periph_clk_irq(s->stm32_rcc, s->periph, s->clk_irq[0]);
 
     //stm32_uart_connect(s, &s->chr);
 
