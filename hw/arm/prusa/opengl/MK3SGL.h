@@ -21,7 +21,7 @@
 #pragma once
 
 #include "../3rdParty/arcball/Camera.hpp"        // for Camera
-//#include "GLHelper.h"
+#include "../parts/dashboard_types.h"
 #include "GLObj.h"           // for GLObj
 #include "GLPrint.h"         // for GLPrint
 #include "../utility/IKeyClient.h"
@@ -34,7 +34,6 @@
 #include <string>            // for string
 #include <vector>            // for vector
 
-class HD44780GL;
 class OBJCollection;
 class Printer;
 
@@ -44,10 +43,7 @@ class MK3SGL: public Scriptable, private IKeyClient
         // Creates new MK3SGL object, with lite graphics (or full) and an MMU (or not)
         MK3SGL(const std::string &strModel, bool bMMU);
 
-		~MK3SGL() override
-		{
-			g_pMK3SGL = nullptr;
-		}
+		~MK3SGL() override;
 
         // IRQ registration helper.
         void Init();
@@ -91,6 +87,11 @@ class MK3SGL: public Scriptable, private IKeyClient
 
 		inline void SetStepsPerMM(int16_t iX, int16_t iY, int16_t iZ, int16_t iE)
 		{
+            m_uiStepsPerMM[DB_MOTOR_X] = iX;
+            m_uiStepsPerMM[DB_MOTOR_Y] = iY;
+            m_uiStepsPerMM[DB_MOTOR_Z] = iZ;
+            m_uiStepsPerMM[DB_MOTOR_E] = iE;
+
 			for (auto p: m_vPrints)
 			{
 				p->SetStepsPerMM(iX,iY,iZ,iE);
@@ -104,6 +105,8 @@ class MK3SGL: public Scriptable, private IKeyClient
     private:
 
 		void OnKeyPress(const Key& key) override;
+
+        void TimerCB(int i);
 
 		// Stuff needed for the mouse events to happen in the GL context.
 		void ProcessAction_GL();
@@ -128,7 +131,7 @@ class MK3SGL: public Scriptable, private IKeyClient
 
         std::vector<GLObj*> m_vObjMMU = {&m_EVis,&m_MMUBase, &m_MMUSel, &m_MMUIdl};
 
-       // HD44780GL *m_pLCD = nullptr;
+        uint32_t m_uiStepsPerMM[DB_MOTOR_COUNT] = {100*16};
 
         std::atomic_bool m_bFollowNozzle = {false}; // Camera follows nozzle.
 		std::atomic_bool m_bClearPrints = {false};
@@ -136,18 +139,17 @@ class MK3SGL: public Scriptable, private IKeyClient
 		// Export result. 0 = pending, 1 = failed, 2 = success.
 		std::atomic_int m_iExportPLYResult {0};
 
-		std::atomic<const std::string*> m_pExportFN {nullptr};
+        std::atomic_bool m_bQuit = {false};
 
-        // MMU draw subfunction.
-        //void DrawMMU();
+		std::atomic<const std::string*> m_pExportFN {nullptr};
 
         // Draws a simple LED at a position.
         void DrawLED(float r, float g, float b);
 		void DrawRoundLED();
 
-        void OnMMULedsChanged(int source, uint32_t value);
 		void OnToolChanged(int source, uint32_t iIdx);
 
+        void (*m_fcnTimer)(int i) = nullptr;
 
         // Correction parameters to get the model at 0,0,0 and aligned with the simulated starting positions.
         std::atomic<float> m_fEPos = {0}, m_fXPos = {0.01}, m_fYPos = {0.01}, m_fZPos = {0.01}, m_fPPos = {0.f};
@@ -176,6 +178,7 @@ class MK3SGL: public Scriptable, private IKeyClient
 
 
         int m_iWindow = 0;
+        int m_iTic = 0, m_iLast = 0, m_iFrCount = 0;
 
 		// Useful for instant positioning.
 

@@ -95,6 +95,8 @@ struct st7789v_state {
     int32_t remap;
     uint32_t mode;
     uint32_t framebuffer[DPY_ROWS * DPY_COLS];
+
+    script_handle handle;
 };
 
 #define TYPE_ST7789V "st7789v"
@@ -335,11 +337,11 @@ static void st7789v_realize(SSIPeripheral *d, Error **errp)
 
     qdev_init_gpio_in(dev, st7789v_cd, 1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(s), TYPE_ST7789V);
+    s->handle = script_instance_new(P404_SCRIPTABLE(s), TYPE_ST7789V);
 
-    script_register_action(pScript, "Screenshot", "Takes a screenshot to the specified file.", 0);
-    script_add_arg_string(pScript, 0);
-    scripthost_register_scriptable(pScript);
+    script_register_action(s->handle, "Screenshot", "Takes a screenshot to the specified file.", 0);
+    script_add_arg_string(s->handle, 0);
+    scripthost_register_scriptable(s->handle);
 
     p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(d));
     p404_register_keyhandler(pKey, 'S', "Takes a screenshot of the LCD with the current time as the filename.");

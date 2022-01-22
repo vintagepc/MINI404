@@ -41,6 +41,34 @@
 
 MK3SGL* MK3SGL::g_pMK3SGL = nullptr;
 
+extern "C"
+{
+	void GLAPIENTRY
+	GLErrorCB( GLenum, //source,
+				GLenum type,
+				GLuint id,
+				GLenum severity,
+				GLsizei, // length
+				const GLchar* message,
+				const void*) // userparam )
+	{
+		std::cerr <<  "GL:";
+		if (type == GL_DEBUG_TYPE_ERROR)
+		{
+			std::cerr << "** GL ERROR **";
+		}
+		std::cerr << "ID:" << id << " type = " << type << " sev = " << severity << " message = " << message << '\n';
+	}
+}
+
+MK3SGL::~MK3SGL()
+{
+	m_bQuit = true;
+	glutLeaveMainLoop();
+	g_pMK3SGL = nullptr;
+}
+
+
 MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), IKeyClient(),m_bMMU(bMMU)
 {
 	if (g_pMK3SGL)
@@ -49,14 +77,6 @@ MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), 
 		exit(1);
 	}
 	g_pMK3SGL = this;
-	if (strModel == "lite")
-	{
-		m_Objs = new Mini_Lite();
-	} 
-	else if (strModel == "full") 
-	{
-		m_Objs = new Mini_Full();
-	}
 
 	RegisterActionAndMenu("ClearPrint","Clears rendered print objects",ActClear);
 	RegisterActionAndMenu("ToggleNozzleCam","Toggles between normal and nozzle cam mode.",ActToggleNCam);
@@ -83,8 +103,11 @@ MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), 
 	RegisterKeyHandler('9',"");
 	RegisterKeyHandler('0',"");
 
-
-	glewInit();
+	int argc = 0;
+	char **argv = nullptr;
+	glutInit(&argc, argv);		/* initialize GLUT system */
+	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
+	glutInitContextVersion(3,0);
 #ifdef TEST_MODE
 	glutInitDisplayMode( US(GLUT_RGB) | US(GLUT_DOUBLE) | US(GLUT_DEPTH)) ;
 #else
@@ -92,57 +115,57 @@ MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), 
 	glutInitDisplayMode( US(GLUT_RGB) | US(GLUT_DOUBLE) | US(GLUT_DEPTH) | US(GLUT_MULTISAMPLE)) ;
 #endif
 	glutInitWindowSize(800,800);		/* width=400pixels height=500pixels */
-	std::string strTitle = std::string("Fancy Graphics: ") + m_Objs->GetName();
+	std::string strTitle = std::string("Fancy Graphics");
 	m_iWindow = glutCreateWindow(strTitle.c_str());	/* create window */
+	glewInit();
+	std::cout << "GL_VERSION   : " << glGetString(GL_VERSION) << '\n';
+	std::cout << "GL_VENDOR    : " << glGetString(GL_VENDOR) << '\n';
+	std::cout << "GL_RENDERER  : " << glGetString(GL_RENDERER) << '\n';
+	std::cout << "GLEW_VERSION : " << glewGetString(GLEW_VERSION) << '\n';
+#if !defined(__APPLE__)
+		glDebugMessageCallback( GLErrorCB, nullptr );
+		if (true)
+		{
+			glDebugMessageControl(GL_DONT_CARE,
+						GL_DONT_CARE,
+						GL_DEBUG_SEVERITY_NOTIFICATION,
+						0, nullptr, GL_FALSE);
+		}
+		glEnable(GL_DEBUG_OUTPUT);
+#endif
 
-	auto fcnDraw = []() { if (g_pMK3SGL) g_pMK3SGL->Draw
-	();};
+	auto fcnDraw = []() { if (g_pMK3SGL) g_pMK3SGL->Draw();};
 	glutDisplayFunc(fcnDraw);
 
 	glutKeyboardFunc(KeyController::GLKeyReceiver); // same func as main window.
 
-	auto fwd = [](int button, int state, int x, int y) {g_pMK3SGL->MouseCB(button,state,x,y);};
+	auto fwd = [](int button, int state, int x, int y) { if (g_pMK3SGL)g_pMK3SGL->MouseCB(button,state,x,y);};
 	glutMouseFunc(fwd);
 
-	auto fcnMove = [](int x, int y) { g_pMK3SGL->MotionCB(x,y);};
+	auto fcnMove = [](int x, int y) { if (g_pMK3SGL)g_pMK3SGL->MotionCB(x,y);};
 	glutMotionFunc(fcnMove);
 
-	auto fcnResize = [](int x, int y) { g_pMK3SGL->ResizeCB(x,y);};
+	auto fcnResize = [](int x, int y) { if (g_pMK3SGL)g_pMK3SGL->ResizeCB(x,y);};
 	glutReshapeFunc(fcnResize);
+
+	m_fcnTimer = [](int i) { if (g_pMK3SGL)g_pMK3SGL->TimerCB(i);};
+	glutTimerFunc(1000, m_fcnTimer, 0);
 
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable(GL_BLEND);
 	glEnable(GL_MULTISAMPLE);
 
 	ResetCamera();
-
-	m_Objs->Load();
-
-	if (m_bMMU)
+	if (strModel == "lite")
 	{
-		for(auto &o : m_vObjMMU)
-		{
-			o->Load();
-		}
-		m_MMUIdl.SetSubobjectVisible(1,false); // Screw, high triangle count
-		m_MMUBase.SetSubobjectVisible(1, false);
-
-		if (strModel == "lite")
-		{
-			m_MMUIdl.SetAllVisible(false);
-			m_MMUIdl.SetSubobjectVisible(3);
-			m_MMUSel.SetAllVisible(false);
-			m_MMUSel.SetSubobjectVisible(1);
-			m_MMUSel.SetSubobjectVisible(2);
-			m_MMUBase.SetAllVisible(false);
-			m_MMUBase.SetSubobjectVisible(17);
-			for (size_t i=32; i<43; i++)
-			{
-				m_MMUBase.SetSubobjectVisible(i); // LEDs
-			}
-		}
+		m_Objs = new Mini_Lite();
+	} 
+	else if (strModel == "full") 
+	{
+		m_Objs = new Mini_Full();
 	}
 
+	m_Objs->Load();
 }
 
 void MK3SGL::ResetCamera()
@@ -161,6 +184,15 @@ void MK3SGL::ResizeCB(int w, int h)
 	gluPerspective(45.0, static_cast<float>(w) / static_cast<float>(h), 0.01f, 100.0f);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
+}
+
+
+void MK3SGL::TimerCB(int i) {
+	if (m_bQuit) {
+		return;
+	}
+	FlagForRedraw();
+	glutTimerFunc(32, m_fcnTimer, i);
 }
 
 void MK3SGL::OnKeyPress(const Key& key)
@@ -213,34 +245,6 @@ void MK3SGL::OnKeyPress(const Key& key)
 
 void MK3SGL::Init()
 {
-	// _Init(avr,this);
-	// auto fcnCB = MAKE_C_CALLBACK(MK3SGL,OnPosChanged);
-	// RegisterNotify(X_IN,fcnCB,this);
-	// RegisterNotify(Y_IN,fcnCB,this);
-	// RegisterNotify(Z_IN,fcnCB,this);
-	// RegisterNotify(E_IN,fcnCB,this);
-	// RegisterNotify(FEED_IN,fcnCB,this);
-	// RegisterNotify(SEL_IN,fcnCB,this);
-	// RegisterNotify(IDL_IN,fcnCB,this);
-
-	// auto fcnMotor = MAKE_C_CALLBACK(MK3SGL, OnMotorStep);
-	// RegisterNotify(X_STEP_IN, fcnMotor, this);
-	// RegisterNotify(Y_STEP_IN, fcnMotor, this);
-	// RegisterNotify(Z_STEP_IN, fcnMotor, this);
-	// RegisterNotify(E_STEP_IN, fcnMotor, this);
-
-	// auto fcnBoolCB = MAKE_C_CALLBACK(MK3SGL,OnBoolChanged);
-	// RegisterNotify(SHEET_IN, 	fcnBoolCB, 	this);
-	// RegisterNotify(EFAN_IN, 	fcnBoolCB, 	this);
-	// RegisterNotify(PFAN_IN, 	fcnBoolCB, 	this);
-	// RegisterNotify(BED_IN, 		fcnBoolCB,	this);
-	// RegisterNotify(SD_IN, 		fcnBoolCB,	this);
-	// RegisterNotify(PINDA_IN, 	fcnBoolCB,	this);
-	// RegisterNotify(FINDA_IN, 	fcnBoolCB,	this);
-
-	// RegisterNotify(TOOL_IN,		MAKE_C_CALLBACK(MK3SGL,OnToolChanged),this);
-	// RegisterNotify(MMU_LEDS_IN,	MAKE_C_CALLBACK(MK3SGL,OnMMULedsChanged),this);
-
 	m_bDirty = true;
 }
 
@@ -359,53 +363,11 @@ void MK3SGL::OnBoolChanged(int source, uint32_t value)
 			break;
 		case DB_IND_HTR:
 			break;
-		// case IRQ::FINDA_IN:
-		// 	m_bFINDAOn = bVal;
-		// 	break;
 		default:
 		std::cout << "NOTE: MK3SGL: Unhandled Bool IRQ " << std::to_string(source) << '\n';
 			break;
 	}
 	m_bDirty = true;
-}
-
-void MK3SGL::OnMMULedsChanged(int source, uint32_t value)
-{
-	// Set the materials appropriately:
-	// Bits 9..0 are LEDs G/R 1..4, 0
-	// LEDs are subobjects R: 32-36 (4..0) and G(38-42)
-	//Red mtl = 31, G = 32. On mtls = 37/38
-	// 	m_lGreen[0].ConnectFrom(m_shift.GetIRQ(HC595::BIT6), LED::LED_IN);
-	// m_lRed[0].ConnectFrom(	m_shift.GetIRQ(HC595::BIT7), LED::LED_IN);
-	// m_lGreen[4].ConnectFrom(m_shift.GetIRQ(HC595::BIT8), LED::LED_IN);
-	// m_lRed[4].ConnectFrom(	m_shift.GetIRQ(HC595::BIT9), LED::LED_IN);
-	// m_lGreen[3].ConnectFrom(m_shift.GetIRQ(HC595::BIT10), LED::LED_IN);
-	// m_lRed[3].ConnectFrom(	m_shift.GetIRQ(HC595::BIT11), LED::LED_IN);
-	// m_lGreen[2].ConnectFrom(m_shift.GetIRQ(HC595::BIT12), LED::LED_IN);
-	// m_lRed[2].ConnectFrom(	m_shift.GetIRQ(HC595::BIT13), LED::LED_IN);
-	// m_lGreen[1].ConnectFrom(m_shift.GetIRQ(HC595::BIT14), LED::LED_IN);
-	// m_lRed[1].ConnectFrom(	m_shift.GetIRQ(HC595::BIT15), LED::LED_IN);
-	// uint32_t bChanged = irq->value ^ value;
-	// static constexpr uint8_t iLedBase[2] = {38, 32}; // G, R
-	// static constexpr uint8_t iLedObj[10] = {4,4,0,0,1,1,2,2,3,3};
-	// //static constexpr uint8_t iMtlOff[2] = {32, 31};
-	// static constexpr uint8_t iMtlOn[2] = {38,37};
-	// for (unsigned int i=0; i<10; i++)
-	// {
-	// 	if ((bChanged>>i) &1U)
-	// 	{
-	// 		if ((value>>i) & 1U)
-	// 		{
-	// 			m_MMUBase.SetSubobjectMaterial(gsl::at(iLedBase,i%2)+gsl::at(iLedObj,i),gsl::at(iMtlOn,i%2));
-	// 		}
-	// 		else
-	// 		{
-	// 			m_MMUBase.SetSubobjectMaterial(gsl::at(iLedBase,i%2)+gsl::at(iLedObj,i),5);//iMtlOff[i%2]);
-	// 		}
-	// 	}
-	// }
-
-	// m_bDirty = true;
 }
 
 void MK3SGL::OnMotorStep(int source, uint32_t value)
@@ -434,6 +396,7 @@ void MK3SGL::OnMotorStep(int source, uint32_t value)
 			//m_lastETick = m_pAVR->cycle;
 			break;
 	}
+	OnPosChanged(source, static_cast<float>(value)/static_cast<float>(m_uiStepsPerMM[source]));
 }
 
 void MK3SGL::OnPosChanged(int source, float value)
@@ -452,15 +415,6 @@ void MK3SGL::OnPosChanged(int source, float value)
 		case DB_MOTOR_E:
 			m_fEPos = value/1000.f;
 			break;
-		// case IRQ::FEED_IN:
-		// 	m_fPPos = fPos/1000.f;
-		// 	break;
-		// case IRQ::IDL_IN:
-		// 	m_fIdlPos = fPos;
-		// 	break;
-		// case IRQ::SEL_IN:
-		// 	m_fSelPos = fPos/1000.f;
-		// 	break;
 		default:
 			std::cout << "NOTE: MK3SGL: Unhandled IRQ " << std::to_string(source) << '\n';
 			break;
@@ -621,22 +575,6 @@ void MK3SGL::Draw()
 		glPushMatrix();
 			m_Objs->DrawKnob(m_iKnobPos);
 		glPopMatrix();
-		// if (m_pLCD)
-		// {
-		// 	glPushMatrix();
-		// 		m_Objs->ApplyLCDTransform();
-		// 		glRotatef(-45.f,1,0,0);
-		// 		glPushMatrix();
-		// 		float fScale = (4.f*0.076f)/500.f; // Disp is 76mm wide, lcd is drawn 500 wide at 4x scale
-		// 			glScalef(fScale,fScale,fScale);
-		// 			glScalef(1.0,-1.0f,-0.1f);
-		// 			glPushMatrix();
-		// 				// This scheme is a bit more legible on the smaller screen.
-		// 				m_pLCD->Draw(0x382200ff, 0x000000ff , 0xFF9900ff, 0x00000055, true);
-		// 			glPopMatrix();
-		// 		glPopMatrix();
-		// 	glPopMatrix();
-		// }
 		if (m_bSDCard) //if card present
 		{
 			m_Objs->Draw(OBJCollection::ObjClass::Media); // Draw removable media (SD, USB, etc)
@@ -647,6 +585,16 @@ void MK3SGL::Draw()
 		}
 		// m_snap.OnDraw();
 		glutSwapBuffers();
+		m_iFrCount++;
+		m_iTic=glutGet(GLUT_ELAPSED_TIME);
+		auto iDiff = m_iTic - m_iLast;
+		if (iDiff > 1000) {
+			int iFPS = m_iFrCount*1000.f/(iDiff);
+			m_iLast = m_iTic;
+			m_iFrCount = 0;
+			std::string strFPS = std::string("Fancy Graphics: ") + m_Objs->GetName() + " (" +std::to_string(iFPS) + " FPS)";
+			glutSetWindowTitle(strFPS.c_str());
+		}
 		m_bDirty = false;
 }
 
@@ -688,90 +636,6 @@ void MK3SGL::DrawLED(float r, float g, float b)
 				glEnd();
 				glMaterialfv(GL_FRONT_AND_BACK,GL_EMISSION, vNone.data());
 }
-
-// void MK3SGL::DrawMMU()
-// {
-// 		float _fTransform[3] {0,0,0};
-// 		gsl::span<float> fTransform = {_fTransform};
-// 		glPushMatrix();
-// 			m_MMUBase.GetCenteringTransform(fTransform);
-// 			glTranslatef(0,0.3185,0.0425);
-// 			glTranslatef(-fTransform[0], -fTransform[1], -fTransform[2]);
-// 			glRotatef(-45,1,0,0);
-// 			glTranslatef(0.13+fTransform[0],fTransform[1],fTransform[2]);
-// 			m_MMUBase.Draw();
-// 			glPushMatrix();
-// 				m_MMUSel.GetCenteringTransform(fTransform);
-// 				glPushMatrix();
-// 					glTranslatef(m_fSelPos - m_fSelCorr,0.062,0.123);
-// 					if (m_bFINDAOn)
-// 					{
-// 						glPushMatrix();
-// 							glTranslatef(-0.075,-0.274,-0.222);
-// 							DrawRoundLED();
-// 						glPopMatrix();
-// 					}
-// 					glTranslatef (-fTransform[0], -fTransform[1], -fTransform[2]);
-// 					glRotatef(-90,1,0,0);
-// 					glRotatef(-2.5,0,1,0);
-// 					glTranslatef (fTransform[0], fTransform[1], fTransform[2]);
-// 					m_MMUSel.Draw();
-// 				glPopMatrix();
-// 				glPushMatrix();
-// 					glTranslatef(0.051, -0.299, -0.165);
-// 					glScalef(fMM2M,fMM2M,fMM2M);
-// 					m_EVis.GetCenteringTransform(fTransform);
-// 					fTransform[1] +=1.5f;
-// 					glTranslatef (-fTransform[0] , -fTransform[1], -fTransform[2]);
-// 					glRotatef(90,0,1,0);
-// 					glRotatef(360.f*(m_fSelPos/0.008f),0,0,1); // 8mm thread pitch, so we need to rotate 360deg for every 8 of travel.
-// 					glTranslatef (fTransform[0], fTransform[1], fTransform[2]);
-// 					m_EVis.Draw();
-// 				glPopMatrix();
-// 			glPopMatrix();
-
-// 			glPushMatrix();
-// 				m_MMUIdl.GetCenteringTransform(fTransform);
-// 				glTranslatef(-0.03,0.028,0.025);
-// 				fTransform[1]=-0.071;
-// 				fTransform[2]=-0.0929;
-// 				glPushMatrix();
-// 					glTranslatef (-fTransform[0], -fTransform[1], -fTransform[2]);
-// 					glRotatef(m_fIdlPos + m_fIdlCorr,1,0,0);
-// 					glRotatef(180,0,1,0);
-// 					glTranslatef (fTransform[0], fTransform[1], fTransform[2]);
-// 					m_MMUIdl.Draw();
-// 				glPopMatrix();
-// 				glPushMatrix();
-// 					glTranslatef(-0.117, -0.300, -0.238);
-// 					glScalef(fMM2M,fMM2M,fMM2M);
-// 					m_EVis.GetCenteringTransform(fTransform);
-// 					fTransform[1] +=1.5f;
-// 					glTranslatef (-fTransform[0] , -fTransform[1], -fTransform[2]);
-// 					glRotatef(270,0,1,0);
-// 					glRotatef(-m_fIdlPos,0,0,1);
-// 					glTranslatef (fTransform[0], fTransform[1], fTransform[2]);
-// 					m_EVis.Draw();
-// 				glPopMatrix();
-
-
-// 			glPopMatrix();
-
-// 			glPushMatrix();
-// 				glTranslatef(0.061, -0.296, -0.212);
-// 				glScalef(fMM2M,fMM2M,fMM2M);
-// 				m_EVis.GetCenteringTransform(fTransform);
-// 				fTransform[1] +=1.5f;
-// 				glTranslatef (-fTransform[0] , -fTransform[1], -fTransform[2]);
-// 				glRotatef(90,0,1,0);
-// 				glRotatef((m_fPPos/0.021f)*360.f,0,0,1); // 1 rotation for every 21mm of travel.
-// 				glTranslatef (fTransform[0], fTransform[1], fTransform[2]);
-// 				m_EVis.Draw();
-// 			glPopMatrix();
-
-// 		glPopMatrix();
-// 	}
-
 
 void MK3SGL::MouseCB(int button, int action, int x, int y)
 {
