@@ -56,6 +56,7 @@ struct InputState {
     int8_t encoder_dir;
 
     QEMUTimer *timer, *release;
+    script_handle handle;
 };
 
 enum {
@@ -204,14 +205,14 @@ static void encoder_input_init(Object *obj)
     s->release = timer_new_ms(QEMU_CLOCK_VIRTUAL,
             (QEMUTimerCB *)buddy_autorelease_timer_expire, s);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_ENCODER_INPUT);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_ENCODER_INPUT);
 
-    script_register_action(pScript, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
-    script_add_arg_int(pScript, ACT_TWIST);
-    script_register_action(pScript, "Push",  "Presses the encoder", ACT_PUSH);
-    script_register_action(pScript, "Reset", "Resets the printer", ACT_RESET);
+    script_register_action(s->handle, "Twist", "Twists the encoder up(1)/down(-1)", ACT_TWIST);
+    script_add_arg_int(s->handle, ACT_TWIST);
+    script_register_action(s->handle, "Push",  "Presses the encoder", ACT_PUSH);
+    script_register_action(s->handle, "Reset", "Resets the printer", ACT_RESET);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 
     p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(obj));
     p404_register_keyhandler(pKey, 'w',"Twists encoder up");

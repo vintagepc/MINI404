@@ -1,7 +1,7 @@
 /*
 	thermistor.c
 	Based on thermistor.c (C) 2008-2012 Michel Pollet <buserror@gmail.com>
-	
+
     Rewritten for MK404/C++ in 2020 by VintagePC <https://github.com/vintagepc/>
     Backported to C again for QEMU in Mini404 in 2021
 
@@ -36,11 +36,11 @@ OBJECT_DECLARE_SIMPLE_TYPE(ThermistorState, THERMISTOR)
 struct ThermistorState {
     SysBusDevice parent;
 
-    qemu_irq irq_value;
+    qemu_irq irq_value, temp_out;
 
     uint8_t index;
     uint16_t table_index;
-    const short int *table;    
+    const short int *table;
     int table_length;
     float temperature;
     float custom_temp;
@@ -50,12 +50,14 @@ struct ThermistorState {
 
     // Saving state - because there's no VMSTATE_FLOAT
     int32_t temp_256x,custom_256x;
+
+	script_handle handle;
 };
 
 enum {
     ActShort,
-    ActDisconnect, 
-    ActNormal, 
+    ActDisconnect,
+    ActNormal,
     ActSet,
     ActGetTemp,
 };
@@ -70,7 +72,7 @@ static void thermistor_read_request(void *opaque, int n, int level) {
         return;
     }
     float value = s->use_custom ? s->custom_temp : s->temperature;
-
+    qemu_set_irq(s->temp_out, 256U*value);
 	for (uint16_t i= 0; i<s->table_length; i+=2) {
 		if (s->table[i+1] <= value) {
 			int16_t tt = s->table[i];
@@ -94,6 +96,7 @@ static void thermistor_temp_in(void *opaque, int n, int level)
 	ThermistorState *s = opaque;
 	float fv = (float)(level) / 256.f;
 	s->temperature = fv;
+	qemu_set_irq(s->temp_out, level);
 }
 
 static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -153,6 +156,7 @@ static void thermistor_reset(DeviceState *dev)
     ThermistorState *s = THERMISTOR(dev);
     s->temperature = s->start_temp;
     thermistor_set_table(s);
+    qemu_set_irq(s->temp_out, 256U*s->temperature);
 }
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ThermistorState, thermistor, THERMISTOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
@@ -167,22 +171,23 @@ static void thermistor_init(Object *obj)
     ThermistorState *s = THERMISTOR(obj);
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_value, "thermistor_value", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->temp_out, "temp_out_256x", 1);
 
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_read_request, "thermistor_read_request", 1);
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_temp_in, "thermistor_set_temperature", 1);
 
     s->oversampling = OVERSAMPLENR;
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_THERMISTOR);
-    script_register_action(pScript, "Short","Shorts the thermistor",ActShort);
-    script_register_action(pScript, "Disconnect","Disconnects the thermistor",ActDisconnect);
-    script_register_action(pScript, "Restore","Restores the thermistor to normal (unshorted, heater-operated) state",ActNormal);
-    script_register_action(pScript, "Set","Sets the temperature to a given value.",ActSet);
-    script_add_arg_float(pScript, ActSet);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_THERMISTOR);
+    script_register_action(s->handle, "Short","Shorts the thermistor",ActShort);
+    script_register_action(s->handle, "Disconnect","Disconnects the thermistor",ActDisconnect);
+    script_register_action(s->handle, "Restore","Restores the thermistor to normal (unshorted, heater-operated) state",ActNormal);
+    script_register_action(s->handle, "Set","Sets the temperature to a given value.",ActSet);
+    script_add_arg_float(s->handle, ActSet);
 
-    script_register_action(pScript, "GetTemp","Prints the current temperature",ActGetTemp);
+    script_register_action(s->handle, "GetTemp","Prints the current temperature",ActGetTemp);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 }
 
 static Property thermistor_properties[] = {

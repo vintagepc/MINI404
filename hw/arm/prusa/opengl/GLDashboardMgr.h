@@ -25,9 +25,6 @@
 
 #include <cstdint>          // for uint32_t
 #include "../parts/dashboard_types.h"
-#include "GLMotor.h"
-#include "IPCIndicator.h"
-#include <array>
 #include <memory>
 #include <pthread.h>
 class MK3SGL;
@@ -45,51 +42,19 @@ class GLDashboardMgr
 
         void UpdateIndicator(int iInd, int level);    
 
-        void UpdateMotorStall(int motor, int level);
-
-        void UpdateMotorEnable(int motor, int level);
-
     private:
 
         void SetupHardware();
 
-        // Draws the visuals within the current GL transformation context.
-        void Draw();
-
-        void SetWindow(int iWin) { m_iWindow = iWin;};
-
-		void ResizeCB(int w, int h);
-
-        void TimerCB(int i);
-
-        void OnGlutClose();
-
         void* RunThread(void *p);
 
-        int m_iWindow = 0;
         pthread_t m_glThread;
         pthread_cond_t m_glReady;
         pthread_mutex_t m_glMtx;
 
-        void (*m_fcnTimer)(int i) = nullptr;
-
-        int m_iWinW = 500, m_iWinH = 200;
-
         int m_iType = DB_NONE;
 
-        int m_iTic = 0, m_iLast = 0, m_iFrCount = 0;
-
         static GLDashboardMgr* g_pGLDashboardMgr;
-
-        GLMotor m_X{'X'}, m_Y{'Y'}, m_Z{'Z'}, m_E{'E',true};
-
-        std::array<GLMotor*,4> m_motors = {&m_X, &m_Y, &m_Z, &m_E};
-
-        IPCIndicator m_EFan {'E'}, m_PFan{'P'}, m_FSens {'F'}, m_ZProbe{'Z'}, m_Bed{'B'}, m_Htr{'H'};
-
-        std::array<IPCIndicator*, 6> m_indicators = {&m_PFan, &m_EFan, &m_FSens, &m_ZProbe, &m_Bed, &m_Htr};
-
-        bool m_bQuit = false;
 
         std::unique_ptr<MK3SGL> m_p3DVis {nullptr};
 
@@ -105,8 +70,6 @@ extern void gl_dashboard_reset(void* pDashboard);
 extern void gl_dashboard_run(void* pDashboard);
 
 extern void gl_dashboard_update_motor(void* pDashboard, int motor, int pos);
-extern void gl_dashboard_update_motor_enable(void* pDashboard, int motor, int pos);
-extern void gl_dashboard_update_motor_stall(void* pDashboard, int motor, int pos);
 
 extern void gl_dashboard_update_indicator(void *pDashboard, int indicator, int level);
 

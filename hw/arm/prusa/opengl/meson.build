@@ -1,7 +1,5 @@
 arm_ss.add(when: ['CONFIG_BUDDYBOARD'],
  if_true: files('GLDashboardMgr.cpp',
-	'GLMotor.cpp',
-	'IPCIndicator.cpp',
 	'PLYExport.cpp',
 	'OBJCollection.cpp',
 	'GLObj.cpp',
