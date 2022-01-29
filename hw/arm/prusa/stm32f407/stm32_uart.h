@@ -24,7 +24,9 @@
 #ifndef STM32_UART_H
 #define STM32_UART_H
 
-
+#include "../stm32_common/stm32_shared.h"
+#include "../stm32_common/stm32_common.h"
+#include "../stm32_common/stm32_rcc_if.h"
 #include "chardev/char-fe.h"
 
 #define USART_RCV_BUF_LEN 256
@@ -36,12 +38,10 @@ struct Stm32Rcc;
 
 struct Stm32Uart {
     /* Inherited */
-    SysBusDevice busdev;
+    STM32Peripheral parent;
 
     /* Private */
     MemoryRegion iomem;
-
-    Stm32Rcc *stm32_rcc;
 
     union {
         uint32_t regs[7];
@@ -66,7 +66,7 @@ struct Stm32Uart {
             struct {
                 uint32_t FRACT  :4;
                 uint32_t MANT   :12;
-                uint32_t :16; 
+                uint32_t :16;
             } QEMU_PACKED BRR;
             struct {
                 uint32_t SBK    :1;
@@ -124,14 +124,13 @@ struct Stm32Uart {
         } QEMU_PACKED defs;
     };
 
-    stm32_periph_t periph;
 
     uint32_t bits_per_sec;
     int64_t ns_per_char;
 
     /* Register Values */
     uint32_t USART_TDR;
-        
+
     bool sr_read_since_ore_set, sr_read_since_idle_set;
 
 
@@ -152,11 +151,8 @@ struct Stm32Uart {
     qemu_irq irq;
     int curr_irq_level;
 
-    // Byte IRQ for connected peripherals to avoid the charbackend complexity. 
-    qemu_irq byte_out; 
-
-    qemu_irq dmar;
-    int dmar_current_level;
+    // Byte IRQ for connected peripherals to avoid the charbackend complexity.
+    qemu_irq byte_out;
 
     /* We buffer the characters we receive from our qemu_chr receive handler in here
      * to increase our overall throughput. This allows us to tell the target that

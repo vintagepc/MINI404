@@ -28,9 +28,9 @@
 #include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "qemu/log.h"
+#include "../stm32_common/stm32_shared.h"
 // #include "sysemu/char.h"
 
-#define STM_NUM_ADCS 3
 
 #define ENUM_STRING(x) [x] = #x
 #define ARRAY_LENGTH(array) (sizeof((array))/sizeof((array)[0]))
@@ -39,8 +39,6 @@
 #define BYTE_ACCESS_SIZE 1
 #define HALFWORD_ACCESS_SIZE 2
 #define WORD_ACCESS_SIZE 4
-
-#define STM32_FLASH_ADDR_START (0x08000000)
 
 /* VALUE_BETWEEN is inclusive */
 #define VALUE_BETWEEN(value, start, end) ((value >= start) && (value <= end))
@@ -70,117 +68,7 @@
 
 
 
-
-/* PERIPHERALS - COMMON */
-/* Indexes used for accessing a GPIO array */
-#define STM32_GPIOA_INDEX 0
-#define STM32_GPIOB_INDEX 1
-#define STM32_GPIOC_INDEX 2
-#define STM32_GPIOD_INDEX 3
-#define STM32_GPIOE_INDEX 4
-#define STM32_GPIOF_INDEX 5
-#define STM32_GPIOG_INDEX 6
-#define STM32_GPIOH_INDEX 7
-#define STM32_GPIOI_INDEX 8
-
-/* Indexes used for accessing a UART array */
-#define STM32_UART1_INDEX 0
-#define STM32_UART2_INDEX 1
-#define STM32_UART3_INDEX 2
-#define STM32_UART4_INDEX 3
-#define STM32_UART5_INDEX 4
-#define STM32_UART6_INDEX 5
-
-/* Used for uniquely identifying a peripheral */
-typedef int32_t stm32_periph_t;
-
-#define DEFINE_PROP_PERIPH_T DEFINE_PROP_INT32
-#define QDEV_PROP_SET_PERIPH_T qdev_prop_set_int32
-
-enum {
-    STM32_PERIPH_UNDEFINED = -1,
-    STM32_RCC_PERIPH = 0,
-    STM32_GPIOA,
-    STM32_GPIOB,
-    STM32_GPIOC,
-    STM32_GPIOD,
-    STM32_GPIOE,
-    STM32_GPIOF,
-    STM32_GPIOG,
-    STM32_GPIOH,
-    STM32_GPIOI,
-    STM32_GPIOJ,
-    STM32_GPIOK,
-    STM32_SYSCFG,
-    STM32_AFIO_PERIPH,
-    STM32_UART1,
-    STM32_UART2,
-    STM32_UART3,
-    STM32_UART4,
-    STM32_UART5,
-    STM32_UART6,
-    STM32_UART7,
-    STM32_UART8,
-    STM32_ADC1,
-    STM32_ADC2,
-    STM32_ADC3,
-    STM32_DAC,
-    STM32_TIM1,
-    STM32_TIM2,
-    STM32_TIM3,
-    STM32_TIM4,
-    STM32_TIM5,
-    STM32_TIM6,
-    STM32_TIM7,
-    STM32_TIM8,
-    STM32_TIM9,
-    STM32_TIM10,
-    STM32_TIM11,
-    STM32_TIM12,
-    STM32_TIM13,
-    STM32_TIM14,
-    STM32_BKP,
-    STM32_PWR,
-    STM32_I2C1,
-    STM32_I2C2,
-    STM32_I2C3,
-    STM32_I2C4,
-    STM32_I2S2,
-    STM32_I2S3,
-    STM32_IWDG,
-    STM32_WWDG,
-    STM32_CAN1,
-    STM32_CAN2,
-    STM32_CAN,
-    STM32_USB,
-    STM32_SPI1,
-    STM32_SPI2,
-    STM32_SPI3,
-    STM32_EXTI_PERIPH,
-    STM32_SDIO,
-    STM32_FSMC,
-    STM32_RTC,
-    STM32_CRC,
-    STM32_DMA1,
-    STM32_DMA2,
-    STM32_DCMI_PERIPH,
-    STM32_CRYP_PERIPH,
-    STM32_HASH_PERIPH,
-    STM32_RNG_PERIPH,
-    STM32_QSPI,
-    STM32_LPTIM1,
-
-    STM32_PERIPH_COUNT,
-};
-
 const char *stm32_periph_name(stm32_periph_t periph);
-
-/* Convert between a GPIO array index and stm32_periph_t, and vice-versa */
-#define STM32_GPIO_INDEX_FROM_PERIPH(gpio_periph) (gpio_periph - STM32_GPIOA)
-#define STM32_GPIO_PERIPH_FROM_INDEX(gpio_index) (STM32_GPIOA + gpio_index)
-
-
-
 
 /* REGISTER HELPERS */
 /* Macros used for converting a half-word into a word.
@@ -209,93 +97,6 @@ const char *stm32_periph_name(stm32_periph_t periph);
                       __FUNCTION__, (int)offset)
 # define STM32_NOT_IMPL_REG(offset, size)      \
         printf("%s: Not implemented yet 0x%x - size %u\n", __FUNCTION__, (int)offset, size)
-
-
-
-
-/* IRQs */
-#define STM32_PVD_IRQ 1
-#define STM32_TAMP_STAMP_IRQ 2
-#define STM32_RTC_WKUP_IRQ 3
-#define STM32_RCC_IRQ 5
-#define STM32_EXTI0_IRQ 6
-#define STM32_EXTI1_IRQ 7
-#define STM32_EXTI2_IRQ 8
-#define STM32_EXTI3_IRQ 9
-#define STM32_EXTI4_IRQ 10
-
-#define STM32_DMA1_STREAM0_IRQ 11
-#define STM32_DMA1_STREAM1_IRQ 12
-#define STM32_DMA1_STREAM2_IRQ 13
-#define STM32_DMA1_STREAM3_IRQ 14
-#define STM32_DMA1_STREAM4_IRQ 15
-#define STM32_DMA1_STREAM5_IRQ 16
-#define STM32_DMA1_STREAM6_IRQ 17
-
-#define STM32_EXTI9_5_IRQ 23
-#define STM32_TIM1_BRK_TIM9_IRQ 24
-#define STM32_TIM1_UP_TIM10_IRQ 25
-#define STM32_TIM1_TRG_COM_TIM11_IRQ 26
-#define STM32_TIM1_CC_IRQ 27
-#define STM32_TIM2_IRQ 28
-#define STM32_TIM3_IRQ 29
-#define STM32_TIM4_IRQ 30
-
-#define STM32_I2C1_EV_IRQ 31
-#define STM32_I2C1_ER_IRQ 32
-#define STM32_I2C2_EV_IRQ 33
-#define STM32_I2C2_ER_IRQ 34
-
-#define STM32_SPI1_IRQ 35
-#define STM32_SPI2_IRQ 36
-
-#define STM32_UART1_IRQ 37
-#define STM32_UART2_IRQ 38
-#define STM32_UART3_IRQ 39
-#define STM32_EXTI15_10_IRQ 40
-#define STM32_RTCAlarm_IRQ 41
-#define STM32_OTG_FS_WKUP_IRQ 42
-#define STM32_TIM8_BRK_TIM12_IRQ 43
-#define STM32_TIM8_UP_TIM13_IRQ 44
-#define STM32_TIM8_TRG_COMM_TIM14_IRQ 45
-
-#define STM32_DMA1_STREAM7_IRQ 47
-
-#define STM32_TIM5_IRQ 50
-#define STM32_SPI3_IRQ 51
-#define STM32_UART4_IRQ 52
-#define STM32_UART5_IRQ 53
-#define STM32_TIM6_IRQ 54
-#define STM32_TIM7_IRQ 55
-
-#define STM32_DMA2_STREAM0_IRQ 56
-#define STM32_DMA2_STREAM1_IRQ 57
-#define STM32_DMA2_STREAM2_IRQ 58
-#define STM32_DMA2_STREAM3_IRQ 59
-#define STM32_DMA2_STREAM4_IRQ 60
-
-#define STM32_ETH_WKUP_IRQ 62
-
-#define STM32_DMA2_STREAM5_IRQ 68
-#define STM32_DMA2_STREAM6_IRQ 69
-#define STM32_DMA2_STREAM7_IRQ 70
-
-#define STM32_UART6_IRQ 71
-
-#define STM32_I2C3_EV_IRQ 72
-#define STM32_I2C3_ER_IRQ 73
-
-#define STM32_SPI4_IRQ 84
-#define STM32_SPI5_IRQ 85
-#define STM32_SPI6_IRQ 86
-
-#define STM32_QSPI_IRQ 92
-#define STM32_LPTIM1_IRQ 93
-
-#define STM32_I2C4_EV_IRQ 95
-#define STM32_I2C4_ER_IRQ 96
-
-#define STM32_MAX_IRQ  127
 
 
 
@@ -346,29 +147,8 @@ uint8_t stm32_gpio_get_mode_bits(Stm32Gpio *s, unsigned pin);
 uint8_t stm32_gpio_get_config_bits(Stm32Gpio *s, unsigned pin);
 
 
-/* RCC */
-typedef struct Stm32Rcc Stm32Rcc;
-
 #define TYPE_STM32_RCC "stm32-rcc"
 #define STM32_RCC(obj) OBJECT_CHECK(Stm32Rcc, (obj), TYPE_STM32_RCC)
-
-/* Checks if the specified peripheral clock is enabled.
- * Generates a hardware error if not.
- */
-bool stm32_rcc_check_periph_clk(Stm32Rcc *s, stm32_periph_t periph);
-
-/* Sets the IRQ to be called when the specified peripheral clock changes
- * frequency. */
-void stm32_rcc_set_periph_clk_irq(
-        Stm32Rcc *s,
-        stm32_periph_t periph,
-        qemu_irq periph_irq);
-
-/* Gets the frequency of the specified peripheral clock. */
-uint32_t stm32_rcc_get_periph_freq(
-        Stm32Rcc *s,
-        stm32_periph_t periph);
-
 
 
 /* TIM */

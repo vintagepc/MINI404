@@ -28,7 +28,9 @@
 #include "qemu-common.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
+#include "hw/qdev-properties.h"
 #include "../utility/macros.h"
+#include "../stm32_common/stm32_rcc_if.h"
 
 #define R_TIM_CR1    (0x00 / 4) //p
 #define R_TIM_CR2    (0x04 / 4)
@@ -85,15 +87,32 @@ static const char *f2xx_tim_reg_names[] = {
 #define DPRINTF(fmt, ...)
 #endif
 
+enum CCxS_val
+{
+	CCxS_OUTPUT,
+	CCxS_INPUT_TI1,
+	CCxS_INPUT_TI2,
+	CCxS_INPUT_TRC
+};
+
+enum OCxM_val
+{
+	OCxM_Frozen,
+	OCxM_ACT_M,
+	OCxM_INACT_M,
+	OCxM_TOGGLE_M,
+	OCxM_F_INACT,
+	OCxM_F_ACT,
+	OCxM_PWM1,
+	OCxM_PWM2,
+};
+
 static uint32_t
 f2xx_tim_period(f2xx_tim *s)
 {
-    
-    uint64_t clock_freq = 84000000UL; // APB2 @ 84 Mhz
-    if (s->rcc!=NULL) {
-        clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
 
-    }
+    uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+
     clock_freq/= (s->defs.PSC+1);
     uint32_t interval = 1000000000UL/clock_freq;
     return interval;
@@ -102,8 +121,11 @@ f2xx_tim_period(f2xx_tim *s)
 
 static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
 {
-    uint64_t clock_freq = stm32_rcc_get_periph_freq(s->rcc, s->periph);
-    return muldiv64(t, clock_freq, 1000000000ULL) / (s->defs.PSC + 1);
+    uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+	if (clock_freq == 0)
+		return 0;
+	else
+	    return muldiv64(t, clock_freq, 1000000000ULL) / (s->defs.PSC + 1);
 }
 
 
@@ -128,27 +150,48 @@ f2xx_tim_timer(void *arg)
     if (s->defs.CR1.CEN) {
         timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
     }
-    if (!s->defs.SR.UIF) {
+    if (!s->defs.SR.UIF && s->defs.DIER.UIE) {
         //printf("f2xx tim timer expired, setting int\n");
         s->defs.SR.UIF = 1;
     }
-    // Set IRQ if UIE is enabled. 
+    // Set IRQ if UIE is enabled.
    if (s->defs.DIER.UIE)
    {
         qemu_set_irq(s->irq, 1);
    }
 }
 
+static void
+f2xx_tim_ccmr1(void *arg)
+{
+    f2xx_tim *s = arg;
+	if (!s->defs.CR1.CEN)
+		return;
+	s->defs.SR.CC1IF |= 1;
+   if (s->defs.DIER.CC1IE)
+   {
+        qemu_set_irq(s->irq, 1);
+   }
+}
+
+static void f2xx_tim_update_ccr_timer(f2xx_tim *s, int n, uint32_t when)
+{
+	// Calculate timer tick for CCR event:
+	int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    // When will we match CCR?
+	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s) *(when));
+}
+
 // Called if there's an update to ARR without buffering (ARPE=0)
-static void 
+static void
 f2xx_arr_update(f2xx_tim *s) {
     if (s->defs.CR1.CEN) {
         if (s->defs.CR1.CMS || s->defs.CR1.DIR) {
             printf("FIXME - non-upcounting ARR updates!\n");
         }
         int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-        int64_t current_count = f2xx_tim_ns_to_ticks(s, now) - s->count_timebase; 
-        int64_t ns_remaining = ((s->defs.ARR+1) - current_count) * f2xx_tim_period(s); 
+        int64_t current_count = f2xx_tim_ns_to_ticks(s, now) - s->count_timebase;
+        int64_t ns_remaining = ((s->defs.ARR+1) - current_count) * f2xx_tim_period(s);
         if (ns_remaining<=0) {
             //printf("ERR: ARR update would have caused timer %u to fire %ld in the past!\n",s->id, ((s->defs.ARR+1) - current_count));
             // Fire at the next tick
@@ -180,7 +223,7 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     case R_TIM_SR:
         break;
     case R_TIM_CNT:
-        r = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase; 
+        r = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase;
         // printf("Attempted to read count on timer %u (val %u)\n", s->id,r);
         break;
     default:
@@ -205,7 +248,7 @@ static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool
     //    case 0x5:
             return 255*is_inverted;
         case 0x6:
-      //  case 0x7:
+        case 0x7:
             ratio = (CCR*255)/s->defs.ARR;
             if (is_inverted^active_low) ratio = 255-ratio;
             return ratio;
@@ -224,12 +267,12 @@ static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool
 //     {
 //         case 0x00: // frozen; do nothing.
 //             return;
-   
+
 //         case 0x6:
 //       //  case 0x7:
-//             if (s->defs.CR1.DIR) // downcount. 
+//             if (s->defs.CR1.DIR) // downcount.
 //             {
-//                 is_on = 
+//                 is_on =
 //             }
 //             ratio = (CCR*255)/s->defs.ARR;
 //             if (is_inverted^active_low) ratio = 255-ratio;
@@ -240,7 +283,39 @@ static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool
 //     }
 // }
 
-// static int 
+// static int
+
+static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
+{
+	if (!s->defs.CR1.CEN)
+		return;
+	int ratio = -1;
+	switch (n)
+	{
+		case 1:
+			if (s->defs.CCER.CC1E && s->defs.CCMR1.CC1S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
+			if (s->defs.CCMR1.OC1M == OCxM_Frozen && s->defs.DIER.CC1IE)
+				f2xx_tim_update_ccr_timer(s, 1, s->defs.CCR1);
+			break;
+		case 2:
+			if (s->defs.CCER.CC2E  && s->defs.CCMR1.CC2S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
+			break;
+		case 3:
+			if (s->defs.CCER.CC3E  && s->defs.CCMR2.CC3S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+			break;
+		case 4:
+			if (s->defs.CCER.CC4E && s->defs.CCMR2.CC4S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
+			break;
+	}
+	if (ratio>=0)
+	{
+		qemu_set_irq(s->pwm_ratio_changed[n-1], ratio);
+	}
+}
 
 static void
 f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
@@ -281,9 +356,11 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_log_mask(LOG_UNIMP, "f2xx tim non-zero CR1 unimplemented\n");
         }
         if ((s->regs[addr] & 1) == 0 && data & 1) {
-            printf("f2xx tim started: %d\n", s->id);
+            printf("f2xx tim started: %u\n", 1U + s->parent.periph - STM32_P_TIM1);
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
             qemu_set_irq(s->pwm_enable[0], 1);
+			s->defs.CR1.CEN = 1;
+			f2xx_tim_update_pwm(s, 1);
             printf("pwm en\n");
         } else if (s->regs[addr] & 1 && (data & 1) == 0) {
             timer_del(s->timer);
@@ -293,17 +370,18 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         }
         if (data & 1<<3)
         {
-            printf("%d OPM!\n", s->id);
+            printf("%u OPM!\n", 1U + s->parent.periph - STM32_P_TIM1);
         }
         s->regs[addr] = data;
         break;
     case R_TIM_SR:
-        if (s->regs[addr] & 1 && (data & 1) == 0) {
+        if ((s->regs[addr] & data) == 0) {
             //printf("f2xx tim clearing int\n");
             qemu_set_irq(s->irq, 0);
         }
         s->regs[addr] &= data;
         break;
+	case R_TIM_DIER:
     case R_TIM_EGR:
         qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented write EGR+%u size %u val 0x%x\n",
           offset, size, (unsigned int)data);
@@ -314,62 +392,41 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
        // printf("CCER: %04x\n",data);
         s->regs[addr] = data;
 
-        // If we are enabling PWM mode in output 1, notify the callback if we have one registered
-        if ( s->defs.CCER.CC1E // Capture Compare 1 output enable
-             && s->defs.CCMR1.OC1M == 6
-             && s->defs.CCMR1.CC1S == 0) {
-
-            uint32_t ratio = (s->defs.CCR1 * 255) / s->defs.ARR;
-            DPRINTF("Setting PWM ratio to %u\n", ratio);
-            qemu_set_irq(s->pwm_ratio_changed[0], ratio);
+        if (changed & 0x01) {
+			f2xx_tim_update_pwm(s, 1);
         }
-
-        // If we are enabling PWM mode in output 1, notify the callback if we have one registered
-        if ( s->defs.CCER.CC2E // Capture Compare 2 output enable
-            && s->defs.CCMR1.OC2M == 6
-            && s->defs.CCMR1.CC2S == 0) {
-
-            uint32_t ratio = (s->defs.CCR2 * 255) / s->defs.ARR;
-            DPRINTF("Setting PWM ratio to %u\n", ratio);
-            qemu_set_irq(s->pwm_ratio_changed[1], ratio);
-        } 
-        if (changed & 0xF00) {
-            if ( s->defs.CCER.CC3E // Capture Compare 2 output enable
-                   && s->defs.CCMR2.CC3S == 0) {
-                int ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
-                if (ratio>=0)
-                    qemu_set_irq(s->pwm_ratio_changed[2], ratio);
-            } 
-            
+        if (changed & 0x10) {
+			f2xx_tim_update_pwm(s, 2);
         }
-        if (changed & 0x3000){
-            if (s->defs.CCER.CC4E // Capture Compare 4 output enable
-                && s->defs.CCMR2.CC4S == 0) {
-                int ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
-                DPRINTF("Setting PWM ratio to %d\n", ratio);
-                if (ratio>=0)
-                    qemu_set_irq(s->pwm_ratio_changed[3], ratio);
-            }
+        if (changed & 0x100) {
+			f2xx_tim_update_pwm(s, 3);
+        }
+        if (changed & 0x1000){
+			f2xx_tim_update_pwm(s, 4);
         }
         break;
     // case R_TIM_CCMR1:
     // case R_TIM_CCMR2:
     // case R_TIM_DIER:
     // case R_TIM_PSC:
+    case R_TIM_CCR1:
+    case R_TIM_CCR2:
+	case R_TIM_CCR3:
+    case R_TIM_CCR4:
+	{
+		// Only timer 5 and 2 are the full 32-bit
+        if (s->parent.periph !=STM32_P_TIM5 && s->parent.periph != STM32_P_TIM2) {
+            data &= 0xFFFFU;
+        }
+        s->regs[addr] = data;
+		f2xx_tim_update_pwm(s, (addr - R_TIM_CCR1)+1 );
+	}
+	break;
     case R_TIM_ARR:
         // Check for ARR buffering setting
         update_required = s->defs.CR1.ARPE == 0;
         /* FALLTHRU */
     case R_TIM_CNT:
-    case R_TIM_CCR1:
-    case R_TIM_CCR2:
-    case R_TIM_CCR3:
-    case R_TIM_CCR4:
-        // Only timer 5 and 2 are the full 32-bit
-        if (s->id !=5 && s->id != 2) {
-            data &= 0xFFFFU; 
-        }
-        /* FALLTHRU */
     default:
         s->regs[addr] = data;
         // printf("f2xx tim unimplemented write 0x%x+%u size %u val 0x%x\n",
@@ -399,10 +456,8 @@ static void f2xx_tim_reset(DeviceState *dev)
     s->count_timebase = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
-static void stm32f2xx_tim_rcc_reset(void *opaque, int n, int level) {
-    if (!level) {
-        f2xx_tim_reset(DEVICE(opaque));
-    }
+static void f2xx_tim_realize(DeviceState* dev, Error **errp)
+{
 }
 
 
@@ -435,13 +490,14 @@ f2xx_tim_init(Object *obj)
     //s->regs[R_RTC_WUTR] = R_RTC_WUTR_RESET;
     DeviceState *dev = DEVICE(obj);
     s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, f2xx_tim_timer, s);
+	for (int i=0; i<4; i++)
+	{
+		s->ccrtimer[i] = timer_new_ns(QEMU_CLOCK_VIRTUAL, f2xx_tim_ccmr1, s);
+	}
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
 
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);
-
-    qdev_init_gpio_in_named(dev,stm32f2xx_tim_rcc_reset,"rcc-reset",1);
-    
 }
 
 static const VMStateDescription vmstate_stm32f2xx_tim = {
@@ -451,25 +507,24 @@ static const VMStateDescription vmstate_stm32f2xx_tim = {
     .fields = (VMStateField[]) {
         VMSTATE_TIMER_PTR(timer,f2xx_tim),
         VMSTATE_UINT32_ARRAY(regs,f2xx_tim,R_TIM_MAX),
-        VMSTATE_UINT8(id,f2xx_tim),
         VMSTATE_INT64(count_timebase,f2xx_tim),
-        VMSTATE_INT32(periph,f2xx_tim),
         VMSTATE_END_OF_LIST()
     }
 };
+
 static void
 f2xx_tim_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32f2xx_tim;
     dc->reset = f2xx_tim_reset;
-
+	dc->realize = f2xx_tim_realize;
 }
 
 static const TypeInfo
 f2xx_tim_info = {
     .name          = TYPE_STM32F4XX_TIMER,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(f2xx_tim),
     .instance_init = f2xx_tim_init,
     .class_init    = f2xx_tim_class_init,

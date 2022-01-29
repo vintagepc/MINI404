@@ -1,6 +1,6 @@
 /*
  * STM32F2XX I2C
- * 
+ *
  * Copyright (c) 2013 <https://github.com/pebble/qemu>
  * Adapted for Mini404 in 2020 VintagePC <github.com/vinagepc>
  * (Significant portions rewritten and updated)
@@ -31,7 +31,6 @@
 #include "hw/i2c/i2c.h"
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
-#include "stm32_util.h"
 #include "stm32f2xx_i2c.h"
 #include "../utility/macros.h"
 
@@ -53,7 +52,7 @@
     do { printf("STM32STM32F2XXI2CState: " fmt , ## __VA_ARGS__); \
          usleep(1000); \
     } while (0)
-    
+
 
     static const char *stm32f2xxi2c_reg_name_arr[] = {
         "CR1",
@@ -183,7 +182,8 @@ stm32f2xxi2c_read(void *arg, hwaddr offset, unsigned size)
     uint16_t r = UINT16_MAX;
 
     if (!(size == 2 || size == 4 || (offset & 0x3) != 0)) {
-        STM32_BAD_REG(offset, size);
+		qemu_log_mask(LOG_GUEST_ERROR, "Bad I2C accessoffset 0x%x\n",
+          (unsigned)offset);
     }
     offset >>= 2;
     if (offset < R_MAX) {
@@ -198,10 +198,10 @@ stm32f2xxi2c_read(void *arg, hwaddr offset, unsigned size)
                         s->defs.SR1.BTF = s->shift_full = true;
                     }
                 } else if (s->defs.SR1.RxNE) {
-                    if (s->dr_unread) {  
+                    if (s->dr_unread) {
                         // Special case for 2 bytes left, don't clobber the wanted value currently in DR.
                     } else if (s->shift_full) {
-                        s->defs.DR = s->shiftreg; 
+                        s->defs.DR = s->shiftreg;
                         s->shift_full = false;
                         s->defs.SR1.RxNE = false;
                         s->defs.SR1.BTF = false;
@@ -215,7 +215,7 @@ stm32f2xxi2c_read(void *arg, hwaddr offset, unsigned size)
                 break;
             case R_SR2:
                 if (s->last_read == R_SR1) {
-                    s->defs.SR1.ADDR = false; // Clear ADDR flag. 
+                    s->defs.SR1.ADDR = false; // Clear ADDR flag.
                 }
                 break;
         }
@@ -238,7 +238,8 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
     struct STM32F2XXI2CState *s = (struct STM32F2XXI2CState *)arg;
 
     if (size != 2 && size != 4) {
-        STM32_BAD_REG(offset, size);
+		qemu_log_mask(LOG_GUEST_ERROR, "Bad I2C access size 0x%x\n",
+          (unsigned)size);
     }
     /* I2C registers are all at most 16 bits wide */
     data &= 0xFFFFF;
@@ -262,10 +263,12 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
                     if (!s->dr_unread) {
                         s->defs.DR = s->shiftreg;
                         s->shiftreg = i2c_recv(s->bus);
-                        s->shift_full = true;     
-                        s->dr_unread = true;                   
+                        s->shift_full = true;
+                        s->dr_unread = true;
                     } else {
-                        printf("FIXME - stop with DR unread!\n");
+						// I'm not sure if this is a problem but it's pretty spammy.
+						// Things seem to work fine so it's not like data is being lost somehow.
+                        //printf("FIXME - stop with DR unread!\n");
                     }
                 }
                 i2c_end_transfer(s->bus);
@@ -282,7 +285,7 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
                 s->defs.SR1.SB = false;
                 s->slave_address = data;
                 if (i2c_start_transfer(s->bus, data>>1, data &1)){
-                    s->defs.SR1.AF = true; // no device, AF flag. 
+                    s->defs.SR1.AF = true; // no device, AF flag.
                 } else if (data&1){
                     s->is_read = true;
                     s->shiftreg = i2c_recv(s->bus);
@@ -293,8 +296,8 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
                     s->defs.SR1.TxE = true; // Ready for data
                 }
             } else if (!s->is_read && s->defs.SR1.TxE) { // Continuing to transmit.
-                i2c_send(s->bus, data& 0xFF); // Send the byte. 
-                s->defs.SR1.BTF = true; // Pretend we put said byte in the shift reg. 
+                i2c_send(s->bus, data& 0xFF); // Send the byte.
+                s->defs.SR1.BTF = true; // Pretend we put said byte in the shift reg.
             }
             break;
         case R_CR2:
@@ -304,7 +307,7 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
         if (offset < ARRAY_SIZE(s->regs)) {
             s->regs[offset] = data;
         } else {
-            STM32_BAD_REG(offset, WORD_ACCESS_SIZE);
+            printf("ERR: F2xx I2c reg out of bounds\n");
         }
     }
     stm32f2xxi2c_update_irq(s);
@@ -328,7 +331,7 @@ static void stm32f2xx_i2c_rcc_reset(void *opaque, int n, int level) {
         stm32f2xxi2c_reset(DEVICE(opaque));
     }
 }
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(STM32F2XXI2CState, stm32f2xxi2c, STM32F2XX_I2C, SYS_BUS_DEVICE, {NULL});
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(STM32F2XXI2CState, stm32f2xxi2c, STM32F2XX_I2C, STM32_PERIPHERAL, {NULL});
 
 static void
 stm32f2xxi2c_finalize(Object *obj)

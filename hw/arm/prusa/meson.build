@@ -22,6 +22,7 @@ else
     message('OpenGL libraries not found. Install development packages for freeglut, glew, and mesa and re-run configure.')
 endif
 
+subdir('stm32_common')
 subdir('stm32f407')
 
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(

@@ -109,6 +109,7 @@ stm32f2xx_fint_init(Object *obj)
 
     memory_region_init_io(&s->iomem, obj, &stm32f2xx_fint_ops, s, "fint", 0x400);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 }
 
 static const VMStateDescription vmstate_stm32f2xx_fint = {

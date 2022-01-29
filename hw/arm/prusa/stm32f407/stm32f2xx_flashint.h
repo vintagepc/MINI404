@@ -44,6 +44,8 @@ struct stm32f2xx_fint {
     MemoryRegion iomem;
 
     uint32_t regs[STM32_FINT_MAX];
+
+	qemu_irq irq;
 };
 
 #endif //#ifndef STM32F2XX_FINT_H

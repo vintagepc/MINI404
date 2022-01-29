@@ -55,7 +55,7 @@
 #define R_HCCHAR    0x00/4
 #define R_HCSPLT    0x04/4
 #define R_HCINT     0x08/4
-#define R_HCINTMSK  0x0C/4 
+#define R_HCINTMSK  0x0C/4
 #define R_HCTSIZ    0x10/4
 #define R_HCDMA     0x14/4
 
@@ -74,8 +74,8 @@
 #define R_PCGCTL (0xE00/4)
 #define R_PCGCCTL1 (0xE04/4)
 
-/* USBIP handling */ 
-#define BSIZE 64 
+/* USBIP handling */
+#define BSIZE 64
 char buffer[BSIZE+1];
 int  bsize=0;
 
@@ -187,11 +187,11 @@ static inline void STM32F4xx_update_hc_irq(STM32F4xxUSBState *s, int index)
 
 //     if (!(s->dreg0[R_DAINT - R_DCFG] & bitval)) {
 //         s->dreg0[R_DAINT - R_DCFG] |= bitval;
-//         if (is_out && (s->dreg_defs.DAINTMSK.OEPM & s->dreg_defs.DAINT.OEPINT)) 
+//         if (is_out && (s->dreg_defs.DAINTMSK.OEPM & s->dreg_defs.DAINT.OEPINT))
 //         {
 //             STM32F4xx_raise_global_irq(s, GINTSTS_OEPINT);
 //         }
-//         if (!is_out && (s->dreg_defs.DAINTMSK.IEPM & s->dreg_defs.DAINT.IEPINT)) 
+//         if (!is_out && (s->dreg_defs.DAINTMSK.IEPM & s->dreg_defs.DAINT.IEPINT))
 //         {
 //             STM32F4xx_raise_global_irq(s, GINTSTS_IEPINT);
 //         }
@@ -203,32 +203,32 @@ static inline void STM32F4xx_update_hc_irq(STM32F4xxUSBState *s, int index)
 
 //     if ((s->dreg0[R_DAINT - R_DCFG] & bitval)) {
 //         s->dreg0[R_DAINT - R_DCFG] &= ~bitval;
-//         if (is_out && (s->dreg_defs.DAINTMSK.OEPM & s->dreg_defs.DAINT.OEPINT)==0) 
+//         if (is_out && (s->dreg_defs.DAINTMSK.OEPM & s->dreg_defs.DAINT.OEPINT)==0)
 //         {
 //             STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
 //         }
-//         if (!is_out && (s->dreg_defs.DAINTMSK.IEPM & s->dreg_defs.DAINT.IEPINT)==0) 
+//         if (!is_out && (s->dreg_defs.DAINTMSK.IEPM & s->dreg_defs.DAINT.IEPINT)==0)
 //         {
 //             STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
 //         }
-        
+
 //     }
 // }
 
-static inline void STM32F4xx_update_device_common_irq(STM32F4xxUSBState *s) 
+static inline void STM32F4xx_update_device_common_irq(STM32F4xxUSBState *s)
 {
     uint32_t common_val = 0;
     bool raise_irq = 0;
     for (int i=0; i< STM32F4xx_NB_DEVCHAN; i++) {
-        if (s->drego[i].raw[R_OFF_DEPINT]) 
+        if (s->drego[i].raw[R_OFF_DEPINT])
         {
             common_val |= (1U << i) << 16U;
-            raise_irq |= (s->drego[i].raw[R_OFF_DEPINT] & s->dreg0[R_DOEPMSK-R_DCFG])>0; 
+            raise_irq |= (s->drego[i].raw[R_OFF_DEPINT] & s->dreg0[R_DOEPMSK-R_DCFG])>0;
         }
-        if (s->dregi[i].raw[R_OFF_DEPINT]) 
+        if (s->dregi[i].raw[R_OFF_DEPINT])
         {
             common_val |= (1U << i);
-            raise_irq |= (s->dregi[i].raw[R_OFF_DEPINT] & s->dreg0[R_DIEPMSK-R_DCFG])>0; 
+            raise_irq |= (s->dregi[i].raw[R_OFF_DEPINT] & s->dreg0[R_DIEPMSK-R_DCFG])>0;
         }
         if (s->dreg_defs.INEPTXFEM & 1U<<i)
         {
@@ -236,27 +236,27 @@ static inline void STM32F4xx_update_device_common_irq(STM32F4xxUSBState *s)
             raise_irq |= (s->dregi[i].raw[R_OFF_DEPINT]& DIEPMSK_TXFIFOEMPTY);
         }
     }
-    if (common_val^s->dreg0[R_DAINT-R_DCFG]) 
+    if (common_val^s->dreg0[R_DAINT-R_DCFG])
     {
-        // There's a change in the common reg. Update global accordingly. 
+        // There's a change in the common reg. Update global accordingly.
         s->dreg0[R_DAINT-R_DCFG] = common_val;
         if (!raise_irq)  // Stop here if IRQs are masked.
         {
             return;
         }
-        if (s->dreg_defs.DAINT.OEPINT & s->dreg_defs.DAINTMSK.OEPM) 
+        if (s->dreg_defs.DAINT.OEPINT & s->dreg_defs.DAINTMSK.OEPM)
         {
             STM32F4xx_raise_global_irq(s, GINTSTS_OEPINT);
         }
-        else 
+        else
         {
             STM32F4xx_lower_global_irq(s, GINTSTS_OEPINT);
         }
-        if (s->dreg_defs.DAINT.IEPINT & s->dreg_defs.DAINTMSK.IEPM) 
+        if (s->dreg_defs.DAINT.IEPINT & s->dreg_defs.DAINTMSK.IEPM)
         {
             STM32F4xx_raise_global_irq(s, GINTSTS_IEPINT);
         }
-        else 
+        else
         {
             STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
         }
@@ -265,7 +265,7 @@ static inline void STM32F4xx_update_device_common_irq(STM32F4xxUSBState *s)
 
 static inline void STM32F4xx_raise_device_ep_out_irq(STM32F4xxUSBState *s, int ep, uint32_t dev_intr)
 {
-    if (!(s->drego[ep].raw[R_OFF_DEPINT] & dev_intr)) 
+    if (!(s->drego[ep].raw[R_OFF_DEPINT] & dev_intr))
     {
         s->drego[ep].raw[R_OFF_DEPINT] |= dev_intr;
         STM32F4xx_update_device_common_irq(s);
@@ -274,7 +274,7 @@ static inline void STM32F4xx_raise_device_ep_out_irq(STM32F4xxUSBState *s, int e
 
 static inline void STM32F4xx_lower_device_ep_out_irq(STM32F4xxUSBState *s, int ep, uint32_t dev_intr)
 {
-    if (s->drego[ep].raw[R_OFF_DEPINT] & dev_intr) 
+    if (s->drego[ep].raw[R_OFF_DEPINT] & dev_intr)
     {
         s->drego[ep].raw[R_OFF_DEPINT] &= ~dev_intr;
         STM32F4xx_update_device_common_irq(s);
@@ -283,7 +283,7 @@ static inline void STM32F4xx_lower_device_ep_out_irq(STM32F4xxUSBState *s, int e
 
 static inline void STM32F4xx_raise_device_ep_in_irq(STM32F4xxUSBState *s, int ep, uint32_t dev_intr)
 {
-    if (!(s->dregi[ep].raw[R_OFF_DEPINT] & dev_intr)) 
+    if (!(s->dregi[ep].raw[R_OFF_DEPINT] & dev_intr))
     {
         s->dregi[ep].raw[R_OFF_DEPINT] |= dev_intr;
         STM32F4xx_update_device_common_irq(s);
@@ -292,7 +292,7 @@ static inline void STM32F4xx_raise_device_ep_in_irq(STM32F4xxUSBState *s, int ep
 
 static inline void STM32F4xx_lower_device_ep_in_irq(STM32F4xxUSBState *s, int ep, uint32_t dev_intr)
 {
-    if (s->dregi[ep].raw[R_OFF_DEPINT] & dev_intr) 
+    if (s->dregi[ep].raw[R_OFF_DEPINT] & dev_intr)
     {
         s->dregi[ep].raw[R_OFF_DEPINT] &= ~dev_intr;
         STM32F4xx_update_device_common_irq(s);
@@ -417,7 +417,7 @@ static void f4xx_usb_cdc_receive(void *opaque, const uint8_t *buf, int size)
     // TODO - forward chars to a packet.
 }
 
-static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, const uint32_t len) 
+static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, const uint32_t len)
 {
     for (int i=0; i<len; i++) {
         s->fifo_ram[i] = pBuff[i];
@@ -427,8 +427,8 @@ static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, co
     }
 }
 
-// Responsible for the initial handshake once device mode is enabled. 
-static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s) 
+// Responsible for the initial handshake once device mode is enabled.
+static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 {
     if (!qemu_chr_fe_backend_connected(&s->cdc)) {
         return;
@@ -470,7 +470,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                 case DEV_ST_DESCR3:
                     f4xx_usb_cdc_sendpkt(s, DEV_GETDESC3, sizeof(DEV_GETDESC3)/sizeof(uint32_t));
                     break;
-            }            
+            }
             s->device_state++;
             STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
@@ -480,7 +480,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         case DEV_ST_DESCR2_WAIT:
         case DEV_ST_DESCR3_WAIT:
             if (s->fifo_level[0]==0) // Data not ready yet. EP is enabled before fifo written.
-             
+
                 break;
             // Print out descriptor to chardev.
             {
@@ -490,7 +490,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                     qemu_chr_fe_write(&s->cdc, &pBuff[i],1);
                 const uint8_t nline[] = "\r\n";
                 qemu_chr_fe_write(&s->cdc, nline,2);
-                
+
             }
             s->fifo_level[0]=0;
             s->fifo_tail[0]=0;
@@ -556,7 +556,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         case DEV_ST_IO:
             if (s->cdc_in!=0)
             {
-                if (s->cdc_in == '\n') 
+                if (s->cdc_in == '\n')
                 {
                     f4xx_usb_cdc_sendpkt(s, DEV_OUT_AT, sizeof(DEV_OUT_AT)/sizeof(uint32_t));
                 }
@@ -636,7 +636,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
     }
 
     if (hctsiz->DOPING){
-        // Ping packet. just ACK it. 
+        // Ping packet. just ACK it.
         if (!s->is_ping) {
             r_chan->defs.HCINT.ACK |= r_chan->defs.HCINTMSK.ACKM;
             // s->hreg1[index + 4] &= ~TSIZ_DOPNG; // clear ping bit, it's done.
@@ -660,11 +660,11 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
         s->is_ping = false;
     }
 
-    trace_usb_stm_handle_packet(chan, dev, &p->packet, 
-            hcchar->EPNUM, 
+    trace_usb_stm_handle_packet(chan, dev, &p->packet,
+            hcchar->EPNUM,
             types[hcchar->EPTYP],
-            dirs[hcchar->EPDIR], 
-            hcchar->MPSIZ, 
+            dirs[hcchar->EPDIR],
+            hcchar->MPSIZ,
             hctsiz->XFRSIZ,
             hctsiz->PKTCNT);
 
@@ -701,12 +701,12 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
             uint32_t copy_end = s->fifo_head[chan] + words_required;
             if (copy_end > STM32F4xx_EP_FIFO_SIZE){
                 // Split copy because we're looping back around.
-                size_t bytes_to_end = ((STM32F4xx_EP_FIFO_SIZE - s->fifo_head[chan])) * sizeof(uint32_t); 
+                size_t bytes_to_end = ((STM32F4xx_EP_FIFO_SIZE - s->fifo_head[chan])) * sizeof(uint32_t);
                 memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],bytes_to_end); // Copy from head to end of ringbuffer
                 s->fifo_head[chan] = 0;
                 memcpy(&s->usb_buf[chan][bytes_to_end],&s->tx_fifos[chan][0],tlen-bytes_to_end); // Copy remainder.
                 s->fifo_head[chan] = copy_end %(STM32F4xx_EP_FIFO_SIZE);
-            } else { 
+            } else {
                 memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],tlen);
                 s->fifo_head[chan] += words_required;
             }
@@ -715,7 +715,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
             // for (int i=0; i<tlen; i++)
             //     printf("%02x ",s->usb_buf[chan][i]);
             // printf("\n");
-            // if (dma_memory_read(&s->dma_as, hcdma,                                          
+            // if (dma_memory_read(&s->dma_as, hcdma,
             //                     s->usb_buf[chan], tlen) != MEMTX_OK) {
             //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_read failed\n",
             //                   __func__);
@@ -778,7 +778,7 @@ babble:
                 // uint32_t orig_head =s->rx_fifo_tail;
                 uint32_t words = (actual>>2); // +1 for header.
                 if (actual%4 !=0) {
-                    words++; 
+                    words++;
                 }
                 if (s->rx_fifo_level + words + 1 > STM32F4xx_RX_FIFO_SIZE)
                 {
@@ -790,13 +790,13 @@ babble:
                 s->rx_fifo_level++;
                 uint32_t copy_end = s->rx_fifo_tail + words;
                 if (copy_end > STM32F4xx_RX_FIFO_SIZE){
-                    size_t bytes_to_end = ((STM32F4xx_RX_FIFO_SIZE - s->rx_fifo_tail)) * sizeof(uint32_t); 
+                    size_t bytes_to_end = ((STM32F4xx_RX_FIFO_SIZE - s->rx_fifo_tail)) * sizeof(uint32_t);
                     // Split copy because we're looping back around.
                     memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],bytes_to_end);
                     s->rx_fifo_tail = 0; // Loop around.
                     memcpy(&s->fifo_ram[s->rx_fifo_tail],&s->usb_buf[chan][bytes_to_end],actual - bytes_to_end);
                     s->rx_fifo_tail = copy_end % (STM32F4xx_RX_FIFO_SIZE);
-                } else { 
+                } else {
                     memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
                     s->rx_fifo_tail += words;
                 }
@@ -806,7 +806,7 @@ babble:
                 // printf("\n");
                 s->rx_fifo_level += words;
                 assert(s->rx_fifo_tail <= 32768); // Fix this you lazy lump...
-          
+
                 // while (orig_head != s->rx_fifo_tail)
                 // {
                 //     printf("RxFifo add @ %u: %08x \n", orig_head, s->fifo_ram[orig_head]);
@@ -833,7 +833,7 @@ babble:
             //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_write failed\n",
             //                   __func__);
             // }
-        } 
+        }
 
         tpcnt = actual / hcchar->MPSIZ;
         if (actual % hcchar->MPSIZ || tlen==0) {
@@ -1257,7 +1257,7 @@ static void STM32F4xx_flush_tx(void *ptr)
         return;
     }
     if (s->fifo_level[index] == 0) {
-        return; // FIFO already empty. 
+        return; // FIFO already empty.
     }
     // switch (index) {
     //     case 0b10000: // All
@@ -1268,7 +1268,7 @@ static void STM32F4xx_flush_tx(void *ptr)
 
     printf("FIXME: PACKET FLUSH\n");
     //STM32F4xx_tx_packet(s);
-    
+
 }
 
 static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t val,
@@ -1304,7 +1304,7 @@ static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t v
             printf("FIXME: USB dma not implemented!\n");
         }
         break;
-    case GUSBCFG: 
+    case GUSBCFG:
         if (val & GUSBCFG_FORCEDEVMODE) {
             printf("USB OTG: Changing to device mode\n");
             s->GINTSTS.CMOD = 0;
@@ -1655,7 +1655,7 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
         case R_DCTL:
             s->dreg0[index] = val;
             if (changed&DCTL_SFTDISCON) {
-                //DC connected, start setup. 
+                //DC connected, start setup.
                 if (s->dreg_defs.DCTL.SDIS) {
                     s->device_state = DEV_ST_RESET;
                 } else {
@@ -1672,11 +1672,11 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
         case R_DIEPEMPMSK:
            // printf("EPEMPMSK Write: %08x -> %"PRIx64" to addr %"HWADDR_PRIx"\n",s->dreg0[index] , val, addr<<2);
             s->dreg0[index] = val;
-            if ((s->device_state >= DEV_ST_IO_READY) && (val&2U)) 
+            if ((s->device_state >= DEV_ST_IO_READY) && (val&2U))
             {
                 STM32F4xx_raise_device_ep_in_irq(s, 1, DIEPMSK_TXFIFOEMPTY);
             }
-            // else if (s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0) 
+            // else if (s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0)
             // {
             //     s->dreg_defs.DAINT.IEPINT &= (~2U);
             //     STM32F4xx_lower_global_irq(s, GINTSTS_IEPINT);
@@ -1799,7 +1799,7 @@ static void STM32F4xx_dregin_write(void *ptr, hwaddr addr, int index,
         case R_OFF_DEPINT: // DIEPINT
             s->dregi[chan].raw[offset] &= ~val;
             STM32F4xx_update_device_common_irq(s);
-            if ((val & 1U) && s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0) 
+            if ((val & 1U) && s->device_state >= DEV_ST_IO_READY && s->fifo_level[1] == 0)
             {
             //   printf("Resetting xfcrcmplin\n");
                 s->dreg_defs.DAINT.IEPINT &= (~2U);
@@ -1971,7 +1971,7 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
         qemu_log_mask(LOG_GUEST_ERROR, "Wrote to a full FIFO (data discarded)!\n");
     }
     s->tx_fifos[index][s->fifo_tail[index]++] = val;
-    // %size ensures we automatically loop back around. 
+    // %size ensures we automatically loop back around.
     s->fifo_tail[index] %= STM32F4xx_EP_FIFO_SIZE;
     s->fifo_level[index]++;
     assert(s->fifo_tail[index]<STM32F4xx_EP_FIFO_SIZE); // laziness ftw
@@ -2129,12 +2129,12 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
     memset(s->dreg0, 0, sizeof(s->dreg0));
     memset(s->dregi[0].raw, 0, sizeof(s->dregi));
     memset(s->drego[0].raw, 0, sizeof(s->drego));
-    // RX fifo storage is the 2nd half of the 128k... for now. 
+    // RX fifo storage is the 2nd half of the 128k... for now.
     s->rx_fifo_head = 0;
     s->rx_fifo_tail = 0;
     s->rx_fifo_level = 0;
 
-    
+
 }
 
 static void STM32F4xx_reset_hold(Object *obj)
@@ -2170,14 +2170,11 @@ static void STM32F4xx_reset_exit(Object *obj)
     }
 }
 
-static void stm32f4xx_usb_reset(void *opaque, int n, int level) {
+static void stm32f4xx_usb_reset(DeviceState *ds) {
     // printf("RCC USB reset signal: %d\n",level);
-    STM32F4xxUSBState *s = STM32F4xx_USB(opaque);
-    if (level) {
-        STM32F4xx_reset_enter(OBJECT(s),RESET_TYPE_COLD);
-    } else {
-        STM32F4xx_reset_exit(OBJECT(s));
-    }
+    STM32F4xxUSBState *s = STM32F4xx_USB(ds);
+	STM32F4xx_reset_enter(OBJECT(s),RESET_TYPE_COLD);
+	STM32F4xx_reset_exit(OBJECT(s));
 }
 
 static void STM32F4xx_realize(DeviceState *dev, Error **errp)
@@ -2189,8 +2186,8 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
     // obj = object_property_get_link(OBJECT(dev), "dma-mr", &error_abort);
 
     // s->dma_mr = MEMORY_REGION(obj);
-    // I have no idea if this is right, I can't find any docs on where the dma 
-    // region for the USB controller lives. 
+    // I have no idea if this is right, I can't find any docs on where the dma
+    // region for the USB controller lives.
     // memory_region_add_subregion(&s->container, 0x20000, &s->dma_mr);
     // address_space_init(&s->dma_as, MEMORY_REGION(&s->dma_mr), "STM32F4xxUSBDMA");
 
@@ -2213,8 +2210,6 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, STM32F4xx_work_timer, s);
     s->cdc_timer = timer_new_us(QEMU_CLOCK_VIRTUAL, STM32F4xx_cdc_helper, s);
     s->async_bh = qemu_bh_new(STM32F4xx_work_bh, s);
-
-    qdev_init_gpio_in_named(dev,stm32f4xx_usb_reset,"rcc-reset",1);
 
     sysbus_init_irq(sbd, &s->irq);
 
@@ -2344,6 +2339,7 @@ static void STM32F4xx_class_init(ObjectClass *klass, void *data)
     ResettableClass *rc = RESETTABLE_CLASS(klass);
 
     dc->realize = STM32F4xx_realize;
+	dc->reset = stm32f4xx_usb_reset;
     dc->vmsd = &vmstate_STM32F4xx_state;
     set_bit(DEVICE_CATEGORY_USB, dc->categories);
     device_class_set_props(dc, STM32F4xx_usb_properties);
@@ -2353,7 +2349,7 @@ static void STM32F4xx_class_init(ObjectClass *klass, void *data)
 
 static const TypeInfo STM32F4xx_usb_type_info = {
     .name          = TYPE_STM32F4xx_USB,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(STM32F4xxUSBState),
     .instance_init = STM32F4xx_init,
     .class_size    = sizeof(STM32F4xxClass),

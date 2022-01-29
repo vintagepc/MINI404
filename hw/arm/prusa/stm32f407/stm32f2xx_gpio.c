@@ -101,7 +101,7 @@ stm32f2xx_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     addr >>= 2;
     if (addr > STM32_GPIO_MAX) {
         qemu_log_mask(LOG_GUEST_ERROR, "invalid GPIO %d write reg 0x%x\n",
-          s->periph, (unsigned int)addr << 2);
+          s->parent.periph, (unsigned int)addr << 2);
         return;
     }
 
@@ -135,7 +135,7 @@ stm32f2xx_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     }
     default:
         qemu_log_mask(LOG_UNIMP, "f2xx GPIO %u reg 0x%x:%d write (0x%x) unimplemented\n",
-          s->periph,  (int)addr << 2, offset, (int)data);
+          s->parent.periph,  (int)addr << 2, offset, (int)data);
         s->regs[addr] = data;
         break;
     }
@@ -156,7 +156,7 @@ stm32f2xx_gpio_reset(DeviceState *dev)
 {
     stm32f2xx_gpio *s = STM32F2XX_GPIO(dev);
 
-    switch (s->periph) {
+    switch (s->parent.periph) {
     case 0:
         s->regs[STM32_GPIO_MODER] = 0xa8000000;
         s->regs[STM32_GPIO_OSPEEDR] = 0x00000000;
@@ -235,7 +235,6 @@ stm32f2xx_gpio_init(Object *obj)
 }
 
 static Property stm32f2xx_gpio_properties[] = {
-    DEFINE_PROP_UINT32("periph", stm32f2xx_gpio, periph, -1),
     DEFINE_PROP_UINT32("idr-mask", stm32f2xx_gpio, idr_mask, 0),
     DEFINE_PROP_END_OF_LIST()
 };
@@ -245,7 +244,6 @@ static const VMStateDescription vmstate_stm32f2xx_gpio = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32(periph, stm32f2xx_gpio),
         VMSTATE_UINT32(idr_mask, stm32f2xx_gpio),
         VMSTATE_UINT32_ARRAY(regs, stm32f2xx_gpio,STM32_GPIO_MAX),
         VMSTATE_UINT32(ccr, stm32f2xx_gpio),
@@ -265,7 +263,7 @@ stm32f2xx_gpio_class_init(ObjectClass *klass, void *data)
 
 static const TypeInfo stm32f2xx_gpio_info = {
     .name = TYPE_STM32F2XX_GPIO,
-    .parent = TYPE_SYS_BUS_DEVICE,
+    .parent = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(stm32f2xx_gpio),
     .instance_init = stm32f2xx_gpio_init,
     .class_init = stm32f2xx_gpio_class_init
