@@ -356,7 +356,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_log_mask(LOG_UNIMP, "f2xx tim non-zero CR1 unimplemented\n");
         }
         if ((s->regs[addr] & 1) == 0 && data & 1) {
-            printf("f2xx tim started: %d\n", 1U + s->parent.periph - STM32_P_TIM1);
+            printf("f2xx tim started: %u\n", 1U + s->parent.periph - STM32_P_TIM1);
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
             qemu_set_irq(s->pwm_enable[0], 1);
 			s->defs.CR1.CEN = 1;
@@ -370,7 +370,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         }
         if (data & 1<<3)
         {
-            printf("%d OPM!\n", 1U + s->parent.periph - STM32_P_TIM1);
+            printf("%u OPM!\n", 1U + s->parent.periph - STM32_P_TIM1);
         }
         s->regs[addr] = data;
         break;

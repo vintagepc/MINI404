@@ -133,7 +133,7 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
 			_STM32_DMA_CHAN_BLK(7)	 				//0xB8 - 0xCC
 		} defs;
         uint32_t raw[R_DMA_MAX];
-    } QEMU_PACKED regs;
+    } regs;
 
 	uint32_t original_ndtrs[STM32_F2xx_DMA_MAX_CHAN];
 
