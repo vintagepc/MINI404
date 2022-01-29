@@ -37,7 +37,6 @@ QEMU_BUILD_BUG_MSG(CLKTREE_MAX_INPUT>=256,"DEFINE EXCEEDS SIZE OF uint8_t used t
 QEMU_BUILD_BUG_MSG(CLKTREE_MAX_OUTPUT>=256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
 QEMU_BUILD_BUG_MSG(CLKTREE_MAX_IRQ>=256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
 
-
 struct Clk {
     const char *name;
 
