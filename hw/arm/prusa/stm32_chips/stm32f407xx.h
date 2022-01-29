@@ -1,0 +1,126 @@
+
+/*
+    stm32f407xx.h - Chip variant definition for the STM32F407xx
+	Copyright 2022 VintagePC <https://github.com/vintagepc/>
+
+ 	This file is part of Mini404.
+
+	Mini404 is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	Mini404 is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef HW_ARM_PRUSA_STM32F407XX_H
+#define HW_ARM_PRUSA_STM32F407XX_H
+
+#include "../stm32_common/stm32_chip_macros.h"
+#include "../stm32_common/stm32_types.h"
+#include "stm32f4xx_irqs.h"
+#include "qemu/units.h"
+
+static const stm32_soc_cfg_t stm32f407xx_cfg =
+{
+	.nvic_irqs = F4xx_F407_COUNT_IRQ,
+	.rcc_hsi_freq = 16000000,
+	.rcc_hse_freq = 12000000,
+	.rcc_lse_freq = 32768,
+	.rcc_lsi_freq = 32000,
+	.flash_variants = {
+		{TYPE_STM32F407xE_SOC, 512*KiB},
+		{TYPE_STM32F407xG_SOC, 1U*MiB},
+		{NULL},
+	},
+	.sram_variants = {{NULL}},
+	PER_LN(flash_memory, "flash", P_UNDEFINED,  0x08000000),
+	PER_LNS(sram, "sram", P_UNDEFINED, 0x20000000, 192*KiB),
+	PER_LNS(ccmsram, "ccmsram", P_UNDEFINED, 0x10000000, 64*KiB),
+	PER_LN(syscfg, TYPE_STM32F4XX_SYSCFG, P_SYSCFG, 0x40013800),
+	PER_ALN(adcs, TYPE_STM32F4XX_ADC,
+		PER_I(P_ADC1, 0x40012000, F4xx_ADC_1_2_3_IRQ),
+		PER_I(P_ADC2, 0x40012100, F4xx_ADC_1_2_3_IRQ),
+		PER_I(P_ADC3, 0x40012200, F4xx_ADC_1_2_3_IRQ)),
+	PER_ALN(usarts, TYPE_STM32_UART,
+		PER_I(P_UART1, 0x40011000, F4xx_USART1_IRQ),
+		PER_I(P_UART2, 0x40004400, F4xx_USART2_IRQ),
+		PER_I(P_UART3, 0x40004800, F4xx_USART3_IRQ),
+		PER_I(P_UART4, 0x40004C00, F4xx_UART4_IRQ),
+		PER_I(P_UART5, 0x40005000, F4xx_UART5_IRQ),
+		PER_I(P_UART6, 0x40011400, F4xx_USART6_IRQ)
+		),
+	PER_ALN(spis, TYPE_STM32F4XX_SPI,
+		PER_I(P_SPI1, 0x40013000, F4xx_SPI1_IRQ),
+		PER_I(P_SPI2, 0x40003800, F4xx_SPI2_IRQ),
+		PER_I(P_SPI3, 0x40003C00, F4xx_SPI3_IRQ)
+		),
+	PER_ALN(i2cs, TYPE_STM32F2XX_I2C,
+		PER_IV(P_I2C1, 0x40005400, F4xx_I2C1_EV_IRQ, F4xx_I2C1_ER_IRQ),
+		PER_IV(P_I2C2, 0x40005800, F4xx_I2C2_EV_IRQ, F4xx_I2C2_ER_IRQ),
+		PER_IV(P_I2C3, 0x40005C00, F4xx_I2C3_EV_IRQ, F4xx_I2C3_ER_IRQ)
+		),
+	PER_ALN(dmas, TYPE_STM32F4xx_DMA,
+		PER_IV(P_DMA1, 0x40026000,
+			F4xx_DMA1_S0_IRQ, F4xx_DMA1_S1_IRQ, F4xx_DMA1_S2_IRQ, F4xx_DMA1_S3_IRQ,
+			F4xx_DMA1_S4_IRQ, F4xx_DMA1_S5_IRQ, F4xx_DMA1_S6_IRQ, F4xx_DMA1_S7_IRQ),
+		PER_IV(P_DMA2, 0x40026400,
+			F4xx_DMA2_S0_IRQ, F4xx_DMA2_S1_IRQ, F4xx_DMA2_S2_IRQ, F4xx_DMA2_S3_IRQ,
+			F4xx_DMA2_S4_IRQ, F4xx_DMA2_S5_IRQ, F4xx_DMA2_S6_IRQ, F4xx_DMA2_S7_IRQ)
+		),
+	PER_ALN(gpios, TYPE_STM32F2XX_GPIO,
+		PER(P_GPIOA, 0x40020000),
+		PER(P_GPIOB, 0x40020400),
+		PER(P_GPIOC, 0x40020800),
+		PER(P_GPIOD, 0x40020C00),
+		PER(P_GPIOE, 0x40021000),
+		PER(P_GPIOF, 0x40021400),
+		PER(P_GPIOG, 0x40021800),
+		PER(P_GPIOH, 0x40021C00),
+		PER(P_GPIOI, 0x40022000),
+		PER(P_GPIOJ, 0x40022400),
+		PER(P_GPIOK, 0x40022800)
+	),
+	PER_ALN(timers, TYPE_STM32F4XX_TIMER,
+		PER(P_TIM1, 0x40010000), // TIM1 FIXME: TIM1 is a complex timer w/ multiple IRQs
+		PER_I(P_TIM2, 0x40000000, F4xx_TIM2_IRQ),
+		PER_I(P_TIM3, 0x40000400, F4xx_TIM3_IRQ),
+		PER_I(P_TIM4, 0x40000800, F4xx_TIM4_IRQ),
+		PER_I(P_TIM5, 0x40000C00, F4xx_TIM5_IRQ),
+		PER_I(P_TIM6, 0x40001000, F4xx_TIM6_DAC_IRQ),
+		PER_I(P_TIM7, 0x40001400, F4xx_TIM7_IRQ),
+		PER(P_TIM8, 0x40010400),
+		PER_I(P_TIM9, 0x40014000, F4xx_TIM1_BRK_TIM9_IRQ),
+		PER_I(P_TIM10, 0x40014400, F4xx_TIM1_UP_TIM10_IRQ),
+		PER_I(P_TIM11, 0x40014800, F4xx_TIM1_TRG_COM_TIM11_IRQ),
+		PER_I(P_TIM12, 0x40001800, F4xx_TIM8_BRK_TIM12_IRQ),
+		PER_I(P_TIM13, 0x40001C00, F4xx_TIM8_UP_TIM13_IRQ),
+		PER_I(P_TIM14, 0x40002000, F4xx_TIM8_TRG_COM_TIM14_IRQ)
+	),
+	PER_LNIV(exti, TYPE_STM32F4XX_EXTI, P_EXTI, 0x40013C00,
+		F4xx_EXTI0_IRQ, F4xx_EXTI1_IRQ, F4xx_EXTI2_IRQ, F4xx_EXTI3_IRQ,
+		F4xx_EXTI4_IRQ, [5 ... 9] = F4xx_EXTI_5_9_IRQ,
+		[10 ... 15] = F4xx_EXTI_10_15_IRQ
+		),
+	PER_LNIV(eth, "stm32f4xx-ethernet", P_UNDEFINED, 0x40028000, F4xx_ETH_IRQ, F4xx_ETH_WKUP_IRQ),
+	PER_LNI(rcc, TYPE_STM32F2xx_RCC, P_RCC, 0x40023800, F4xx_RCC_IRQ),
+	PER_LNI(flash_if, TYPE_STM32F2XX_FINT, P_FSMC, 0x40023C00, F4xx_FLASH_IRQ),
+	PER_LN(iwdg, TYPE_STM32F4XX_IWDG, P_IWDG, 0x40003000),
+	PER_LN(crc, TYPE_STM32F2XX_CRC, P_CRC, 0x40023000),
+	PER_LN(rtc, TYPE_STM32F2XX_RTC, P_RTC, 0x40002800),
+	PER_LN(itm, TYPE_STM32F4XX_ITM, P_UNDEFINED, 0xE0000000),
+	PER_LN(pwr, TYPE_STM32F2XX_PWR, P_PWR, 0x40007000),
+	PER_LNI(rng, TYPE_STM32F4XX_RNG, P_RNG, 0x50060800, F4xx_HASH_RNG_IRQ),
+	PER_LN(otp, TYPE_STM32F4XX_OTP, P_UNDEFINED, 0x1FFF7800),
+	PER_LNI(usb_hs, TYPE_STM32F4xx_USB, P_USB, 0x40040000, F4xx_OTG_HS_IRQ),
+	PER_LNI(usb_fs, TYPE_STM32F4xx_USB, P_USB2, 0x50000000, F4xx_OTG_FS_IRQ),
+	PER_LN(adc_common, TYPE_STM32F4XX_ADCC, P_UNDEFINED, 0x40012300),
+} ;
+
+#endif // HW_ARM_PRUSA_STM32F407XX_H

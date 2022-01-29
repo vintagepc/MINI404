@@ -27,6 +27,7 @@
 #include "exec/memory.h"
 #include "stm32.h"
 #include "sysemu/block-backend.h"
+#include "../stm32_common/stm32_common.h"
 #include "../utility/macros.h"
 
 #define R_RNG_MAX (0x0C/4U)
@@ -35,13 +36,13 @@
 OBJECT_DECLARE_SIMPLE_TYPE(Stm32f4xxRNGState, STM32F4XX_RNG);
 
 typedef struct Stm32f4xxRNGState {
-    SysBusDevice  busdev;
+    STM32Peripheral  parent;
     MemoryRegion  iomem;
 
-    union 
+    union
     {
         uint32_t raw[R_RNG_MAX];
-        struct 
+        struct
         {
             struct {
                 uint32_t _unused :2;
@@ -61,8 +62,6 @@ typedef struct Stm32f4xxRNGState {
             uint32_t DR;
         } defs;
     } regs;
-
-    Stm32Rcc *rcc; // RCC for clock speed. 
 
     qemu_irq irq;
 

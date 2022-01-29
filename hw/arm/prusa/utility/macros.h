@@ -1,8 +1,8 @@
 /*
-    macros.h - Stupid fix for the fact you can't use DEFINE 
+    macros.h - Stupid fix for the fact you can't use DEFINE
     with simple type objects and have to resort to copypasta
     or tons of boilerplate.
-	
+
     Copyright 2021 VintagePC <https://github.com/vintagepc/>
     Based off the related macros in qom/object.h
 
@@ -55,18 +55,51 @@
 #define OBJECT_DEFINE_SIMPLE_TYPE (ModuleObjName, module_obj_name, \
                         MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME) \
                         OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
-                            MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL}) 
+                            MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL})
 
 #if !defined __cplusplus
 #define static_assert _Static_assert
 #endif
-#define CHECK_PRI(x,y)  #x" != "#y                      
+
+#define _JOIN2R(a,b) a##b
+#define _JOIN3(a,b,c) a#b#c
+#define _JOIN3R(a,b,c) a##b##c
+#define _JOIN2(a,b) a#b
+
+#define CHECK_PRI(x,y)  #x" != "#y
 #define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
 #define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg " size incorrect!")
 #define CHECK_TYPEDEF_u32(type,reg) CHECK_ALIGN(sizeof(((type*)0)->reg),sizeof(uint32_t),#reg " size incorrect!")
+#define CHECK_REGDEF_u32(type,reg) CHECK_ALIGN(sizeof(type),sizeof(uint32_t),#reg " size incorrect!")
 
-#define REG_S32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED 
+// 32-bit register with a single field of a lesser size.
+#define REG_S32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED
+// Single-bit field in a 32bit register
 #define REG_B32(name) uint32_t name :1
+// multi-bit bloc_K_ in a 32 bit register
+#define REG_K32(name, len) uint32_t name : len
+
+#define REGDEF_R(addr) uint32_t _JOIN2R(_reserved, addr)
+// Block of reserved 32 bit registers:
+
+
+
+
+#define REGDEF_NAME(part, x) _JOIN3R(stm32reg_,part##_##x,_t)
+
+#define REGDEF_BLOCK_BEGIN() typedef union { \
+	struct {
+
+#define REGDEF_BLOCK_END(part, x) } QEMU_PACKED; \
+	uint32_t raw; \
+} REGDEF_NAME(part, x);
+
+// Helper for auto-naming reserved blocks.
+#define _REG_R32(name, count, size) uint32_t _JOIN2R(name,count) : size
+// Define reserved bits in register.
+#define REG_R(size) _REG_R32(_reserved, __LINE__, size)
+// Single reserved bit.
+#define REG_RB() _REG_R32(_reserved, __LINE__, 1)
 
 // Missing int32 array macro:
 #define VMSTATE_INT32_2DARRAY_V(_f, _s, _n1, _n2, _v)                \
@@ -75,7 +108,7 @@
 #define VMSTATE_INT32_2DARRAY(_f, _s, _n1, _n2)                      \
     VMSTATE_INT32_2DARRAY_V(_f, _s, _n1, _n2, 0)
 
-// Some rather ugly convenience macros for 
+// Some rather ugly convenience macros for
 // more easily debugging save state symmetry. See the RCC implementation for
 // an example how this works. (STATE_DEBUG_VAR must be defined for it to work.)
 #ifdef STATE_DEBUG_VAR
@@ -86,17 +119,17 @@
 #define DEBUG_TAKE(src,index) memcpy(&STATE_DEBUG_VAR[index],src, sizeof(STATE_DEBUG_VAR[index]))
 #define DEBUG_CHECK(field) assert(s->field == STATE_DEBUG_VAR[index].field)
 #define DEBUG_CHECKP(field) assert(s->field == STATE_DEBUG_VAR[index]->field)
-#define DEBUG_VERIFY DEBUG_LIST 
+#define DEBUG_VERIFY DEBUG_LIST
 #define DEBUG_CAST_ONLY(cast) cast
 #undef STATE_DEBUG_VAR
 #else
 
-#define DEBUG_COPY(type, size) 
-#define DEBUG_TAKE(src,index) 
+#define DEBUG_COPY(type, size)
+#define DEBUG_TAKE(src,index)
 
 #define DEBUG_INDEX(value)
 #define DEBUG_CAST_ONLY(cast)
 #define DEBUG_CHECK(field)
-#define DEBUG_VERIFY 
+#define DEBUG_VERIFY
 
 #endif

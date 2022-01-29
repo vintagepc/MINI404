@@ -20,6 +20,7 @@
  */
 
 #include "stm32f4xx_rng.h"
+#include "../stm32_common/stm32_rcc_if.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "../utility/macros.h"
@@ -64,12 +65,8 @@ stm32f4xx_rng_read(void *arg, hwaddr addr, unsigned int size)
             s->regs.defs.SR.DRDY = 0;
             qemu_guest_getrandom_nofail(&s->regs.defs.DR, sizeof(&s->regs.defs.DR));
             // Calculate next DRDY:
-            uint32_t clk_freq = 84000000;
-            if (s->rcc)
-            {
-                clk_freq = stm32_rcc_get_periph_freq(s->rcc, STM32_RNG_PERIPH);
-            }
-            // Datasheet says this is 40 clock ticks or less. 
+            uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+            // Datasheet says this is 40 clock ticks or less.
             s->next_drdy = (1000000000LLU/(clk_freq/40U)) + qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
             break;
         case R_OFF_CR:
@@ -118,7 +115,7 @@ static const MemoryRegionOps stm32f4xx_rng_ops = {
     }
 };
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(Stm32f4xxRNGState, stm32f4xx_rng, STM32F4XX_RNG, SYS_BUS_DEVICE, {NULL});
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(Stm32f4xxRNGState, stm32f4xx_rng, STM32F4XX_RNG, STM32_PERIPHERAL, {NULL});
 
 static void stm32f4xx_rng_reset(DeviceState *ds)
 {
@@ -143,9 +140,7 @@ stm32f4xx_rng_init(Object *obj)
     Stm32f4xxRNGState *s = STM32F4XX_RNG(obj);
     memory_region_init_io(&s->iomem, obj, &stm32f4xx_rng_ops, s, "rng", R_RNG_MAX * 4U);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
-
-    qdev_init_gpio_out(DEVICE(obj),&s->irq, 1);
-
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 }
 
 static const VMStateDescription vmstate_stm32f4xx_rng = {

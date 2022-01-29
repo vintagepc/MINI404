@@ -28,6 +28,7 @@
 #include "hw/sysbus.h"
 #include "hw/ssi/ssi.h"
 #include "qom/object.h"
+#include "../stm32_common/stm32_common.h"
 
 // #define R_SPI_CR1     0x00
 // #define R_SPI_CR2     0x04
@@ -50,7 +51,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXSPIState, STM32F4XX_SPI)
 
 struct STM32F4XXSPIState {
     /* <private> */
-    SysBusDevice parent_obj;
+    STM32Peripheral parent;
 
     /* <public> */
     MemoryRegion mmio;

@@ -20,7 +20,7 @@
  */
 
 #include "stm32f4xx_iwdg.h"
-#include "stm32_rcc.h"
+#include "../stm32_common/stm32_rcc_if.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "sysemu/watchdog.h"
@@ -88,7 +88,7 @@ static void stm32f4xx_iwdg_update(stm32f4xx_iwdg *s){
     }
     uint32_t clkrate = 32000;
     if (s->rcc != NULL){
-        clkrate = stm32_rcc_get_periph_freq(s->rcc, STM32_IWDG);
+        clkrate = stm32_rcc_if_get_periph_freq(&s->parent);
         if (clkrate == 0)
         {
             qemu_log_mask(LOG_GUEST_ERROR,"ERR: Attempted to enable IWDG with LSI clock disabled!\n");
@@ -230,7 +230,7 @@ stm32f4xx_iwdg_class_init(ObjectClass *klass, void *data)
 static const TypeInfo
 stm32f4xx_iwdg_info = {
     .name          = TYPE_STM32F4XX_IWDG,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(stm32f4xx_iwdg),
     .instance_init = stm32f4xx_iwdg_init,
     .class_init    = stm32f4xx_iwdg_class_init,

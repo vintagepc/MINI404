@@ -1,0 +1,85 @@
+/*
+ * Basic Clock Tree Building Blocks
+ *
+ * Copyright (C) 2012 Andre Beckus
+ * Adapted for QEMU 5.2 in 2021 by VintagePC <http://github.com/vintagepc>
+ *
+ * Source code roughly based on omap_clk.c
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef STM32_CLK_H
+#define STM32_CLK_H
+
+#include "qemu/osdep.h"
+#include "../utility/macros.h"
+#include "migration/vmstate.h"
+#include "stm32_types.h"
+
+// Cannot be >255 as counts are stored in uint8_ts
+#define CLKTREE_MAX_IRQ 16
+#define CLKTREE_MAX_OUTPUT 24
+#define CLKTREE_MAX_INPUT 24
+
+static_assert(CLKTREE_MAX_INPUT<256,"DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
+static_assert(CLKTREE_MAX_OUTPUT<256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
+static_assert(CLKTREE_MAX_IRQ<256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
+
+
+struct Clk {
+    const char *name;
+
+    bool is_initialized;
+    bool enabled;
+
+    uint32_t input_freq, output_freq, max_output_freq;
+
+    uint16_t multiplier, divisor;
+
+    uint8_t user_count;
+    qemu_irq user[CLKTREE_MAX_IRQ]; /* Who to notify on change */
+
+    uint8_t output_count;
+    struct Clk *output[CLKTREE_MAX_OUTPUT];
+
+    uint8_t input_count;
+    int16_t selected_input;
+    struct Clk *input[CLKTREE_MAX_INPUT];
+
+};
+
+typedef struct Clk Clk_t;
+
+static const VMStateDescription vmstate_stm32_common_rcc_clk = {
+    .name = TYPE_STM32COM_RCC "-clk",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_BOOL(enabled, struct Clk),
+        VMSTATE_UINT32(input_freq,struct Clk),
+        VMSTATE_UINT32(output_freq,struct Clk),
+        VMSTATE_UINT32(max_output_freq,struct Clk),
+        VMSTATE_UINT16(multiplier,struct Clk),
+        VMSTATE_UINT16(divisor,struct Clk),
+        VMSTATE_UINT8(user_count,struct Clk),
+        VMSTATE_UINT8(output_count,struct Clk),
+        VMSTATE_UINT8(input_count,struct Clk),
+        VMSTATE_INT16(selected_input,struct Clk),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+
+#endif // STM32_CLK_H

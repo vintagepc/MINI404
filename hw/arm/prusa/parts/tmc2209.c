@@ -407,14 +407,14 @@ static void tmc2209_init(Object *obj){
     s->regs.defs.SG_RESULT.sg_result = 250;
     s->regs.defs.DRV_STATUS.stst = 1;
 
-    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "tmc2209-dir",1);
-    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "tmc2209-step",1);
-    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_enable, "tmc2209-enable",1);
-    qdev_init_gpio_out_named(DEVICE(obj),&s->irq_diag, "tmc2209-diag", 1);
-    qdev_init_gpio_out_named(DEVICE(obj),&s->hard_out, "tmc2209-hard", 1);
-    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_receive, "tmc2209-byte-in",1);
-    qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out, "tmc2209-byte-out", 1);
-    qdev_init_gpio_out_named(DEVICE(obj),&s->position_out, "tmc2209-step-out", 1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_dir, "dir",1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_step, "step",1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_enable, "enable",1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->irq_diag, "diag", 1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->hard_out, "hard", 1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2209_receive, "byte-in",1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out, "byte-out", 1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->position_out, "step-out", 1);
     qemu_set_irq(s->irq_diag,0);
     qemu_set_irq(s->hard_out,0);
 

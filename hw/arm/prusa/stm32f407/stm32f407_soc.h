@@ -23,8 +23,8 @@
  * THE SOFTWARE.
  */
 
-#ifndef HW_ARM_STM32F407_SOC_H
-#define HW_ARM_STM32F407_SOC_H
+#ifndef HW_ARM_STM32F4XX_SOC_H
+#define HW_ARM_STM32F4XX_SOC_H
 
 #include "hw/misc/stm32f4xx_syscfg.h"
 #include "hw/timer/stm32f2xx_timer.h"
@@ -34,7 +34,7 @@
 #include "stm32f4xx_adc.h"
 #include "stm32f4xx_adcc.h"
 #include "stm32f2xx_crc.h"
-#include "stm32f2xx_dma.h"
+#include "../stm32_common/stm32_f2xx_f4xx_dma.h"
 #include "stm32f2xx_flashint.h"
 #include "stm32f2xx_gpio.h"
 #include "stm32f2xx_i2c.h"
@@ -52,8 +52,7 @@
 #include "stm32_uart.h"
 #include "qom/object.h"
 
-#define TYPE_STM32F407_SOC "stm32f407-soc"
-OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
+OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XX_STRUCT_NAME(), STM32F4XX_BASE)
 
 #define STM_NUM_USARTS 7
 #define STM_NUM_TIMERS 14
@@ -63,56 +62,33 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
 #define STM_NUM_GPIOS 11
 #define STM_NUM_DMAS 2
 
-#define FLASH_BASE_ADDRESS 0x08000000
-#define FLASH_SIZE (1U *MiB)
-#define SRAM_BASE_ADDRESS 0x20000000
-#define F407_SRAM_SIZE (192 * KiB)
-
-
-// Convenience enum. 
-enum {
-    GPIO_A = 0,
-    GPIO_B,
-    GPIO_C,
-    GPIO_D,
-    GPIO_E,
-    GPIO_F,
-    GPIO_G,
-    GPIO_H,
-    GPIO_I,
-    GPIO_J,
-    GPIO_K
-};
-
-struct STM32F407State {
-    /*< private >*/
-    SysBusDevice parent_obj;
+struct STM32F4XX_STRUCT_NAME() {
+    /*< protected >*/
+    STM32SOC parent;
     /*< public >*/
-
-    char *cpu_type;
 
     ARMv7MState armv7m;
 
     STM32F4xxSyscfgState syscfg;
     STM32F4xxExtiState exti;
     // STM32F2XXUsartState usart[STM_NUM_USARTS];
-    Stm32Uart usart[STM_NUM_USARTS];
+    Stm32Uart usarts[STM_NUM_USARTS];
     qemu_or_irq adc_irqs;
-    STM32F4XXADCState adc[STM_NUM_ADCS];
+    STM32F4XXADCState adcs[STM_NUM_ADCS];
     STM32F4XXADCCState adc_common;
-    STM32F4XXSPIState spi[STM_NUM_SPIS];
-    STM32F2XXI2CState i2c[STM_NUM_I2CS];
-    stm32f2xx_gpio gpio[STM_NUM_GPIOS];
+    STM32F4XXSPIState spis[STM_NUM_SPIS];
+    STM32F2XXI2CState i2cs[STM_NUM_I2CS];
+    stm32f2xx_gpio gpios[STM_NUM_GPIOS];
 
     f2xx_rtc rtc;
 
     Stm32f2xxRcc rcc;
 
-    stm32f2xx_fint flashIF;
+    stm32f2xx_fint flash_if;
 
     f2xx_pwr pwr;
 
-    f2xx_dma dma[STM_NUM_DMAS];
+    STM32F2xxDmaState dmas[STM_NUM_DMAS];
 
     f2xx_tim timers[STM_NUM_TIMERS];
 
@@ -120,7 +96,7 @@ struct STM32F407State {
 
     f2xx_crc crc;
 
-    STM32F4xxUSBState otg_fs, otg_hs;
+    STM32F4xxUSBState usb_fs, usb_hs;
 
     stm32f4xx_iwdg iwdg;
     // TMC2209UsartState usart2;
@@ -134,8 +110,6 @@ struct STM32F407State {
     MemoryRegion flash_alias;
     MemoryRegion ccmsram;
     MemoryRegion temp_usb;
-
-    uint32_t ram_size;
 
 };
 

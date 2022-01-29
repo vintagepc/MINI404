@@ -56,7 +56,7 @@
 #endif
 
 #define USART_SR_OFFSET     0x00/4
-#define USART_DR_OFFSET     0x04/4 
+#define USART_DR_OFFSET     0x04/4
 #define USART_BRR_OFFSET    0x08/4
 #define USART_CR1_OFFSET    0x0c/4
 #define USART_CR2_OFFSET    0x10/4
@@ -69,9 +69,7 @@
 /* Update the baud rate based on the USART's peripheral clock frequency. */
 static void stm32_uart_baud_update(Stm32Uart *s)
 {
-    uint32_t clk_freq = 84000000;
-    if (s->stm32_rcc)
-        clk_freq = stm32_rcc_get_periph_freq(s->stm32_rcc, s->periph);
+    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
 
     uint64_t ns_per_bit;
 
@@ -133,10 +131,9 @@ static void stm32_uart_update_irq(Stm32Uart *s) {
         s->curr_irq_level = new_irq_level;
     }
     int new_dmar = s->defs.SR.RXNE && (s->defs.CR3.DMAR);
-    if (new_dmar != s->dmar_current_level || new_dmar==1)
+    if (new_dmar==1)
     {
-        s->dmar_current_level = new_dmar;
-        qemu_set_irq(s->dmar,new_dmar);
+		qemu_set_irq(s->parent.dmar, s->iomem.addr + (4U*USART_DR_OFFSET));
     }
 }
 
@@ -162,7 +159,7 @@ static void stm32_uart_tx_complete(Stm32Uart *s)
         s->defs.SR.TXE = 1;
         stm32_uart_update_irq(s);
         stm32_uart_start_tx(s, s->USART_TDR);
-  
+
     }
 }
 
@@ -176,8 +173,8 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
      */
     s->defs.SR.TC = 0;
     /* Write the character out. */
-    uint8_t chcr = '\r';
-    if (ch == '\n') qemu_chr_fe_write_all(&s->chr, &chcr, 1);
+    //uint8_t chcr = '\r';
+    //if (ch == '\n') qemu_chr_fe_write_all(&s->chr, &chcr, 1);
     qemu_chr_fe_write_all(&s->chr, &ch, 1);
     qemu_set_irq(s->byte_out, ch);
     // if (s->chr_write_obj) {
@@ -195,13 +192,13 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
 }
 
 
-/* Put byte into the receive data register, if we have one and the target is 
+/* Put byte into the receive data register, if we have one and the target is
  * ready for it. */
 static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
 {
     bool enabled = (s->defs.CR1.UE && s->defs.CR1.RE);
 
-    /* If we have no more data, or we are emulating baud delay and it's not 
+    /* If we have no more data, or we are emulating baud delay and it's not
      * time yet for the next byte, return without filling the RDR */
     if (!s->rcv_char_bytes || s->receiving) {
         return;
@@ -283,7 +280,7 @@ static int stm32_uart_can_receive(void *opaque)
 {
     // Note - while more than 1 byte at a time can work in theory
     // for some reason this results in the string being
-    // reversed if the receiving end is configured with DMA (e.g ESP01). 
+    // reversed if the receiving end is configured with DMA (e.g ESP01).
     // For now, just have 1 char at a time and we'll deal with it
     // when it becomes a bottleneck.
     // Stm32Uart *s = (Stm32Uart *)opaque;
@@ -298,10 +295,10 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
 
     assert(size > 0);
     /* Copy the characters into our buffer first */
-    // if (s->periph==19) {
+    // if (s->periph==STM32_P_UART2) {
     //     printf("UART RX: ");
     //     for (int i=0; i<size;i++)
-    //         printf("%c",buf[i]);
+    //         printf("%02x ",buf[i]);
     //     printf("\n");
     // }
     assert (size <= USART_RCV_BUF_LEN - s->rcv_char_bytes);
@@ -354,9 +351,10 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         /* Put next character into the RDR if we have one */
         stm32_uart_fill_receive_data_register(s);
     } else {
-        // Not sure if this is a sim bug or actual HW behaviour, DMAR always seems to overread one byte. 
-        // Doesn't actually cause any problems I've observed, but leaving a note here for future reference.
-        if(!s->defs.CR3.DMAR) printf("STM32_UART WARNING: Read value from USART_DR (%08"HWADDR_PRIx") while it was empty.\n", s->iomem.addr);
+        // Not sure if this is a sim bug or actual HW behaviour, DMAR always seems to overread one byte.
+        // This isn't actually a bug, some of the STM32 driver code will flush DR regardless of whether it has data or not
+		// e.g. __HAL_UART_CLEAR_OREFLAG
+        //if(!s->defs.CR3.DMAR) printf("STM32_UART WARNING: Read value from USART_DR (%08"HWADDR_PRIx") while it was empty.\n", s->iomem.addr);
         s->defs.DR.DR = 0; // Clear value.
     }
 
@@ -415,7 +413,6 @@ static void stm32_uart_reset(DeviceState *dev)
     }
     s->defs.SR.TC = 1;
     s->defs.SR.TXE = 1;
-    s->dmar_current_level = -1;
 
     s->sr_read_since_idle_set = false;
     s->idle_interrupt_blocked = false;
@@ -459,7 +456,7 @@ static uint64_t stm32_uart_read(void *opaque, hwaddr addr,
                 return value;
             }
             break;
-        default:  
+        default:
             s->sr_read_since_idle_set = false;
     }
 
@@ -501,8 +498,7 @@ static void stm32_uart_write(void *opaque, hwaddr addr,
         abort();
     }
 
-    if (s->stm32_rcc)
-        stm32_rcc_check_periph_clk(s->stm32_rcc, s->periph);
+	stm32_rcc_if_check_periph_clk(&s->parent);
 
     switch (addr) {
         case USART_SR_OFFSET:
@@ -522,6 +518,7 @@ static void stm32_uart_write(void *opaque, hwaddr addr,
             stm32_uart_baud_update(s);
             break;
         case USART_CR1_OFFSET:
+		case USART_CR3_OFFSET:
             s->regs[addr] = data;
             stm32_uart_update_irq(s);
             break;
@@ -554,13 +551,6 @@ static void stm32_uart_rx_wrapper(void *opaque, int n, int level)
 
 /* DEVICE INITIALIZATION */
 
-static void stm32_uart_rcc_reset(void *opaque, int n, int level) {
-    if (!level) {
-        stm32_uart_reset(DEVICE(opaque));
-    }
-}
-
-
 static void stm32_uart_init(Object *obj)
 {
     Stm32Uart *s = STM32_UART(obj);
@@ -575,7 +565,6 @@ static void stm32_uart_init(Object *obj)
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32_uart_rx_wrapper,"uart-byte-in",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out,"uart-byte-out",1);
-    qdev_init_gpio_out_named(DEVICE(obj),&s->dmar,"uart-dmar",1);
 
     s->rx_timer =
         timer_new_ns(QEMU_CLOCK_VIRTUAL,
@@ -590,14 +579,12 @@ static void stm32_uart_init(Object *obj)
     /* Register handlers to handle updates to the USART's peripheral clock. */
     s->clk_irq =
           qemu_allocate_irqs(stm32_uart_clk_irq_handler, (void *)s, 1);
-    if (s->stm32_rcc)
-        stm32_rcc_set_periph_clk_irq(s->stm32_rcc, s->periph, s->clk_irq[0]);
+	stm32_rcc_if_set_periph_clk_irq(&s->parent, s->clk_irq[0]);
 
     //stm32_uart_connect(s, &s->chr);
 
     s->rcv_char_bytes = 0;
 
-    qdev_init_gpio_in_named(DEVICE(obj),stm32_uart_rcc_reset,"rcc-reset",1);
 
     stm32_uart_reset(DEVICE(obj));
 }
@@ -608,6 +595,22 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
     qemu_chr_fe_set_handlers(&s->chr, stm32_uart_can_receive, stm32_uart_receive, NULL,
             NULL,s,NULL,true);
     qemu_chr_fe_set_echo(&s->chr, true);
+    // No symlink support for these.
+#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
+    if (CHARDEV_IS_PTY(s->chr.chr)) {
+        char link_path[] = "/tmp/stm32-uart0";
+        link_path[15] += (1U + s->parent.periph - STM32_P_UART1);
+        unlink(link_path);
+        if (symlink(s->chr.chr->filename+4, link_path) != 0)
+        {
+            printf("WARN: Can't create %s (%s)\n",link_path, strerror(errno));
+        }
+        else
+        {
+            printf("%s now points to: %s\n",link_path, s->chr.chr->filename);
+        }
+    }
+#endif
     // Throw compile errors if alignment is off
     CHECK_ALIGN(sizeof(s->defs), sizeof(s->regs), "USART");
     CHECK_ALIGN(sizeof(uint32_t)*7, sizeof(s->regs), "USART");
@@ -631,7 +634,6 @@ static const VMStateDescription vmstate_stm32_uart = {
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, Stm32Uart,USART_R_END),
-        VMSTATE_INT32(periph,Stm32Uart),
         VMSTATE_UINT32(bits_per_sec,Stm32Uart),
         VMSTATE_INT64(ns_per_char,Stm32Uart),
         VMSTATE_UINT32(USART_TDR,Stm32Uart),
@@ -640,7 +642,6 @@ static const VMStateDescription vmstate_stm32_uart = {
         VMSTATE_TIMER_PTR(rx_timer,Stm32Uart),
         VMSTATE_TIMER_PTR(tx_timer,Stm32Uart),
         VMSTATE_INT32(curr_irq_level,Stm32Uart),
-        VMSTATE_INT32(dmar_current_level,Stm32Uart),
         VMSTATE_UINT8_ARRAY(rcv_char_buf,Stm32Uart,USART_RCV_BUF_LEN),
         VMSTATE_UINT32(rcv_char_bytes,Stm32Uart),
         VMSTATE_END_OF_LIST()
@@ -658,7 +659,7 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
 
 static TypeInfo stm32_uart_info = {
     .name  = TYPE_STM32_UART,
-    .parent = TYPE_SYS_BUS_DEVICE,
+    .parent = TYPE_STM32_PERIPHERAL,
     .instance_size  = sizeof(Stm32Uart),
     .class_init = stm32_uart_class_init,
     .instance_init = stm32_uart_init

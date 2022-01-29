@@ -5,7 +5,7 @@
  *
  * Original Copyright (c) 2020 Paul Zimmerman <pauldzim@gmail.com>
  * Adapted for STM32F4xx in 2021 by VintagePC <http://github.com/vintagepc>
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -30,6 +30,7 @@
 #include "qemu/units.h"
 #include "qom/object.h"
 #include "hw/qdev-properties-system.h"
+#include "../stm32_common/stm32_common.h"
 #include "../utility/macros.h"
 
 #define STM32F4xx_MMIO_SIZE      0xCFFF // CSRs and FIFOs
@@ -117,7 +118,7 @@ typedef struct {
     REG_B32(SODDFRM);
     REG_B32(EPDIS);
     REG_B32(EPENA);
-} QEMU_PACKED depctl_t; 
+} QEMU_PACKED depctl_t;
 
 typedef struct {
     REG_B32(XFRC);
@@ -179,7 +180,7 @@ typedef union {
         uint32_t _unused2;
         deptsiz_t DIEPTSIZ; // 0xB10
         uint32_t _unused4[3];// 0xB14 - 0xB1C
-    }; 
+    };
     uint32_t raw[8];
 } QEMU_PACKED dreg_do_set_t;
 
@@ -232,7 +233,7 @@ typedef union {
 
 struct STM32F4xxUSBState {
     /*< private >*/
-    SysBusDevice parent_obj;
+    STM32Peripheral parent_obj;
 
     /*< public >*/
     USBBus bus;
@@ -286,7 +287,7 @@ struct STM32F4xxUSBState {
                     REG_B32(WKUINT);
                 } QEMU_PACKED GINTSTS;
             };
-            uint32_t gintmsk;       /* 18 */   
+            uint32_t gintmsk;       /* 18 */
             union {
                 uint32_t grxstsr;       /* 1c */
                 rxstatus_t defs;
@@ -576,7 +577,7 @@ struct STM32F4xxUSBState {
 
 struct STM32F4xxClass {
     /*< private >*/
-    SysBusDeviceClass parent_class;
+    STM32PeripheralClass parent_class;
     ResettablePhases parent_phases;
 
     /*< public >*/

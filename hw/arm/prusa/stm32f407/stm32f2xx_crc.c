@@ -25,7 +25,7 @@
 #include "stm32f2xx_crc.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
-#include "stm32_rcc.h"
+#include "../stm32_common/stm32_rcc_if.h"
 
 #define R_CRC_DR            (0x00 / 4)
 #define R_CRC_DR_RESET 0xffffffff
@@ -124,7 +124,7 @@ f2xx_crc_read(void *arg, hwaddr addr, unsigned int size)
     }
     switch(addr) {
     case R_CRC_DR:
-        if (s->rcc && stm32_rcc_check_periph_clk(s->rcc, STM32_CRC)) 
+        if (stm32_rcc_if_check_periph_clk(&s->parent)) 
         {
             return s->crc;
         }
@@ -224,7 +224,7 @@ f2xx_crc_class_init(ObjectClass *klass, void *data)
 static const TypeInfo
 f2xx_crc_info = {
     .name          = TYPE_STM32F2XX_CRC,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(f2xx_crc),
     .instance_init = f2xx_crc_init,
     .class_init    = f2xx_crc_class_init,
