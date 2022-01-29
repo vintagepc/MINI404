@@ -70,8 +70,8 @@ enum interrupt_bits
 
 static const uint8_t dma_xfer_size_b[4] = {1, 2, 4, 0};
 
-static_assert(R_DMA_MAX == RI_MAX, "register definitions do not agree!");
-static_assert(CH_OFF_END == STM32_F2xx_DMA_CHAN_REGS, "register definitions do not agree!");
+QEMU_BUILD_BUG_MSG(R_DMA_MAX != RI_MAX, "register definitions do not agree!");
+QEMU_BUILD_BUG_MSG(CH_OFF_END != STM32_F2xx_DMA_CHAN_REGS, "register definitions do not agree!");
 
 
 static void stm32_f2xx_f4xx_update_irqs(STM32F2XX_STRUCT_NAME(Dma) *s, uint8_t channel)

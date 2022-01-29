@@ -33,7 +33,7 @@
 #include "../stm32_common/stm32_rcc_if.h"
 #include "../utility/macros.h"
 
-static_assert(STM32_P_COUNT<=255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
+QEMU_BUILD_BUG_MSG(STM32_P_COUNT>255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 
 enum pll_src
 {
@@ -173,7 +173,7 @@ static const stm32_reginfo_t stm32f4xx_rcc_reginfo[RI_END] =
 };
 
 
-static_assert(RI_END == R_RCC_MAX, "maxima definitions for F2xx RCC Misaligned!");
+QEMU_BUILD_BUG_MSG(RI_END != R_RCC_MAX, "maxima definitions for F2xx RCC Misaligned!");
 /* REGISTER IMPLEMENTATION */
 
 /* Write the Configuration Register.

@@ -413,7 +413,7 @@ static void stm32f4xx_adc_init(Object *obj)
     CHECK_REG_u32(s->defs.SQR1);
     CHECK_REG_u32(s->defs.SMPR1);
     CHECK_REG_u32(s->defs.SMPR2);
-    static_assert(R_ADC_MAX == 20, "Size of register array has changed. You need to update VMState!");
+    QEMU_BUILD_BUG_MSG(R_ADC_MAX != 20, "Size of register array has changed. You need to update VMState!");
 
 
     s->next_eoc = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32f4xx_adc_eoc_deadline, s);

@@ -57,17 +57,13 @@
                         OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
                             MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL})
 
-#if !defined __cplusplus
-#define static_assert _Static_assert
-#endif
-
 #define _JOIN2R(a,b) a##b
 #define _JOIN3(a,b,c) a#b#c
 #define _JOIN3R(a,b,c) a##b##c
 #define _JOIN2(a,b) a#b
 
 #define CHECK_PRI(x,y)  #x" != "#y
-#define CHECK_ALIGN(x,y, name) static_assert(x == y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
+#define CHECK_ALIGN(x,y, name) QEMU_BUILD_BUG_MSG(x != y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
 #define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg " size incorrect!")
 #define CHECK_TYPEDEF_u32(type,reg) CHECK_ALIGN(sizeof(((type*)0)->reg),sizeof(uint32_t),#reg " size incorrect!")
 #define CHECK_REGDEF_u32(type,reg) CHECK_ALIGN(sizeof(type),sizeof(uint32_t),#reg " size incorrect!")

@@ -105,7 +105,7 @@ enum {
     STM32_P_COUNT,
 };
 
-static_assert(STM32_P_COUNT<=255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
+QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 
 #define _CHECK_BOUNDS(index, val, max, reginfo, descr, type) \
     if (index >= max || reginfo[index].is_reserved) { \
