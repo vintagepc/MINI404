@@ -43,6 +43,15 @@ stm32f4xx_otp_read(void *arg, hwaddr addr, unsigned int size)
         return 0;
     }
 
+    // HACK ALERT: the custom board ver (4.0.4) we set 
+    // for the sim upsets the bootloader. So pretend to be 
+    // HW ver 0 for the first read only.
+    if (addr == 0 && !s->blk && s->first_read && size == 1)
+    {
+        s->first_read = false;
+        return 0;
+    }
+
     uint32_t value = s->data[addr];
 
     r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
@@ -110,6 +119,7 @@ stm32f4xx_otp_init(Object *obj)
     memory_region_init_io(&s->iomem, obj, &stm32f4xx_otp_ops, s, "otp", OTP_SIZE * 4u);
     s->iomem.readonly = true;
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
+    s->first_read = true;
 
     // Some defaults for Mini404. 
     // TODO - abstract this out as properties or use file backend
@@ -124,6 +134,14 @@ stm32f4xx_otp_init(Object *obj)
     s->data[7] = 0x04040404;
 
 }
+
+static void
+stm32f4xx_otp_reset(DeviceState *dev)
+{
+    Stm32f4xx_OTP *s = STM32F4XX_OTP(dev);
+    s->first_read = true;
+}
+
 
 static Property stm32f4xx_otp_props[] = {
     DEFINE_PROP_DRIVE("drive", Stm32f4xx_OTP, blk),
@@ -145,6 +163,7 @@ stm32f4xx_otp_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32f4xx_otp_realize;
+    dc->reset = &stm32f4xx_otp_reset;
     dc->vmsd = &vmstate_stm32f4xx_otp;
     device_class_set_props(dc, stm32f4xx_otp_props);
 

@@ -1,7 +1,7 @@
 /*
     stm32f2xx_flashint.h - Flash I/F Configuration block for STM32
 
-	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+	Copyright 2021-2022 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -25,27 +25,88 @@
 #define STM32F2XX_FINT_H
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
 #include "qemu-common.h"
+#include "../stm32_common/stm32_common.h"
 
-#define STM32_FINT_ACR     (0x00 / 4)
-#define STM32_FINT_KEYR    (0x04 / 4)
-#define STM32_FINT_OPTKEYR (0x08 / 4)
-#define STM32_FINT_SR      (0x0c / 4)
-#define STM32_FINT_CR     (0x10 / 4)
-#define STM32_FINT_OPTCR     (0x14 / 4)
 #define STM32_FINT_MAX     (0x18 / 4)
 
-#define TYPE_STM32F2XX_FINT "stm32f2xx-fint"
-OBJECT_DECLARE_SIMPLE_TYPE(stm32f2xx_fint, STM32F2XX_FINT)
+OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XX_STRUCT_NAME(FlashIF), STM32F4xx_FINT)
 
-struct stm32f2xx_fint {
-    SysBusDevice busdev;
+REGDEF_BLOCK_BEGIN()
+    REG_K32(LATENCY, 3);
+    REG_R(5);
+    REG_B32(PRFTEN);
+    REG_B32(ICEN);
+    REG_B32(DCEN);
+    REG_B32(ICRST);
+    REG_B32(DCRST);
+REGDEF_BLOCK_END(flashif, acr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(EOP);
+    REG_B32(OPER);
+    REG_R(2);
+    REG_B32(WRPERR);
+    REG_B32(PGAERR);
+    REG_B32(PGPERR);
+    REG_B32(PGSERR);
+    REG_R(8);
+    REG_B32(BSY);
+    REG_R(15);
+REGDEF_BLOCK_END(flashif, sr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(PG);
+    REG_B32(SER);
+    REG_B32(MER);
+    REG_K32(SNB, 4);
+    REG_RB();
+    REG_K32(PSIZE,2);
+    REG_R(6);
+    REG_B32(STRT);
+    REG_R(7);
+    REG_B32(EOPIE);
+    REG_R(6);
+    REG_B32(LOCK);
+REGDEF_BLOCK_END(flashif, cr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(OPTLOCK);
+    REG_B32(OPTSTRT);
+    REG_K32(BOR_LEV,2);
+    REG_RB();
+    REG_B32(WDG_SW);
+    REG_B32(nRST_STOP);
+    REG_B32(nRST_STDBY);
+    REG_K32(RDP,8);
+    REG_K32(nWRP, 12);
+    REG_R(4);
+REGDEF_BLOCK_END(flashif, optcr);
+
+
+typedef struct STM32F4XX_STRUCT_NAME(FlashIF) {
+    STM32Peripheral parent;
     MemoryRegion iomem;
 
-    uint32_t regs[STM32_FINT_MAX];
+    union {
+        struct {
+			REGDEF_NAME(flashif, acr) ACR;
+            uint32_t KEYR;
+            uint32_t OPTKEYR; 
+            REGDEF_NAME(flashif, sr) SR;
+            REGDEF_NAME(flashif, cr) CR;
+            REGDEF_NAME(flashif, optcr) OPTCR;
+		} defs;
+        uint32_t raw[STM32_FINT_MAX];
+    } regs;
 
-	qemu_irq irq;
-};
+
+    uint8_t flash_state;
+
+    MemoryRegion* flash;
+
+    qemu_irq irq;
+
+} STM32F4XX_STRUCT_NAME(FlashIF);
 
 #endif //#ifndef STM32F2XX_FINT_H

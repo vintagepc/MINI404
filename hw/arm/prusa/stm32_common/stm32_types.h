@@ -31,6 +31,8 @@
 #define TYPE_STM32F2xx_RCC _STM_F2xx_PART(rcc)
 #define TYPE_STM32F4xx_RCC _STM_F4xx_PART(rcc)
 
+#define TYPE_STM32F4xx_FINT _STM_F4xx_PART(fint)
+
 #define TYPE_STM32F2xx_DMA _STM_F2xx_PART(dma)
 #define TYPE_STM32F4xx_DMA _STM_F4xx_PART(dma)
 

@@ -299,16 +299,16 @@ static void stm32_rcc_RCC_CFGR_write(Stm32f2xxRcc *s, uint32_t new_value, bool i
 	REGDEF_NAME(rcc, cfgr) cfgr = {.raw = new_value};
     if(cfgr.PPRE2 < 0x4) {
         clktree_set_scale(&s->PCLK2, 1, 1);
-        clktree_set_scale(&s->TIMCLK2, 2, 1);
+        clktree_set_scale(&s->TIMCLK2, 1, 1);
     } else {
         clktree_set_scale(&s->PCLK2, 1, 2 * (cfgr.PPRE2 - 3));
-		clktree_set_scale(&s->TIMCLK2, 1, 1);
+		clktree_set_scale(&s->TIMCLK2, 2, 1);
     }
 
     /* PPRE1 */
     if(cfgr.PPRE1 < 4) {
         clktree_set_scale(&s->PCLK1, 1, 1);
-		clktree_set_scale(&s->TIMCLK1, 2, 1);
+		clktree_set_scale(&s->TIMCLK1, 1, 1);
     } else {
         clktree_set_scale(&s->PCLK1, 1, 2 * (cfgr.PPRE1 - 3));
 		clktree_set_scale(&s->TIMCLK1, 2, 1);

@@ -91,6 +91,7 @@ enum {
     STM32_P_EXTI,
     STM32_P_SDIO,
     STM32_P_FSMC,
+    STM32_P_FINT,
     STM32_P_RTC,
     STM32_P_CRC,
 	STM32_P_DMAMUX,
