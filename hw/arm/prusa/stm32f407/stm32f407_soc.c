@@ -207,6 +207,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     // // Wake up timer
     // sysbus_connect_irq(SYS_BUS_DEVICE(rtc_dev), 2, qdev_get_gpio_in(exti_dev, 22));
 
+    s->flash_if.flash = &s->flash;
 	STM32_RLZ_AND_MAP(s, flash_if, armv7m, false, NULL);
 	STM32_RLZ_AND_MAP(s, otp, armv7m, false, NULL);
 	STM32_RLZ_AND_MAP(s, iwdg, armv7m, true, rcc);

@@ -84,7 +84,7 @@ struct STM32F4XX_STRUCT_NAME() {
 
     Stm32f2xxRcc rcc;
 
-    stm32f2xx_fint flash_if;
+    STM32F4xxFlashIFState flash_if;
 
     f2xx_pwr pwr;
 
