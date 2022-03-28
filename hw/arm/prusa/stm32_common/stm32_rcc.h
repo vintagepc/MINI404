@@ -28,6 +28,7 @@
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_clk.h"
+#include "hw/clock.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Rcc), COM_CLASS_NAME(Rcc), STM32COM_RCC);
 
@@ -51,9 +52,14 @@ typedef struct COM_STRUCT_NAME(Rcc) {
 	// ... and their four input frequencies:
     uint32_t hse_freq, lse_freq, hsi_freq, lsi_freq;
 
+	// CPU clocks (can't use these everywhere, they don't support changing sources.)
+	Clock* REFCLK; Clock* CPUCLOCK;
+
 	DeviceRealize realize_func;
 
 } COM_STRUCT_NAME(Rcc);
+
+extern void stm32_common_rcc_connect_cpu_clocks(DeviceState *dev, DeviceState *cpu);
 
 
 // Init a peripheral clock with auto-stringify the STM32_P enum entry

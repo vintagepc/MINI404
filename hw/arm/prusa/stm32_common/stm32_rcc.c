@@ -21,9 +21,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
+#include "hw/qdev-clock.h"
 #include "hw/irq.h"
 #include "stm32_rcc.h"
 #include "stm32_rcc_if.h"
@@ -110,14 +110,22 @@ void stm32_common_rcc_enable_write(COM_STRUCT_NAME(Rcc) *s, uint32_t mask, const
     }
 }
 
+extern void stm32_common_rcc_connect_cpu_clocks(DeviceState *dev, DeviceState *cpu)
+{
+	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(dev);
+	qdev_connect_clock_in(cpu, "refclk", s->REFCLK);
+	qdev_connect_clock_in(cpu, "cpuclk", s->CPUCLOCK);
+}
+
+
 static void stm32_common_rcc_realize(DeviceState *dev, Error **errp)
 {
 	// Init the four primary clocks:
 	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(dev);
-	clktree_create_src_clk(&s->HSICLK, "HSI", s->hse_freq, false);
-    clktree_create_src_clk(&s->LSICLK, "LSI", s->lse_freq, false);
-    clktree_create_src_clk(&s->HSECLK, "HSE", s->hsi_freq, false);
-    clktree_create_src_clk(&s->LSECLK, "LSE", s->lsi_freq, false);
+	clktree_create_src_clk(&s->HSICLK, "HSI", s->hsi_freq, false);
+    clktree_create_src_clk(&s->LSICLK, "LSI", s->lsi_freq, false);
+    clktree_create_src_clk(&s->HSECLK, "HSE", s->hse_freq, false);
+    clktree_create_src_clk(&s->LSECLK, "LSE", s->lse_freq, false);
 }
 
 static void stm32_common_rcc_instance_init(Object* obj)
@@ -135,6 +143,10 @@ static void stm32_common_rcc_instance_init(Object* obj)
         s->pclocks[i].is_initialized = false;
     }
 	s->realize_func = stm32_common_rcc_realize;
+	s->REFCLK = clock_new(obj,"REFCLK");
+	s->CPUCLOCK = clock_new(obj,"CPUCLK");
+	clock_set_mul_div(s->REFCLK, 8,1);
+	clock_set_mul_div(s->CPUCLOCK, 1, 1);
 }
 
 static Property stm32_common_rcc_properties[] = {
