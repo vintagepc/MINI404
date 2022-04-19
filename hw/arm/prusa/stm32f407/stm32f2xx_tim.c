@@ -108,15 +108,11 @@ enum OCxM_val
 };
 
 static uint32_t
-f2xx_tim_period(f2xx_tim *s)
+f2xx_tim_period(f2xx_tim *s, uint64_t multiplier)
 {
-
     uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
-
     clock_freq/= (s->defs.PSC+1);
-    uint32_t interval = 1000000000UL/clock_freq;
-    return interval;
-
+    return muldiv64(1000000000ULL,multiplier,clock_freq);
 }
 
 static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
@@ -139,7 +135,7 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
     // We also need to update the timebase used for determining the count value each rollover.
     s->count_timebase = f2xx_tim_ns_to_ticks(s,current_time);
     // Note - counter counts from 0...ARR, so there are actually ARR+1 "ticks" to account for.
-    return current_time + f2xx_tim_period(s) * (s->defs.ARR+1);
+	return f2xx_tim_ns_to_ticks(s, f2xx_tim_period(s,s->defs.ARR+1));
 }
 
 static void
@@ -179,7 +175,7 @@ static void f2xx_tim_update_ccr_timer(f2xx_tim *s, int n, uint32_t when)
 	// Calculate timer tick for CCR event:
 	int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     // When will we match CCR?
-	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s) *(when));
+	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s,when));
 }
 
 // Called if there's an update to ARR without buffering (ARPE=0)
@@ -191,12 +187,12 @@ f2xx_arr_update(f2xx_tim *s) {
         }
         int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         int64_t current_count = f2xx_tim_ns_to_ticks(s, now) - s->count_timebase;
-        int64_t ns_remaining = ((s->defs.ARR+1) - current_count) * f2xx_tim_period(s);
+        int64_t ns_remaining = f2xx_tim_period(s,((s->defs.ARR+1) - current_count));
         if (ns_remaining<=0) {
             //printf("ERR: ARR update would have caused timer %u to fire %ld in the past!\n",s->id, ((s->defs.ARR+1) - current_count));
             // Fire at the next tick
             //f2xx_tim_timer(s);
-            timer_mod(s->timer, now + f2xx_tim_period(s));
+            timer_mod(s->timer, now + f2xx_tim_period(s,1));
         } else {
             timer_mod(s->timer, now + ns_remaining);
         }
