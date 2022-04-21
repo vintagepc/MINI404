@@ -178,7 +178,7 @@ jobs:
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.pull_request.head.sha }}
-          submodules: false
+          submodules: true
 
       - name: Checkout ${{ github.event.ref }}
         uses: actions/checkout@v2.2.0
@@ -186,7 +186,7 @@ jobs:
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.ref }}
-          submodules: false
+          submodules: true
 
         # Note we need to sed LDFLAGS_NO_PIE because mingw's LD is no-pie by default and doesn't
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
