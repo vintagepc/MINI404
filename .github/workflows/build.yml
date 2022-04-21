@@ -193,6 +193,7 @@ jobs:
       - name: Configure build
         run: |
           cd MINI404
+          git config --global --add safe.directory /cygdrive/d/a/MINI404/MINI404
           mkdir build
           cd build
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
