@@ -38,7 +38,32 @@
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
-static void prusa_mini_init(MachineState *machine)
+typedef struct mini_config_t {
+    const char* flash_chip;
+} mini_config_t;
+
+static const mini_config_t mini_100_cfg = {
+    .flash_chip = "w25q64jv"
+};
+
+static const mini_config_t mini_014_cfg = {
+    .flash_chip = "w25w80d"
+};
+
+static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg);
+
+static void prusa_mini_014_init(MachineState *machine)
+{
+    prusa_mini_init(machine, &mini_014_cfg);
+}
+
+static void prusa_mini_100_init(MachineState *machine)
+{
+    prusa_mini_init(machine, &mini_100_cfg);
+}
+
+
+static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 {
     DeviceState *dev;
 
@@ -109,7 +134,7 @@ static void prusa_mini_init(MachineState *machine)
     DriveInfo *dinfo = NULL;
     {
         bus = qdev_get_child_bus(DEVICE(&SOC->spis[2]), "ssi");
-        dev = qdev_new("w25q64jv");
+        dev = qdev_new(cfg->flash_chip);
         dinfo = drive_get_next(IF_MTD);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
@@ -338,14 +363,27 @@ static void prusa_mini_init(MachineState *machine)
 
 static void prusa_mini_machine_init(MachineClass *mc)
 {
-    mc->desc = "Prusa Mini";
-    mc->init = prusa_mini_init;
+    mc->desc = "Prusa Mini 1.0+";
+    mc->family = "Prusa Mini";
+    mc->init = prusa_mini_100_init;
     mc->default_ram_size = 0; // 0 = use default RAM from chip.
     mc->no_parallel = 1;
 	mc->no_serial = 1;
 }
 
 DEFINE_MACHINE("prusa-mini", prusa_mini_machine_init)
+
+static void prusa_mini_014_machine_init(MachineClass *mc)
+{
+    mc->desc = "Prusa Mini 0.1.4";
+    mc->family = "Prusa Mini";
+    mc->init = prusa_mini_014_init;
+    mc->default_ram_size = 0; // 0 = use default RAM from chip.
+    mc->no_parallel = 1;
+	mc->no_serial = 1;
+}
+
+DEFINE_MACHINE("prusa-mini-014", prusa_mini_014_machine_init)
 
 static void buddy_machine_init(MachineClass *mc)
 {

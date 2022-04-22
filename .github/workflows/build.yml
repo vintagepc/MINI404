@@ -144,7 +144,7 @@ jobs:
 
   build_cygwin:
     # The type of runner that the job will run on
-    runs-on: windows-latest
+    runs-on: windows-2019
     if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
     steps:
       - uses: actions/cache@v1
@@ -193,10 +193,11 @@ jobs:
       - name: Configure build
         run: |
           cd MINI404
+          git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "../configure --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
+          bash.exe -c "../configure --with-git-submodules=ignore --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
           bash.exe -c "sed -i 's/LDFLAGS_NOPIE=-no-pie/LDFLAGS_NOPIE=/g' config-host.mak" 
         shell: cmd
 
