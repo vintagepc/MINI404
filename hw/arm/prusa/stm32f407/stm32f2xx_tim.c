@@ -135,7 +135,7 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
     // We also need to update the timebase used for determining the count value each rollover.
     s->count_timebase = f2xx_tim_ns_to_ticks(s,current_time);
     // Note - counter counts from 0...ARR, so there are actually ARR+1 "ticks" to account for.
-	return f2xx_tim_ns_to_ticks(s, f2xx_tim_period(s,s->defs.ARR+1));
+	return current_time + f2xx_tim_period(s,s->defs.ARR+1);
 }
 
 static void
