@@ -1185,6 +1185,7 @@ static uint64_t STM32F4xx_glbreg_read(void *ptr, hwaddr addr, int index,
         if (s->debug) printf("RX fifo pop (STSP): %08x @ %u\n", s->fifo_ram[s->rx_fifo_head], s->rx_fifo_head);
         if(s->rx_fifo_level>0) {
             val = s->fifo_ram[s->rx_fifo_head++];
+			s->rx_fifo_head %= STM32F4xx_RX_FIFO_SIZE;
             s->rx_fifo_level--;
         } // else: val will be 0 from s->GRXSTSP;
         break;
