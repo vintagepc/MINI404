@@ -64,6 +64,8 @@
 
 #define CHECK_PRI(x,y)  #x" != "#y
 #define CHECK_ALIGN(x,y, name) QEMU_BUILD_BUG_MSG(x != y, "ERROR - " name " register definition misaligned! - " CHECK_PRI(x,y))
+// Ensures that member 1 and member 2 of a union have the same offset into the data type.
+#define CHECK_UNION(u, m1, m2)	QEMU_BUILD_BUG_MSG(offsetof(u, m1)!=offsetof(u, m2), "ERROR - " #u "  definition not aligned - offsets "  CHECK_PRI(m1,m2) "!");
 #define CHECK_REG_u32(reg) CHECK_ALIGN(sizeof(reg),sizeof(uint32_t),#reg " size incorrect!")
 #define CHECK_TYPEDEF_u32(type,reg) CHECK_ALIGN(sizeof(((type*)0)->reg),sizeof(uint32_t),#reg " size incorrect!")
 #define CHECK_REGDEF_u32(type,reg) CHECK_ALIGN(sizeof(type),sizeof(uint32_t),#reg " size incorrect!")

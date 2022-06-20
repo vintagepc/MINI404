@@ -342,7 +342,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     if (changed==0)
         return;
 
-    //if (s->id==5 && addr!=4) printf("Timer%d: Wrote %08lx to %02lx (change mask %08x)\n", s->id, data, addr, changed);
+    //if (s->parent.periph == STM32_P_TIM3) printf("%s: Wrote %08lx to %02lx (change mask %08x)\n", _PERIPHNAMES[s->parent.periph], data, addr, changed);
 
     bool update_required = false;
 
@@ -356,7 +356,8 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
             qemu_set_irq(s->pwm_enable[0], 1);
 			s->defs.CR1.CEN = 1;
-			f2xx_tim_update_pwm(s, 1);
+			for (int i=1; i<5; i++)
+				f2xx_tim_update_pwm(s, i);
             printf("pwm en\n");
         } else if (s->regs[addr] & 1 && (data & 1) == 0) {
             timer_del(s->timer);

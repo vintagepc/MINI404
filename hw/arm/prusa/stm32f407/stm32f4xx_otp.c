@@ -43,12 +43,12 @@ stm32f4xx_otp_read(void *arg, hwaddr addr, unsigned int size)
         return 0;
     }
 
-    // HACK ALERT: the custom board ver (4.0.4) we set 
-    // for the sim upsets the bootloader. So pretend to be 
+    // HACK ALERT: the custom board ver (4.0.4) we set
+    // for the sim upsets the bootloader. So pretend to be
     // HW ver 0 for the first read only.
     if (addr == 0 && !s->blk && s->first_read && size == 1)
     {
-        s->first_read = false;
+        //s->first_read = false;
         return 0;
     }
 
@@ -86,10 +86,10 @@ static void stm32f4xx_otp_realize(DeviceState *dev, Error **errp)
     Stm32f4xx_OTP *s = STM32F4XX_OTP(dev);
     s->blk = blk_by_name("stm32-otp");
     if (s->blk) {
-        
+
         int64_t len = blk_getlength(s->blk);
 
-        // Note - some OSes do not allow files under 1k, so as long as the source is larger it's fine. 
+        // Note - some OSes do not allow files under 1k, so as long as the source is larger it's fine.
         if (len <= sizeof(s->data)) {
             error_setg(errp, "%s: Backing file size %" PRId64 " != %" PRIu64,
                        TYPE_STM32F4XX_OTP, len, sizeof(s->data));
@@ -121,9 +121,9 @@ stm32f4xx_otp_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
     s->first_read = true;
 
-    // Some defaults for Mini404. 
+    // Some defaults for Mini404.
     // TODO - abstract this out as properties or use file backend
-    // if you want anything other than blank. 
+    // if you want anything other than blank.
     s->data[0] = 0x00040004;
     s->data[1] = 1081065844;
     s->data[2] = 0x56207942;

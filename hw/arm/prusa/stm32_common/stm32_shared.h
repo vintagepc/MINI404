@@ -19,92 +19,119 @@ typedef struct stm32_reginfo_t
 
 } stm32_reginfo_t;
 
-enum {
-    STM32_P_UNDEFINED = -1,
-    STM32_P_RCC = 0,
-    STM32_P_GPIOA,
-    STM32_P_GPIOB,
-    STM32_P_GPIOC,
-    STM32_P_GPIOD,
-    STM32_P_GPIOE,
-    STM32_P_GPIOF,
-    STM32_P_GPIOG,
-    STM32_P_GPIOH,
-    STM32_P_GPIOI,
-    STM32_P_GPIOJ,
-    STM32_P_GPIOK,
-    STM32_P_SYSCFG,
-    STM32_P_AFIO,
-    STM32_P_UART1,
-    STM32_P_UART2,
-    STM32_P_UART3,
-    STM32_P_UART4,
-    STM32_P_UART5,
-    STM32_P_UART6,
-    STM32_P_UART7,
-    STM32_P_UART8,
-    STM32_P_ADC_ALL, // special common ADC for shared reset.
-    STM32_P_ADC1,
-    STM32_P_ADC2,
-    STM32_P_ADC3,
-    STM32_P_ADCC,
-    STM32_P_DAC,
-    STM32_P_TIM1,
-    STM32_P_TIM2,
-    STM32_P_TIM3,
-    STM32_P_TIM4,
-    STM32_P_TIM5,
-    STM32_P_TIM6,
-    STM32_P_TIM7,
-    STM32_P_TIM8,
-    STM32_P_TIM9,
-    STM32_P_TIM10,
-    STM32_P_TIM11,
-    STM32_P_TIM12,
-    STM32_P_TIM13,
-    STM32_P_TIM14,
-    STM32_P_TIM15,
-    STM32_P_TIM16,
-    STM32_P_TIM17,
-    STM32_P_BKP,
-    STM32_P_PWR,
-    STM32_P_I2C1,
-    STM32_P_I2C2,
-    STM32_P_I2C3,
-    STM32_P_I2C4,
-    STM32_P_I2S1,
-    STM32_P_I2S2,
-    STM32_P_I2S3,
-    STM32_P_IWDG,
-    STM32_P_WWDG,
-    STM32_P_CAN1,
-    STM32_P_CAN2,
-    STM32_P_CAN,
-    STM32_P_USB,
-    STM32_P_USB2,
-    STM32_P_SPI1,
-    STM32_P_SPI2,
-    STM32_P_SPI3,
-    STM32_P_SPI4,
-    STM32_P_SPI5,
-    STM32_P_SPI6,
-    STM32_P_EXTI,
-    STM32_P_SDIO,
-    STM32_P_FSMC,
-    STM32_P_FINT,
-    STM32_P_RTC,
-    STM32_P_CRC,
-	STM32_P_DMAMUX,
-    STM32_P_DMA1,
-    STM32_P_DMA2,
-    STM32_P_DCMI,
-    STM32_P_CRYP,
-    STM32_P_HASH,
-    STM32_P_RNG,
-    STM32_P_QSPI,
-    STM32_P_LPTIM1,
-    STM32_P_COUNT,
+// NOTE: it's an implicit thing that RCC comes first so that when iterating
+// it is ready to be attached to all other peripherals to do their RESET and clock handling.
+#define PERIPHS \
+    _P(RCC), \
+    _P(GPIOA), \
+    _P(GPIOB), \
+    _P(GPIOC), \
+    _P(GPIOD), \
+    _P(GPIOE), \
+    _P(GPIOF), \
+    _P(GPIOG), \
+    _P(GPIOH), \
+    _P(GPIOI), \
+    _P(GPIOJ), \
+    _P(GPIOK), /* NOTE: update the convenience index below if you add more GPIOS */ \
+    _P(SYSCFG), \
+    _P(AFIO), \
+    _P(UART1), \
+    _P(UART2), \
+    _P(UART3), \
+    _P(UART4), \
+    _P(UART5), \
+    _P(UART6), \
+    _P(UART7), \
+    _P(UART8), \
+    _P(ADC_ALL), /* special common ADC for shared reset.*/ \
+    _P(ADCC), \
+    _P(ADC1), \
+    _P(ADC2), \
+    _P(ADC3), /* NOTE: update the convenience index below if you add more ADCs */ \
+    _P(DAC), \
+    _P(TIM1), \
+    _P(TIM2), \
+    _P(TIM3), \
+    _P(TIM4), \
+    _P(TIM5), \
+    _P(TIM6), \
+    _P(TIM7), \
+    _P(TIM8), \
+    _P(TIM9), \
+    _P(TIM10), \
+    _P(TIM11), \
+    _P(TIM12), \
+    _P(TIM13), \
+    _P(TIM14), \
+    _P(TIM15), \
+    _P(TIM16), \
+    _P(TIM17), \
+    _P(BKP), \
+    _P(PWR), \
+    _P(I2C1), \
+    _P(I2C2), \
+    _P(I2C3), \
+    _P(I2C4), \
+    _P(I2S1), \
+    _P(I2S2), \
+    _P(I2S3), \
+    _P(IWDG), \
+    _P(WWDG), \
+    _P(CAN1), \
+    _P(CAN2), \
+    _P(CAN), \
+    _P(USB2), /*DANGER WILL ROBINSON - FS must come first in init order otherwise the USB drive gets attached to the wrong port!*/ \
+    _P(USB), \
+    _P(SPI1), \
+    _P(SPI2), \
+    _P(SPI3), \
+    _P(SPI4), \
+    _P(SPI5), \
+    _P(SPI6), \
+    _P(EXTI), \
+    _P(SDIO), \
+    _P(FSMC), \
+    _P(FINT), \
+    _P(RTC), \
+    _P(CRC), \
+	_P(DMAMUX), \
+    _P(DMA1), \
+    _P(DMA2), /* NOTE: update the convenience index below if you add more DMAs */ \
+    _P(DCMI), \
+    _P(CRYP), \
+    _P(HASH), \
+    _P(RNG), \
+    _P(QSPI), \
+    _P(LPTIM1), \
+	_P(ETH), \
+	_P(OTP), \
+	_P(DWT), \
+	_P(ITM),
+
+#define _P(x) STM32_P_##x
+
+enum STM32_PERIPHS {
+	_P(UNDEFINED) = -1,
+    PERIPHS
+    _P(COUNT),
+	STM32_P_DMA_BEGIN = STM32_P_DMA1,
+	STM32_P_DMA_END = STM32_P_DMA2,
+	STM32_P_GPIO_BEGIN = STM32_P_GPIOA,
+	STM32_P_GPIO_END = STM32_P_GPIOK + 1U,
+	STM32_P_ADC_BEGIN = STM32_P_ADC1,
+	STM32_P_ADC_END = STM32_P_ADC3 + 1U,
 };
+#undef _P
+
+#define _P(x) #x
+static const char *_PERIPHNAMES[STM32_P_COUNT]  __attribute__((unused)) = {
+    PERIPHS
+} ;
+#undef _P
+
+#undef PERIPHS // Clear the IRQ pairs for subsequent classes.
+
 
 QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 

@@ -1,7 +1,7 @@
 /*
  * Prusa Buddy board machine model
  *
- * Copyright 2020 VintagePC <github.com/vintagepc>
+ * Copyright 2020-2022 VintagePC <github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@
 #include "qemu/error-report.h"
 #include "stm32f407/stm32f407_soc.h"
 #include "hw/arm/boot.h"
+#include "hw/ssi/ssi.h"
 #include "hw/loader.h"
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
@@ -71,7 +72,6 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    STM32F4xxState *SOC = STM32F4XX_BASE(dev);
 	DeviceState* dev_soc = dev;
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
@@ -82,7 +82,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         default_flash_size <<=2; // quadruple the flash size for debug code.
     }
     if (arghelper_is_arg("appendix")) {
-        SOC->gpios[0].idr_mask |= 0x2000;
+		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
     int kernel_len = strlen(machine->kernel_filename);
     if (kernel_len >3)
@@ -119,7 +119,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
     void *bus;
     {
-        bus = qdev_get_child_bus(DEVICE(&SOC->spis[1]), "ssi");
+        bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI2), "ssi");
 
         DeviceState *lcd_dev = ssi_create_peripheral(bus, "st7789v");
         qemu_irq lcd_cs = qdev_get_gpio_in_named(lcd_dev, SSI_GPIO_CS, 0);
@@ -133,7 +133,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     }
     DriveInfo *dinfo = NULL;
     {
-        bus = qdev_get_child_bus(DEVICE(&SOC->spis[2]), "ssi");
+        bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI3), "ssi");
         dev = qdev_new(cfg->flash_chip);
         dinfo = drive_get_next(IF_MTD);
         if (dinfo) {
@@ -141,7 +141,6 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
                                 blk_by_legacy_dinfo(dinfo));
         }
         qdev_realize_and_unref(dev, bus, &error_fatal);
-        //DeviceState *flash_dev = ssi_create_slave(bus, "w25q64jv");
         qemu_irq flash_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
         qemu_irq_raise(flash_cs);
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 7, flash_cs);
@@ -150,7 +149,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
     }
     {
-        bus = qdev_get_child_bus(DEVICE(&SOC->i2cs[0]),"i2c");
+        bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_I2C1),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
         qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
@@ -215,7 +214,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         DeviceState* split_out = qdev_new("split-irq");
         qdev_prop_set_uint16(split_out, "num-lines", 4);
         qdev_realize_and_unref(DEVICE(split_out),NULL,  &error_fatal);
-        qdev_connect_gpio_out_named(DEVICE(&SOC->usarts[1]),"uart-byte-out", 0, qdev_get_gpio_in(split_out,0));
+        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART2),"uart-byte-out", 0, qdev_get_gpio_in(split_out,0));
         DeviceState* split_zmin = qdev_new("split-irq");
         qdev_prop_set_uint16(split_zmin, "num-lines", 3);
         qdev_realize_and_unref(DEVICE(split_zmin),NULL,  &error_fatal);
@@ -234,7 +233,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
             sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-            qdev_connect_gpio_out_named(dev,"byte-out", 0, qdev_get_gpio_in_named(DEVICE(&SOC->usarts[1]),"uart-byte-in",0));
+            qdev_connect_gpio_out_named(dev,"byte-out", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART2),"uart-byte-in",0));
             qdev_connect_gpio_out(split_out,i, qdev_get_gpio_in_named(dev,"byte-in",0));
             qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), step_pins[i], qdev_get_gpio_in_named(dev,"step",0));
             qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), dir_pins[i], qdev_get_gpio_in_named(dev,"dir",0));
@@ -275,8 +274,8 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         qdev_prop_set_uint16(dev, "table_no", tables[i]);
         qdev_prop_set_uint8(dev, "index", i);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(DEVICE(&SOC->adcs[0]),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
-        qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(DEVICE(&SOC->adcs[0]),"adc_data_in",channels[i]));
+        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",channels[i]));
         qdev_connect_gpio_out_named(dev, "temp_out_256x", 0, qdev_get_gpio_in_named(db2,"therm-temp",i));
 
     }
@@ -286,7 +285,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     qdev_prop_set_uint8(dev, "thermal_mass_x10",30);
     qdev_prop_set_uint8(dev,"label", 'E');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
+    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",0));
 #ifdef BUDDY_HAS_GL
@@ -301,7 +300,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     qdev_prop_set_uint8(dev, "thermal_mass_x10",3);
     qdev_prop_set_uint8(dev,"label", 'B');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qdev_connect_gpio_out_named(DEVICE(&SOC->timers[2]),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
+    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",1));
 #ifdef BUDDY_HAS_GL

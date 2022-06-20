@@ -2,7 +2,7 @@
  * STM32F4XX ADC Common register
  *
  * Copyright (c) 2021 by VintagePC <http://github.com/vintagepc> for Mini404
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -57,7 +57,7 @@ uint8_t stm32f4xx_adcc_get_adcpre(STM32F4XXADCCState *s)
 static void stm32f4xx_adcc_sr_in(void *opaque, int n, int level){
 
     STM32F4XXADCCState *s = STM32F4XX_ADCC(opaque);
-    uint32_t mask = 0xFF << (n*2U); 
+    uint32_t mask = 0xFF << (n*2U);
     s->regs[R_CSR] &= ~mask;
     s->regs[R_CSR] |= (level& 0xFF) << (n*2U);
 }
@@ -79,7 +79,7 @@ static uint64_t stm32f4xx_adcc_read(void *opaque, hwaddr addr,
     }
 
     switch (addr) {
-        case R_CSR: 
+        case R_CSR:
             printf("FIXME: ADCC R_CSR read\n");
             /* FALLTHRU */
         case R_CCR:
@@ -105,7 +105,7 @@ static void stm32f4xx_adcc_write(void *opaque, hwaddr addr,
                       "%s: ADC write with size != word (32 bits)!\n", __func__);
     }
 
-    addr>>=2; // Get index in array. 
+    addr>>=2; // Get index in array.
 
     if (addr >= 0x100) {
         qemu_log_mask(LOG_UNIMP,
@@ -114,7 +114,7 @@ static void stm32f4xx_adcc_write(void *opaque, hwaddr addr,
 
     switch (addr) {
         case R_CCR:
-            s->regs[addr] = value;          
+            s->regs[addr] = value;
             break;
         case R_CSR:
         default:
@@ -173,7 +173,7 @@ static void stm32f4xx_adcc_class_init(ObjectClass *klass, void *data)
 
 static const TypeInfo stm32f4xx_adcc_info = {
     .name          = TYPE_STM32F4XX_ADCC,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(STM32F4XXADCCState),
     .instance_init = stm32f4xx_adcc_init,
     .class_init    = stm32f4xx_adcc_class_init,
