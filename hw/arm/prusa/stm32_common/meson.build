@@ -3,4 +3,6 @@ arm_ss.add(when: 'CONFIG_STM32F407_SOC',
     'stm32_common.c',
     'stm32_rcc.c',
     'stm32_f2xx_f4xx_dma.c',
+    'stm32_spi.c',
+    'stm32_syscfg.c',
 ))

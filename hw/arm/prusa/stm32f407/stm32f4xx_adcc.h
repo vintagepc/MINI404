@@ -2,7 +2,7 @@
  * STM32F4XX ADC Common registers
  *
  * Copyright (c) 2021 by VintagePC <http://github.com/vintagepc> for Mini404
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -27,8 +27,8 @@
 
 #include "qom/object.h"
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "../utility/macros.h"
+#include "../stm32_common/stm32_common.h"
 
 #define TYPE_STM32F4XX_ADCC "stm32f4xx-adcc"
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXADCCState, STM32F4XX_ADCC)
@@ -37,7 +37,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXADCCState, STM32F4XX_ADCC)
 
 struct STM32F4XXADCCState {
     /* <private> */
-    SysBusDevice parent_obj;
+    STM32Peripheral parent_obj;
 
     /* <public> */
     MemoryRegion mmio;

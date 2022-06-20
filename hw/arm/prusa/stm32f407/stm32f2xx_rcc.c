@@ -52,7 +52,7 @@ enum sw_src
 
 static const uint8_t AHB1_PERIPHS[32] = {
     STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, STM32_P_GPIOE, STM32_P_GPIOF, STM32_P_GPIOG, STM32_P_GPIOH,
-    STM32_P_GPIOI, 0, 0, 0, STM32_P_CRC, 0, 0, 0,
+    STM32_P_GPIOI, STM32_P_GPIOJ, STM32_P_GPIOK, 0, STM32_P_CRC, 0, 0, 0,
     0, 0, 0, 0, 0, 0, STM32_P_DMA1, STM32_P_DMA2,
     0, 0, 0/*eth*/, 0, 0, STM32_P_USB, 0, 0
 };
@@ -75,20 +75,20 @@ static const uint8_t APB1_PERIPHS[32] = {
     STM32_P_TIM2, STM32_P_TIM3, STM32_P_TIM4, STM32_P_TIM5, STM32_P_TIM6, STM32_P_TIM7, STM32_P_TIM12, STM32_P_TIM13,
     STM32_P_TIM14, 0, 0, STM32_P_WWDG, 0, 0, STM32_P_SPI2, STM32_P_SPI3,
     0, STM32_P_UART2, STM32_P_UART3, STM32_P_UART4, STM32_P_UART5, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I2C3,
-    0, STM32_P_CAN1, STM32_P_CAN2, 0, STM32_P_PWR, STM32_P_DAC, 0, 0
+    0, STM32_P_CAN1, STM32_P_CAN2, 0, STM32_P_PWR, STM32_P_DAC, STM32_P_UART7, STM32_P_UART8
 };
 
 static const uint8_t APB2RST_PERIPHS[32] = {
     STM32_P_TIM1, STM32_P_TIM8, 0, 0, STM32_P_UART1, STM32_P_UART6, 0, 0,
-    STM32_P_ADC_ALL, 0, 0, STM32_P_SDIO, STM32_P_SPI1, 0, STM32_P_SYSCFG, 0,
-    STM32_P_TIM9, STM32_P_TIM10, STM32_P_TIM11, 0, 0, 0, 0, 0,
+    STM32_P_ADC_ALL, 0, 0, STM32_P_SDIO, STM32_P_SPI1, STM32_P_SPI4, STM32_P_SYSCFG, 0,
+    STM32_P_TIM9, STM32_P_TIM10, STM32_P_TIM11, 0, STM32_P_SPI5, STM32_P_SPI6, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
 static const uint8_t APB2EN_PERIPHS[32] = {
     STM32_P_TIM1, STM32_P_TIM8, 0, 0, STM32_P_UART1, STM32_P_UART6, 0, 0,
-    STM32_P_ADC1, STM32_P_ADC2, STM32_P_ADC3, STM32_P_SDIO, STM32_P_SPI1, 0, STM32_P_SYSCFG, 0,
-    STM32_P_TIM9, STM32_P_TIM10, STM32_P_TIM11, 0, 0, 0, 0, 0,
+    STM32_P_ADC1, STM32_P_ADC2, STM32_P_ADC3, STM32_P_SDIO, STM32_P_SPI1, STM32_P_SPI4, STM32_P_SYSCFG, 0,
+    STM32_P_TIM9, STM32_P_TIM10, STM32_P_TIM11, 0, STM32_P_SPI5, STM32_P_SPI6, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
@@ -137,7 +137,7 @@ enum reg_index {
 	RI_END
 };
 
-static const stm32_reginfo_t stm32f4xx_rcc_reginfo[RI_END] =
+static const stm32_reginfo_t stm32f407_rcc_reginfo[RI_END] =
 {
 	[RI_CR] = {.mask = 0x0F0FFFFB, .reset_val = 0x83},
 
@@ -171,6 +171,17 @@ static const stm32_reginfo_t stm32f4xx_rcc_reginfo[RI_END] =
 	[RI_SSCGR] = {.unimp_mask = UINT32_MAX, .mask = 0xCFFFFFFF},
 	[RI_PLLI2SCFGR] = {.mask = 0x70007FC0, .reset_val = 0x20003000 },
 };
+
+
+static const stm32_periph_variant_t stm32f4xx_rcc_variants[] =
+{
+	{TYPE_STM32F407_RCC, stm32f407_rcc_reginfo},
+};
+
+typedef struct COM_CLASS_NAME(F4xxRcc) {
+	STM32COMRccClass parent_class;
+    stm32_reginfo_t var_reginfo[R_RCC_MAX];
+} COM_CLASS_NAME(F4xxRcc);
 
 
 QEMU_BUILD_BUG_MSG(RI_END != R_RCC_MAX, "maxima definitions for F2xx RCC Misaligned!");
@@ -347,7 +358,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
     Stm32f2xxRcc *s = (Stm32f2xxRcc *)opaque;
 	uint32_t index = offset>>2U;
 	uint32_t data = 0;
-	CHECK_BOUNDS_R(index, RI_END, stm32f4xx_rcc_reginfo, "F4xx RCC");
+	CHECK_BOUNDS_R(index, RI_END, s->reginfo, "F4xx RCC");
     switch (index) {
         case RI_CR:
 		{
@@ -399,10 +410,10 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
 {
     Stm32f2xxRcc *s = (Stm32f2xxRcc *)opaque;
 	uint32_t index = offset>>2U;
-	CHECK_BOUNDS_W(index, data, RI_END, stm32f4xx_rcc_reginfo, "F2xx RCC");
+	CHECK_BOUNDS_W(index, data, RI_END, s->reginfo, "F2xx RCC");
 	uint32_t oldval = stm32_rcc_read(opaque, index<<2U,4);
 	ADJUST_FOR_OFFSET_AND_SIZE_W(oldval, data, size, (offset&0x3), 0b101);
-	CHECK_UNIMP_RESVD(data, stm32f4xx_rcc_reginfo, index);
+	CHECK_UNIMP_RESVD(data, s->reginfo, index);
     switch(index) {
         case RI_CR:
             stm32_rcc_RCC_CR_write(s, data, false);
@@ -454,10 +465,10 @@ static const MemoryRegionOps stm32_rcc_ops = {
 
 static void stm32_rcc_reset(DeviceState *dev)
 {
-    Stm32f2xxRcc *s = STM32F2xx_RCC(dev);
+    Stm32f2xxRcc *s = STM32F4xx_RCC(dev);
 
 	for (int i=0; i<RI_END; i++)
-		stm32_rcc_write(s, i<<2U, stm32f4xx_rcc_reginfo[i].reset_val,4);
+		stm32_rcc_write(s, i<<2U, s->reginfo[i].reset_val,4);
 }
 
 /* IRQ handler to handle updates to the HCLK frequency.
@@ -490,7 +501,7 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
 /* Set up the clock tree */
 static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 {
-    Stm32f2xxRcc *s = STM32F2xx_RCC(dev);
+    Stm32f2xxRcc *s = STM32F4xx_RCC(dev);
 	s->parent.realize_func(dev, errp);
     s->hclk_upd_irq =
     qemu_allocate_irqs(stm32_rcc_hclk_upd_irq_handler, s, 1);
@@ -598,12 +609,14 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 static void stm32_rcc_init(Object *obj)
 {
 
-    Stm32f2xxRcc *s = STM32F2xx_RCC(obj);
+    Stm32f2xxRcc *s = STM32F4xx_RCC(obj);
 
     memory_region_init_io(&s->parent.iomem, obj, &stm32_rcc_ops, s,
                           "rcc", 1U*KiB);
 
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->parent.iomem);
+	COM_CLASS_NAME(F4xxRcc) *k = STM32F4xx_RCC_GET_CLASS(obj);
+	s->reginfo = k->var_reginfo;
 }
 
 static const VMStateDescription vmstate_STM32F2xx_RCC = {
@@ -628,26 +641,38 @@ static const VMStateDescription vmstate_STM32F2xx_RCC = {
     }
 };
 
-
 static void stm32_rcc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->reset = stm32_rcc_reset;
     dc->realize = stm32_rcc_realize;
     dc->vmsd = &vmstate_STM32F2xx_RCC;
+	COM_CLASS_NAME(F4xxRcc) *k = STM32F4xx_RCC_CLASS(klass);
+	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));
 }
 
 static TypeInfo stm32_rcc_info = {
-    .name  = TYPE_STM32F2xx_RCC,
+    .name  = TYPE_STM32F4xx_RCC,
     .parent = TYPE_STM32COM_RCC,
     .instance_size  = sizeof(Stm32f2xxRcc),
-    .class_init = stm32_rcc_class_init,
-    .instance_init = stm32_rcc_init,
+	.class_size = sizeof(COM_CLASS_NAME(F4xxRcc)),
+	.abstract = true,
+
 };
 
 static void stm32_rcc_register_types(void)
 {
     type_register_static(&stm32_rcc_info);
+	for (int i = 0; i < ARRAY_SIZE(stm32f4xx_rcc_variants); ++i) {
+        TypeInfo ti = {
+            .name       = stm32f4xx_rcc_variants[i].variant_name,
+            .parent     = TYPE_STM32F4xx_RCC,
+			.class_init = stm32_rcc_class_init,
+    		.instance_init = stm32_rcc_init,
+            .class_data = (void *)stm32f4xx_rcc_variants[i].variant_regs,
+        };
+        type_register(&ti);
+    }
 }
 
 type_init(stm32_rcc_register_types)

@@ -60,6 +60,7 @@ typedef struct STM32SOC {
 	hwaddr ram_size;
 	hwaddr flash_size;
 	DeviceState* perhiperhals[STM32_P_COUNT]; // Map for getting peripherals from chip variants.
+	DeviceState *cpu;
 } STM32SOC;
 
 
@@ -67,7 +68,10 @@ OBJECT_DECLARE_TYPE(STM32SOC, STM32SOCClass, STM32_SOC);
 
 extern hwaddr stm32_soc_get_flash_size(DeviceState* soc);
 extern hwaddr stm32_soc_get_sram_size(DeviceState* soc);
+extern hwaddr stm32_soc_get_ccmsram_size(DeviceState* soc);
 extern DeviceState* stm32_soc_get_periph(DeviceState* soc, stm32_periph_t id);
+extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t id, Error **errp);
+extern void stm32_soc_realize_all_peripherals(DeviceState *soc_state,Error **errp);
 
 
 #endif //STM32_COMMON_H
