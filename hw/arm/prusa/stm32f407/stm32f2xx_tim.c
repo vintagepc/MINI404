@@ -133,7 +133,16 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
        // return -1;
     }
     // We also need to update the timebase used for determining the count value each rollover.
-    s->count_timebase = f2xx_tim_ns_to_ticks(s,current_time);
+	if (s->int_pending)
+	{
+		// Don't actually roll over until the interrupt is serviced, this is some hackery
+		// to deal with QEMU not being cycle-accurate.
+    	s->count_timebase_pending = f2xx_tim_ns_to_ticks(s,current_time);
+	}
+	else
+	{
+		s->count_timebase = f2xx_tim_ns_to_ticks(s,current_time);
+	}
     // Note - counter counts from 0...ARR, so there are actually ARR+1 "ticks" to account for.
 	return current_time + f2xx_tim_period(s,s->defs.ARR+1);
 }
@@ -219,8 +228,14 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     case R_TIM_SR:
         break;
     case R_TIM_CNT:
+		// note CNT can read greater than allowed due to disconnect between int service and being set.
         r = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase;
         // printf("Attempted to read count on timer %u (val %u)\n", s->id,r);
+		if (s->parent.periph == STM32_P_TIM5 && r >= 84000000)
+		{
+			s->int_pending = true; // set int pending flag because we need to wait for the IRQ to be serviced to roll over.
+			printf("%s CNT overflow: %u IRQ pending: %u \n", _PERIPHNAMES[s->parent.periph], r, s->int_pending);
+		}
         break;
     default:
         qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented read 0x%x+%u size %u val 0x%x\n",
@@ -377,6 +392,14 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_set_irq(s->irq, 0);
         }
         s->regs[addr] &= data;
+
+		if (s->int_pending && !s->defs.SR.UIF)
+		{
+			// Interrupt has been serviced, now we can roll over the CNT
+			printf("Interrupt serviced, clearing flag and rolling over\n");
+			s->count_timebase = s->count_timebase_pending;
+			s->int_pending = false;
+		}
         break;
 	case R_TIM_DIER:
     case R_TIM_EGR:

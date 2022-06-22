@@ -212,6 +212,9 @@ struct f2xx_tim {
     qemu_irq pwm_enable[4], pwm_pin[4];
 
     int64_t count_timebase;
+	int64_t count_timebase_pending;
+	bool int_pending, overflow_read;
+
 
 };
 
