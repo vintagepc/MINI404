@@ -693,33 +693,40 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
         if (pid != USB_TOKEN_IN) {
             trace_usb_stm_memory_read(s->fifo_head[chan], tlen);
             uint32_t words_required = (tlen>>2) + ((tlen%4>0));
-            if (s->fifo_level[chan]<words_required)
+			if (s->gahbcfg & GAHBCFG_DMA_EN)
+			{
+				// Note - USB DMA doesn't use the normal peripheral DMA engine.
+				if (MEMTX_OK != dma_memory_read(&address_space_memory, r_chan->defs.HCDMA, s->usb_buf[chan], tlen))
+				{
+					qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory read failed - transfer aborted.", __func__);
+					return;
+				}
+			}
+            else if (s->fifo_level[chan]<words_required)
             {
                 //printf("No data to send in FIFO, ignoring...\n");
                 return; // No data to send yet...
             }
-            uint32_t copy_end = s->fifo_head[chan] + words_required;
-            if (copy_end > STM32F4xx_EP_FIFO_SIZE){
-                // Split copy because we're looping back around.
-                size_t bytes_to_end = ((STM32F4xx_EP_FIFO_SIZE - s->fifo_head[chan])) * sizeof(uint32_t);
-                memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],bytes_to_end); // Copy from head to end of ringbuffer
-                s->fifo_head[chan] = 0;
-                memcpy(&s->usb_buf[chan][bytes_to_end],&s->tx_fifos[chan][0],tlen-bytes_to_end); // Copy remainder.
-                s->fifo_head[chan] = copy_end %(STM32F4xx_EP_FIFO_SIZE);
-            } else {
-                memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],tlen);
-                s->fifo_head[chan] += words_required;
-            }
-            s->fifo_level[chan] -= words_required;
+			else // Fifo has enough data
+			{
+				uint32_t copy_end = s->fifo_head[chan] + words_required;
+				if (copy_end > STM32F4xx_EP_FIFO_SIZE){
+					// Split copy because we're looping back around.
+					size_t bytes_to_end = ((STM32F4xx_EP_FIFO_SIZE - s->fifo_head[chan])) * sizeof(uint32_t);
+					memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],bytes_to_end); // Copy from head to end of ringbuffer
+					s->fifo_head[chan] = 0;
+					memcpy(&s->usb_buf[chan][bytes_to_end],&s->tx_fifos[chan][0],tlen-bytes_to_end); // Copy remainder.
+					s->fifo_head[chan] = copy_end %(STM32F4xx_EP_FIFO_SIZE);
+				} else {
+					memcpy(s->usb_buf[chan],&s->tx_fifos[chan][s->fifo_head[chan]],tlen);
+					s->fifo_head[chan] += words_required;
+				}
+				s->fifo_level[chan] -= words_required;
+			}
             // printf("USB TX:");
             // for (int i=0; i<tlen; i++)
             //     printf("%02x ",s->usb_buf[chan][i]);
             // printf("\n");
-            // if (dma_memory_read(&s->dma_as, hcdma,
-            //                     s->usb_buf[chan], tlen) != MEMTX_OK) {
-            //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_read failed\n",
-            //                   __func__);
-            // }
         }
 
         usb_packet_init(&p->packet);
@@ -784,29 +791,39 @@ babble:
                 {
                     qemu_log_mask(LOG_GUEST_ERROR,"Receive FIFO full, data discarded!");
                 }
-                s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
-                s->fifo_ram[s->rx_fifo_tail++] = header.raw;
-                s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
-                s->rx_fifo_level++;
-                uint32_t copy_end = s->rx_fifo_tail + words;
-                if (copy_end > STM32F4xx_RX_FIFO_SIZE){
-                    size_t bytes_to_end = ((STM32F4xx_RX_FIFO_SIZE - s->rx_fifo_tail)) * sizeof(uint32_t);
-                    // Split copy because we're looping back around.
-                    memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],bytes_to_end);
-                    s->rx_fifo_tail = 0; // Loop around.
-                    memcpy(&s->fifo_ram[s->rx_fifo_tail],&s->usb_buf[chan][bytes_to_end],actual - bytes_to_end);
-                    s->rx_fifo_tail = copy_end % (STM32F4xx_RX_FIFO_SIZE);
-                } else {
-                    memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
-                    s->rx_fifo_tail += words;
-                }
+				if (s->gahbcfg | GAHBCFG_DMA_EN)
+				{
+					if (MEMTX_OK != dma_memory_write(&address_space_memory, r_chan->defs.HCDMA, s->usb_buf[chan], actual))
+					{
+						qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory write failed - transfer aborted.", __func__);
+						return;
+					}
+				}
+				else
+				{
+					s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
+					s->fifo_ram[s->rx_fifo_tail++] = header.raw;
+					s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
+					s->rx_fifo_level++;
+					uint32_t copy_end = s->rx_fifo_tail + words;
+					if (copy_end > STM32F4xx_RX_FIFO_SIZE){
+						size_t bytes_to_end = ((STM32F4xx_RX_FIFO_SIZE - s->rx_fifo_tail)) * sizeof(uint32_t);
+						// Split copy because we're looping back around.
+						memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],bytes_to_end);
+						s->rx_fifo_tail = 0; // Loop around.
+						memcpy(&s->fifo_ram[s->rx_fifo_tail],&s->usb_buf[chan][bytes_to_end],actual - bytes_to_end);
+						s->rx_fifo_tail = copy_end % (STM32F4xx_RX_FIFO_SIZE);
+					} else {
+						memcpy(&s->fifo_ram[s->rx_fifo_tail],s->usb_buf[chan],actual);
+						s->rx_fifo_tail += words;
+					}
+					s->rx_fifo_level += words;
+					assert(s->rx_fifo_tail <= 32768); // Fix this you lazy lump...
+				}
                 // printf("USB RX %u: ", actual);
                 // for (int i=0; i<actual; i++)
                 //     printf("%02x ",s->usb_buf[chan][i]);
                 // printf("\n");
-                s->rx_fifo_level += words;
-                assert(s->rx_fifo_tail <= 32768); // Fix this you lazy lump...
-
                 // while (orig_head != s->rx_fifo_tail)
                 // {
                 //     printf("RxFifo add @ %u: %08x \n", orig_head, s->fifo_ram[orig_head]);
@@ -827,12 +844,6 @@ babble:
                 //     return;
                 // }
             }
-            // cpu_physical_memory_write(hcdma + 0x1000,s->usb_buf[chan],tlen);
-            // if (dma_memory_write(&s->dma_as, hcdma, s->usb_buf[chan],
-            //                      actual) != MEMTX_OK) {
-            //     qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_write failed\n",
-            //                   __func__);
-            // }
         }
 
         tpcnt = actual / hcchar->MPSIZ;
@@ -1299,10 +1310,6 @@ static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t v
     case GAHBCFG:
         if ((val & GAHBCFG_GLBL_INTR_EN) && !(old & GAHBCFG_GLBL_INTR_EN)) {
             iflg = 1;
-        }
-        if (val & GAHBCFG_DMA_EN)
-        {
-            printf("FIXME: USB dma not implemented!\n");
         }
         break;
     case GUSBCFG:
