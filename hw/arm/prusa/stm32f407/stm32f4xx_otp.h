@@ -41,6 +41,8 @@ typedef struct Stm32f4xx_OTP {
 
     uint32_t data[OTP_SIZE];
 
+    bool first_read;
+
 } Stm32f4xx_OTP;
 
 #endif //STM32F4XX_OTP_H

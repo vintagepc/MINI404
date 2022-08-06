@@ -95,7 +95,7 @@ struct f2xx_rtc{
     int64_t       host_to_target_offset_us;
 
     // target time in ticks (seconds according to the RTC registers)
-    time_t        ticks;
+    uint64_t        ticks;
 
     uint32_t      regs[R_RTC_MAX];
     int           wp_count; /* Number of correct writes to WP reg */

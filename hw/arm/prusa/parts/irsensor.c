@@ -41,7 +41,7 @@ struct IRState {
     /*< public >*/
     bool state;
     qemu_irq irq;
-
+    script_handle handle;
 };
 
 enum {
@@ -91,13 +91,13 @@ static void irsensor_init(Object *obj)
     IRState *s = IRSENSOR(obj);
     qdev_init_gpio_out(DEVICE(obj), &s->irq, 1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_IRSENSOR);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_IRSENSOR);
 
-    script_register_action(pScript, "Set", "Sets the IR sensor to the given value", ACT_SET);
-    script_add_arg_bool(pScript, ACT_SET);
-    script_register_action(pScript, "Toggle",  "Toggles IR sensor state", ACT_TOGGLE);
+    script_register_action(s->handle, "Set", "Sets the IR sensor to the given value", ACT_SET);
+    script_add_arg_bool(s->handle, ACT_SET);
+    script_register_action(s->handle, "Toggle",  "Toggles IR sensor state", ACT_TOGGLE);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 }
 
 static const VMStateDescription vmstate_irsensor = {

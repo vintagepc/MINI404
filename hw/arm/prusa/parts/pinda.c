@@ -45,7 +45,7 @@ struct PindaState {
     bool state;
     bool first_fired;
     qemu_irq irq;
-
+    script_handle handle;
 };
 
 enum {
@@ -158,14 +158,14 @@ static void pinda_init(Object *obj)
     }
     pinda_rebuild_mesh(s);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_PINDA);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_PINDA);
 
 
-    script_register_action(pScript, "SetMBL", "Sets the given block of the 4x4 z-trigger grid to the specified value. (x,y,mm)", ACT_SET_MBL);
-    script_add_arg_int(pScript,ACT_SET_MBL);
-    script_add_arg_int(pScript,ACT_SET_MBL);
-    script_add_arg_bool(pScript,ACT_SET_MBL);
-    scripthost_register_scriptable(pScript);
+    script_register_action(s->handle, "SetMBL", "Sets the given block of the 4x4 z-trigger grid to the specified value. (x,y,mm)", ACT_SET_MBL);
+    script_add_arg_int(s->handle,ACT_SET_MBL);
+    script_add_arg_int(s->handle,ACT_SET_MBL);
+    script_add_arg_bool(s->handle,ACT_SET_MBL);
+    scripthost_register_scriptable(s->handle);
 }
 
 static int pinda_post_load(void *opaque, int version_id)

@@ -31,9 +31,9 @@
 #define CLKTREE_MAX_OUTPUT 24
 #define CLKTREE_MAX_INPUT 24
 
-static_assert(CLKTREE_MAX_INPUT<256,"DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
-static_assert(CLKTREE_MAX_OUTPUT<256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
-static_assert(CLKTREE_MAX_IRQ<256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
+QEMU_BUILD_BUG_MSG(CLKTREE_MAX_INPUT>=256,"DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
+QEMU_BUILD_BUG_MSG(CLKTREE_MAX_OUTPUT>=256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
+QEMU_BUILD_BUG_MSG(CLKTREE_MAX_IRQ>=256, "DEFINE EXCEEDS SIZE OF uint8_t used to store it in struct Clk");
 
 
 struct Clk {                                                                    

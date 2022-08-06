@@ -27,6 +27,7 @@
 #include "hw/sysbus.h"
 #include "qemu/timer.h"
 #include "exec/memory.h"
+#include "../stm32_common/stm32_common.h"
 
 #define R_IWDG_MAX 4
 
@@ -36,7 +37,7 @@ typedef struct Stm32Rcc Stm32Rcc;
 OBJECT_DECLARE_SIMPLE_TYPE(stm32f4xx_iwdg, STM32F4XX_IWDG);
 
 typedef struct stm32f4xx_iwdg {
-    SysBusDevice  busdev;
+    STM32Peripheral parent;
     MemoryRegion  iomem;
 
     union {

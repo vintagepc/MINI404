@@ -26,7 +26,7 @@ jobs:
       uses: actions/checkout@v2.2.0
       if: ${{ github.event.pull_request }}
       with:
-        repository: vintagepc/MINI404.git
+        repository: ${{ github.repository }}
         ref: ${{ github.event.pull_request.head.sha }}
         submodules: false
 
@@ -34,7 +34,7 @@ jobs:
       uses: actions/checkout@v2.2.0
       if: ${{ !github.event.pull_request }}
       with:
-        repository: vintagepc/MINI404.git
+        repository: ${{ github.repository }}
         ref: ${{ github.event.ref }}
         submodules: false
 
@@ -53,13 +53,13 @@ jobs:
     - name: Install packages
       run: |
           sudo apt-get update
-          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build
+          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev
 
     - name: Cache permissions
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" 
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
 
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404 && make -j3
@@ -88,6 +88,7 @@ jobs:
           cd ${{ runner.workspace }}/MINI404/build
           mv buddy-softmmu Mini404-dev-linux
           mv assets Mini404-dev-linux
+          mv pc-bios Mini404-dev-linux
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
@@ -96,53 +97,55 @@ jobs:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
 
-  # build_osx:
-  #   # The type of runner that the job will run on
-  #   runs-on: macos-latest
-  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-  #   # Steps represent a sequence of tasks that will be executed as part of the job
-  #   steps:
-  #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-  #   - name: Checkout ${{ github.event.pull_request.head.ref }}
-  #     uses: actions/checkout@v2.2.0
-  #     if: ${{ github.event.pull_request }}
-  #     with:
-  #       repository: vintagepc/MK404.git
-  #       ref: ${{ github.event.pull_request.head.sha }}
-  #       submodules: true
+  build_macos:
+    # The type of runner that the job will run on
+    runs-on: macos-latest
+    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - name: Checkout ${{ github.event.pull_request.head.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ github.event.pull_request }}
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
 
-  #   - name: Checkout ${{ github.event.ref }}
-  #     uses: actions/checkout@v2.2.0
-  #     if: ${{ !github.event.pull_request }}
-  #     with:
-  #       repository: vintagepc/MK404.git
-  #       ref: ${{ github.event.ref }}
-  #       submodules: true
+    - name: Checkout ${{ github.event.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ !github.event.pull_request }}
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.ref }}
+        submodules: true
 
-  #   - name: Install packages
-  #     run: |
-  #         brew cask install xquartz
-  #         brew tap osx-cross/avr
-  #         brew install libelf freeglut glew SDL avr-gcc libpng
+    - name: Install dependencies
+      run: brew install libffi gettext glib pkg-config autoconf automake pixman ninja make
 
-  #   - name: Prepare CMake build
-  #     run: mkdir ${{ runner.workspace }}/MK404/build && cd ${{ runner.workspace }}/MK404/build && cmake -DCMAKE_BUILD_TYPE=RELEASE ..
+    - name: Configure build
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu"
 
-  #   - name: Build Einsy
-  #     run: |
-  #       cd ${{ runner.workspace }}/MK404/build && make -j2
-  #       cp MK404 MK404_OSX
+    - name: Build qemu-system-buddy
+      run: cd ${{ runner.workspace }}/MINI404 && gmake -j3
 
-  #   - name: Upload OSX artifact
-  #     if: ${{ !github.event.pull_request }}
-  #     uses: actions/upload-artifact@v2
-  #     with:
-  #       name: Binaries
-  #       path: ${{ runner.workspace }}/MK404/build/MK404_OSX
+    - name: Assemble artifacts
+      if: ${{ !github.event.pull_request }}
+      run: |
+        cd ${{ runner.workspace }}/MINI404/build
+        mv buddy-softmmu Mini404-dev-macos
+        tar -jhcvf Mini404-dev-macos.tar.bz2 Mini404-dev-macos
+
+    - name: Upload artifact
+      if: ${{ !github.event.pull_request }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: Binaries
+        path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
 
   build_cygwin:
     # The type of runner that the job will run on
-    runs-on: windows-latest
+    runs-on: windows-2019
     if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
     steps:
       - uses: actions/cache@v1
@@ -164,7 +167,7 @@ jobs:
           choco install --no-progress cygwin
       - name: Install cygwin dependencies
         run: |
-          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make,zip,ninja"
+          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-openssl,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make,zip,ninja"
         shell: cmd
 
       - name: Fix CRLF Checkout
@@ -174,7 +177,7 @@ jobs:
         uses: actions/checkout@v2.2.0
         if: ${{ github.event.pull_request }}
         with:
-          repository: vintagepc/MINI404.git
+          repository: ${{ github.repository }}
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: false
 
@@ -182,7 +185,7 @@ jobs:
         uses: actions/checkout@v2.2.0
         if: ${{ !github.event.pull_request }}
         with:
-          repository: vintagepc/MINI404.git
+          repository: ${{ github.repository }}
           ref: ${{ github.event.ref }}
           submodules: false
 
@@ -191,10 +194,11 @@ jobs:
       - name: Configure build
         run: |
           cd MINI404
+          git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
           set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "../configure --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
+          bash.exe -c "../configure --with-git-submodules=ignore --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
           bash.exe -c "sed -i 's/LDFLAGS_NOPIE=-no-pie/LDFLAGS_NOPIE=/g' config-host.mak" 
         shell: cmd
 
@@ -231,7 +235,7 @@ jobs:
   Publish:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request }}
-    needs: [build_linux, build_cygwin]
+    needs: [build_linux, build_cygwin, build_macos]
     steps:
       - name: Retrieve platform binaries
         uses: actions/download-artifact@v2
@@ -247,10 +251,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tar -jxvf Mini404-dev-linux.tar.bz2
+          tar -jxvf Mini404-dev-macos.tar.bz2
           unzip Mini404-dev-w64.zip
           mv Mini404-dev-linux Mini404-${{ steps.get_version.outputs.VERSION }}-linux
+          mv Mini404-dev-macos Mini404-${{ steps.get_version.outputs.VERSION }}-macos
           mv Mini404-dev-w64 Mini404-${{ steps.get_version.outputs.VERSION }}-w64
           tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-linux
+          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-macos.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-macos
           zip -r Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip Mini404-${{ steps.get_version.outputs.VERSION }}-w64
 
       - name: RELEASE THE KRAKEN
@@ -261,6 +268,7 @@ jobs:
           prerelease: false
           files: |
             Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2
+            Mini404-${{ steps.get_version.outputs.VERSION }}-macos.tar.bz2
             Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip
       
       - name: Publish prerelease
@@ -273,5 +281,6 @@ jobs:
           title: "Latest (Development) Build"
           files: |
             Mini404-dev-linux.tar.bz2
+            Mini404-dev-macos.tar.bz2
             Mini404-dev-w64.zip
 

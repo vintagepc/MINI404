@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
  * Modified/bugfixed for Mini404 2021 by VintagePC <http://github.com/vintagepc>
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -28,10 +28,11 @@
 
 #include "qom/object.h"
 #include "../utility/macros.h"
+#include "../stm32_common/stm32_common.h"
+#include "../stm32_common/stm32_rcc_if.h"
 #include "stm32.h"
 
 typedef struct STM32F4XXADCCState STM32F4XXADCCState;
-typedef struct Stm32Rcc Stm32Rcc;
 
 #define ADC_NUM_REG_CHANNELS 16
 
@@ -42,7 +43,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXADCState, STM32F4XX_ADC)
 
 struct STM32F4XXADCState {
     /* <private> */
-    SysBusDevice parent_obj;
+    STM32Peripheral parent;
 
     /* <public> */
     MemoryRegion mmio;
@@ -123,11 +124,9 @@ struct STM32F4XXADCState {
 
     uint8_t  adc_smprs[19];
 
-    Stm32Rcc *rcc;
     STM32F4XXADCCState* common;
 
     qemu_irq irq;
-    qemu_irq dmar;
 
     qemu_irq irq_read[ADC_NUM_REG_CHANNELS]; // Set when the ADC wants to get a value from the channel.
 
@@ -137,8 +136,6 @@ struct STM32F4XXADCState {
     uint8_t adc_sequence_position;
 
     QEMUTimer* next_eoc;
-
-    int id;
 };
 
 #endif /* HW_STM32F4XX_ADC_H */

@@ -23,38 +23,17 @@
  * THE SOFTWARE.
  */
 
-#ifndef HW_ARM_STM32F407_SOC_H
-#define HW_ARM_STM32F407_SOC_H
+#ifndef HW_ARM_STM32F4XX_SOC_H
+#define HW_ARM_STM32F4XX_SOC_H
 
-#include "hw/misc/stm32f4xx_syscfg.h"
-#include "hw/timer/stm32f2xx_timer.h"
-// #include "hw/char/stm32f2xx_usart.h"
-#include "hw/misc/stm32f4xx_exti.h"
-#include "hw/or-irq.h"
-#include "stm32f4xx_adc.h"
-#include "stm32f4xx_adcc.h"
-#include "stm32f2xx_crc.h"
-#include "stm32f2xx_dma.h"
-#include "stm32f2xx_flashint.h"
-#include "stm32f2xx_gpio.h"
-#include "stm32f2xx_i2c.h"
-#include "stm32f4xx_itm.h"
-#include "stm32f4xx_iwdg.h"
-#include "stm32f2xx_pwr.h"
-#include "stm32f2xx_rcc.h"
-#include "stm32f2xx_rtc.h"
-#include "stm32f4xx_spi.h"
-#include "stm32f2xx_tim.h"
-#include "stm32f4xx_otp.h"
-#include "stm32f4xx_usb.h"
+#include "qemu/units.h"
+#include "../stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
-#include "stm32_uart.h"
 #include "qom/object.h"
 
-#define TYPE_STM32F407_SOC "stm32f407-soc"
-OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
+OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XX_STRUCT_NAME(), STM32F4XX_BASE)
 
-#define STM_NUM_USARTS 7
+#define STM_NUM_USARTS 8
 #define STM_NUM_TIMERS 14
 #define STM_NUM_ADCS 3
 #define STM_NUM_SPIS 6
@@ -62,69 +41,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F407State, STM32F407_SOC)
 #define STM_NUM_GPIOS 11
 #define STM_NUM_DMAS 2
 
-#define FLASH_BASE_ADDRESS 0x08000000
-#define FLASH_SIZE (1024 * 1024)
-#define SRAM_BASE_ADDRESS 0x20000000
-#define SRAM_SIZE (192 * 1024)
-
-
-// Convenience enum. 
-enum {
-    GPIO_A = 0,
-    GPIO_B,
-    GPIO_C,
-    GPIO_D,
-    GPIO_E,
-    GPIO_F,
-    GPIO_G,
-    GPIO_H,
-    GPIO_I,
-    GPIO_J,
-    GPIO_K
-};
-
-struct STM32F407State {
-    /*< private >*/
-    SysBusDevice parent_obj;
+struct STM32F4XX_STRUCT_NAME() {
+    /*< protected >*/
+    STM32SOC parent;
     /*< public >*/
-
-    char *cpu_type;
 
     ARMv7MState armv7m;
 
-    STM32F4xxSyscfgState syscfg;
-    STM32F4xxExtiState exti;
-    // STM32F2XXUsartState usart[STM_NUM_USARTS];
-    Stm32Uart usart[STM_NUM_USARTS];
-    qemu_or_irq adc_irqs;
-    STM32F4XXADCState adc[STM_NUM_ADCS];
-    STM32F4XXADCCState adc_common;
-    STM32F4XXSPIState spi[STM_NUM_SPIS];
-    STM32F2XXI2CState i2c[STM_NUM_I2CS];
-    stm32f2xx_gpio gpio[STM_NUM_GPIOS];
-
-    f2xx_rtc rtc;
-
-    Stm32f2xxRcc rcc;
-
-    stm32f2xx_fint flashIF;
-
-    f2xx_pwr pwr;
-
-    f2xx_dma dma[STM_NUM_DMAS];
-
-    f2xx_tim timers[STM_NUM_TIMERS];
-
-    stm32f4xx_itm itm;
-
-    f2xx_crc crc;
-
-    STM32F4xxUSBState otg_fs, otg_hs;
-
-    stm32f4xx_iwdg iwdg;
-    // TMC2209UsartState usart2;
-
-    Stm32f4xx_OTP otp;
 
     MemoryRegion sram;
     MemoryRegion flash;

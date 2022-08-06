@@ -20,31 +20,38 @@ if libglut.found() and libglu.found() and libglew.found() and libgl.found()
     subdir('assets')
 else
     message('OpenGL libraries not found. Install development packages for freeglut, glew, and mesa and re-run configure.')
-
 endif
 
-
-
+subdir('stm32_common')
 subdir('stm32f407')
-
 
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
         'parts/encoder_input.c',
         'parts/fan.c',
         'parts/gl_dashboard.c',
+        'parts/2d-dashboard.c',
         'parts/heater.c',
         'parts/irsensor.c',
+        'parts/p404_key_input.c',
         'parts/pinda.c',
         'parts/st7789v.c',
         'parts/thermistor.c',
         'parts/tmc2209.c',
         'utility/ArgHelper.cpp',
+        'utility/IKeyClient.cpp',
         'utility/IScriptable.cpp',
+        'utility/KeyController.cpp',
         'utility/ScriptHost.cpp',
+        'utility/Scriptable.cpp',
         'utility/p404_script_console.c',
         'utility/p404scriptable.c',
+        'utility/p404_keyclient.c',
+        'utility/p404_motor_if.c',
+        'utility/text_helper.c',
     ))
 
-# Required if using Message queue IPC
-
+# Use CONFIG_PRUSA_STM32_HACKS when building our target to enable our specific workarounds
+prusa_hacks = declare_dependency(compile_args: '-DCONFIG_PRUSA_STM32_HACKS')
+arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [prusa_hacks])
+softmmu_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [prusa_hacks])

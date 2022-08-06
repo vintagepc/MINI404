@@ -240,19 +240,20 @@ static void scriptcon_init(Object *obj)
     s->scripting = timer_new_ms(QEMU_CLOCK_VIRTUAL,
     (QEMUTimerCB *)scriptcon_timer_expire, s);
 
-    const char* script = arghelper_get_string("script");
 
-    if (scripthost_setup(script, obj)) // TODO- move scripthost out of this input handler?
-    {
-        // Start script timer
-        timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
-    }
 }
 
 static void scriptcon_realize(DeviceState *d, Error **errp)
 {
     //DeviceState *dev = DEVICE(d);
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(d);
+
+    const char* script = arghelper_get_string("script");
+    if (scripthost_setup(script, OBJECT(d))) // TODO- move scripthost out of this input handler?
+    {
+        // Start script timer
+        timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
+    }
 
     s->input_source = qemu_chr_find("p404-scriptcon");
     if (!s->input_source) {

@@ -27,18 +27,19 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "qemu-common.h"
+#include "../stm32_common/stm32_common.h"
 
-#define STM32_GPIO_MODER   (0x00 / 4)
-#define STM32_GPIO_OTYPER  (0x04 / 4)
-#define STM32_GPIO_OSPEEDR (0x08 / 4)
-#define STM32_GPIO_PUPDR   (0x0c / 4)
-#define STM32_GPIO_IDR     (0x10 / 4)
-#define STM32_GPIO_ODR     (0x14 / 4)
-#define STM32_GPIO_BSRR    (0x18 / 4)
-#define STM32_GPIO_LCKR    (0x1c / 4)
-#define STM32_GPIO_AFRL    (0x20 / 4)
-#define STM32_GPIO_AFRH    (0x24 / 4)
-#define STM32_GPIO_MAX     (0x28 / 4)
+#define R_GPIO_MODER   (0x00 / 4)
+#define R_GPIO_OTYPER  (0x04 / 4)
+#define R_GPIO_OSPEEDR (0x08 / 4)
+#define R_GPIO_PUPDR   (0x0c / 4)
+#define R_GPIO_IDR     (0x10 / 4)
+#define R_GPIO_ODR     (0x14 / 4)
+#define R_GPIO_BSRR    (0x18 / 4)
+#define R_GPIO_LCKR    (0x1c / 4)
+#define R_GPIO_AFRL    (0x20 / 4)
+#define R_GPIO_AFRH    (0x24 / 4)
+#define R_GPIO_MAX     (0x28 / 4)
 
 #define STM32_GPIO_PIN_COUNT 16
 
@@ -52,11 +53,9 @@ void f2xx_gpio_wake_set(stm32f2xx_gpio *, unsigned, qemu_irq);
 
 
 struct stm32f2xx_gpio {
-    SysBusDevice busdev;
+    STM32Peripheral parent;
     MemoryRegion iomem;
 
-    // stm32_periph_t periph;
-    uint32_t periph;
     uint32_t idr_mask;
 
     qemu_irq pin[STM32_GPIO_PIN_COUNT];
@@ -64,7 +63,7 @@ struct stm32f2xx_gpio {
     qemu_irq alternate_function[STM32_GPIO_PIN_COUNT];
     qemu_irq cpu_wake[STM32_GPIO_PIN_COUNT];
 
-    uint32_t regs[STM32_GPIO_MAX];
+    uint32_t regs[R_GPIO_MAX];
     uint32_t ccr;
 };
 

@@ -32,6 +32,7 @@
 #include "hw/sysbus.h"
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
+#include "../stm32_common/stm32_common.h"
 
 
 #define TYPE_STM32F2XX_I2C "stm32f2xx-i2c"
@@ -41,7 +42,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XXI2CState, STM32F2XX_I2C);
 
 struct STM32F2XXI2CState {
     /* <private> */
-    SysBusDevice parent_obj;
+    STM32Peripheral parent_obj;
 
     /* <public> */
     MemoryRegion mmio;

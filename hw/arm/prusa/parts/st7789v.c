@@ -1,12 +1,12 @@
 /*
 	st7789v.c
-	
+
     Sitronix 7789V 240x320 LCD controller.
-    
+
     Written for Mini404 in 2020 by VintagePC <https://github.com/vintagepc/>
 
     Portions referenced from hw/display/ssd0323.c by Paul Brook
-	
+
  	This file is part of Mini404.
 	Mini404 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include "qom/object.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
+#include "../utility/p404_keyclient.h"
 #include "../utility/ScriptHost_C.h"
 
 #include "png.h"
@@ -94,6 +95,8 @@ struct st7789v_state {
     int32_t remap;
     uint32_t mode;
     uint32_t framebuffer[DPY_ROWS * DPY_COLS];
+
+    script_handle handle;
 };
 
 #define TYPE_ST7789V "st7789v"
@@ -156,8 +159,8 @@ static uint32_t st7789v_transfer(SSIPeripheral *dev, uint32_t data)
                 s->col = s->col_start;
                 // printf("RAWR: %d %d\n", sr->row, s->col);
                 DATA(2);
-            } else {// One of an unknown number of 16-bit words.    
-                DATA(2);    
+            } else {// One of an unknown number of 16-bit words.
+                DATA(2);
                 word = (s->cmd_data[0]<<8|s->cmd_data[1]);
                 color.r = (word & 0xF800)>>8;
                 color.g = (word & 0x7E0)>> 3;
@@ -222,15 +225,15 @@ static void st7789v_write_png(st7789v_state *s, const char* file)
 {
     FILE *handle = fopen(file, "wb");
     if (!handle)
-        printf("Screenshot failed - could not open file %s\n",file);
-    
+        printf("Screenshot failed - could not open file %s (%s)\n",file, strerror(errno));
+
     png_structrp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
 
     png_inforp info_p = png_create_info_struct(png_ptr);
 
     png_init_io(png_ptr, handle);
 
-    png_set_IHDR(png_ptr, info_p, DPY_COLS, DPY_ROWS, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, 
+    png_set_IHDR(png_ptr, info_p, DPY_COLS, DPY_ROWS, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE,
         PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 
     char text1[] = "Mini404 Screenshot";
@@ -253,7 +256,7 @@ static void st7789v_write_png(st7789v_state *s, const char* file)
         },
         {
             .compression = PNG_TEXT_COMPRESSION_NONE,
-            .key = key3, 
+            .key = key3,
             .text = text3
         }
     };
@@ -264,14 +267,14 @@ static void st7789v_write_png(st7789v_state *s, const char* file)
     png_write_info(png_ptr, info_p);
     png_set_bgr(png_ptr);
 
-    png_byte row[DPY_COLS*4]; 
+    png_byte row[DPY_COLS*4];
 
 
     for (int i=0; i<DPY_ROWS; i++){
         memcpy(&row, &s->framebuffer[i*DPY_COLS], sizeof(row));
         png_write_row(png_ptr, row);
     }
-  
+
     png_write_end(png_ptr, NULL);
 
     if (info_p) png_free_data(png_ptr, info_p, PNG_FREE_ALL, -1);
@@ -291,12 +294,25 @@ static int st7789v_process_action(P404ScriptIF *obj, unsigned int action, script
     }
 }
 
+static void st7789v_handle_key(P404KeyIF *obj, Key keycode)
+{
+    if (keycode == 'S') // S release
+    {
+        char file[100] = {0};
+        time_t now = time(NULL);
+	    struct tm *t = localtime(&now);
+        strftime(file, sizeof(file)-1, "Snap %d %m %Y %H:%M:%S.png", t);
+        printf("Saving screenshot to: %s\n",file);
+        st7789v_write_png(ST7789V(obj), file);
+    }
+}
+
 static const GraphicHwOps st7789v_ops = {
     .invalidate  = st7789v_invalidate_display,
     .gfx_update  = st7789v_update_display,
 };
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_PERIPHERAL, {TYPE_P404_SCRIPTABLE}, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(st7789v_state, st7789v, ST7789V, SSI_PERIPHERAL, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_KEYCLIENT}, {NULL})
 
 static void st7789v_finalize(Object *obj)
 {
@@ -321,11 +337,14 @@ static void st7789v_realize(SSIPeripheral *d, Error **errp)
 
     qdev_init_gpio_in(dev, st7789v_cd, 1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(s), TYPE_ST7789V);
+    s->handle = script_instance_new(P404_SCRIPTABLE(s), TYPE_ST7789V);
 
-    script_register_action(pScript, "Screenshot", "Takes a screenshot to the specified file.", 0);
-    script_add_arg_string(pScript, 0);
-    scripthost_register_scriptable(pScript);
+    script_register_action(s->handle, "Screenshot", "Takes a screenshot to the specified file.", 0);
+    script_add_arg_string(s->handle, 0);
+    scripthost_register_scriptable(s->handle);
+
+    p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(d));
+    p404_register_keyhandler(pKey, 'S', "Takes a screenshot of the LCD with the current time as the filename.");
 
 }
 
@@ -367,6 +386,9 @@ static void st7789v_class_init(ObjectClass *klass, void *data)
     SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = st7789v_process_action;
+
+    P404KeyIFClass *kc = P404_KEYCLIENT_CLASS(klass);
+    kc->KeyHandler = st7789v_handle_key;
 
     k->realize = st7789v_realize;
     k->transfer = st7789v_transfer;

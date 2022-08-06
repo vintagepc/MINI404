@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
  * Modified/bugfixed for Mini404 2021 by VintagePC <http://github.com/vintagepc>
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -34,6 +34,7 @@
 #include "stm32f4xx_adc.h"
 #include "../utility/macros.h"
 #include "stm32f4xx_adcc.h"
+#include "hw/qdev-properties.h"
 
 #ifndef STM_ADC_ERR_DEBUG
 #define STM_ADC_ERR_DEBUG 0
@@ -97,6 +98,9 @@ static void stm32f4xx_adc_reset(DeviceState *dev)
     memset(&s->adc_sequence,0,ADC_NUM_REG_CHANNELS);
     memset(&s->adc_data,0,ADC_NUM_REG_CHANNELS*sizeof(int));
     s->adc_sequence_position = 0;
+
+	if (s->next_eoc)
+		timer_del(s->next_eoc);
 }
 
 static uint16_t adc_lookup_smpr(uint8_t value) {
@@ -118,20 +122,25 @@ static uint16_t adc_lookup_smpr(uint8_t value) {
         case 7:
             return 480;
         default:
-            return 0;
             assert(false);
+            return 0;
     }
 }
 
 static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
 {
     uint8_t channel = s->adc_sequence[s->adc_sequence_position];
-    s->defs.DR = s->adc_data[channel];// * (adc_lookup_smpr(s->adc_smprs[channel])+1); // TODO... *3 ->sample time
-   
+    s->defs.DR = s->adc_data[channel];
+    // I'm not sure why this is yet - some sort of built in oversampling
+    // that is enabled in non-DMA mode?
+    if (!s->defs.CR2.DMA) {
+        s->defs.DR*=(adc_lookup_smpr(s->adc_smprs[channel])+1);
+    }
+
     // Mask: RES 0..3 == 12..6 bit mask.
     uint32_t mask = (0xFFF >> (s->defs.CR1.RES<<1));
     s->defs.DR &= mask;
-    
+
     if (s->defs.CR2.ALIGN) {
         return (s->defs.DR << 1) & 0xFFF0;
     } else {
@@ -145,6 +154,27 @@ static void stm32f4xx_adc_data_in(void *opaque, int n, int level){
     s->adc_data[n] = level;
     // printf("ADC: Ch %d new data: %d\n",n, level);
 }
+
+static void stm32f4xx_adc_schedule_next(STM32F4XXADCState *s) {
+    if (!s->defs.CR2.ADON)
+        return;
+    s->defs.CR2.SWSTART = 0;
+    // Calculate the clock rate
+    uint64_t clock = stm32_rcc_if_get_periph_freq(&s->parent);
+
+    clock /= stm32f4xx_adcc_get_adcpre(s->common);
+
+    // #bits:
+    uint32_t conv_cycles = (12U - (s->defs.CR1.RES<<1U));
+    uint8_t channel = s->adc_sequence[s->adc_sequence_position];
+    conv_cycles += adc_lookup_smpr(s->adc_smprs[channel]);
+
+    uint64_t delay_ns = 1000000000000U / (clock/conv_cycles);
+    // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
+    timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
+
+}
+
 
 static uint64_t stm32f4xx_adc_read(void *opaque, hwaddr addr,
                                      unsigned int size)
@@ -201,7 +231,7 @@ static void stm32f4xx_adc_update_sequence(STM32F4XXADCState *s)
     {
         if (i>length)
         {
-            s->adc_sequence[i] = 0; 
+            s->adc_sequence[i] = 0;
             continue;
         }
         uint8_t src_index = i/6;
@@ -220,61 +250,34 @@ static void stm32f4xx_adc_convert(STM32F4XXADCState *s)
     qemu_irq_pulse(s->irq_read[channel]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
 }
 
-static void stm32f4xx_adc_schedule_next(STM32F4XXADCState *s) {
-    if (!s->defs.CR2.ADON)
-        return;
-    s->defs.CR2.SWSTART = 0;
-    // Calculate the clock rate 
-    uint64_t clock = 84000000;
-    if (s->rcc != NULL) 
-    {
-        clock = stm32_rcc_get_periph_freq(s->rcc, s->id);
-    }
-
-    clock /= stm32f4xx_adcc_get_adcpre(s->common);
-
-    // #bits:
-    uint32_t conv_cycles = (12U - (s->defs.CR1.RES<<1U));
-    uint8_t channel = s->adc_sequence[s->adc_sequence_position];
-    conv_cycles += adc_lookup_smpr(s->adc_smprs[channel]);
-
-    uint64_t delay_ns = 1000000000000U / (clock/conv_cycles);
-    // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
-    timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
-
-}
-
 static void stm32f4xx_adc_update_irqs(STM32F4XXADCState *s, int level) {
 
     bool bChanged = level^s->defs.SR.EOC;
     s->defs.SR.EOC = level;
 
-    if (s->defs.CR1.EOCIE && level && bChanged) 
+    if (s->defs.CR1.EOCIE && level && bChanged)
     {
         qemu_irq_raise(s->irq);
     }
-    
+
     if (s->defs.CR2.DMA && level)
     {
-        qemu_irq_raise(s->dmar);
+        qemu_set_irq(s->parent.dmar, s->mmio.addr + (4U * R_DR));
     }
 
 }
 
 static void stm32f4xx_adc_eoc_deadline(void *opaque) {
-    
+
     STM32F4XXADCState *s = STM32F4XX_ADC(opaque);
     stm32f4xx_adc_convert(s);
-    if (s->defs.CR2.EOCS) 
+    if (s->defs.CR2.EOCS || s->adc_sequence_position==s->defs.SQR1.L)
     {
+        // Either end of cycle or end-of-sequence.
         stm32f4xx_adc_update_irqs(s, 1);
     }
-    else 
-    {
-        printf("%s TODO - whole-cycle EOCS\n",__FILE__);
-    }
 
-    if (s->defs.CR2.DMA) 
+    if (s->defs.CR2.DMA)
     {
         if (s->defs.CR2.CONT && s->defs.CR1.SCAN)
         {
@@ -284,7 +287,7 @@ static void stm32f4xx_adc_eoc_deadline(void *opaque) {
                 stm32f4xx_adc_schedule_next(s);
             }
         }
-    } 
+    }
 }
 
 static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
@@ -300,7 +303,7 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
                       "%s: ADC write with size != word (32 bits)!\n", __func__);
     }
 
-    addr>>=2; // Get index in array. 
+    addr>>=2; // Get index in array.
 
     if (addr >= 0x100) {
         qemu_log_mask(LOG_UNIMP,
@@ -319,6 +322,12 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
             if (s->defs.CR2.SWSTART)
             {
                 stm32f4xx_adc_schedule_next(s);
+            }
+            // Ugly hack alert. This is just because we don't run the ADC scheduling
+            // at full throttle and the Mini FW BSODs if the ADC isn't quite ready in time in non_DMA mode.
+            if (!s->defs.CR2.DMA)
+            {
+                s->defs.SR.EOC = 1;
             }
             break;
         case R_SMPR1:
@@ -384,18 +393,9 @@ static const VMStateDescription vmstate_stm32f4xx_adc = {
         VMSTATE_INT32_ARRAY(adc_data,STM32F4XXADCState, ADC_NUM_REG_CHANNELS),
         VMSTATE_UINT8_ARRAY(adc_sequence,STM32F4XXADCState, ADC_NUM_REG_CHANNELS),
         VMSTATE_UINT8(adc_sequence_position,STM32F4XXADCState),
-        VMSTATE_INT32(id,STM32F4XXADCState),
         VMSTATE_END_OF_LIST()
     }
 };
-
-static void stm32f4xx_adc_rcc_reset(void *opaque, int n, int level) {
-    if (!level) {
-        STM32F4XXADCState *s = STM32F4XX_ADC(opaque);
-        stm32f4xx_adc_reset(DEVICE(opaque));
-        timer_del(s->next_eoc);
-    }
-}
 
 static void stm32f4xx_adc_init(Object *obj)
 {
@@ -413,7 +413,7 @@ static void stm32f4xx_adc_init(Object *obj)
     CHECK_REG_u32(s->defs.SQR1);
     CHECK_REG_u32(s->defs.SMPR1);
     CHECK_REG_u32(s->defs.SMPR2);
-    static_assert(R_ADC_MAX == 20, "Size of register array has changed. You need to update VMState!");
+    QEMU_BUILD_BUG_MSG(R_ADC_MAX != 20, "Size of register array has changed. You need to update VMState!");
 
 
     s->next_eoc = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32f4xx_adc_eoc_deadline, s);
@@ -428,12 +428,12 @@ static void stm32f4xx_adc_init(Object *obj)
     memory_region_init_io(&s->mmio, obj, &stm32f4xx_adc_ops, s,
                           TYPE_STM32F4XX_ADC, 0x100);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
-
-    qdev_init_gpio_in_named(DEVICE(obj),stm32f4xx_adc_rcc_reset,"rcc-reset",1);
-
-    qdev_init_gpio_out_named(DEVICE(obj),&s->dmar,"dmar",1);
-
 }
+
+static Property stm32f4xx_adc_properties[] = {
+    DEFINE_PROP_LINK("common", STM32F4XXADCState, common, TYPE_STM32F4XX_ADCC, STM32F4XXADCCState *),
+    DEFINE_PROP_END_OF_LIST()
+};
 
 static void stm32f4xx_adc_class_init(ObjectClass *klass, void *data)
 {
@@ -441,11 +441,12 @@ static void stm32f4xx_adc_class_init(ObjectClass *klass, void *data)
 
     dc->reset = stm32f4xx_adc_reset;
     dc->vmsd = &vmstate_stm32f4xx_adc;
+	device_class_set_props(dc, stm32f4xx_adc_properties);
 }
 
 static const TypeInfo stm32f4xx_adc_info = {
     .name          = TYPE_STM32F4XX_ADC,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(STM32F4XXADCState),
     .instance_init = stm32f4xx_adc_init,
     .class_init    = stm32f4xx_adc_class_init,

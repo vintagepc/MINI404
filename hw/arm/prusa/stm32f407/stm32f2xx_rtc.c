@@ -155,7 +155,7 @@ f2xx_rtc_compute_target_time_from_host_time(f2xx_rtc *s, uint64_t rtc_period_ns,
 
 // Return the current date and time as stored in the RTC TR and DR registers in two forms:
 // By filling in the passed in tm struct and by returning the UTC time in seconds.
-static time_t
+static uint64_t
 f2xx_rtc_get_current_target_time(f2xx_rtc *s, struct tm *target_tm)
 {
     memset(target_tm, 0, sizeof(*target_tm));
@@ -177,7 +177,7 @@ f2xx_rtc_get_current_target_time(f2xx_rtc *s, struct tm *target_tm)
     target_tm->tm_year = from_bcd((date_reg & 0x00FF0000) >> 16) + 100;
 
     // Have mktime fill in the remaining fields and return the UTC seconds as well
-    return mktimegm(target_tm);
+    return (uint64_t)mktimegm(target_tm);
 }
 
 
@@ -185,7 +185,7 @@ f2xx_rtc_get_current_target_time(f2xx_rtc *s, struct tm *target_tm)
 // Compute the host to target offset based on the passed in target ticks and the current
 //  host time.
 static int64_t
-f2xx_rtc_compute_host_to_target_offset(f2xx_rtc *s, int64_t period_ns, time_t target_ticks)
+f2xx_rtc_compute_host_to_target_offset(f2xx_rtc *s, int64_t period_ns, uint64_t target_ticks)
 {
     // Convert target ticks to real clock microseconds
     int64_t target_time_us = target_ticks * period_ns / 1000;
@@ -481,7 +481,8 @@ f2xx_update_current_date_and_time(void *arg)
     } else {
         while (s->ticks != new_target_ticks) {
             s->ticks += 1;
-            gmtime_r(&s->ticks, &new_target_tm);
+            time_t host_ticks = (time_t)s->ticks;
+            gmtime_r(&host_ticks, &new_target_tm);
             f2xx_rtc_set_time_and_date_registers(s, &new_target_tm);
 
             f2xx_alarm_check(s, 0);
@@ -610,7 +611,7 @@ static const VMStateDescription vmstate_stm32f2xx_rtc = {
         VMSTATE_TIMER_PTR(timer,f2xx_rtc),
         VMSTATE_TIMER_PTR(wu_timer,f2xx_rtc),
         VMSTATE_INT64(host_to_target_offset_us,f2xx_rtc),
-        VMSTATE_INT64(ticks,f2xx_rtc),
+        VMSTATE_UINT64(ticks,f2xx_rtc),
         VMSTATE_UINT32_ARRAY(regs,f2xx_rtc,R_RTC_MAX),
         VMSTATE_INT32(wp_count,f2xx_rtc),
         VMSTATE_END_OF_LIST()

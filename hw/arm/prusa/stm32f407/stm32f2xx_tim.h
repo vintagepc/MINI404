@@ -32,22 +32,24 @@
 #include "qemu/timer.h"
 #include "hw/sysbus.h"
 #include "stm32.h"
+#include "../stm32_common/stm32_shared.h"
+#include "../stm32_common/stm32_common.h"
 
-#define SHORT_REG_32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED 
+
+#define SHORT_REG_32(name,used) struct{ uint32_t name :used; uint32_t :32-used; } QEMU_PACKED
 
 #define R_TIM_MAX    (0x54 / 4)
 
 #define TYPE_STM32F4XX_TIMER "stm32f4xx-timer"
 OBJECT_DECLARE_SIMPLE_TYPE(f2xx_tim, STM32F4XX_TIMER)
 
-struct Stm32Rcc;
-
 struct f2xx_tim {
-    SysBusDevice busdev;
+    STM32Peripheral parent;
     MemoryRegion iomem;
-    QEMUTimer *timer, *pwmtimer;
+
+    QEMUTimer *timer, *ccrtimer[4];
     qemu_irq irq;
-    // Union-ized for my/code sanity and easier inspection during debugging. 
+    // Union-ized for my/code sanity and easier inspection during debugging.
     union {
         uint32_t regs[R_TIM_MAX];
         struct {
@@ -77,7 +79,7 @@ struct f2xx_tim {
                 uint32_t OIS3N :1;
                 uint32_t OIS4 :1;
                 uint32_t :32-15; // unused.
-            } QEMU_PACKED  CR2;         
+            } QEMU_PACKED  CR2;
             struct {
                 uint32_t SMS :3;
                 uint32_t _reserved :1;
@@ -175,7 +177,7 @@ struct f2xx_tim {
                 uint32_t CC3NP :1;
                 uint32_t CC4E :1;
                 uint32_t CC4P :1;
-                uint32_t :32-14;                
+                uint32_t :32-14;
             } QEMU_PACKED  CCER;
             uint32_t CNT;
             SHORT_REG_32(PSC, 16);
@@ -206,14 +208,11 @@ struct f2xx_tim {
             SHORT_REG_32(RMP,2) OR;
         } QEMU_PACKED defs;
     };
-    uint8_t id;
     qemu_irq pwm_ratio_changed[4];
     qemu_irq pwm_enable[4], pwm_pin[4];
 
     int64_t count_timebase;
 
-    stm32_periph_t periph;
-    Stm32Rcc *rcc; // RCC for clock speed. 
 };
 
 #endif // STM32F2XX_TIM_H

@@ -70,25 +70,6 @@ static void gldashboard_motor_in(void *opaque, int n, int level) {
 #endif
 }
 
-static void gldashboard_motor_stall_in(void *opaque, int n, int level) {
-#ifdef BUDDY_HAS_GL
-    GLDashboadState *s = GLDASHBOARD(opaque);
-    if (s->dashboard_type) {
-        gl_dashboard_update_motor_stall(s->dashboardmgr,n,level);
-    }
-#endif
-}
-
-static void gldashboard_motor_enable_in(void *opaque, int n, int level) {
-#ifdef BUDDY_HAS_GL
-    GLDashboadState *s = GLDASHBOARD(opaque);
-    if (s->dashboard_type) {
-        gl_dashboard_update_motor_enable(s->dashboardmgr,n,level);
-    }
-#endif
-}
-
-
 static void gldashboard_indicator_in(void *opaque, int n, int level) {
 #ifdef BUDDY_HAS_GL    
     GLDashboadState *s = GLDASHBOARD(opaque);
@@ -122,10 +103,7 @@ static void gldashboard_reset(DeviceState *dev) {
 
 static void gldashboard_init(Object *obj)
 {
-   // GLDashboadState *s = GLDASHBOARD(obj);
     qdev_init_gpio_in_named(DEVICE(obj), gldashboard_motor_in, "motor-step",DB_MOTOR_COUNT);
-    qdev_init_gpio_in_named(DEVICE(obj), gldashboard_motor_stall_in, "motor-stall",DB_MOTOR_COUNT);
-    qdev_init_gpio_in_named(DEVICE(obj), gldashboard_motor_enable_in, "motor-enable",DB_MOTOR_COUNT);
     qdev_init_gpio_in_named(DEVICE(obj), gldashboard_indicator_in, "indicator-analog",DB_IND_COUNT);
     qdev_init_gpio_in_named(DEVICE(obj), gldashboard_indicator_logic_in, "indicator-logic",DB_IND_COUNT);
 

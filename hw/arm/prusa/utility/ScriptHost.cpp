@@ -95,8 +95,8 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 
 ScriptHost::~ScriptHost() {
 	for (auto &p: m_clients) {
-		if (p.second!=this) { // Don't delete ourselves!
-			std::cout << "Freeing " << p.first << "\n";
+		if (p.second->CanBeDeleted()) { // Don't delete things we shouldn't - ourselves, statics...
+			//std::cout << "Freeing " << p.first << "\n";
 			delete p.second;
 		}
 	}
@@ -768,7 +768,7 @@ void ScriptHost::AddScriptable_C(IScriptable* src)
 }
 
 std::set<std::string> ScriptHost::OnAutoComplete_C(std::string strCmd) {
-	std::set<std::string> strMatches; 
+	std::set<std::string> strMatches;
 	auto pNext = m_strGLAutoC.upper_bound(strCmd);
 	if (pNext == m_strGLAutoC.end()) {
 		return strMatches;
@@ -793,8 +793,8 @@ void ScriptHost::PrintToConsole_C(std::string strOut) {
 	if (m_pConsole)
 	{
 		scriptcon_print_out(m_pConsole,strOut.c_str());
-	} 
-	else 
+	}
+	else
 	{
 		std::cerr << "Cannot print to console, it is NULL!\n";
 	}
@@ -817,7 +817,7 @@ extern "C" {
 		{
         	return ScriptHost::Setup(strScript, 0);
 		}
-		else 
+		else
 		{
 			return false;
 		}
@@ -859,7 +859,7 @@ extern "C" {
 			add_func(p,s.c_str());
 		}
 	}
-	
+
 	extern void scripthost_execute(const char* cmd) {
 		ScriptHost::OnCommand_C(cmd);
 	}
