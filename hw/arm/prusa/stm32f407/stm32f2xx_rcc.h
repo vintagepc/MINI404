@@ -55,8 +55,8 @@ REGDEF_BLOCK_BEGIN()
 	REG_B32(LSERDY);
 	REG_B32(LSEBYP);
 	REG_K32(LSEDRV,2);
-	REG_B32(LSECSSON); 
-	REG_B32(LSECCSD);  
+	REG_B32(LSECSSON);
+	REG_B32(LSECCSD);
 	REG_RB();
 	REG_K32(RTC_SEL,2);
 	REG_R(5);
@@ -116,7 +116,7 @@ REGDEF_BLOCK_BEGIN()
 		REG_RB();
 REGDEF_BLOCK_END(rcc, plli2scfgr);
 
-OBJECT_DECLARE_SIMPLE_TYPE(Stm32f2xxRcc, STM32F2xx_RCC)
+OBJECT_DECLARE_TYPE(Stm32f2xxRcc, COM_CLASS_NAME(F4xxRcc), STM32F4xx_RCC)
 
 #define R_RCC_MAX (0x88/4)
 
@@ -185,4 +185,7 @@ typedef struct Stm32f2xxRcc {
 	} regs;
 
     qemu_irq *hclk_upd_irq;
+
+	stm32_reginfo_t* reginfo;
+
 } Stm32f2xxRcc;

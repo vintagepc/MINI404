@@ -141,10 +141,11 @@ static void thermistor_set_table(ThermistorState *s) {
             s->table_length = 2*HEATER_0_TEMPTABLE_LEN;
             break;
         case 2000:
-            s->table_length = AMBIENTTEMPTABLE_LEN;
+            s->table_length = 2*AMBIENTTEMPTABLE_LEN;
             s->table = &temptable_2000[0][0];
             break;
         default:
+			printf("%s WARNING: Unhandled thermistor table %u!\n",__FILE__,s->table_index);
             s->table = NULL;
             s->table_length = 0;
             break;

@@ -29,7 +29,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/buddy-softmmu/qemu-system-buddy",
-            "args": ["--machine", "prusabuddy", "-kernel", "mini_debug_noboot.bin"],
+            "args": ["--machine", "prusa-mini", "-kernel", "mini_debug_noboot.bin"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build/buddy-softmmu/",
             "environment": [],

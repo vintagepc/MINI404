@@ -430,12 +430,18 @@ static void stm32f4xx_adc_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
+static Property stm32f4xx_adc_properties[] = {
+    DEFINE_PROP_LINK("common", STM32F4XXADCState, common, TYPE_STM32F4XX_ADCC, STM32F4XXADCCState *),
+    DEFINE_PROP_END_OF_LIST()
+};
+
 static void stm32f4xx_adc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->reset = stm32f4xx_adc_reset;
     dc->vmsd = &vmstate_stm32f4xx_adc;
+	device_class_set_props(dc, stm32f4xx_adc_properties);
 }
 
 static const TypeInfo stm32f4xx_adc_info = {

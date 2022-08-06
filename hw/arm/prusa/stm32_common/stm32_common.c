@@ -7,6 +7,7 @@
 #include "stm32_chip_macros.h"
 #include "stm32_rcc.h"
 #include "stm32_rcc_if.h"
+#include "stm32_shared.h"
 
 DECLARE_CLASS_CHECKERS(STM32PeripheralClass, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
 
@@ -26,7 +27,7 @@ extern hwaddr stm32_soc_get_flash_size(DeviceState* dev)
 			}
 		}
 		printf("ERR: Flash size not defined in variant array for %s!\n", type);
-		return cfg->flash_memory.data.size;
+		g_assert_not_reached();
 	}
 	else
 		return soc->flash_size;
@@ -44,11 +45,25 @@ extern hwaddr stm32_soc_get_sram_size(DeviceState* dev)
 			{
 				return p->mem_size;
 			}
-		} // If no variants, just return the fixed value.
-		return cfg->sram.data.size;
+		}
+		printf("ERR: SRAM size not defined in variant array for %s!\n", type);
+		g_assert_not_reached();
 	}
 	else
 		return soc->ram_size;
+}
+extern hwaddr stm32_soc_get_ccmsram_size(DeviceState* dev)
+{
+	const stm32_soc_cfg_t* cfg = STM32_SOC_GET_CLASS(dev)->cfg;
+	const char* type = object_get_typename(OBJECT(dev));
+	for (const stm32_mem_cfg_t* p = cfg->ccmssram_variants; p->chip_type != NULL; p++){
+		if (strcmp(type, p->chip_type) == 0)
+		{
+			return p->mem_size;
+		}
+	}
+	printf("ERR: CCMSRAM size not defined in variant array for %s!\n", type);
+	g_assert_not_reached();
 }
 
 extern DeviceState* stm32_soc_get_periph(DeviceState* soc, stm32_periph_t id)
@@ -68,6 +83,95 @@ static void stm32_peripheral_rcc_reset(void *opaque, int n, int level)
 	{
 		DeviceClass *c = DEVICE_GET_CLASS(opaque);
 		c->reset(DEVICE(opaque));
+	}
+}
+
+static void stm32_soc_instance_init(Object* obj)
+{
+	STM32SOCClass *c = STM32_SOC_GET_CLASS(obj);
+	STM32SOC *s = STM32_SOC(obj);
+	for (int i=0; i<STM32_P_COUNT; i++)
+	{
+		const stm32_periph_cfg_t* p = &(c->cfg->perhipherals[i]);
+		if (p->type != NULL)
+		{
+			s->perhiperhals[i] = qdev_new(p->type);
+			object_property_add_child(obj, _PERIPHNAMES[i], OBJECT(s->perhiperhals[i]));
+		}
+	}
+}
+
+static void stm32_soc_connect_periph_dmar(DeviceState* soc_state, stm32_periph_t id, uint8_t n_dmas, Error **errp)
+{
+	STM32SOC *s = STM32_SOC(soc_state);
+	if (s->perhiperhals[id] == NULL || !object_dynamic_cast(OBJECT(s->perhiperhals[id]), TYPE_STM32_PERIPHERAL))
+	{
+		return;
+	}
+	if (n_dmas == 1U)
+	{
+		qdev_connect_gpio_out_named(s->perhiperhals[id], "dmar", 0, qdev_get_gpio_in_named(s->perhiperhals[STM32_P_DMA1],"dmar-in",0)); \
+	}
+	else
+	{
+		DeviceState *split_dmar = qdev_new(TYPE_SPLIT_IRQ);
+        qdev_prop_set_uint16(split_dmar, "num-lines", n_dmas);
+		qdev_realize_and_unref(split_dmar, NULL,  errp);
+		qdev_connect_gpio_out_named(s->perhiperhals[id], "dmar", 0, qdev_get_gpio_in(split_dmar, 0));
+		for (int i=STM32_P_DMA_BEGIN; i<= STM32_P_DMA_END; i++)
+		{
+			qdev_connect_gpio_out(split_dmar, i-STM32_P_DMA_BEGIN,  qdev_get_gpio_in_named(s->perhiperhals[i],"dmar-in",0));
+		}
+	}
+}
+
+extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t id, Error **errp)
+{
+	STM32SOCClass *c = STM32_SOC_GET_CLASS(soc_state);
+	const stm32_periph_cfg_t *cfg = &(c->cfg->perhipherals[id]);
+	STM32SOC *s = STM32_SOC(soc_state);
+	if (s == NULL || s->perhiperhals[id] == NULL || cfg->type == NULL)
+	{
+		return;
+	}
+	if (id>STM32_P_RCC && s->perhiperhals[STM32_P_RCC] != NULL)
+	{
+		if (object_property_find(OBJECT(s->perhiperhals[id]), "periph"))
+		{
+			QDEV_PROP_SET_PERIPH_T(s->perhiperhals[id], "periph", id);
+			object_property_set_link(OBJECT(s->perhiperhals[id]),"rcc", OBJECT(s->perhiperhals[STM32_P_RCC]), errp);
+			qdev_connect_gpio_out_named(s->perhiperhals[STM32_P_RCC],"reset",id,qdev_get_gpio_in_named(s->perhiperhals[id],"rcc-reset",0));
+		}
+		else
+		{
+			printf("Warning: Peripheral %s does not support the STM32 Common interface\n", _PERIPHNAMES[id]);
+		}
+	}
+	if (!sysbus_realize(SYS_BUS_DEVICE(s->perhiperhals[id]), errp)) {
+		return;
+	}
+	// ITM is special and can't go in the sysbus region. see the stm32f4xx_soc.c for more.
+	if (id !=STM32_P_ITM) sysbus_mmio_map(SYS_BUS_DEVICE(s->perhiperhals[id]), 0, cfg->base_addr);
+	for (const int *irq = cfg->irq; *irq != -1; irq++)
+	{
+		sysbus_connect_irq(SYS_BUS_DEVICE(s->perhiperhals[id]), irq-(cfg->irq), qdev_get_gpio_in(s->cpu, *irq));
+	}
+}
+
+extern void stm32_soc_realize_all_peripherals(DeviceState *soc_state,Error **errp)
+{
+	STM32SOCClass *c = STM32_SOC_GET_CLASS(soc_state);
+	uint8_t n_dmas = 0;
+	for (int i=STM32_P_DMA_BEGIN; i<= STM32_P_DMA_END; i++)
+	{
+		if (!c->cfg->perhipherals[i].type) break;
+		n_dmas++;
+	}
+	for (int i=0; i<STM32_P_COUNT; i++)
+	{
+		stm32_soc_realize_peripheral(soc_state, i, errp);
+		// Auto wire the DMAR.
+		stm32_soc_connect_periph_dmar(soc_state, i, n_dmas,errp);
 	}
 }
 
@@ -118,6 +222,7 @@ static const TypeInfo stm32_soc_info = {
 	.name = TYPE_STM32_SOC,
 	.parent = TYPE_SYS_BUS_DEVICE,
 	.instance_size = sizeof(STM32SOC),
+	.instance_init = stm32_soc_instance_init,
 	.abstract = true,
 	.class_size = sizeof(STM32SOCClass),
 	.class_init = stm32_soc_class_init,
