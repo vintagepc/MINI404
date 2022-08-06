@@ -31,15 +31,24 @@
 #include "qemu/main-loop.h"
 #include "iothread.h"
 
-static int coroutine_fn bdrv_test_co_prwv(BlockDriverState *bs,
-                                          uint64_t offset, uint64_t bytes,
-                                          QEMUIOVector *qiov, int flags)
+static int coroutine_fn bdrv_test_co_preadv(BlockDriverState *bs,
+                                            int64_t offset, int64_t bytes,
+                                            QEMUIOVector *qiov,
+                                            BdrvRequestFlags flags)
+{
+    return 0;
+}
+
+static int coroutine_fn bdrv_test_co_pwritev(BlockDriverState *bs,
+                                             int64_t offset, int64_t bytes,
+                                             QEMUIOVector *qiov,
+                                             BdrvRequestFlags flags)
 {
     return 0;
 }
 
 static int coroutine_fn bdrv_test_co_pdiscard(BlockDriverState *bs,
-                                              int64_t offset, int bytes)
+                                              int64_t offset, int64_t bytes)
 {
     return 0;
 }
@@ -66,8 +75,8 @@ static BlockDriver bdrv_test = {
     .format_name            = "test",
     .instance_size          = 1,
 
-    .bdrv_co_preadv         = bdrv_test_co_prwv,
-    .bdrv_co_pwritev        = bdrv_test_co_prwv,
+    .bdrv_co_preadv         = bdrv_test_co_preadv,
+    .bdrv_co_pwritev        = bdrv_test_co_pwritev,
     .bdrv_co_pdiscard       = bdrv_test_co_pdiscard,
     .bdrv_co_truncate       = bdrv_test_co_truncate,
     .bdrv_co_block_status   = bdrv_test_co_block_status,
@@ -194,13 +203,11 @@ static void test_sync_op_truncate(BdrvChild *c)
     g_assert_cmpint(ret, ==, -EINVAL);
 
     /* Error: Read-only image */
-    c->bs->read_only = true;
     c->bs->open_flags &= ~BDRV_O_RDWR;
 
     ret = bdrv_truncate(c, 65536, false, PREALLOC_MODE_OFF, 0, NULL);
     g_assert_cmpint(ret, ==, -EACCES);
 
-    c->bs->read_only = false;
     c->bs->open_flags |= BDRV_O_RDWR;
 }
 
@@ -236,13 +243,11 @@ static void test_sync_op_flush(BdrvChild *c)
     g_assert_cmpint(ret, ==, 0);
 
     /* Early success: Read-only image */
-    c->bs->read_only = true;
     c->bs->open_flags &= ~BDRV_O_RDWR;
 
     ret = bdrv_flush(c->bs);
     g_assert_cmpint(ret, ==, 0);
 
-    c->bs->read_only = false;
     c->bs->open_flags |= BDRV_O_RDWR;
 }
 
@@ -256,13 +261,11 @@ static void test_sync_op_blk_flush(BlockBackend *blk)
     g_assert_cmpint(ret, ==, 0);
 
     /* Early success: Read-only image */
-    bs->read_only = true;
     bs->open_flags &= ~BDRV_O_RDWR;
 
     ret = blk_flush(blk);
     g_assert_cmpint(ret, ==, 0);
 
-    bs->read_only = false;
     bs->open_flags |= BDRV_O_RDWR;
 }
 
@@ -276,10 +279,10 @@ static void test_sync_op_check(BdrvChild *c)
     g_assert_cmpint(ret, ==, -ENOTSUP);
 }
 
-static void test_sync_op_invalidate_cache(BdrvChild *c)
+static void test_sync_op_activate(BdrvChild *c)
 {
     /* Early success: Image is not inactive */
-    bdrv_invalidate_cache(c->bs, NULL);
+    bdrv_activate(c->bs, NULL);
 }
 
 
@@ -322,8 +325,8 @@ const SyncOpTest sync_op_tests[] = {
         .name   = "/sync-op/check",
         .fn     = test_sync_op_check,
     }, {
-        .name   = "/sync-op/invalidate_cache",
-        .fn     = test_sync_op_invalidate_cache,
+        .name   = "/sync-op/activate",
+        .fn     = test_sync_op_activate,
     },
 };
 

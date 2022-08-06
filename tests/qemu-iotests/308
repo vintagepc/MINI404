@@ -58,6 +58,9 @@ _supported_os Linux # We need /dev/urandom
 # $4: Node to export (defaults to 'node-format')
 fuse_export_add()
 {
+    # The grep -v is a filter for errors when /etc/fuse.conf does not contain
+    # user_allow_other.  (The error is benign, but it is printed by fusermount
+    # on the first mount attempt, so our export code cannot hide it.)
     _send_qemu_cmd $QEMU_HANDLE \
         "{'execute': 'block-export-add',
           'arguments': {
@@ -67,7 +70,8 @@ fuse_export_add()
               $2
           } }" \
         "${3:-return}" \
-        | _filter_imgfmt
+        | _filter_imgfmt \
+        | grep -v 'option allow_other only allowed if'
 }
 
 # $1: Export ID
@@ -144,7 +148,7 @@ rmdir "$EXT_MP" 2>/dev/null
 rm -f "$EXT_MP"
 output=$(fuse_export_add 'export-err' "'mountpoint': '$EXT_MP'" error)
 
-if echo "$output" | grep -q "Invalid parameter 'fuse'"; then
+if echo "$output" | grep -q "Parameter 'type' does not accept value 'fuse'"; then
     _notrun 'No FUSE support'
 fi
 
@@ -165,6 +169,17 @@ fuse_export_add 'export-mp' "'mountpoint': '$EXT_MP'"
 
 # Check that the export presents the same data as the original image
 $QEMU_IMG compare -f raw -F $IMGFMT -U "$EXT_MP" "$TEST_IMG"
+
+# Some quick chmod tests
+stat -c 'Permissions pre-chmod: %a' "$EXT_MP"
+
+# Verify that we cannot set +w
+chmod u+w "$EXT_MP" 2>&1 | _filter_testdir | _filter_imgfmt
+stat -c 'Permissions post-+w: %a' "$EXT_MP"
+
+# But that we can set, say, +x (if we are so inclined)
+chmod u+x "$EXT_MP" 2>&1 | _filter_testdir | _filter_imgfmt
+stat -c 'Permissions post-+x: %a' "$EXT_MP"
 
 echo
 echo '=== Mount over existing file ==='
@@ -215,7 +230,29 @@ echo '=== Writable export ==='
 fuse_export_add 'export-mp' "'mountpoint': '$EXT_MP', 'writable': true"
 
 # Check that writing to the read-only export fails
-$QEMU_IO -f raw -c 'write -P 42 1M 64k' "$TEST_IMG" | _filter_qemu_io
+output=$($QEMU_IO -f raw -c 'write -P 42 1M 64k' "$TEST_IMG" 2>&1 \
+             | _filter_qemu_io | _filter_testdir | _filter_imgfmt)
+
+# Expected reference output: Opening the file fails because it has no
+# write permission
+reference="Could not open 'TEST_DIR/t.IMGFMT': Permission denied"
+
+if echo "$output" | grep -q "$reference"; then
+    echo "Writing to read-only export failed: OK"
+elif echo "$output" | grep -q "write failed: Permission denied"; then
+    # With CAP_DAC_OVERRIDE (e.g. when running this test as root), the export
+    # can be opened regardless of its file permissions, but writing will then
+    # fail.  This is not the result for which we want to test, so count this as
+    # a SKIP.
+    _casenotrun "Opening RO export as R/W succeeded, perhaps because of" \
+        "CAP_DAC_OVERRIDE"
+
+    # Still, write this to the reference output to make the test pass
+    echo "Writing to read-only export failed: OK"
+else
+    echo "Writing to read-only export failed: ERROR"
+    echo "$output"
+fi
 
 # But here it should work
 $QEMU_IO -f raw -c 'write -P 42 1M 64k' "$EXT_MP" | _filter_qemu_io

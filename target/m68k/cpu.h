@@ -79,7 +79,7 @@
 
 typedef CPU_LDoubleU FPReg;
 
-typedef struct CPUM68KState {
+typedef struct CPUArchState {
     uint32_t dregs[8];
     uint32_t aregs[8];
     uint32_t pc;
@@ -156,7 +156,7 @@ typedef struct CPUM68KState {
  *
  * A Motorola 68k CPU.
  */
-struct M68kCPU {
+struct ArchCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
@@ -166,8 +166,10 @@ struct M68kCPU {
 };
 
 
+#ifndef CONFIG_USER_ONLY
 void m68k_cpu_do_interrupt(CPUState *cpu);
 bool m68k_cpu_exec_interrupt(CPUState *cpu, int int_req);
+#endif /* !CONFIG_USER_ONLY */
 void m68k_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 hwaddr m68k_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 int m68k_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
@@ -175,13 +177,6 @@ int m68k_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
 
 void m68k_tcg_init(void);
 void m68k_cpu_init_gdb(M68kCPU *cpu);
-/*
- * you can call this signal handler from your SIGBUS and SIGSEGV
- * signal handlers to inform the virtual CPU of exceptions. non zero
- * is returned if the signal was handled by the virtual CPU.
- */
-int cpu_m68k_signal_handler(int host_signum, void *pinfo,
-                           void *puc);
 uint32_t cpu_m68k_get_ccr(CPUM68KState *env);
 void cpu_m68k_set_ccr(CPUM68KState *env, uint32_t);
 void cpu_m68k_set_sr(CPUM68KState *env, uint32_t);
@@ -229,6 +224,9 @@ typedef enum {
 #define SR_S  0x2000
 #define SR_T_SHIFT 14
 #define SR_T  0xc000
+
+#define M68K_SR_TRACE(sr) ((sr & SR_T) >> SR_T_SHIFT)
+#define M68K_SR_TRACE_ANY_INS 0x2
 
 #define M68K_SSP    0
 #define M68K_USP    1
@@ -558,7 +556,6 @@ enum {
 #define M68K_CPU_TYPE_NAME(model) model M68K_CPU_TYPE_SUFFIX
 #define CPU_RESOLVING_TYPE TYPE_M68K_CPU
 
-#define cpu_signal_handler cpu_m68k_signal_handler
 #define cpu_list m68k_cpu_list
 
 /* MMU modes definitions */
@@ -577,9 +574,6 @@ void m68k_cpu_transaction_failed(CPUState *cs, hwaddr physaddr, vaddr addr,
                                  int mmu_idx, MemTxAttrs attrs,
                                  MemTxResult response, uintptr_t retaddr);
 
-typedef CPUM68KState CPUArchState;
-typedef M68kCPU ArchCPU;
-
 #include "exec/cpu-all.h"
 
 /* TB flags */
@@ -590,6 +584,8 @@ typedef M68kCPU ArchCPU;
 #define TB_FLAGS_SFC_S          (1 << TB_FLAGS_SFC_S_BIT)
 #define TB_FLAGS_DFC_S_BIT      15
 #define TB_FLAGS_DFC_S          (1 << TB_FLAGS_DFC_S_BIT)
+#define TB_FLAGS_TRACE          16
+#define TB_FLAGS_TRACE_BIT      (1 << TB_FLAGS_TRACE)
 
 static inline void cpu_get_tb_cpu_state(CPUM68KState *env, target_ulong *pc,
                                         target_ulong *cs_base, uint32_t *flags)
@@ -601,6 +597,9 @@ static inline void cpu_get_tb_cpu_state(CPUM68KState *env, target_ulong *pc,
         *flags |= TB_FLAGS_MSR_S;
         *flags |= (env->sfc << (TB_FLAGS_SFC_S_BIT - 2)) & TB_FLAGS_SFC_S;
         *flags |= (env->dfc << (TB_FLAGS_DFC_S_BIT - 2)) & TB_FLAGS_DFC_S;
+    }
+    if (M68K_SR_TRACE(env->sr) == M68K_SR_TRACE_ANY_INS) {
+        *flags |= TB_FLAGS_TRACE;
     }
 }
 

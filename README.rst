@@ -59,9 +59,9 @@ of other UNIX targets. The simple steps to build QEMU are:
 
 Additional information can also be found online via the QEMU website:
 
-* `<https://qemu.org/Hosts/Linux>`_
-* `<https://qemu.org/Hosts/Mac>`_
-* `<https://qemu.org/Hosts/W32>`_
+* `<https://wiki.qemu.org/Hosts/Linux>`_
+* `<https://wiki.qemu.org/Hosts/Mac>`_
+* `<https://wiki.qemu.org/Hosts/W32>`_
 
 
 Submitting patches
@@ -84,8 +84,8 @@ the Developers Guide.
 Additional information on submitting patches can be found online via
 the QEMU website
 
-* `<https://qemu.org/Contribute/SubmitAPatch>`_
-* `<https://qemu.org/Contribute/TrivialPatches>`_
+* `<https://wiki.qemu.org/Contribute/SubmitAPatch>`_
+* `<https://wiki.qemu.org/Contribute/TrivialPatches>`_
 
 The QEMU website is also maintained under source control.
 
@@ -131,20 +131,20 @@ will be tagged as my-feature-v2.
 Bug reporting
 =============
 
-The QEMU project uses Launchpad as its primary upstream bug tracker. Bugs
+The QEMU project uses GitLab issues to track bugs. Bugs
 found when running code built from QEMU git or upstream released sources
 should be reported via:
 
-* `<https://bugs.launchpad.net/qemu/>`_
+* `<https://gitlab.com/qemu-project/qemu/-/issues>`_
 
 If using QEMU via an operating system vendor pre-built binary package, it
 is preferable to report bugs to the vendor's own bug tracker first. If
 the bug is also known to affect latest upstream code, it can also be
-reported via launchpad.
+reported via GitLab.
 
 For additional information on bug reporting consult:
 
-* `<https://qemu.org/Contribute/ReportABug>`_
+* `<https://wiki.qemu.org/Contribute/ReportABug>`_
 
 
 ChangeLog
@@ -168,4 +168,4 @@ main methods being email and IRC
 Information on additional methods of contacting the community can be
 found online via the QEMU website:
 
-* `<https://qemu.org/Contribute/StartHere>`_
+* `<https://wiki.qemu.org/Contribute/StartHere>`_

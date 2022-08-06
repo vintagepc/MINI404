@@ -251,8 +251,8 @@
 #
 # @max_queue_size: the maximum number of packets to keep in the queue for
 #                  comparing with incoming packets from @secondary_in.  If the
-#                  queue is full and addtional packets are received, the
-#                  addtional packets are dropped. (default: 1024)
+#                  queue is full and additional packets are received, the
+#                  additional packets are dropped. (default: 1024)
 #
 # @vnet_hdr_support: if true, vnet header support is enabled (default: false)
 #
@@ -516,12 +516,17 @@
 #               algorithm detects it is spending too long polling without
 #               encountering events. 0 selects a default behaviour (default: 0)
 #
+# @aio-max-batch: maximum number of requests in a batch for the AIO engine,
+#                 0 means that the engine will use its default
+#                 (default:0, since 6.1)
+#
 # Since: 2.0
 ##
 { 'struct': 'IothreadProperties',
   'data': { '*poll-max-ns': 'int',
             '*poll-grow': 'int',
-            '*poll-shrink': 'int' } }
+            '*poll-shrink': 'int',
+            '*aio-max-batch': 'int' } }
 
 ##
 # @MemoryBackendProperties:
@@ -545,16 +550,23 @@
 # @share: if false, the memory is private to QEMU; if true, it is shared
 #         (default: false)
 #
+# @reserve: if true, reserve swap space (or huge pages) if applicable
+#           (default: true) (since 6.1)
+#
 # @size: size of the memory region in bytes
 #
 # @x-use-canonical-path-for-ramblock-id: if true, the canoncial path is used
 #                                        for ramblock-id. Disable this for 4.0
 #                                        machine types or older to allow
 #                                        migration with newer QEMU versions.
-#                                        This option is considered stable
-#                                        despite the x- prefix. (default:
-#                                        false generally, but true for machine
-#                                        types <= 4.0)
+#                                        (default: false generally,
+#                                        but true for machine types <= 4.0)
+#
+# Note: prealloc=true and reserve=false cannot be set at the same time. With
+#       reserve=true, the behavior depends on the operating system: for example,
+#       Linux will not reserve swap space for shared file mappings --
+#       "not applicable". In contrast, reserve=false will bail out if it cannot
+#       be configured accordingly.
 #
 # Since: 2.1
 ##
@@ -566,6 +578,7 @@
             '*prealloc': 'bool',
             '*prealloc-threads': 'uint32',
             '*share': 'bool',
+            '*reserve': 'bool',
             'size': 'size',
             '*x-use-canonical-path-for-ramblock-id': 'bool' } }
 
@@ -603,7 +616,7 @@
   'data': { '*align': 'size',
             '*discard-data': 'bool',
             'mem-path': 'str',
-            '*pmem': { 'type': 'bool', 'if': 'defined(CONFIG_LIBPMEM)' },
+            '*pmem': { 'type': 'bool', 'if': 'CONFIG_LIBPMEM' },
             '*readonly': 'bool' } }
 
 ##
@@ -633,6 +646,23 @@
             '*seal': 'bool' } }
 
 ##
+# @MemoryBackendEpcProperties:
+#
+# Properties for memory-backend-epc objects.
+#
+# The @share boolean option is true by default with epc
+#
+# The @merge boolean option is false by default with epc
+#
+# The @dump boolean option is false by default with epc
+#
+# Since: 6.2
+##
+{ 'struct': 'MemoryBackendEpcProperties',
+  'base': 'MemoryBackendProperties',
+  'data': {} }
+
+##
 # @PrManagerHelperProperties:
 #
 # Properties for pr-manager-helper objects.
@@ -643,6 +673,21 @@
 ##
 { 'struct': 'PrManagerHelperProperties',
   'data': { 'path': 'str' } }
+
+##
+# @QtestProperties:
+#
+# Properties for qtest objects.
+#
+# @chardev: the chardev to be used to receive qtest commands on.
+#
+# @log: the path to a log file
+#
+# Since: 6.0
+##
+{ 'struct': 'QtestProperties',
+        'data': { 'chardev': 'str',
+                  '*log': 'str' } }
 
 ##
 # @RemoteObjectProperties:
@@ -724,6 +769,10 @@
 # @reduced-phys-bits: number of bits in physical addresses that become
 #                     unavailable when SEV is enabled
 #
+# @kernel-hashes: if true, add hashes of kernel/initrd/cmdline to a
+#                 designated guest firmware page for measured boot
+#                 with -kernel (default: false) (since 6.2)
+#
 # Since: 2.12
 ##
 { 'struct': 'SevGuestProperties',
@@ -733,10 +782,14 @@
             '*policy': 'uint32',
             '*handle': 'uint32',
             '*cbitpos': 'uint32',
-            'reduced-phys-bits': 'uint32' } }
+            'reduced-phys-bits': 'uint32',
+            '*kernel-hashes': 'bool' } }
 
 ##
 # @ObjectType:
+#
+# Features:
+# @unstable: Member @x-remote-object is experimental.
 #
 # Since: 6.0
 ##
@@ -747,12 +800,13 @@
     'authz-pam',
     'authz-simple',
     'can-bus',
-    'can-host-socketcan',
+    { 'name': 'can-host-socketcan',
+      'if': 'CONFIG_LINUX' },
     'colo-compare',
     'cryptodev-backend',
     'cryptodev-backend-builtin',
     { 'name': 'cryptodev-vhost-user',
-      'if': 'defined(CONFIG_VHOST_CRYPTO)' },
+      'if': 'CONFIG_VHOST_CRYPTO' },
     'dbus-vmstate',
     'filter-buffer',
     'filter-dump',
@@ -761,19 +815,26 @@
     'filter-replay',
     'filter-rewriter',
     'input-barrier',
-    'input-linux',
+    { 'name': 'input-linux',
+      'if': 'CONFIG_LINUX' },
     'iothread',
+    { 'name': 'memory-backend-epc',
+      'if': 'CONFIG_LINUX' },
     'memory-backend-file',
     { 'name': 'memory-backend-memfd',
-      'if': 'defined(CONFIG_LINUX)' },
+      'if': 'CONFIG_LINUX' },
     'memory-backend-ram',
     'pef-guest',
-    'pr-manager-helper',
+    { 'name': 'pr-manager-helper',
+      'if': 'CONFIG_LINUX' },
+    'qtest',
     'rng-builtin',
     'rng-egd',
-    'rng-random',
+    { 'name': 'rng-random',
+      'if': 'CONFIG_POSIX' },
     'secret',
-    'secret_keyring',
+    { 'name': 'secret_keyring',
+      'if': 'CONFIG_SECRET_KEYRING' },
     'sev-guest',
     's390-pv-guest',
     'throttle-group',
@@ -781,7 +842,7 @@
     'tls-creds-psk',
     'tls-creds-x509',
     'tls-cipher-suites',
-    'x-remote-object'
+    { 'name': 'x-remote-object', 'features': [ 'unstable' ] }
   ] }
 
 ##
@@ -804,12 +865,13 @@
       'authz-listfile':             'AuthZListFileProperties',
       'authz-pam':                  'AuthZPAMProperties',
       'authz-simple':               'AuthZSimpleProperties',
-      'can-host-socketcan':         'CanHostSocketcanProperties',
+      'can-host-socketcan':         { 'type': 'CanHostSocketcanProperties',
+                                      'if': 'CONFIG_LINUX' },
       'colo-compare':               'ColoCompareProperties',
       'cryptodev-backend':          'CryptodevBackendProperties',
       'cryptodev-backend-builtin':  'CryptodevBackendProperties',
       'cryptodev-vhost-user':       { 'type': 'CryptodevVhostUserProperties',
-                                      'if': 'defined(CONFIG_VHOST_CRYPTO)' },
+                                      'if': 'CONFIG_VHOST_CRYPTO' },
       'dbus-vmstate':               'DBusVMStateProperties',
       'filter-buffer':              'FilterBufferProperties',
       'filter-dump':                'FilterDumpProperties',
@@ -818,18 +880,25 @@
       'filter-replay':              'NetfilterProperties',
       'filter-rewriter':            'FilterRewriterProperties',
       'input-barrier':              'InputBarrierProperties',
-      'input-linux':                'InputLinuxProperties',
+      'input-linux':                { 'type': 'InputLinuxProperties',
+                                      'if': 'CONFIG_LINUX' },
       'iothread':                   'IothreadProperties',
+      'memory-backend-epc':         { 'type': 'MemoryBackendEpcProperties',
+                                      'if': 'CONFIG_LINUX' },
       'memory-backend-file':        'MemoryBackendFileProperties',
       'memory-backend-memfd':       { 'type': 'MemoryBackendMemfdProperties',
-                                      'if': 'defined(CONFIG_LINUX)' },
+                                      'if': 'CONFIG_LINUX' },
       'memory-backend-ram':         'MemoryBackendProperties',
-      'pr-manager-helper':          'PrManagerHelperProperties',
+      'pr-manager-helper':          { 'type': 'PrManagerHelperProperties',
+                                      'if': 'CONFIG_LINUX' },
+      'qtest':                      'QtestProperties',
       'rng-builtin':                'RngProperties',
       'rng-egd':                    'RngEgdProperties',
-      'rng-random':                 'RngRandomProperties',
+      'rng-random':                 { 'type': 'RngRandomProperties',
+                                      'if': 'CONFIG_POSIX' },
       'secret':                     'SecretProperties',
-      'secret_keyring':             'SecretKeyringProperties',
+      'secret_keyring':             { 'type': 'SecretKeyringProperties',
+                                      'if': 'CONFIG_SECRET_KEYRING' },
       'sev-guest':                  'SevGuestProperties',
       'throttle-group':             'ThrottleGroupProperties',
       'tls-creds-anon':             'TlsCredsAnonProperties',
@@ -857,7 +926,8 @@
 # <- { "return": {} }
 #
 ##
-{ 'command': 'object-add', 'data': 'ObjectOptions', 'boxed': true }
+{ 'command': 'object-add', 'data': 'ObjectOptions', 'boxed': true,
+  'allow-preconfig': true }
 
 ##
 # @object-del:
@@ -877,4 +947,5 @@
 # <- { "return": {} }
 #
 ##
-{ 'command': 'object-del', 'data': {'id': 'str'} }
+{ 'command': 'object-del', 'data': {'id': 'str'},
+  'allow-preconfig': true }

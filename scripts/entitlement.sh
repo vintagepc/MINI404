@@ -8,18 +8,26 @@ if [ "$1" = --install ]; then
   in_place=false
 fi
 
-SRC="$1"
-DST="$2"
-ENTITLEMENT="$3"
+DST="$1"
+SRC="$2"
+ICON="$3"
+ENTITLEMENT="$4"
 
 if $in_place; then
   trap 'rm "$DST.tmp"' exit
-  cp -af "$SRC" "$DST.tmp"
+  cp -pPf "$SRC" "$DST.tmp"
   SRC="$DST.tmp"
 else
   cd "$MESON_INSTALL_DESTDIR_PREFIX"
 fi
 
-codesign --entitlements "$ENTITLEMENT" --force -s - "$SRC"
+if test -n "$ENTITLEMENT"; then
+  codesign --entitlements "$ENTITLEMENT" --force -s - "$SRC"
+fi
+
+# Add the QEMU icon to the binary on Mac OS
+Rez -append "$ICON" -o "$SRC"
+SetFile -a C "$SRC"
+
 mv -f "$SRC" "$DST"
 trap '' exit

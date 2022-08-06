@@ -29,6 +29,7 @@
 #include "qemu/host-utils.h"
 #include "qemu/module.h"
 #include "sysemu/kvm.h"
+#include "sysemu/replay.h"
 #include "hw/virtio/virtio-mmio.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
@@ -36,7 +37,9 @@
 
 static bool virtio_mmio_ioeventfd_enabled(DeviceState *d)
 {
-    return kvm_eventfds_enabled();
+    VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
+
+    return (proxy->flags & VIRTIO_IOMMIO_FLAG_USE_IOEVENTFD) != 0;
 }
 
 static int virtio_mmio_ioeventfd_assign(DeviceState *d,
@@ -589,7 +592,6 @@ static const VMStateDescription vmstate_virtio_mmio = {
     .name = "virtio_mmio",
     .version_id = 1,
     .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
     .fields = (VMStateField[]) {
         VMSTATE_END_OF_LIST()
     },
@@ -720,6 +722,8 @@ static Property virtio_mmio_properties[] = {
     DEFINE_PROP_BOOL("format_transport_address", VirtIOMMIOProxy,
                      format_transport_address, true),
     DEFINE_PROP_BOOL("force-legacy", VirtIOMMIOProxy, legacy, true),
+    DEFINE_PROP_BIT("ioeventfd", VirtIOMMIOProxy, flags,
+                    VIRTIO_IOMMIO_FLAG_USE_IOEVENTFD_BIT, true),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -728,9 +732,18 @@ static void virtio_mmio_realizefn(DeviceState *d, Error **errp)
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
     SysBusDevice *sbd = SYS_BUS_DEVICE(d);
 
-    qbus_create_inplace(&proxy->bus, sizeof(proxy->bus), TYPE_VIRTIO_MMIO_BUS,
-                        d, NULL);
+    qbus_init(&proxy->bus, sizeof(proxy->bus), TYPE_VIRTIO_MMIO_BUS, d, NULL);
     sysbus_init_irq(sbd, &proxy->irq);
+
+    if (!kvm_eventfds_enabled()) {
+        proxy->flags &= ~VIRTIO_IOMMIO_FLAG_USE_IOEVENTFD;
+    }
+
+    /* fd-based ioevents can't be synchronized in record/replay */
+    if (replay_mode != REPLAY_MODE_NONE) {
+        proxy->flags &= ~VIRTIO_IOMMIO_FLAG_USE_IOEVENTFD;
+    }
+
     if (proxy->legacy) {
         memory_region_init_io(&proxy->iomem, OBJECT(d),
                               &virtio_legacy_mem_ops, proxy,
@@ -803,6 +816,17 @@ static char *virtio_mmio_bus_get_dev_path(DeviceState *dev)
     return path;
 }
 
+static void virtio_mmio_vmstate_change(DeviceState *d, bool running)
+{
+    VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
+
+    if (running) {
+        virtio_mmio_start_ioeventfd(proxy);
+    } else {
+        virtio_mmio_stop_ioeventfd(proxy);
+    }
+}
+
 static void virtio_mmio_bus_class_init(ObjectClass *klass, void *data)
 {
     BusClass *bus_class = BUS_CLASS(klass);
@@ -818,6 +842,7 @@ static void virtio_mmio_bus_class_init(ObjectClass *klass, void *data)
     k->ioeventfd_enabled = virtio_mmio_ioeventfd_enabled;
     k->ioeventfd_assign = virtio_mmio_ioeventfd_assign;
     k->pre_plugged = virtio_mmio_pre_plugged;
+    k->vmstate_change = virtio_mmio_vmstate_change;
     k->has_variable_vring_alignment = true;
     bus_class->max_dev = 1;
     bus_class->get_dev_path = virtio_mmio_bus_get_dev_path;

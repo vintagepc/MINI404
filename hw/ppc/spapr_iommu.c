@@ -25,7 +25,6 @@
 #include "kvm_ppc.h"
 #include "migration/vmstate.h"
 #include "sysemu/dma.h"
-#include "exec/address-spaces.h"
 #include "trace.h"
 
 #include "hw/ppc/spapr.h"
@@ -686,7 +685,7 @@ static void spapr_tce_table_class_init(ObjectClass *klass, void *data)
     spapr_register_hypercall(H_STUFF_TCE, h_stuff_tce);
 }
 
-static TypeInfo spapr_tce_table_info = {
+static const TypeInfo spapr_tce_table_info = {
     .name = TYPE_SPAPR_TCE_TABLE,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(SpaprTceTable),

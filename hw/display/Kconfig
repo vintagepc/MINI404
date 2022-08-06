@@ -49,7 +49,7 @@ config VGA_ISA
     depends on ISA_BUS
     select VGA
 
-config VGA_ISA_MM
+config VGA_MMIO
     bool
     select VGA
 
@@ -71,10 +71,6 @@ config BLIZZARD
 
 config FRAMEBUFFER
     bool
-
-config MILKYMIST_TMU2
-    bool
-    depends on OPENGL && X11
 
 config SM501
     bool

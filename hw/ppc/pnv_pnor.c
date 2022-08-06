@@ -10,7 +10,6 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "qemu/log.h"
 #include "qemu/units.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
@@ -37,7 +36,7 @@ static void pnv_pnor_update(PnvPnor *s, int offset, int size)
     int offset_end;
     int ret;
 
-    if (s->blk) {
+    if (!s->blk || !blk_is_writable(s->blk)) {
         return;
     }
 

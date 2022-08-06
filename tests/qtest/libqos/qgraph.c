@@ -93,7 +93,7 @@ static void add_edge(const char *source, const char *dest,
     edge->type = type;
     edge->dest = g_strdup(dest);
     edge->edge_name = g_strdup(opts->edge_name ?: dest);
-    edge->arg = g_memdup(opts->arg, opts->size_arg);
+    edge->arg = g_memdup2(opts->arg, opts->size_arg);
 
     edge->before_cmd_line =
         opts->before_cmd_line ? g_strconcat(" ", opts->before_cmd_line, NULL) : NULL;
@@ -844,7 +844,7 @@ void qos_dump_graph(void)
         }
         qos_printf_literal("type=%d cmd_line='%s' [%s]\n",
                            node->type, node->command_line,
-                           node->available ? "available" : "UNAVAILBLE"
+                           node->available ? "available" : "UNAVAILABLE"
         );
     }
     g_list_free(keys);

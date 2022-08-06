@@ -18,7 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu/datadir.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -27,7 +26,6 @@
 #include "sysemu/numa.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
-#include "exec/address-spaces.h"
 #include "exec/hwaddr.h"
 #include "kvm_arm.h"
 #include "hw/arm/boot.h"
@@ -66,7 +64,7 @@ enum {
     SBSA_GIC_DIST,
     SBSA_GIC_REDIST,
     SBSA_SECURE_EC,
-    SBSA_GWDT,
+    SBSA_GWDT_WS0,
     SBSA_GWDT_REFRESH,
     SBSA_GWDT_CONTROL,
     SBSA_SMMU,
@@ -141,7 +139,7 @@ static const int sbsa_ref_irqmap[] = {
     [SBSA_AHCI] = 10,
     [SBSA_EHCI] = 11,
     [SBSA_SMMU] = 12, /* ... to 15 */
-    [SBSA_GWDT] = 16,
+    [SBSA_GWDT_WS0] = 16,
 };
 
 static const char * const valid_cpus[] = {
@@ -482,7 +480,7 @@ static void create_wdt(const SBSAMachineState *sms)
     hwaddr cbase = sbsa_ref_memmap[SBSA_GWDT_CONTROL].base;
     DeviceState *dev = qdev_new(TYPE_WDT_SBSA);
     SysBusDevice *s = SYS_BUS_DEVICE(dev);
-    int irq = sbsa_ref_irqmap[SBSA_GWDT];
+    int irq = sbsa_ref_irqmap[SBSA_GWDT_WS0];
 
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, rbase);
@@ -671,7 +669,7 @@ static void sbsa_ref_init(MachineState *machine)
     int n, sbsa_max_cpus;
 
     if (!cpu_type_valid(machine->cpu_type)) {
-        error_report("mach-virt: CPU type %s not supported", machine->cpu_type);
+        error_report("sbsa-ref: CPU type %s not supported", machine->cpu_type);
         exit(1);
     }
 
@@ -691,13 +689,6 @@ static void sbsa_ref_init(MachineState *machine)
     memory_region_add_subregion_overlap(secure_sysmem, 0, sysmem, -1);
 
     firmware_loaded = sbsa_firmware_init(sms, sysmem, secure_sysmem);
-
-    if (machine->kernel_filename && firmware_loaded) {
-        error_report("sbsa-ref: No fw_cfg device on this machine, "
-                     "so -kernel option is not supported when firmware loaded, "
-                     "please load OS from hard disk instead");
-        exit(1);
-    }
 
     /*
      * This machine has EL3 enabled, external firmware should supply PSCI
@@ -785,7 +776,6 @@ static void sbsa_ref_init(MachineState *machine)
     create_secure_ec(secure_sysmem);
 
     sms->bootinfo.ram_size = machine->ram_size;
-    sms->bootinfo.nb_cpus = smp_cpus;
     sms->bootinfo.board_id = -1;
     sms->bootinfo.loader_start = sbsa_ref_memmap[SBSA_MEM].base;
     sms->bootinfo.get_dtb = sbsa_ref_dtb;

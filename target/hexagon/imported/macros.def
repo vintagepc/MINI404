@@ -92,6 +92,21 @@ DEF_MACRO(
     /* attribs */
 )
 
+
+DEF_MACRO(
+    fINSERT_RANGE,
+        {
+            int offset=LOWBIT;
+            int width=HIBIT-LOWBIT+1;
+            /* clear bits where new bits go */
+            INREG &= ~(((fCONSTLL(1)<<width)-1)<<offset);
+            /* OR in new bits */
+            INREG |= ((INVAL & ((fCONSTLL(1)<<width)-1)) << offset);
+        },
+    /* attribs */
+)
+
+
 DEF_MACRO(
     f8BITSOF,
     ( (VAL) ? 0xff : 0x00),
@@ -162,6 +177,12 @@ DEF_MACRO(
 )
 
 DEF_MACRO(
+    fVSATUVALN,
+    ({ ((VAL) < 0) ? 0 : ((1LL<<(N))-1);}),
+    ()
+)
+
+DEF_MACRO(
     fSATUVALN,
     ({fSET_OVERFLOW(); ((VAL) < 0) ? 0 : ((1LL<<(N))-1);}),
     ()
@@ -170,6 +191,12 @@ DEF_MACRO(
 DEF_MACRO(
     fSATVALN,
     ({fSET_OVERFLOW(); ((VAL) < 0) ? (-(1LL<<((N)-1))) : ((1LL<<((N)-1))-1);}),
+    ()
+)
+
+DEF_MACRO(
+    fVSATVALN,
+    ({((VAL) < 0) ? (-(1LL<<((N)-1))) : ((1LL<<((N)-1))-1);}),
     ()
 )
 
@@ -188,6 +215,11 @@ DEF_MACRO(
 DEF_MACRO(
     fSATN,
     ((fSXTN(N,64,VAL) == (VAL)) ? (VAL) : fSATVALN(N,VAL)),
+    ()
+)
+DEF_MACRO(
+    fVSATN,
+    ((fSXTN(N,64,VAL) == (VAL)) ? (VAL) : fVSATVALN(N,VAL)),
     ()
 )
 
@@ -220,6 +252,12 @@ DEF_MACRO(
 )
 
 DEF_MACRO(
+    fVSATUN,
+    ((fZXTN(N,64,VAL) == (VAL)) ? (VAL) : fVSATUVALN(N,VAL)),
+    ()
+)
+
+DEF_MACRO(
     fSATUN,
     ((fZXTN(N,64,VAL) == (VAL)) ? (VAL) : fSATUVALN(N,VAL)),
     ()
@@ -239,6 +277,19 @@ DEF_MACRO(
 )
 
 DEF_MACRO(
+    fVSATH,
+    (fVSATN(16,VAL)),
+    ()
+)
+
+DEF_MACRO(
+    fVSATUH,
+    (fVSATUN(16,VAL)),
+    ()
+)
+
+
+DEF_MACRO(
     fSATUB,
     (fSATUN(8,VAL)),
     ()
@@ -248,6 +299,20 @@ DEF_MACRO(
     (fSATN(8,VAL)),
     ()
 )
+
+
+DEF_MACRO(
+    fVSATUB,
+    (fVSATUN(8,VAL)),
+    ()
+)
+DEF_MACRO(
+    fVSATB,
+    (fVSATN(8,VAL)),
+    ()
+)
+
+
 
 
 /*************************************/
@@ -277,6 +342,12 @@ DEF_MACRO(
 /*************************************/
 
 DEF_MACRO(
+    fREAD_IREG, /* read modifier register */
+    (fSXTN(11,64,(((VAL) & 0xf0000000)>>21) | ((VAL>>17)&0x7f) )),          /* behavior */
+    ()
+)
+
+DEF_MACRO(
     fREAD_LR, /* read link register */
     (READ_RREG(REG_LR)),          /* behavior */
     ()
@@ -303,6 +374,12 @@ DEF_MACRO(
 DEF_MACRO(
     fREAD_SP, /* read stack pointer */
     (READ_RREG(REG_SP)),          /* behavior */
+    ()
+)
+
+DEF_MACRO(
+    fREAD_CSREG, /* read  CS register */
+    (READ_RREG(REG_CSA+N)),          /* behavior */
     ()
 )
 
@@ -526,6 +603,18 @@ DEF_MACRO(
 DEF_MACRO(
     fCAST8s, /* macro name */
     ((size8s_t)(A)),          /* behavior */
+    /* optional attributes */
+)
+
+DEF_MACRO(
+    fCAST2_2s, /* macro name */
+    ((size2s_t)(A)),
+    /* optional attributes */
+)
+
+DEF_MACRO(
+    fCAST2_2u, /* macro name */
+    ((size2u_t)(A)),
     /* optional attributes */
 )
 
@@ -807,6 +896,12 @@ DEF_MACRO(
 )
 
 DEF_MACRO(
+    fEA_BREVR, /* Calculate EA with bit reversed bottom of REGISTER */
+    EA=fbrev(REG),
+    ()
+)
+
+DEF_MACRO(
     fEA_GPI, /* Calculate EA with Global Poitner + Immediate */
     do { EA=fREAD_GP()+IMM; fGP_DOCHKPAGECROSS(fREAD_GP(),EA); } while (0),
     ()
@@ -825,14 +920,39 @@ DEF_MACRO(
 )
 
 DEF_MACRO(
+    fPM_CIRI, /* Post Modify Register using Circular arithmetic by Immediate */
+    do { fcirc_add(REG,siV,MuV); } while (0),
+    ()
+)
+
+DEF_MACRO(
+    fPM_CIRR, /* Post Modify Register using Circular arithmetic by register */
+    do { fcirc_add(REG,VAL,MuV); } while (0),
+    ()
+)
+
+
+
+DEF_MACRO(
     fSCALE, /* scale by N */
     (((size8s_t)(A))<<N),
     /* optional attributes */
+)
+DEF_MACRO(
+    fVSATW, /* saturating to 32-bits*/
+    fVSATN(32,((long long)A)),
+    ()
 )
 
 DEF_MACRO(
     fSATW, /* saturating to 32-bits*/
     fSATN(32,((long long)A)),
+    ()
+)
+
+DEF_MACRO(
+    fVSAT, /* saturating to 32-bits*/
+    fVSATN(32,(A)),
     ()
 )
 
@@ -1342,6 +1462,11 @@ DEF_MACRO(fSETBITS,
 /*************************************/
 /* Used for parity, etc........      */
 /*************************************/
+DEF_MACRO(fCOUNTONES_2,
+    count_ones_2(VAL),
+    /* nothing */
+)
+
 DEF_MACRO(fCOUNTONES_4,
     count_ones_4(VAL),
     /* nothing */
@@ -1369,6 +1494,11 @@ DEF_MACRO(fCL1_8,
 
 DEF_MACRO(fCL1_4,
     count_leading_ones_4(VAL),
+    /* nothing */
+)
+
+DEF_MACRO(fCL1_2,
+    count_leading_ones_2(VAL),
     /* nothing */
 )
 
@@ -1527,5 +1657,10 @@ DEF_MACRO(fBRANCH_SPECULATE_STALL,
             insn->is_2nd_jump,
             (thread->fetch_access.vaddr + insn->encoding_offset*4));
     },
+    ()
+)
+
+DEF_MACRO(IV1DEAD,
+    ,
     ()
 )

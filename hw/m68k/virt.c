@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifer: GPL-2.0-or-later
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * QEMU Vitual M68K Machine
  *
@@ -12,14 +12,11 @@
 #include "qemu-common.h"
 #include "sysemu/sysemu.h"
 #include "cpu.h"
-#include "hw/hw.h"
 #include "hw/boards.h"
-#include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "elf.h"
 #include "hw/loader.h"
 #include "ui/console.h"
-#include "exec/address-spaces.h"
 #include "hw/sysbus.h"
 #include "standard-headers/asm-m68k/bootinfo.h"
 #include "standard-headers/asm-m68k/bootinfo-virt.h"
@@ -88,14 +85,21 @@
 #define VIRT_VIRTIO_MMIO_BASE 0xff010000     /* MMIO: 0xff010000 - 0xff01ffff */
 #define VIRT_VIRTIO_IRQ_BASE  PIC_IRQ(2, 1)  /* PIC: 2, 3, 4, 5, IRQ: ALL */
 
+typedef struct {
+    M68kCPU *cpu;
+    hwaddr initial_pc;
+    hwaddr initial_stack;
+} ResetInfo;
+
 static void main_cpu_reset(void *opaque)
 {
-    M68kCPU *cpu = opaque;
+    ResetInfo *reset_info = opaque;
+    M68kCPU *cpu = reset_info->cpu;
     CPUState *cs = CPU(cpu);
 
     cpu_reset(cs);
-    cpu->env.aregs[7] = ldl_phys(cs->as, 0);
-    cpu->env.pc = ldl_phys(cs->as, 4);
+    cpu->env.aregs[7] = reset_info->initial_stack;
+    cpu->env.pc = reset_info->initial_pc;
 }
 
 static void virt_init(MachineState *machine)
@@ -116,6 +120,7 @@ static void virt_init(MachineState *machine)
     SysBusDevice *sysbus;
     hwaddr io_base;
     int i;
+    ResetInfo *reset_info;
 
     if (ram_size > 3399672 * KiB) {
         /*
@@ -127,9 +132,13 @@ static void virt_init(MachineState *machine)
         exit(1);
     }
 
+    reset_info = g_new0(ResetInfo, 1);
+
     /* init CPUs */
     cpu = M68K_CPU(cpu_create(machine->cpu_type));
-    qemu_register_reset(main_cpu_reset, cpu);
+
+    reset_info->cpu = cpu;
+    qemu_register_reset(main_cpu_reset, reset_info);
 
     /* RAM */
     memory_region_add_subregion(get_system_memory(), 0, machine->ram);
@@ -209,7 +218,7 @@ static void virt_init(MachineState *machine)
             error_report("could not load kernel '%s'", kernel_filename);
             exit(1);
         }
-        stl_phys(cs->as, 4, elf_entry); /* reset initial PC */
+        reset_info->initial_pc = elf_entry;
         parameters_base = (high + 1) & ~1;
 
         BOOTINFO1(cs->as, parameters_base, BI_MACHTYPE, MACH_VIRT);
@@ -307,7 +316,28 @@ type_init(virt_machine_register_types)
     } \
     type_init(machvirt_machine_##major##_##minor##_init);
 
-static void virt_machine_6_0_options(MachineClass *mc)
+static void virt_machine_7_0_options(MachineClass *mc)
 {
 }
-DEFINE_VIRT_MACHINE(6, 0, true)
+DEFINE_VIRT_MACHINE(7, 0, true)
+
+static void virt_machine_6_2_options(MachineClass *mc)
+{
+    virt_machine_7_0_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_6_2, hw_compat_6_2_len);
+}
+DEFINE_VIRT_MACHINE(6, 2, false)
+
+static void virt_machine_6_1_options(MachineClass *mc)
+{
+    virt_machine_6_2_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_6_1, hw_compat_6_1_len);
+}
+DEFINE_VIRT_MACHINE(6, 1, false)
+
+static void virt_machine_6_0_options(MachineClass *mc)
+{
+    virt_machine_6_1_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_6_0, hw_compat_6_0_len);
+}
+DEFINE_VIRT_MACHINE(6, 0, false)

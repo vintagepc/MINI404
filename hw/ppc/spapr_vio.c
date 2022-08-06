@@ -310,7 +310,7 @@ int spapr_vio_send_crq(SpaprVioDevice *dev, uint8_t *crq)
 static void spapr_vio_quiesce_one(SpaprVioDevice *dev)
 {
     if (dev->tcet) {
-        device_legacy_reset(DEVICE(dev->tcet));
+        device_cold_reset(DEVICE(dev->tcet));
     }
     free_crq(dev);
 }
@@ -577,7 +577,7 @@ SpaprVioBus *spapr_vio_bus_init(void)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     /* Create bus on bridge device */
-    qbus = qbus_create(TYPE_SPAPR_VIO_BUS, dev, "spapr-vio");
+    qbus = qbus_new(TYPE_SPAPR_VIO_BUS, dev, "spapr-vio");
     bus = SPAPR_VIO_BUS(qbus);
     bus->next_reg = SPAPR_VIO_REG_BASE;
 
@@ -726,7 +726,7 @@ void spapr_dt_vdevice(SpaprVioBus *bus, void *fdt)
 gchar *spapr_vio_stdout_path(SpaprVioBus *bus)
 {
     SpaprVioDevice *dev;
-    char *name, *path;
+    g_autofree char *name = NULL;
 
     dev = spapr_vty_get_default(bus);
     if (!dev) {
@@ -734,8 +734,6 @@ gchar *spapr_vio_stdout_path(SpaprVioBus *bus)
     }
 
     name = spapr_vio_get_dev_name(DEVICE(dev));
-    path = g_strdup_printf("/vdevice/%s", name);
 
-    g_free(name);
-    return path;
+    return g_strdup_printf("/vdevice/%s", name);
 }

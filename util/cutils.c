@@ -27,9 +27,6 @@
 #include <math.h>
 
 #include "qemu-common.h"
-#include "qemu/sockets.h"
-#include "qemu/iov.h"
-#include "net/net.h"
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
@@ -939,19 +936,6 @@ int parse_debug_env(const char *name, int max, int initial)
 }
 
 /*
- * Helper to print ethernet mac address
- */
-const char *qemu_ether_ntoa(const MACAddr *mac)
-{
-    static char ret[18];
-
-    snprintf(ret, sizeof(ret), "%02x:%02x:%02x:%02x:%02x:%02x",
-             mac->a[0], mac->a[1], mac->a[2], mac->a[3], mac->a[4], mac->a[5]);
-
-    return ret;
-}
-
-/*
  * Return human readable string for size @val.
  * @val can be anything that uint64_t allows (no more than "16 EiB").
  * Use IEC binary units like KiB, MiB, and so forth.
@@ -1055,5 +1039,5 @@ char *get_relocated_path(const char *dir)
         assert(G_IS_DIR_SEPARATOR(dir[-1]));
         g_string_append(result, dir - 1);
     }
-    return result->str;
+    return g_string_free(result, false);
 }

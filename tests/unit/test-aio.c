@@ -130,7 +130,7 @@ static void *test_acquire_thread(void *opaque)
 static void set_event_notifier(AioContext *ctx, EventNotifier *notifier,
                                EventNotifierHandler *handler)
 {
-    aio_set_event_notifier(ctx, notifier, false, handler, NULL);
+    aio_set_event_notifier(ctx, notifier, false, handler, NULL, NULL);
 }
 
 static void dummy_notifier_read(EventNotifier *n)
@@ -390,7 +390,7 @@ static void test_aio_external_client(void)
     for (i = 1; i < 3; i++) {
         EventNotifierTestData data = { .n = 0, .active = 10, .auto_set = true };
         event_notifier_init(&data.e, false);
-        aio_set_event_notifier(ctx, &data.e, true, event_ready_cb, NULL);
+        aio_set_event_notifier(ctx, &data.e, true, event_ready_cb, NULL, NULL);
         event_notifier_set(&data.e);
         for (j = 0; j < i; j++) {
             aio_disable_external(ctx);
@@ -877,6 +877,42 @@ static void test_queue_chaining(void)
     g_assert_cmpint(data_b.i, ==, data_b.max);
 }
 
+static void co_check_current_thread(void *opaque)
+{
+    QemuThread *main_thread = opaque;
+    assert(qemu_thread_is_self(main_thread));
+}
+
+static void *test_aio_co_enter(void *co)
+{
+    /*
+     * qemu_get_current_aio_context() should not to be the main thread
+     * AioContext, because this is a worker thread that has not taken
+     * the BQL.  So aio_co_enter will schedule the coroutine in the
+     * main thread AioContext.
+     */
+    aio_co_enter(qemu_get_aio_context(), co);
+    return NULL;
+}
+
+static void test_worker_thread_co_enter(void)
+{
+    QemuThread this_thread, worker_thread;
+    Coroutine *co;
+
+    qemu_thread_get_self(&this_thread);
+    co = qemu_coroutine_create(co_check_current_thread, &this_thread);
+
+    qemu_thread_create(&worker_thread, "test_acquire_thread",
+                       test_aio_co_enter,
+                       co, QEMU_THREAD_JOINABLE);
+
+    /* Test aio_co_enter from a worker thread.  */
+    qemu_thread_join(&worker_thread);
+    g_assert(aio_poll(ctx, true));
+    g_assert(!aio_poll(ctx, false));
+}
+
 /* End of tests.  */
 
 int main(int argc, char **argv)
@@ -903,6 +939,7 @@ int main(int argc, char **argv)
     g_test_add_func("/aio/timer/schedule",          test_timer_schedule);
 
     g_test_add_func("/aio/coroutine/queue-chaining", test_queue_chaining);
+    g_test_add_func("/aio/coroutine/worker-thread-co-enter", test_worker_thread_co_enter);
 
     g_test_add_func("/aio-gsource/flush",                   test_source_flush);
     g_test_add_func("/aio-gsource/bh/schedule",             test_source_bh_schedule);
