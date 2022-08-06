@@ -53,13 +53,13 @@ jobs:
     - name: Install packages
       run: |
           sudo apt-get update
-          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build
+          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev
 
     - name: Cache permissions
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" 
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
 
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404 && make -j3
@@ -88,6 +88,7 @@ jobs:
           cd ${{ runner.workspace }}/MINI404/build
           mv buddy-softmmu Mini404-dev-linux
           mv assets Mini404-dev-linux
+          mv pc-bios Mini404-dev-linux
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
