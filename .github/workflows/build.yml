@@ -143,32 +143,16 @@ jobs:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
 
-  build_cygwin:
+  build_msys:
     # The type of runner that the job will run on
-    runs-on: windows-2019
+    runs-on: windows-latest
     if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
     steps:
-      - uses: actions/cache@v1
-        with:
-          path: C:\tools\chococache
-          key: ${{ runner.os }}-cygwin-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-cygwin-
-      - name: Cygwin package cache
-        uses: actions/cache@v1
-        with:
-          path: C:\tools\cygcache
-          key: ${{ runner.os }}-cygwinpkgs-1_1
-          restore-keys: |
-            ${{ runner.os }}-cygwinpkgs-
-      - name: Install cygwin
-        run: |
-          choco config set cacheLocation C:\tools\chococache
-          choco install --no-progress cygwin
-      - name: Install cygwin dependencies
-        run: |
-          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-openssl,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make,zip,ninja"
-        shell: cmd
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with: 
+          msystem: MINGW64
+          install: git python ninja-build mingw-w64-x86-64-toolchain mingw-w64-x86-64-gtk mingw-w64-x86-64-freeglut mingw-w64-x86-64-glew mingw-w64-x86-64-libusb mingw-w64-x86-64-SDL2  mingw-w64-x86-64-pixman  mingw-w64-x86-64-glib2.0 python-setuptools
 
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
@@ -197,18 +181,15 @@ jobs:
           git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
-          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "../configure --with-git-submodules=ignore --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
-          bash.exe -c "sed -i 's/LDFLAGS_NOPIE=-no-pie/LDFLAGS_NOPIE=/g' config-host.mak" 
-        shell: cmd
+          bash.exe -c "../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb"
+#          bash.exe -c "sed -i 's/LDFLAGS_NOPIE=-no-pie/LDFLAGS_NOPIE=/g' config-host.mak" 
+        shell: msys2 {0}
 
       - name: Build
         run: |
           cd ${{runner.workspace}}\MINI404\build
-          pwd
-          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "make -j3"
-        shell: cmd
+          ninja
+        shell: msys2{0}
       - name: Assemble artifacts and libraries
         if: ${{ !github.event.pull_request }}
         run: |
@@ -235,7 +216,7 @@ jobs:
   Publish:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request }}
-    needs: [build_linux, build_cygwin, build_macos]
+    needs: [build_linux, build_msys, build_macos]
     steps:
       - name: Retrieve platform binaries
         uses: actions/download-artifact@v2
