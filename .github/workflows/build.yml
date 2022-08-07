@@ -177,11 +177,12 @@ jobs:
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
       - name: Configure build
         run: |
+          ls -lh
           cd MINI404
           git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
-          bash.exe -c "../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb"
+          ../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb
 #          bash.exe -c "sed -i 's/LDFLAGS_NOPIE=-no-pie/LDFLAGS_NOPIE=/g' config-host.mak" 
         shell: msys2 {0}
 
