@@ -15,133 +15,133 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  build_linux:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
-      if: ${{ github.event.pull_request }}
-      with:
-        repository: ${{ github.repository }}
-        ref: ${{ github.event.pull_request.head.sha }}
-        submodules: false
+  # build_linux:
+  #   # The type of runner that the job will run on
+  #   runs-on: ubuntu-latest
+  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
+  #   steps:
+  #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+  #   - name: Checkout ${{ github.event.pull_request.head.ref }}
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ github.event.pull_request }}
+  #     with:
+  #       repository: ${{ github.repository }}
+  #       ref: ${{ github.event.pull_request.head.sha }}
+  #       submodules: false
 
-    - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
-      if: ${{ !github.event.pull_request }}
-      with:
-        repository: ${{ github.repository }}
-        ref: ${{ github.event.ref }}
-        submodules: false
+  #   - name: Checkout ${{ github.event.ref }}
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ !github.event.pull_request }}
+  #     with:
+  #       repository: ${{ github.repository }}
+  #       ref: ${{ github.event.ref }}
+  #       submodules: false
 
-    - name: Cache packages
-      uses: actions/cache@v1.0.3
-      id: cache-pkgs
-      with:
-          path: "packages"
-          key: "${{ runner.os }}-packages-1_0_0"
-          restore-keys: ${{ runner.os }}-packages-
+  #   - name: Cache packages
+  #     uses: actions/cache@v1.0.3
+  #     id: cache-pkgs
+  #     with:
+  #         path: "packages"
+  #         key: "${{ runner.os }}-packages-1_0_0"
+  #         restore-keys: ${{ runner.os }}-packages-
 
-    - name: Setup cache dir
-      if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
-      run: mkdir -p packages/partial
+  #   - name: Setup cache dir
+  #     if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
+  #     run: mkdir -p packages/partial
 
-    - name: Install packages
-      run: |
-          sudo apt-get update
-          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev
+  #   - name: Install packages
+  #     run: |
+  #         sudo apt-get update
+  #         sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev
 
-    - name: Cache permissions
-      run: sudo chmod -R 744 packages
+  #   - name: Cache permissions
+  #     run: sudo chmod -R 744 packages
 
-    - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
+  #   - name: Configure build
+  #     run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
 
-    - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && make -j3
+  #   - name: Build qemu-system-buddy
+  #     run: cd ${{ runner.workspace }}/MINI404 && make -j3
 
-    - name: Checkout Wiki
-      uses: actions/checkout@v2.2.0
-      if: ${{ !github.event.pull_request }}
-      with:
-        repository: vintagepc/MINI404.wiki.git
-        path: ref
+  #   - name: Checkout Wiki
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ !github.event.pull_request }}
+  #     with:
+  #       repository: vintagepc/MINI404.wiki.git
+  #       path: ref
 
-    - name: Regen docs
-      if: ${{ !github.event.pull_request }}
-      run: |
-        cd ${{ runner.workspace }}/MINI404
-        ./updateDocs.sh
-        cd ${{ runner.workspace }}/MINI404/ref
-        git add autogen/*
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git diff-index --quiet HEAD || git commit -m "Regen reference docs" && git push
+  #   - name: Regen docs
+  #     if: ${{ !github.event.pull_request }}
+  #     run: |
+  #       cd ${{ runner.workspace }}/MINI404
+  #       ./updateDocs.sh
+  #       cd ${{ runner.workspace }}/MINI404/ref
+  #       git add autogen/*
+  #       git config --local user.email "action@github.com"
+  #       git config --local user.name "GitHub Action"
+  #       git diff-index --quiet HEAD || git commit -m "Regen reference docs" && git push
 
-    - name: Assemble artifacts
-      if: ${{ !github.event.pull_request }}
-      run: |
-          cd ${{ runner.workspace }}/MINI404/build
-          mv buddy-softmmu Mini404-dev-linux
-          mv assets Mini404-dev-linux
-          mv pc-bios Mini404-dev-linux
-          tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
-    - name: Upload artifact
-      if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
-      with:
-        name: Binaries
-        path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
+  #   - name: Assemble artifacts
+  #     if: ${{ !github.event.pull_request }}
+  #     run: |
+  #         cd ${{ runner.workspace }}/MINI404/build
+  #         mv buddy-softmmu Mini404-dev-linux
+  #         mv assets Mini404-dev-linux
+  #         mv pc-bios Mini404-dev-linux
+  #         tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
+  #   - name: Upload artifact
+  #     if: ${{ !github.event.pull_request }}
+  #     uses: actions/upload-artifact@v2
+  #     with:
+  #       name: Binaries
+  #       path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
 
-  build_macos:
-    # The type of runner that the job will run on
-    runs-on: macos-latest
-    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
-      if: ${{ github.event.pull_request }}
-      with:
-        repository: ${{ github.repository }}
-        ref: ${{ github.event.pull_request.head.sha }}
-        submodules: true
+  # build_macos:
+  #   # The type of runner that the job will run on
+  #   runs-on: macos-latest
+  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
+  #   steps:
+  #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+  #   - name: Checkout ${{ github.event.pull_request.head.ref }}
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ github.event.pull_request }}
+  #     with:
+  #       repository: ${{ github.repository }}
+  #       ref: ${{ github.event.pull_request.head.sha }}
+  #       submodules: true
 
-    - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
-      if: ${{ !github.event.pull_request }}
-      with:
-        repository: ${{ github.repository }}
-        ref: ${{ github.event.ref }}
-        submodules: true
+  #   - name: Checkout ${{ github.event.ref }}
+  #     uses: actions/checkout@v2.2.0
+  #     if: ${{ !github.event.pull_request }}
+  #     with:
+  #       repository: ${{ github.repository }}
+  #       ref: ${{ github.event.ref }}
+  #       submodules: true
 
-    - name: Install dependencies
-      run: brew install libffi gettext glib pkg-config autoconf automake pixman ninja make
+  #   - name: Install dependencies
+  #     run: brew install libffi gettext glib pkg-config autoconf automake pixman ninja make
 
-    - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu"
+  #   - name: Configure build
+  #     run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu"
 
-    - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && gmake -j3
+  #   - name: Build qemu-system-buddy
+  #     run: cd ${{ runner.workspace }}/MINI404 && gmake -j3
 
-    - name: Assemble artifacts
-      if: ${{ !github.event.pull_request }}
-      run: |
-        cd ${{ runner.workspace }}/MINI404/build
-        mv buddy-softmmu Mini404-dev-macos
-        tar -jhcvf Mini404-dev-macos.tar.bz2 Mini404-dev-macos
+  #   - name: Assemble artifacts
+  #     if: ${{ !github.event.pull_request }}
+  #     run: |
+  #       cd ${{ runner.workspace }}/MINI404/build
+  #       mv buddy-softmmu Mini404-dev-macos
+  #       tar -jhcvf Mini404-dev-macos.tar.bz2 Mini404-dev-macos
 
-    - name: Upload artifact
-      if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
-      with:
-        name: Binaries
-        path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
+  #   - name: Upload artifact
+  #     if: ${{ !github.event.pull_request }}
+  #     uses: actions/upload-artifact@v2
+  #     with:
+  #       name: Binaries
+  #       path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
 
   build_msys:
     # The type of runner that the job will run on
@@ -152,7 +152,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with: 
           msystem: MINGW64
-          install: git python ninja-build mingw-w64-x86-64-toolchain mingw-w64-x86-64-gtk mingw-w64-x86-64-freeglut mingw-w64-x86-64-glew mingw-w64-x86-64-libusb mingw-w64-x86-64-SDL2  mingw-w64-x86-64-pixman  mingw-w64-x86-64-glib2.0 python-setuptools
+          install: git python ninja-build mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2.0 python-setuptools
 
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
