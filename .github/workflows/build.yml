@@ -190,7 +190,7 @@ jobs:
           ninja
         shell: msys2 {0}
       - name: Assemble artifacts and libraries
-        if: ${{ !github.event.pull_request }}
+#        if: ${{ !github.event.pull_request }}
         run: |
           cd build
           mkdir Mini404-dev-w64
@@ -205,7 +205,7 @@ jobs:
         shell: msys2 {0}
 
       - name: Upload Cygwin artifact
-        if: ${{ !github.event.pull_request }}
+#        if: ${{ !github.event.pull_request }}
         uses: actions/upload-artifact@v2
         with:
           name: Binaries
