@@ -155,7 +155,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with: 
           msystem: MINGW64
-          install: make git mingw-w64-x86_64-diffutils diffutils python mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl
+          install: make git mingw-w64-x86_64-diffutils diffutils python mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl
 
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
