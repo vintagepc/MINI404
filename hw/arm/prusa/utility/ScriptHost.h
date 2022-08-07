@@ -125,8 +125,6 @@ class ScriptHost: public IScriptable
 
         ~ScriptHost();
 
-        ~ScriptHost();
-
 		void _Init();
 		static ScriptHost& GetHost()
 		{

@@ -696,7 +696,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
 			if (s->gahbcfg & GAHBCFG_DMA_EN)
 			{
 				// Note - USB DMA doesn't use the normal peripheral DMA engine.
-				if (MEMTX_OK != dma_memory_read(&address_space_memory, r_chan->defs.HCDMA, s->usb_buf[chan], tlen))
+				if (MEMTX_OK != dma_memory_read(&address_space_memory, r_chan->defs.HCDMA, s->usb_buf[chan], tlen, MEMTXATTRS_UNSPECIFIED))
 				{
 					qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory read failed - transfer aborted.", __func__);
 					return;
@@ -793,7 +793,7 @@ babble:
                 }
 				if (s->gahbcfg | GAHBCFG_DMA_EN)
 				{
-					if (MEMTX_OK != dma_memory_write(&address_space_memory, r_chan->defs.HCDMA, s->usb_buf[chan], actual))
+					if (MEMTX_OK != dma_memory_write(&address_space_memory, r_chan->defs.HCDMA, s->usb_buf[chan], actual, MEMTXATTRS_UNSPECIFIED))
 					{
 						qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory write failed - transfer aborted.", __func__);
 						return;
