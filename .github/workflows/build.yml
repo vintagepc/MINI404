@@ -177,8 +177,6 @@ jobs:
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
       - name: Configure build
         run: |
-          ls -lh
-          cd MINI404
           git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
@@ -194,18 +192,17 @@ jobs:
       - name: Assemble artifacts and libraries
         if: ${{ !github.event.pull_request }}
         run: |
-          cd ${{ runner.workspace }}/MINI404/build
+          cd build
           mkdir Mini404-dev-w64
           mv qemu-system-buddy.exe Mini404-dev-w64
           mv assets Mini404-dev-w64
           cd Mini404-dev-w64
-          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "mkdir pc-bios && echo \"Placeholder. DO NOT DELETE THIS DIRECTORY, IT MUST EXIST OR QEMU WILL HANG ON BOOT\" > pc-bios/README.txt" 
-          bash.exe -c "for i in `ldd qemu-system-buddy.exe | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done"
-          bash.exe -c "while `ldd *.dll | grep -q \"not found\"`; do for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done; sleep 2; done" 
+          mkdir pc-bios && echo \"Placeholder. DO NOT DELETE THIS DIRECTORY, IT MUST EXIST OR QEMU WILL HANG ON BOOT\" > pc-bios/README.txt
+          for i in `ldd qemu-system-buddy.exe | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done
+          while `ldd *.dll | grep -q \"not found\"`; do for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done; sleep 2; done
           cd ..
           zip -r Mini404-dev-w64.zip Mini404-dev-w64
-        shell: cmd
+        shell: msys2 {0}
 
       - name: Upload Cygwin artifact
         if: ${{ !github.event.pull_request }}
