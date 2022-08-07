@@ -187,8 +187,8 @@ jobs:
       - name: Build
         run: |
           cd build
-          make
-        shell: msys2{0}
+          ninja
+        shell: msys2 {0}
       - name: Assemble artifacts and libraries
         if: ${{ !github.event.pull_request }}
         run: |
