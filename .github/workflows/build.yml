@@ -194,12 +194,11 @@ jobs:
         run: |
           cd build
           mkdir Mini404-dev-w64
-          mv qemu-system-buddy.exe Mini404-dev-w64
+          mv qemu-*.exe Mini404-dev-w64
           mv assets Mini404-dev-w64
           cd Mini404-dev-w64
-          mkdir pc-bios && echo \"Placeholder. DO NOT DELETE THIS DIRECTORY, IT MUST EXIST OR QEMU WILL HANG ON BOOT\" > pc-bios/README.txt
-          for i in `ldd qemu-system-buddy.exe | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done
-          while `ldd *.dll | grep -q \"not found\"`; do for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done; sleep 2; done
+          mkdir pc-bios && mv ../pc-bios/keymaps pc-bios/
+          for i in `cat ../../.github/workflows/dll-list.txt`; do echo "Copying $i"; cp /mingw64/bin/$i .; done;
           cd ..
           zip -r Mini404-dev-w64.zip Mini404-dev-w64
         shell: msys2 {0}
