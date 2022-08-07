@@ -134,6 +134,9 @@ jobs:
   #     run: |
   #       cd ${{ runner.workspace }}/MINI404/build
   #       mv buddy-softmmu Mini404-dev-macos
+  #       mv assets Mini404-dev-macos
+          # mkdir Mini404-dev-macos/pc-bios
+          # mv pc-bios/keymaps Mini404-dev-macos/pc-bios/
   #       tar -jhcvf Mini404-dev-macos.tar.bz2 Mini404-dev-macos
 
   #   - name: Upload artifact
@@ -152,7 +155,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with: 
           msystem: MINGW64
-          install: make git mingw-w64-x86_64-diffutils diffutils python mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make
+          install: make git mingw-w64-x86_64-diffutils diffutils python mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl
 
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
