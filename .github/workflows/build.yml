@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     # if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
   #   # Steps represent a sequence of tasks that will be executed as part of the job
-  #   steps:
+    steps:
   #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
   #   - name: Checkout ${{ github.event.pull_request.head.ref }}
   #     uses: actions/checkout@v2.2.0
@@ -30,13 +30,13 @@ jobs:
   #       ref: ${{ github.event.pull_request.head.sha }}
   #       submodules: false
 
-  #   - name: Checkout ${{ github.event.ref }}
-  #     uses: actions/checkout@v2.2.0
-  #     if: ${{ !github.event.pull_request }}
-  #     with:
-  #       repository: ${{ github.repository }}
-  #       ref: ${{ github.event.ref }}
-  #       submodules: false
+    - name: Checkout ${{ github.event.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ !github.event.pull_request }}
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.ref }}
+        submodules: false
 
   #   - name: Cache packages
   #     uses: actions/cache@v1.0.3
@@ -102,15 +102,15 @@ jobs:
     runs-on: macos-latest
   #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
   #   # Steps represent a sequence of tasks that will be executed as part of the job
-  #   steps:
+    steps:
   #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-  #   - name: Checkout ${{ github.event.pull_request.head.ref }}
-  #     uses: actions/checkout@v2.2.0
-  #     if: ${{ github.event.pull_request }}
-  #     with:
-  #       repository: ${{ github.repository }}
-  #       ref: ${{ github.event.pull_request.head.sha }}
-  #       submodules: true
+    - name: Checkout ${{ github.event.pull_request.head.ref }}
+      uses: actions/checkout@v2.2.0
+      if: ${{ github.event.pull_request }}
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
 
   #   - name: Checkout ${{ github.event.ref }}
   #     uses: actions/checkout@v2.2.0
