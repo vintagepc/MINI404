@@ -186,7 +186,7 @@ jobs:
 
       - name: Build
         run: |
-          cd ${{runner.workspace}}\MINI404\build
+          cd build
           ninja
         shell: msys2{0}
       - name: Assemble artifacts and libraries
