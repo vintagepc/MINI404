@@ -67,13 +67,14 @@ class KeyController: private Scriptable
 		std::map<unsigned char, std::vector<IKeyClient*> > m_mClients {};
 		std::map<unsigned char, std::string> m_mDescrs {};
         std::vector<IKeyClient*> m_vAllClients {};
-        std::map<std::pair<int,bool>, unsigned char> m_qemu2char 
-        {   
+        std::map<std::pair<int,bool>, unsigned char> m_qemu2char
+        {
             { {0x009F ,true} , 'S'},
             { {0x11   ,false} , 'w'}, // shared with arrow keys for up/down
             { {0x48 ,false} , 'w'}, // shared with arrow keys for up/down
             { {0x1F   ,false} , 's'},
             { {0x50 ,false} , 's'},
+			{ {0x21, false}, 'f'},
             { {0x1c   ,false} ,  0xd}
         };
 		std::atomic_uchar m_key {0};
