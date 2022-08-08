@@ -21,6 +21,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/qemu-print.h"
+#include "qemu/timer.h"
 #include "cpu.h"
 #include "qemu/module.h"
 #include "exec/exec-all.h"
@@ -62,7 +63,7 @@ static void hppa_cpu_synchronize_from_tb(CPUState *cs,
 
 static bool hppa_cpu_has_work(CPUState *cs)
 {
-    return cs->interrupt_request & CPU_INTERRUPT_HARD;
+    return cs->interrupt_request & (CPU_INTERRUPT_HARD | CPU_INTERRUPT_NMI);
 }
 
 static void hppa_cpu_disas_set_info(CPUState *cs, disassemble_info *info)
@@ -72,9 +73,10 @@ static void hppa_cpu_disas_set_info(CPUState *cs, disassemble_info *info)
 }
 
 #ifndef CONFIG_USER_ONLY
-static void hppa_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
-                                         MMUAccessType access_type,
-                                         int mmu_idx, uintptr_t retaddr)
+static void QEMU_NORETURN
+hppa_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
+                             MMUAccessType access_type, int mmu_idx,
+                             uintptr_t retaddr)
 {
     HPPACPU *cpu = HPPA_CPU(cs);
     CPUHPPAState *env = &cpu->env;
@@ -131,15 +133,23 @@ static ObjectClass *hppa_cpu_class_by_name(const char *cpu_model)
     return object_class_by_name(TYPE_HPPA_CPU);
 }
 
+#ifndef CONFIG_USER_ONLY
+#include "hw/core/sysemu-cpu-ops.h"
+
+static const struct SysemuCPUOps hppa_sysemu_ops = {
+    .get_phys_page_debug = hppa_cpu_get_phys_page_debug,
+};
+#endif
+
 #include "hw/core/tcg-cpu-ops.h"
 
-static struct TCGCPUOps hppa_tcg_ops = {
+static const struct TCGCPUOps hppa_tcg_ops = {
     .initialize = hppa_translate_init,
     .synchronize_from_tb = hppa_cpu_synchronize_from_tb,
-    .cpu_exec_interrupt = hppa_cpu_exec_interrupt,
-    .tlb_fill = hppa_cpu_tlb_fill,
 
 #ifndef CONFIG_USER_ONLY
+    .tlb_fill = hppa_cpu_tlb_fill,
+    .cpu_exec_interrupt = hppa_cpu_exec_interrupt,
     .do_interrupt = hppa_cpu_do_interrupt,
     .do_unaligned_access = hppa_cpu_do_unaligned_access,
 #endif /* !CONFIG_USER_ONLY */
@@ -161,8 +171,8 @@ static void hppa_cpu_class_init(ObjectClass *oc, void *data)
     cc->gdb_read_register = hppa_cpu_gdb_read_register;
     cc->gdb_write_register = hppa_cpu_gdb_write_register;
 #ifndef CONFIG_USER_ONLY
-    cc->get_phys_page_debug = hppa_cpu_get_phys_page_debug;
     dc->vmsd = &vmstate_hppa_cpu;
+    cc->sysemu_ops = &hppa_sysemu_ops;
 #endif
     cc->disas_set_info = hppa_cpu_disas_set_info;
     cc->gdb_num_core_regs = 128;

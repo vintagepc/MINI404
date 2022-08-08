@@ -24,7 +24,6 @@
 
 #include "qemu/osdep.h"
 #include "monitor-internal.h"
-#include "cpu.h"
 #include "monitor/qdev.h"
 #include "hw/usb.h"
 #include "hw/pci/pci.h"
@@ -42,6 +41,7 @@
 #include "disas/disas.h"
 #include "sysemu/balloon.h"
 #include "qemu/timer.h"
+#include "qemu/log.h"
 #include "sysemu/hw_accel.h"
 #include "sysemu/runstate.h"
 #include "authz/list.h"
@@ -71,7 +71,9 @@
 #include "qapi/qapi-commands-migration.h"
 #include "qapi/qapi-commands-misc.h"
 #include "qapi/qapi-commands-qom.h"
+#include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-commands-trace.h"
+#include "qapi/qapi-commands-machine.h"
 #include "qapi/qapi-init-commands.h"
 #include "qapi/error.h"
 #include "qapi/qmp-event.h"
@@ -231,12 +233,13 @@ static void monitor_init_qmp_commands(void)
 
     qmp_init_marshal(&qmp_commands);
 
-    qmp_register_command(&qmp_commands, "device_add", qmp_device_add,
-                         QCO_NO_OPTIONS);
+    qmp_register_command(&qmp_commands, "device_add",
+                         qmp_device_add, 0, 0);
 
     QTAILQ_INIT(&qmp_cap_negotiation_commands);
     qmp_register_command(&qmp_cap_negotiation_commands, "qmp_capabilities",
-                         qmp_marshal_qmp_capabilities, QCO_ALLOW_PRECONFIG);
+                         qmp_marshal_qmp_capabilities,
+                         QCO_ALLOW_PRECONFIG, 0);
 }
 
 /* Set the current CPU defined by the user. Callers must hold BQL. */
@@ -321,24 +324,6 @@ static void hmp_info_registers(Monitor *mon, const QDict *qdict)
     }
 }
 
-#ifdef CONFIG_TCG
-static void hmp_info_jit(Monitor *mon, const QDict *qdict)
-{
-    if (!tcg_enabled()) {
-        error_report("JIT information is only available with accel=tcg");
-        return;
-    }
-
-    dump_exec_info();
-    dump_drift_info();
-}
-
-static void hmp_info_opcount(Monitor *mon, const QDict *qdict)
-{
-    dump_opcount_info();
-}
-#endif
-
 static void hmp_info_sync_profile(Monitor *mon, const QDict *qdict)
 {
     int64_t max = qdict_get_try_int(qdict, "max", 10);
@@ -368,17 +353,6 @@ static void hmp_info_history(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "%d: '%s'\n", i, str);
         i++;
     }
-}
-
-static void hmp_info_cpustats(Monitor *mon, const QDict *qdict)
-{
-    CPUState *cs = mon_get_cpu(mon);
-
-    if (!cs) {
-        monitor_printf(mon, "No CPU available\n");
-        return;
-    }
-    cpu_dump_statistics(cs, 0);
 }
 
 static void hmp_info_trace_events(Monitor *mon, const QDict *qdict)
@@ -500,10 +474,18 @@ static void hmp_gdbserver(Monitor *mon, const QDict *qdict)
 
 static void hmp_watchdog_action(Monitor *mon, const QDict *qdict)
 {
-    const char *action = qdict_get_str(qdict, "action");
-    if (select_watchdog_action(action) == -1) {
-        monitor_printf(mon, "Unknown watchdog action '%s'\n", action);
+    Error *err = NULL;
+    WatchdogAction action;
+    char *qapi_value;
+
+    qapi_value = g_ascii_strdown(qdict_get_str(qdict, "action"), -1);
+    action = qapi_enum_parse(&WatchdogAction_lookup, qapi_value, -1, &err);
+    g_free(qapi_value);
+    if (err) {
+        hmp_handle_error(mon, err);
+        return;
     }
+    qmp_watchdog_set_action(action, &error_abort);
 }
 
 static void monitor_printc(Monitor *mon, int c)
@@ -959,33 +941,6 @@ static void hmp_info_mtree(Monitor *mon, const QDict *qdict)
     mtree_info(flatview, dispatch_tree, owner, disabled);
 }
 
-#ifdef CONFIG_PROFILER
-
-int64_t dev_time;
-
-static void hmp_info_profile(Monitor *mon, const QDict *qdict)
-{
-    static int64_t last_cpu_exec_time;
-    int64_t cpu_exec_time;
-    int64_t delta;
-
-    cpu_exec_time = tcg_cpu_exec_time();
-    delta = cpu_exec_time - last_cpu_exec_time;
-
-    monitor_printf(mon, "async time  %" PRId64 " (%0.3f)\n",
-                   dev_time, dev_time / (double)NANOSECONDS_PER_SECOND);
-    monitor_printf(mon, "qemu time   %" PRId64 " (%0.3f)\n",
-                   delta, delta / (double)NANOSECONDS_PER_SECOND);
-    last_cpu_exec_time = cpu_exec_time;
-    dev_time = 0;
-}
-#else
-static void hmp_info_profile(Monitor *mon, const QDict *qdict)
-{
-    monitor_printf(mon, "Internal profiler not compiled\n");
-}
-#endif
-
 /* Capture support */
 static QLIST_HEAD (capture_list_head, CaptureState) capture_head;
 
@@ -1073,7 +1028,7 @@ void qmp_getfd(const char *fdname, Error **errp)
         return;
     }
 
-    monfd = g_malloc0(sizeof(mon_fd_t));
+    monfd = g_new0(mon_fd_t, 1);
     monfd->name = g_strdup(fdname);
     monfd->fd = fd;
 
@@ -1834,7 +1789,7 @@ void info_trace_events_completion(ReadLineState *rs, int nb_args, const char *st
         TraceEventIter iter;
         TraceEvent *ev;
         char *pattern = g_strdup_printf("%s*", str);
-        trace_event_iter_init(&iter, pattern);
+        trace_event_iter_init_pattern(&iter, pattern);
         while ((ev = trace_event_iter_next(&iter)) != NULL) {
             readline_add_completion(rs, trace_event_get_name(ev));
         }
@@ -1852,7 +1807,7 @@ void trace_event_completion(ReadLineState *rs, int nb_args, const char *str)
         TraceEventIter iter;
         TraceEvent *ev;
         char *pattern = g_strdup_printf("%s*", str);
-        trace_event_iter_init(&iter, pattern);
+        trace_event_iter_init_pattern(&iter, pattern);
         while ((ev = trace_event_iter_next(&iter)) != NULL) {
             readline_add_completion(rs, trace_event_get_name(ev));
         }
@@ -1984,6 +1939,38 @@ static void sortcmdlist(void)
     qsort(hmp_info_cmds, ARRAY_SIZE(hmp_info_cmds) - 1,
           sizeof(*hmp_info_cmds),
           compare_mon_cmd);
+}
+
+void monitor_register_hmp(const char *name, bool info,
+                          void (*cmd)(Monitor *mon, const QDict *qdict))
+{
+    HMPCommand *table = info ? hmp_info_cmds : hmp_cmds;
+
+    while (table->name != NULL) {
+        if (strcmp(table->name, name) == 0) {
+            g_assert(table->cmd == NULL && table->cmd_info_hrt == NULL);
+            table->cmd = cmd;
+            return;
+        }
+        table++;
+    }
+    g_assert_not_reached();
+}
+
+void monitor_register_hmp_info_hrt(const char *name,
+                                   HumanReadableText *(*handler)(Error **errp))
+{
+    HMPCommand *table = hmp_info_cmds;
+
+    while (table->name != NULL) {
+        if (strcmp(table->name, name) == 0) {
+            g_assert(table->cmd == NULL && table->cmd_info_hrt == NULL);
+            table->cmd_info_hrt = handler;
+            return;
+        }
+        table++;
+    }
+    g_assert_not_reached();
 }
 
 void monitor_init_globals(void)

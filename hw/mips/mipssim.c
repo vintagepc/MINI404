@@ -29,7 +29,6 @@
 #include "qapi/error.h"
 #include "qemu-common.h"
 #include "qemu/datadir.h"
-#include "cpu.h"
 #include "hw/clock.h"
 #include "hw/mips/mips.h"
 #include "hw/mips/cpudevs.h"
@@ -43,7 +42,6 @@
 #include "elf.h"
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
-#include "exec/address-spaces.h"
 #include "qemu/error-report.h"
 #include "sysemu/qtest.h"
 #include "sysemu/reset.h"
@@ -164,7 +162,7 @@ mips_mipssim_init(MachineState *machine)
     cpu = mips_cpu_create_with_clock(machine->cpu_type, cpuclk);
     env = &cpu->env;
 
-    reset_info = g_malloc0(sizeof(ResetData));
+    reset_info = g_new0(ResetData, 1);
     reset_info->cpu = cpu;
     reset_info->vector = env->active_tc.PC;
     qemu_register_reset(main_cpu_reset, reset_info);

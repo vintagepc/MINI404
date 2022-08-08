@@ -11,9 +11,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "cpu.h"
 #include "semihosting/console.h"
 #include "qemu.h"
+#include "user-internals.h"
 #include <termios.h>
 
 int qemu_semihosting_console_outs(CPUArchState *env, target_ulong addr)

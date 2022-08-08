@@ -25,7 +25,7 @@
  */
 #include "stm32f2xx_rtc.h"
 #include <sys/time.h>
-#include "qemu-common.h"
+#include "sysemu/rtc.h"
 #include "migration/vmstate.h"
 #include "hw/sysbus.h"
 #include "qemu/timer.h"
@@ -139,7 +139,7 @@ f2xx_rtc_compute_target_time_from_host_time(f2xx_rtc *s, uint64_t rtc_period_ns,
 
     // Convert to target ticks according period set in the RTC
     time_t target_time_ticks = (target_time_us * 1000) / rtc_period_ns;
-    
+
     // Convert to date, hour, min, sec components
     gmtime_r(&target_time_ticks, target_tm);
 
@@ -228,7 +228,7 @@ f2xx_rtc_read(void *arg, hwaddr addr, unsigned int size)
     // HACK for Pebble. Clear the "entered standby" bit. If this bit is set, the Pebble
     // will only continue booting if one of the buttons is held down. Because the button GPIOs
     // are setup AFTER QEMU gets the key press event, it is difficult to set the GPIOs according
-    // to the buttons held down before the reset. 
+    // to the buttons held down before the reset.
     if (addr == R_RTC_BKPxR) {
         value &= ~0x10000;
     }
@@ -462,7 +462,7 @@ f2xx_update_current_date_and_time(void *arg)
 {
     f2xx_rtc *s = arg;
     uint64_t period_ns = f2xx_clock_period_ns(s);
-    
+
     struct tm new_target_tm;
     time_t new_target_ticks = f2xx_rtc_compute_target_time_from_host_time(s,
                                   period_ns, &new_target_tm);

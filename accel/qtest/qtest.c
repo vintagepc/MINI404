@@ -20,7 +20,6 @@
 #include "qemu/accel.h"
 #include "sysemu/qtest.h"
 #include "sysemu/cpus.h"
-#include "sysemu/cpu-timers.h"
 #include "qemu/guest-random.h"
 #include "qemu/main-loop.h"
 #include "hw/core/cpu.h"
@@ -45,6 +44,7 @@ static const TypeInfo qtest_accel_type = {
     .parent = TYPE_ACCEL,
     .class_init = qtest_accel_class_init,
 };
+module_obj(TYPE_QTEST_ACCEL);
 
 static void qtest_accel_ops_class_init(ObjectClass *oc, void *data)
 {
@@ -61,6 +61,7 @@ static const TypeInfo qtest_accel_ops_type = {
     .class_init = qtest_accel_ops_class_init,
     .abstract = true,
 };
+module_obj(ACCEL_OPS_NAME("qtest"));
 
 static void qtest_type_init(void)
 {

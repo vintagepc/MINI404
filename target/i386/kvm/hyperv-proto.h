@@ -39,6 +39,12 @@
 #define HV_ACCESS_REENLIGHTENMENTS_CONTROL  (1u << 13)
 
 /*
+ * HV_CPUID_FEATURES.EBX bits
+ */
+#define HV_POST_MESSAGES             (1u << 4)
+#define HV_SIGNAL_EVENTS             (1u << 5)
+
+/*
  * HV_CPUID_FEATURES.EDX bits
  */
 #define HV_MWAIT_AVAILABLE                      (1u << 0)
@@ -60,6 +66,7 @@
 #define HV_APIC_ACCESS_RECOMMENDED          (1u << 3)
 #define HV_SYSTEM_RESET_RECOMMENDED         (1u << 4)
 #define HV_RELAXED_TIMING_RECOMMENDED       (1u << 5)
+#define HV_DEPRECATING_AEOI_RECOMMENDED     (1u << 9)
 #define HV_CLUSTER_IPI_RECOMMENDED          (1u << 10)
 #define HV_EX_PROCESSOR_MASKS_RECOMMENDED   (1u << 11)
 #define HV_ENLIGHTENED_VMCS_RECOMMENDED     (1u << 14)

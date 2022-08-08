@@ -32,7 +32,6 @@
 
 #include "qemu/osdep.h"
 #include "hw/core/cpu.h"
-#include "hw/sysbus.h"
 #include "sysemu/dma.h"
 #include "sysemu/reset.h"
 #include "hw/boards.h"
@@ -57,8 +56,9 @@ static void generic_loader_reset(void *opaque)
     }
 
     if (s->data_len) {
-        assert(s->data_len < sizeof(s->data));
-        dma_memory_write(s->cpu->as, s->addr, &s->data, s->data_len);
+        assert(s->data_len <= sizeof(s->data));
+        dma_memory_write(s->cpu->as, s->addr, &s->data, s->data_len,
+                         MEMTXATTRS_UNSPECIFIED);
     }
 }
 
@@ -207,7 +207,7 @@ static void generic_loader_class_init(ObjectClass *klass, void *data)
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 
-static TypeInfo generic_loader_info = {
+static const TypeInfo generic_loader_info = {
     .name = TYPE_GENERIC_LOADER,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(GenericLoaderState),

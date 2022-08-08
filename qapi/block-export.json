@@ -121,6 +121,23 @@
             '*num-queues': 'uint16'} }
 
 ##
+# @FuseExportAllowOther:
+#
+# Possible allow_other modes for FUSE exports.
+#
+# @off: Do not pass allow_other as a mount option.
+#
+# @on: Pass allow_other as a mount option.
+#
+# @auto: Try mounting with allow_other first, and if that fails, retry
+#        without allow_other.
+#
+# Since: 6.1
+##
+{ 'enum': 'FuseExportAllowOther',
+  'data': ['off', 'on', 'auto'] }
+
+##
 # @BlockExportOptionsFuse:
 #
 # Options for exporting a block graph node on some (file) mountpoint
@@ -132,12 +149,26 @@
 # @growable: Whether writes beyond the EOF should grow the block node
 #            accordingly. (default: false)
 #
+# @allow-other: If this is off, only qemu's user is allowed access to
+#               this export.  That cannot be changed even with chmod or
+#               chown.
+#               Enabling this option will allow other users access to
+#               the export with the FUSE mount option "allow_other".
+#               Note that using allow_other as a non-root user requires
+#               user_allow_other to be enabled in the global fuse.conf
+#               configuration file.
+#               In auto mode (the default), the FUSE export driver will
+#               first attempt to mount the export with allow_other, and
+#               if that fails, try again without.
+#               (since 6.1; default: auto)
+#
 # Since: 6.0
 ##
 { 'struct': 'BlockExportOptionsFuse',
   'data': { 'mountpoint': 'str',
-            '*growable': 'bool' },
-  'if': 'defined(CONFIG_FUSE)' }
+            '*growable': 'bool',
+            '*allow-other': 'FuseExportAllowOther' },
+  'if': 'CONFIG_FUSE' }
 
 ##
 # @NbdServerAddOptions:
@@ -188,13 +219,13 @@
 #
 # @hard: Drop all connections immediately and remove export.
 #
-# Potential additional modes to be added in the future:
+# TODO: Potential additional modes to be added in the future:
 #
-# hide: Just hide export from new clients, leave existing connections as is.
-# Remove export after all clients are disconnected.
+#       hide: Just hide export from new clients, leave existing connections as is.
+#       Remove export after all clients are disconnected.
 #
-# soft: Hide export from new clients, answer with ESHUTDOWN for all further
-# requests from existing clients.
+#       soft: Hide export from new clients, answer with ESHUTDOWN for all further
+#       requests from existing clients.
 #
 # Since: 2.12
 ##
@@ -246,8 +277,10 @@
 # Since: 4.2
 ##
 { 'enum': 'BlockExportType',
-  'data': [ 'nbd', 'vhost-user-blk',
-            { 'name': 'fuse', 'if': 'defined(CONFIG_FUSE)' } ] }
+  'data': [ 'nbd',
+            { 'name': 'vhost-user-blk',
+              'if': 'CONFIG_VHOST_USER_BLK_SERVER' },
+            { 'name': 'fuse', 'if': 'CONFIG_FUSE' } ] }
 
 ##
 # @BlockExportOptions:
@@ -288,9 +321,10 @@
   'discriminator': 'type',
   'data': {
       'nbd': 'BlockExportOptionsNbd',
-      'vhost-user-blk': 'BlockExportOptionsVhostUserBlk',
+      'vhost-user-blk': { 'type': 'BlockExportOptionsVhostUserBlk',
+                          'if': 'CONFIG_VHOST_USER_BLK_SERVER' },
       'fuse': { 'type': 'BlockExportOptionsFuse',
-                'if': 'defined(CONFIG_FUSE)' }
+                'if': 'CONFIG_FUSE' }
    } }
 
 ##

@@ -15,7 +15,6 @@
 
 #include "sysemu/runstate.h"
 #include "hw/vfio/vfio-common.h"
-#include "cpu.h"
 #include "migration/migration.h"
 #include "migration/vmstate.h"
 #include "migration/qemu-file.h"
@@ -725,7 +724,16 @@ static void vfio_vmstate_change(void *opaque, bool running, RunState state)
          * _RUNNING bit
          */
         mask = ~VFIO_DEVICE_STATE_RUNNING;
-        value = 0;
+
+        /*
+         * When VM state transition to stop for savevm command, device should
+         * start saving data.
+         */
+        if (state == RUN_STATE_SAVE_VM) {
+            value = VFIO_DEVICE_STATE_SAVING;
+        } else {
+            value = 0;
+        }
     }
 
     ret = vfio_migration_set_state(vbasedev, mask, value);
@@ -850,7 +858,6 @@ int vfio_migration_probe(VFIODevice *vbasedev, Error **errp)
 {
     VFIOContainer *container = vbasedev->group->container;
     struct vfio_region_info *info = NULL;
-    Error *local_err = NULL;
     int ret = -ENOTSUP;
 
     if (!vbasedev->enable_migration || !container->dirty_pages_supported) {
@@ -877,9 +884,8 @@ add_blocker:
                "VFIO device doesn't support migration");
     g_free(info);
 
-    ret = migrate_add_blocker(vbasedev->migration_blocker, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    ret = migrate_add_blocker(vbasedev->migration_blocker, errp);
+    if (ret < 0) {
         error_free(vbasedev->migration_blocker);
         vbasedev->migration_blocker = NULL;
     }
@@ -893,6 +899,7 @@ void vfio_migration_finalize(VFIODevice *vbasedev)
 
         remove_migration_state_change_notifier(&migration->migration_state);
         qemu_del_vm_change_state_handler(migration->vm_state);
+        unregister_savevm(VMSTATE_IF(vbasedev->dev), "vfio", vbasedev);
         vfio_migration_exit(vbasedev);
     }
 

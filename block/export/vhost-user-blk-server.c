@@ -70,9 +70,16 @@ static void vu_blk_req_complete(VuBlkReq *req)
 static bool vu_blk_sect_range_ok(VuBlkExport *vexp, uint64_t sector,
                                  size_t size)
 {
-    uint64_t nb_sectors = size >> BDRV_SECTOR_BITS;
+    uint64_t nb_sectors;
     uint64_t total_sectors;
 
+    if (size % VIRTIO_BLK_SECTOR_SIZE) {
+        return false;
+    }
+
+    nb_sectors = size >> VIRTIO_BLK_SECTOR_BITS;
+
+    QEMU_BUILD_BUG_ON(BDRV_SECTOR_SIZE != VIRTIO_BLK_SECTOR_SIZE);
     if (nb_sectors > BDRV_REQUEST_MAX_SECTORS) {
         return false;
     }
@@ -165,6 +172,7 @@ vu_blk_discard_write_zeroes(VuBlkExport *vexp, struct iovec *iov,
     return VIRTIO_BLK_S_IOERR;
 }
 
+/* Called with server refcount increased, must decrease before returning */
 static void coroutine_fn vu_blk_virtio_process_req(void *opaque)
 {
     VuBlkReq *req = opaque;
@@ -279,10 +287,12 @@ static void coroutine_fn vu_blk_virtio_process_req(void *opaque)
     }
 
     vu_blk_req_complete(req);
+    vhost_user_server_unref(server);
     return;
 
 err:
     free(req);
+    vhost_user_server_unref(server);
 }
 
 static void vu_blk_process_vq(VuDev *vu_dev, int idx)
@@ -303,6 +313,8 @@ static void vu_blk_process_vq(VuDev *vu_dev, int idx)
 
         Coroutine *co =
             qemu_coroutine_create(vu_blk_virtio_process_req, req);
+
+        vhost_user_server_ref(server);
         qemu_coroutine_enter(co);
     }
 }

@@ -338,6 +338,8 @@ static void stm32_rcc_RCC_CFGR_write(Stm32f2xxRcc *s, uint32_t new_value, bool i
         case 0x1:
         case 0x2:
             clktree_set_selected_input(&s->SYSCLK, cfgr.SW);
+			clock_set_hz(s->parent.CPUCLOCK, clktree_get_output_freq(&s->SYSCLK));
+			clock_propagate(s->parent.CPUCLOCK);
 			cfgr.SWS = cfgr.SW;
             break;
         default:
@@ -483,15 +485,8 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
     hclk_freq = clktree_get_output_freq(&s->HCLK);
 
     /* Only update the scales if the frequency is not zero. */
-    if (hclk_freq > 0) {
-        // ext_ref_freq = hclk_freq / 8;
-
-        /* Update the scales - these are the ratio of QEMU clock ticks
-         * (which is an unchanging number independent of the CPU frequency) to
-         * system/external clock ticks.
-         */
-        system_clock_scale = 1000000000LL / hclk_freq;
-    }
+	clock_set_hz(s->parent.REFCLK, hclk_freq);
+	clock_propagate(s->parent.REFCLK);
 }
 
 
@@ -505,7 +500,6 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 	s->parent.realize_func(dev, errp);
     s->hclk_upd_irq =
     qemu_allocate_irqs(stm32_rcc_hclk_upd_irq_handler, s, 1);
-
 
     /* Initialize clocks */
     /* Source clocks are initially disabled, which represents

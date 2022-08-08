@@ -1,5 +1,10 @@
-libglut = cc.find_library('glut', required: false)
-if build_machine.system() == 'cygwin'
+if build_machine.system() == 'windows'
+    libglut = cc.find_library('libfreeglut', required: false)
+else
+    # cygwin or native build.
+    libglut = cc.find_library('glut', required: false)
+endif 
+if build_machine.system() == 'cygwin' or build_machine.system() == 'windows'
     message('Cross build, finding opengl32. libglew32 and libglu32')
     libgl = cc.find_library('libopengl32', required: false)
     libglu = cc.find_library('libglu32', required: false)

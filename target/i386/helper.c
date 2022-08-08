@@ -27,6 +27,7 @@
 #include "sysemu/hw_accel.h"
 #include "monitor/monitor.h"
 #endif
+#include "qemu/log.h"
 
 void cpu_sync_bndcs_hflags(CPUX86State *env)
 {
@@ -174,7 +175,7 @@ void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4)
     }
 
     /* Clear bits we're going to recompute.  */
-    hflags = env->hflags & ~(HF_OSFXSR_MASK | HF_SMAP_MASK);
+    hflags = env->hflags & ~(HF_OSFXSR_MASK | HF_SMAP_MASK | HF_UMIP_MASK);
 
     /* SSE handling */
     if (!(env->features[FEAT_1_EDX] & CPUID_SSE)) {
@@ -189,6 +190,12 @@ void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4)
     }
     if (new_cr4 & CR4_SMAP_MASK) {
         hflags |= HF_SMAP_MASK;
+    }
+    if (!(env->features[FEAT_7_0_ECX] & CPUID_7_0_ECX_UMIP)) {
+        new_cr4 &= ~CR4_UMIP_MASK;
+    }
+    if (new_cr4 & CR4_UMIP_MASK) {
+        hflags |= HF_UMIP_MASK;
     }
 
     if (!(env->features[FEAT_7_0_ECX] & CPUID_7_0_ECX_PKU)) {
@@ -495,7 +502,7 @@ void cpu_report_tpr_access(CPUX86State *env, TPRAccess access)
     X86CPU *cpu = env_archcpu(env);
     CPUState *cs = env_cpu(env);
 
-    if (kvm_enabled() || whpx_enabled()) {
+    if (kvm_enabled() || whpx_enabled() || nvmm_enabled()) {
         env->tpr_access_type = access;
 
         cpu_interrupt(cs, CPU_INTERRUPT_TPR);
@@ -574,6 +581,19 @@ void do_cpu_sipi(X86CPU *cpu)
 #endif
 
 #ifndef CONFIG_USER_ONLY
+
+void cpu_load_efer(CPUX86State *env, uint64_t val)
+{
+    env->efer = val;
+    env->hflags &= ~(HF_LMA_MASK | HF_SVME_MASK);
+    if (env->efer & MSR_EFER_LMA) {
+        env->hflags |= HF_LMA_MASK;
+    }
+    if (env->efer & MSR_EFER_SVME) {
+        env->hflags |= HF_SVME_MASK;
+    }
+}
+
 uint8_t x86_ldub_phys(CPUState *cs, hwaddr addr)
 {
     X86CPU *cpu = X86_CPU(cs);

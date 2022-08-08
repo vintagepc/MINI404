@@ -170,13 +170,15 @@ static void stm32_f2xx_f4xx_dma_do_p2m(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr cha
 		&address_space_memory,
 		*src,
 		buff,
-		xfersize
+		xfersize,
+		MEMTXATTRS_UNSPECIFIED
 	);
 	dma_memory_write(
 		&address_space_memory,
 		*dest,
 		buff,
-		xfersize
+		xfersize,
+		MEMTXATTRS_UNSPECIFIED
 	);
 	if (cr->MINC)
 	{
@@ -229,13 +231,15 @@ static void stm32_f2xx_f4xx_dma_do_m2p(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr cha
 			&address_space_memory,
 			*src,
 			buff,
-			xfersize
+			xfersize,
+			MEMTXATTRS_UNSPECIFIED
 		);
 		dma_memory_write(
 			&address_space_memory,
 			*dest,
 			buff,
-			xfersize
+			xfersize,
+			MEMTXATTRS_UNSPECIFIED
 		);
 		if (cr->MINC)
 		{

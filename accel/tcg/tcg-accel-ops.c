@@ -29,10 +29,10 @@
 #include "qemu-common.h"
 #include "sysemu/tcg.h"
 #include "sysemu/replay.h"
+#include "sysemu/cpu-timers.h"
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"
 #include "exec/exec-all.h"
-#include "hw/boards.h"
 
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
@@ -125,6 +125,7 @@ static const TypeInfo tcg_accel_ops_type = {
     .class_init = tcg_accel_ops_class_init,
     .abstract = true,
 };
+module_obj(ACCEL_OPS_NAME("tcg"));
 
 static void tcg_accel_ops_register_types(void)
 {

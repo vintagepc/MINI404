@@ -14,6 +14,7 @@ tests = {
   'test-qobject-output-visitor': [testqapi],
   'test-clone-visitor': [testqapi],
   'test-qobject-input-visitor': [testqapi],
+  'test-forward-visitor': [testqapi],
   'test-string-input-visitor': [testqapi],
   'test-string-output-visitor': [testqapi],
   'test-opts-visitor': [testqapi],
@@ -22,6 +23,7 @@ tests = {
   # all code tested by test-x86-cpuid is inside topology.h
   'test-x86-cpuid': [],
   'test-cutils': [],
+  'test-div128': [],
   'test-shift128': [],
   'test-mul64': [],
   # all code tested by test-int128 is inside int128.h
@@ -42,14 +44,19 @@ tests = {
   'test-keyval': [testqapi],
   'test-logging': [],
   'test-uuid': [],
-  'ptimer-test': ['ptimer-test-stubs.c', meson.source_root() / 'hw/core/ptimer.c'],
+  'ptimer-test': ['ptimer-test-stubs.c', meson.project_source_root() / 'hw/core/ptimer.c'],
   'test-qapi-util': [],
+  'test-smp-parse': [qom, meson.project_source_root() / 'hw/core/machine-smp.c'],
 }
 
 if have_system or have_tools
   tests += {
     'test-qmp-event': [testqapi],
   }
+
+  if seccomp.found()
+    tests += {'test-seccomp': ['../../softmmu/qemu-seccomp.c', seccomp]}
+  endif
 endif
 
 if have_block
@@ -83,8 +90,8 @@ if have_block
     'test-crypto-afsplit': [io],
     'test-crypto-block': [io],
   }
-  if 'CONFIG_GNUTLS' in config_host and \
-     'CONFIG_TASN1' in config_host and \
+  if gnutls.found() and \
+     tasn1.found() and \
      'CONFIG_POSIX' in config_host
     tests += {
       'test-crypto-tlscredsx509': ['crypto-tls-x509-helpers.c', 'pkix_asn1_tab.c',
@@ -94,22 +101,22 @@ if have_block
       'test-io-channel-tls': ['io-channel-helpers.c', 'crypto-tls-x509-helpers.c', 'pkix_asn1_tab.c',
                               tasn1, io, crypto, gnutls]}
   endif
-  if 'CONFIG_AUTH_PAM' in config_host
+  if pam.found()
     tests += {'test-authz-pam': [authz]}
   endif
-  if 'CONFIG_QEMU_PRIVATE_XTS' in config_host
+  if xts == 'private'
     tests += {'test-crypto-xts': [crypto, io]}
   endif
   if 'CONFIG_POSIX' in config_host
     tests += {'test-image-locking': [testblock]}
   endif
-  if 'CONFIG_REPLICATION' in config_host
+  if config_host_data.get('CONFIG_REPLICATION')
     tests += {'test-replication': [testblock]}
   endif
-  if 'CONFIG_NETTLE' in config_host or 'CONFIG_GCRYPT' in config_host
+  if nettle.found() or gcrypt.found()
     tests += {'test-crypto-pbkdf': [io]}
   endif
-  if 'CONFIG_EPOLL_CREATE1' in config_host
+  if config_host_data.get('CONFIG_EPOLL_CREATE1')
     tests += {'test-fdmon-epoll': [testblock]}
   endif
 endif
@@ -126,7 +133,7 @@ if have_system
     'test-vmstate': [migration, io],
     'test-yank': ['socket-helpers.c', qom, io, chardev]
   }
-  if 'CONFIG_INOTIFY1' in config_host
+  if config_host_data.get('CONFIG_INOTIFY1')
     tests += {'test-util-filemonitor': []}
   endif
 
@@ -146,9 +153,7 @@ if have_system
   endif
 endif
 
-if 'CONFIG_TSAN' not in config_host and \
-   'CONFIG_GUEST_AGENT' in config_host and \
-   'CONFIG_LINUX' in config_host
+if have_ga and targetos == 'linux' and 'CONFIG_TSAN' not in config_host
   tests += {'test-qga': ['../qtest/libqtest.c']}
   test_deps += {'test-qga': qga}
 endif

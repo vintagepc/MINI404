@@ -44,7 +44,7 @@ struct ScriptConsoleState {
 
     bool is_vc;
 
-    bool is_busy; 
+    bool is_busy;
 
     bool show_status;
 
@@ -80,7 +80,7 @@ static void scriptcon_execute(void *opaque, const char *cmdline,
                                void *readline_opaque)
 {
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(opaque);
-    s->is_busy = true;    
+    s->is_busy = true;
     s->show_status = true;
     scripthost_execute(cmdline);
     if (timer_expired(s->scripting,qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)))
@@ -105,14 +105,14 @@ static void scriptcon_autocomplete(void *opaque,
     scripthost_autocomplete(opaque, cmdline, scriptcon_auto_return);
 }
 
-// Dummy handler for disabled echo mode. 
-static void GCC_FMT_ATTR(2, 3) scriptcon_dummy_printf(void *opaque,
+// Dummy handler for disabled echo mode.
+static void G_GNUC_PRINTF(2, 3) scriptcon_dummy_printf(void *opaque,
                                                        const char *fmt, ...)
                                                        {
 
                                                        }
 
-static void GCC_FMT_ATTR(2, 3) scriptcon_printf(void *opaque,
+static void G_GNUC_PRINTF(2, 3) scriptcon_printf(void *opaque,
                                                        const char *fmt, ...)
 {
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(opaque);
@@ -210,7 +210,7 @@ static void scriptcon_read(void *opaque, const uint8_t *buf, int size){
             readline_handle_byte(s->rl_state, buf[i]);
         }
         return;
-    } 
+    }
     printf("err: no readline??\n");
     // printf("Input: %02x len %d\n", *buf, size);
     // if (*buf == 0x08){
@@ -285,11 +285,11 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 
     // qemu_chr_fe_set_echo(&s->be, true);
 
-    // TODO- need to find a way to get a chardevbackend in here. Maybe turn this 
+    // TODO- need to find a way to get a chardevbackend in here. Maybe turn this
     // into a chardev parent item?
    //s->con = graphic_console_init(dev, 0, &scriptcon_ops, s);
-    
-   
+
+
 }
 
 static Property scriptcon_properties[] = {
@@ -300,14 +300,14 @@ static Property scriptcon_properties[] = {
 
 static void scriptcon_class_init(ObjectClass *klass, void *data)
 {
-   // ChardevClass *cc = CHARDEV_CLASS(klass);   
+   // ChardevClass *cc = CHARDEV_CLASS(klass);
     // cc->chr_write = scriptcon_read;
-    // cc->chr_accept_input 
+    // cc->chr_accept_input
   //  cc->parse = scriptcon_parse;
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = scriptcon_realize;
     dc->user_creatable = true;
-   
+
 //    //dc->reset = scriptcon_reset;
     device_class_set_props(dc, scriptcon_properties);
 }

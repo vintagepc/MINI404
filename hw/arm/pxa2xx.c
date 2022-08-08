@@ -8,7 +8,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
@@ -27,6 +26,7 @@
 #include "chardev/char-fe.h"
 #include "sysemu/blockdev.h"
 #include "sysemu/qtest.h"
+#include "sysemu/rtc.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 #include "qom/object.h"
@@ -1437,7 +1437,7 @@ static void pxa2xx_i2c_write(void *opaque, hwaddr addr,
         break;
 
     case ISAR:
-        i2c_set_slave_address(I2C_SLAVE(s->slave), value & 0x7f);
+        i2c_slave_set_address(I2C_SLAVE(s->slave), value & 0x7f);
         break;
 
     case IDBR:

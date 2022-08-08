@@ -29,7 +29,6 @@
 
 
 typedef struct BDRVStateCOR {
-    bool active;
     BlockDriverState *bottom_bs;
     bool chain_frozen;
 } BDRVStateCOR;
@@ -89,7 +88,6 @@ static int cor_open(BlockDriverState *bs, QDict *options, int flags,
          */
         bdrv_ref(bottom_bs);
     }
-    state->active = true;
     state->bottom_bs = bottom_bs;
 
     /*
@@ -112,17 +110,6 @@ static void cor_child_perm(BlockDriverState *bs, BdrvChild *c,
                            uint64_t perm, uint64_t shared,
                            uint64_t *nperm, uint64_t *nshared)
 {
-    BDRVStateCOR *s = bs->opaque;
-
-    if (!s->active) {
-        /*
-         * While the filter is being removed
-         */
-        *nperm = 0;
-        *nshared = BLK_PERM_ALL;
-        return;
-    }
-
     *nperm = perm & PERM_PASSTHROUGH;
     *nshared = (shared & PERM_PASSTHROUGH) | PERM_UNCHANGED;
 
@@ -141,10 +128,10 @@ static int64_t cor_getlength(BlockDriverState *bs)
 
 
 static int coroutine_fn cor_co_preadv_part(BlockDriverState *bs,
-                                           uint64_t offset, uint64_t bytes,
+                                           int64_t offset, int64_t bytes,
                                            QEMUIOVector *qiov,
                                            size_t qiov_offset,
-                                           int flags)
+                                           BdrvRequestFlags flags)
 {
     int64_t n;
     int local_flags;
@@ -194,10 +181,11 @@ static int coroutine_fn cor_co_preadv_part(BlockDriverState *bs,
 
 
 static int coroutine_fn cor_co_pwritev_part(BlockDriverState *bs,
-                                            uint64_t offset,
-                                            uint64_t bytes,
+                                            int64_t offset,
+                                            int64_t bytes,
                                             QEMUIOVector *qiov,
-                                            size_t qiov_offset, int flags)
+                                            size_t qiov_offset,
+                                            BdrvRequestFlags flags)
 {
     return bdrv_co_pwritev_part(bs->file, offset, bytes, qiov, qiov_offset,
                                 flags);
@@ -205,7 +193,7 @@ static int coroutine_fn cor_co_pwritev_part(BlockDriverState *bs,
 
 
 static int coroutine_fn cor_co_pwrite_zeroes(BlockDriverState *bs,
-                                             int64_t offset, int bytes,
+                                             int64_t offset, int64_t bytes,
                                              BdrvRequestFlags flags)
 {
     return bdrv_co_pwrite_zeroes(bs->file, offset, bytes, flags);
@@ -213,15 +201,15 @@ static int coroutine_fn cor_co_pwrite_zeroes(BlockDriverState *bs,
 
 
 static int coroutine_fn cor_co_pdiscard(BlockDriverState *bs,
-                                        int64_t offset, int bytes)
+                                        int64_t offset, int64_t bytes)
 {
     return bdrv_co_pdiscard(bs->file, offset, bytes);
 }
 
 
 static int coroutine_fn cor_co_pwritev_compressed(BlockDriverState *bs,
-                                                  uint64_t offset,
-                                                  uint64_t bytes,
+                                                  int64_t offset,
+                                                  int64_t bytes,
                                                   QEMUIOVector *qiov)
 {
     return bdrv_co_pwritev(bs->file, offset, bytes, qiov,
@@ -280,32 +268,14 @@ static BlockDriver bdrv_copy_on_read = {
 
 void bdrv_cor_filter_drop(BlockDriverState *cor_filter_bs)
 {
-    BdrvChild *child;
-    BlockDriverState *bs;
     BDRVStateCOR *s = cor_filter_bs->opaque;
 
-    child = bdrv_filter_child(cor_filter_bs);
-    if (!child) {
-        return;
-    }
-    bs = child->bs;
-
-    /* Retain the BDS until we complete the graph change. */
-    bdrv_ref(bs);
-    /* Hold a guest back from writing while permissions are being reset. */
-    bdrv_drained_begin(bs);
-    /* Drop permissions before the graph change. */
-    s->active = false;
     /* unfreeze, as otherwise bdrv_replace_node() will fail */
     if (s->chain_frozen) {
         s->chain_frozen = false;
         bdrv_unfreeze_backing_chain(cor_filter_bs, s->bottom_bs);
     }
-    bdrv_child_refresh_perms(cor_filter_bs, child, &error_abort);
-    bdrv_replace_node(cor_filter_bs, bs, &error_abort);
-
-    bdrv_drained_end(bs);
-    bdrv_unref(bs);
+    bdrv_drop_filter(cor_filter_bs, &error_abort);
     bdrv_unref(cor_filter_bs);
 }
 

@@ -16,13 +16,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/log.h"
 #include "qemu/qemu-print.h"
 #include "cpu.h"
 #include "internal.h"
 #include "exec/exec-all.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
+#include "fpu/softfloat-helpers.h"
 
 static void hexagon_v67_cpu_init(Object *obj)
 {
@@ -59,7 +59,7 @@ const char * const hexagon_regnames[TOTAL_PER_THREAD_REGS] = {
   "r24", "r25", "r26", "r27", "r28",  "r29", "r30", "r31",
   "sa0", "lc0", "sa1", "lc1", "p3_0", "c5",  "m0",  "m1",
   "usr", "pc",  "ugp", "gp",  "cs0",  "cs1", "c14", "c15",
-  "c16", "c17", "c18", "c19", "pkt_cnt",  "insn_cnt", "c22", "c23",
+  "c16", "c17", "c18", "c19", "pkt_cnt",  "insn_cnt", "hvx_cnt", "c23",
   "c24", "c25", "c26", "c27", "c28",  "c29", "c30", "c31",
 };
 
@@ -69,10 +69,9 @@ const char * const hexagon_regnames[TOTAL_PER_THREAD_REGS] = {
  * stacks at different locations.  This is used to compensate so the diff is
  * cleaner.
  */
-static inline target_ulong adjust_stack_ptrs(CPUHexagonState *env,
-                                             target_ulong addr)
+static target_ulong adjust_stack_ptrs(CPUHexagonState *env, target_ulong addr)
 {
-    HexagonCPU *cpu = container_of(env, HexagonCPU, env);
+    HexagonCPU *cpu = env_archcpu(env);
     target_ulong stack_adjust = cpu->lldb_stack_adjust;
     target_ulong stack_start = env->stack_start;
     target_ulong stack_size = 0x10000;
@@ -88,7 +87,7 @@ static inline target_ulong adjust_stack_ptrs(CPUHexagonState *env,
 }
 
 /* HEX_REG_P3_0 (aka C4) is an alias for the predicate registers */
-static inline target_ulong read_p3_0(CPUHexagonState *env)
+static target_ulong read_p3_0(CPUHexagonState *env)
 {
     int32_t control_reg = 0;
     int i;
@@ -114,9 +113,68 @@ static void print_reg(FILE *f, CPUHexagonState *env, int regnum)
                  hexagon_regnames[regnum], value);
 }
 
-static void hexagon_dump(CPUHexagonState *env, FILE *f)
+static void print_vreg(FILE *f, CPUHexagonState *env, int regnum,
+                       bool skip_if_zero)
 {
-    HexagonCPU *cpu = container_of(env, HexagonCPU, env);
+    if (skip_if_zero) {
+        bool nonzero_found = false;
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES; i++) {
+            if (env->VRegs[regnum].ub[i] != 0) {
+                nonzero_found = true;
+                break;
+            }
+        }
+        if (!nonzero_found) {
+            return;
+        }
+    }
+
+    qemu_fprintf(f, "  v%d = ( ", regnum);
+    qemu_fprintf(f, "0x%02x", env->VRegs[regnum].ub[MAX_VEC_SIZE_BYTES - 1]);
+    for (int i = MAX_VEC_SIZE_BYTES - 2; i >= 0; i--) {
+        qemu_fprintf(f, ", 0x%02x", env->VRegs[regnum].ub[i]);
+    }
+    qemu_fprintf(f, " )\n");
+}
+
+void hexagon_debug_vreg(CPUHexagonState *env, int regnum)
+{
+    print_vreg(stdout, env, regnum, false);
+}
+
+static void print_qreg(FILE *f, CPUHexagonState *env, int regnum,
+                       bool skip_if_zero)
+{
+    if (skip_if_zero) {
+        bool nonzero_found = false;
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES / 8; i++) {
+            if (env->QRegs[regnum].ub[i] != 0) {
+                nonzero_found = true;
+                break;
+            }
+        }
+        if (!nonzero_found) {
+            return;
+        }
+    }
+
+    qemu_fprintf(f, "  q%d = ( ", regnum);
+    qemu_fprintf(f, "0x%02x",
+                 env->QRegs[regnum].ub[MAX_VEC_SIZE_BYTES / 8 - 1]);
+    for (int i = MAX_VEC_SIZE_BYTES / 8 - 2; i >= 0; i--) {
+        qemu_fprintf(f, ", 0x%02x", env->QRegs[regnum].ub[i]);
+    }
+    qemu_fprintf(f, " )\n");
+}
+
+void hexagon_debug_qreg(CPUHexagonState *env, int regnum)
+{
+    print_qreg(stdout, env, regnum, false);
+}
+
+static void hexagon_dump(CPUHexagonState *env, FILE *f, int flags)
+{
+    HexagonCPU *cpu = env_archcpu(env);
 
     if (cpu->lldb_compat) {
         /*
@@ -160,6 +218,17 @@ static void hexagon_dump(CPUHexagonState *env, FILE *f)
     print_reg(f, env, HEX_REG_CS1);
 #endif
     qemu_fprintf(f, "}\n");
+
+    if (flags & CPU_DUMP_FPU) {
+        qemu_fprintf(f, "Vector Registers = {\n");
+        for (int i = 0; i < NUM_VREGS; i++) {
+            print_vreg(f, env, i, true);
+        }
+        for (int i = 0; i < NUM_QREGS; i++) {
+            print_qreg(f, env, i, true);
+        }
+        qemu_fprintf(f, "}\n");
+    }
 }
 
 static void hexagon_dump_state(CPUState *cs, FILE *f, int flags)
@@ -167,12 +236,12 @@ static void hexagon_dump_state(CPUState *cs, FILE *f, int flags)
     HexagonCPU *cpu = HEXAGON_CPU(cs);
     CPUHexagonState *env = &cpu->env;
 
-    hexagon_dump(env, f);
+    hexagon_dump(env, f, flags);
 }
 
 void hexagon_debug(CPUHexagonState *env)
 {
-    hexagon_dump(env, stdout);
+    hexagon_dump(env, stdout, CPU_DUMP_FPU);
 }
 
 static void hexagon_cpu_set_pc(CPUState *cs, vaddr value)
@@ -206,8 +275,12 @@ static void hexagon_cpu_reset(DeviceState *dev)
     CPUState *cs = CPU(dev);
     HexagonCPU *cpu = HEXAGON_CPU(cs);
     HexagonCPUClass *mcc = HEXAGON_CPU_GET_CLASS(cpu);
+    CPUHexagonState *env = &cpu->env;
 
     mcc->parent_reset(dev);
+
+    set_default_nan_mode(1, &env->fp_status);
+    set_float_detect_tininess(float_tininess_before_rounding, &env->fp_status);
 }
 
 static void hexagon_cpu_disas_set_info(CPUState *s, disassemble_info *info)
@@ -242,34 +315,11 @@ static void hexagon_cpu_init(Object *obj)
     qdev_property_add_static(DEVICE(obj), &hexagon_lldb_stack_adjust_property);
 }
 
-static bool hexagon_tlb_fill(CPUState *cs, vaddr address, int size,
-                             MMUAccessType access_type, int mmu_idx,
-                             bool probe, uintptr_t retaddr)
-{
-#ifdef CONFIG_USER_ONLY
-    switch (access_type) {
-    case MMU_INST_FETCH:
-        cs->exception_index = HEX_EXCP_FETCH_NO_UPAGE;
-        break;
-    case MMU_DATA_LOAD:
-        cs->exception_index = HEX_EXCP_PRIV_NO_UREAD;
-        break;
-    case MMU_DATA_STORE:
-        cs->exception_index = HEX_EXCP_PRIV_NO_UWRITE;
-        break;
-    }
-    cpu_loop_exit_restore(cs, retaddr);
-#else
-#error System mode not implemented for Hexagon
-#endif
-}
-
 #include "hw/core/tcg-cpu-ops.h"
 
-static struct TCGCPUOps hexagon_tcg_ops = {
+static const struct TCGCPUOps hexagon_tcg_ops = {
     .initialize = hexagon_translate_init,
     .synchronize_from_tb = hexagon_cpu_synchronize_from_tb,
-    .tlb_fill = hexagon_tlb_fill,
 };
 
 static void hexagon_cpu_class_init(ObjectClass *c, void *data)
@@ -289,7 +339,7 @@ static void hexagon_cpu_class_init(ObjectClass *c, void *data)
     cc->set_pc = hexagon_cpu_set_pc;
     cc->gdb_read_register = hexagon_gdb_read_register;
     cc->gdb_write_register = hexagon_gdb_write_register;
-    cc->gdb_num_core_regs = TOTAL_PER_THREAD_REGS;
+    cc->gdb_num_core_regs = TOTAL_PER_THREAD_REGS + NUM_VREGS + NUM_QREGS;
     cc->gdb_stop_before_watchpoint = true;
     cc->disas_set_info = hexagon_cpu_disas_set_info;
     cc->tcg_ops = &hexagon_tcg_ops;

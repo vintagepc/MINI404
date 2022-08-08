@@ -37,6 +37,7 @@
 #include "qemu/range.h"
 #include "hw/virtio/virtio-bus.h"
 #include "qapi/visitor.h"
+#include "sysemu/replay.h"
 
 #define VIRTIO_PCI_REGION_SIZE(dev)     VIRTIO_PCI_CONFIG_OFF(msix_present(dev))
 
@@ -130,7 +131,6 @@ static const VMStateDescription vmstate_virtio_pci = {
     .name = "virtio_pci",
     .version_id = 1,
     .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
     .fields = (VMStateField[]) {
         VMSTATE_END_OF_LIST()
     },
@@ -423,6 +423,11 @@ static uint64_t virtio_pci_config_read(void *opaque, hwaddr addr,
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
     uint32_t config = VIRTIO_PCI_CONFIG_SIZE(&proxy->pci_dev);
     uint64_t val = 0;
+
+    if (vdev == NULL) {
+        return UINT64_MAX;
+    }
+
     if (addr < config) {
         return virtio_ioport_read(proxy, addr);
     }
@@ -454,6 +459,11 @@ static void virtio_pci_config_write(void *opaque, hwaddr addr,
     VirtIOPCIProxy *proxy = opaque;
     uint32_t config = VIRTIO_PCI_CONFIG_SIZE(&proxy->pci_dev);
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+
+    if (vdev == NULL) {
+        return;
+    }
+
     if (addr < config) {
         virtio_ioport_write(proxy, addr, val);
         return;
@@ -673,10 +683,12 @@ static int kvm_virtio_pci_vq_vector_use(VirtIOPCIProxy *proxy,
     int ret;
 
     if (irqfd->users == 0) {
-        ret = kvm_irqchip_add_msi_route(kvm_state, vector, &proxy->pci_dev);
+        KVMRouteChange c = kvm_irqchip_begin_route_changes(kvm_state);
+        ret = kvm_irqchip_add_msi_route(&c, vector, &proxy->pci_dev);
         if (ret < 0) {
             return ret;
         }
+        kvm_irqchip_commit_route_changes(&c);
         irqfd->virq = ret;
     }
     irqfd->users++;
@@ -1110,6 +1122,19 @@ static AddressSpace *virtio_pci_get_dma_as(DeviceState *d)
     return pci_get_address_space(dev);
 }
 
+static bool virtio_pci_iommu_enabled(DeviceState *d)
+{
+    VirtIOPCIProxy *proxy = VIRTIO_PCI(d);
+    PCIDevice *dev = &proxy->pci_dev;
+    AddressSpace *dma_as = pci_device_iommu_address_space(dev);
+
+    if (dma_as == &address_space_memory) {
+        return false;
+    }
+
+    return true;
+}
+
 static bool virtio_pci_queue_enabled(DeviceState *d, int n)
 {
     VirtIOPCIProxy *proxy = VIRTIO_PCI(d);
@@ -1145,6 +1170,10 @@ static uint64_t virtio_pci_common_read(void *opaque, hwaddr addr,
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
     uint32_t val = 0;
     int i;
+
+    if (vdev == NULL) {
+        return UINT64_MAX;
+    }
 
     switch (addr) {
     case VIRTIO_PCI_COMMON_DFSELECT:
@@ -1228,6 +1257,10 @@ static void virtio_pci_common_write(void *opaque, hwaddr addr,
 {
     VirtIOPCIProxy *proxy = opaque;
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+
+    if (vdev == NULL) {
+        return;
+    }
 
     switch (addr) {
     case VIRTIO_PCI_COMMON_DFSELECT:
@@ -1330,6 +1363,11 @@ static void virtio_pci_common_write(void *opaque, hwaddr addr,
 static uint64_t virtio_pci_notify_read(void *opaque, hwaddr addr,
                                        unsigned size)
 {
+    VirtIOPCIProxy *proxy = opaque;
+    if (virtio_bus_get_device(&proxy->bus) == NULL) {
+        return UINT64_MAX;
+    }
+
     return 0;
 }
 
@@ -1367,7 +1405,7 @@ static uint64_t virtio_pci_isr_read(void *opaque, hwaddr addr,
     uint64_t val;
 
     if (vdev == NULL) {
-        return 0;
+        return UINT64_MAX;
     }
 
     val = qatomic_xchg(&vdev->isr, 0);
@@ -1388,7 +1426,7 @@ static uint64_t virtio_pci_device_read(void *opaque, hwaddr addr,
     uint64_t val;
 
     if (vdev == NULL) {
-        return 0;
+        return UINT64_MAX;
     }
 
     switch (size) {
@@ -1757,6 +1795,11 @@ static void virtio_pci_realize(PCIDevice *pci_dev, Error **errp)
                      !pci_bus_is_root(pci_get_bus(pci_dev));
 
     if (kvm_enabled() && !kvm_has_many_ioeventfds()) {
+        proxy->flags &= ~VIRTIO_PCI_FLAG_USE_IOEVENTFD;
+    }
+
+    /* fd-based ioevents can't be synchronized in record/replay */
+    if (replay_mode != REPLAY_MODE_NONE) {
         proxy->flags &= ~VIRTIO_PCI_FLAG_USE_IOEVENTFD;
     }
 
@@ -2145,8 +2188,7 @@ static void virtio_pci_bus_new(VirtioBusState *bus, size_t bus_size,
     DeviceState *qdev = DEVICE(dev);
     char virtio_bus_name[] = "virtio-bus";
 
-    qbus_create_inplace(bus, bus_size, TYPE_VIRTIO_PCI_BUS, qdev,
-                        virtio_bus_name);
+    qbus_init(bus, bus_size, TYPE_VIRTIO_PCI_BUS, qdev, virtio_bus_name);
 }
 
 static void virtio_pci_bus_class_init(ObjectClass *klass, void *data)
@@ -2173,6 +2215,7 @@ static void virtio_pci_bus_class_init(ObjectClass *klass, void *data)
     k->ioeventfd_enabled = virtio_pci_ioeventfd_enabled;
     k->ioeventfd_assign = virtio_pci_ioeventfd_assign;
     k->get_dma_as = virtio_pci_get_dma_as;
+    k->iommu_enabled = virtio_pci_iommu_enabled;
     k->queue_enabled = virtio_pci_queue_enabled;
 }
 

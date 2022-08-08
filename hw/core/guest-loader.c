@@ -26,7 +26,6 @@
 
 #include "qemu/osdep.h"
 #include "hw/core/cpu.h"
-#include "hw/sysbus.h"
 #include "sysemu/dma.h"
 #include "hw/loader.h"
 #include "hw/qdev-properties.h"
@@ -130,7 +129,7 @@ static void guest_loader_class_init(ObjectClass *klass, void *data)
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 
-static TypeInfo guest_loader_info = {
+static const TypeInfo guest_loader_info = {
     .name = TYPE_GUEST_LOADER,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(GuestLoaderState),

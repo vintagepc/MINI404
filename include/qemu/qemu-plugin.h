@@ -526,6 +526,15 @@ qemu_plugin_register_vcpu_syscall_ret_cb(qemu_plugin_id_t id,
 char *qemu_plugin_insn_disas(const struct qemu_plugin_insn *insn);
 
 /**
+ * qemu_plugin_insn_symbol() - best effort symbol lookup
+ * @insn: instruction reference
+ *
+ * Return a static string referring to the symbol. This is dependent
+ * on the binary QEMU is running having provided a symbol table.
+ */
+const char *qemu_plugin_insn_symbol(const struct qemu_plugin_insn *insn);
+
+/**
  * qemu_plugin_vcpu_for_each() - iterate over the existing vCPU
  * @id: plugin ID
  * @cb: callback function
@@ -540,6 +549,19 @@ void qemu_plugin_vcpu_for_each(qemu_plugin_id_t id,
 void qemu_plugin_register_flush_cb(qemu_plugin_id_t id,
                                    qemu_plugin_simple_cb_t cb);
 
+/**
+ * qemu_plugin_register_atexit_cb() - register exit callback
+ * @id: plugin ID
+ * @cb: callback
+ * @userdata: user data for callback
+ *
+ * The @cb function is called once execution has finished. Plugins
+ * should be able to free all their resources at this point much like
+ * after a reset/uninstall callback is called.
+ *
+ * In user-mode it is possible a few un-instrumented instructions from
+ * child threads may run before the host kernel reaps the threads.
+ */
 void qemu_plugin_register_atexit_cb(qemu_plugin_id_t id,
                                     qemu_plugin_udata_cb_t cb, void *userdata);
 
@@ -554,5 +576,52 @@ int qemu_plugin_n_max_vcpus(void);
  * @string: a string
  */
 void qemu_plugin_outs(const char *string);
+
+/**
+ * qemu_plugin_bool_parse() - parses a boolean argument in the form of
+ * "<argname>=[on|yes|true|off|no|false]"
+ *
+ * @name: argument name, the part before the equals sign
+ * @val: argument value, what's after the equals sign
+ * @ret: output return value
+ *
+ * returns true if the combination @name=@val parses correctly to a boolean
+ * argument, and false otherwise
+ */
+bool qemu_plugin_bool_parse(const char *name, const char *val, bool *ret);
+
+/**
+ * qemu_plugin_path_to_binary() - path to binary file being executed
+ *
+ * Return a string representing the path to the binary. For user-mode
+ * this is the main executable. For system emulation we currently
+ * return NULL. The user should g_free() the string once no longer
+ * needed.
+ */
+const char *qemu_plugin_path_to_binary(void);
+
+/**
+ * qemu_plugin_start_code() - returns start of text segment
+ *
+ * Returns the nominal start address of the main text segment in
+ * user-mode. Currently returns 0 for system emulation.
+ */
+uint64_t qemu_plugin_start_code(void);
+
+/**
+ * qemu_plugin_end_code() - returns end of text segment
+ *
+ * Returns the nominal end address of the main text segment in
+ * user-mode. Currently returns 0 for system emulation.
+ */
+uint64_t qemu_plugin_end_code(void);
+
+/**
+ * qemu_plugin_entry_code() - returns start address for module
+ *
+ * Returns the nominal entry address of the main text segment in
+ * user-mode. Currently returns 0 for system emulation.
+ */
+uint64_t qemu_plugin_entry_code(void);
 
 #endif /* QEMU_PLUGIN_API_H */

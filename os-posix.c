@@ -32,7 +32,7 @@
 #include "qemu-common.h"
 /* Needed early for CONFIG_BSD etc. */
 #include "net/slirp.h"
-#include "qemu-options.h"
+#include "qemu/qemu-options.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "sysemu/runstate.h"
@@ -315,6 +315,12 @@ void os_set_line_buffering(void)
 bool is_daemonized(void)
 {
     return daemonize;
+}
+
+int os_set_daemonize(bool d)
+{
+    daemonize = d;
+    return 0;
 }
 
 int os_mlock(void)

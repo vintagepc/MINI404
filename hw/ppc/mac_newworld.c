@@ -58,7 +58,6 @@
 #include "hw/pci/pci.h"
 #include "net/net.h"
 #include "sysemu/sysemu.h"
-#include "hw/boards.h"
 #include "hw/nvram/fw_cfg.h"
 #include "hw/char/escc.h"
 #include "hw/misc/macio/macio.h"
@@ -71,7 +70,6 @@
 #include "sysemu/reset.h"
 #include "kvm_ppc.h"
 #include "hw/usb.h"
-#include "exec/address-spaces.h"
 #include "hw/sysbus.h"
 #include "trace.h"
 
@@ -157,6 +155,10 @@ static void ppc_core99_init(MachineState *machine)
     }
 
     /* allocate RAM */
+    if (machine->ram_size > 2 * GiB) {
+        error_report("RAM size more than 2 GiB is not supported");
+        exit(1);
+    }
     memory_region_add_subregion(get_system_memory(), 0, machine->ram);
 
     /* allocate and load firmware ROM */
@@ -579,7 +581,8 @@ static void core99_machine_class_init(ObjectClass *oc, void *data)
     mc->desc = "Mac99 based PowerMAC";
     mc->init = ppc_core99_init;
     mc->block_default_type = IF_IDE;
-    mc->max_cpus = MAX_CPUS;
+    /* SMP is not supported currently */
+    mc->max_cpus = 1;
     mc->default_boot_order = "cd";
     mc->default_display = "std";
     mc->kvm_type = core99_kvm_type;

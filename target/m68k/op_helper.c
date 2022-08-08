@@ -17,24 +17,14 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "semihosting/semihost.h"
 
-#if defined(CONFIG_USER_ONLY)
-
-void m68k_cpu_do_interrupt(CPUState *cs)
-{
-    cs->exception_index = -1;
-}
-
-static inline void do_interrupt_m68k_hardirq(CPUM68KState *env)
-{
-}
-
-#else
+#if !defined(CONFIG_USER_ONLY)
 
 static void cf_rte(CPUM68KState *env)
 {
@@ -426,7 +416,10 @@ static void m68k_interrupt_all(CPUM68KState *env, int is_hw)
         oldsr = sr;
         env->aregs[7] = sp;
         cpu_m68k_set_sr(env, sr &= ~SR_M);
-        sp = env->aregs[7] & ~1;
+        sp = env->aregs[7];
+        if (!m68k_feature(env, M68K_FEATURE_UNALIGNED_DATA)) {
+            sp &= ~1;
+        }
         do_stack_frame(env, &sp, 1, oldsr, 0, retaddr);
     } else {
         do_stack_frame(env, &sp, 0, oldsr, 0, retaddr);
@@ -515,7 +508,6 @@ void m68k_cpu_transaction_failed(CPUState *cs, hwaddr physaddr, vaddr addr,
         cpu_loop_exit(cs);
     }
 }
-#endif
 
 bool m68k_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
@@ -536,6 +528,8 @@ bool m68k_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
     }
     return false;
 }
+
+#endif /* !CONFIG_USER_ONLY */
 
 static void raise_exception_ra(CPUM68KState *env, int tt, uintptr_t raddr)
 {
@@ -782,9 +776,9 @@ static void do_cas2l(CPUM68KState *env, uint32_t regs, uint32_t a1, uint32_t a2,
     uint32_t u2 = env->dregs[Du2];
     uint32_t l1, l2;
     uintptr_t ra = GETPC();
-#if defined(CONFIG_ATOMIC64) && !defined(CONFIG_USER_ONLY)
+#if defined(CONFIG_ATOMIC64)
     int mmu_idx = cpu_mmu_index(env, 0);
-    TCGMemOpIdx oi;
+    MemOpIdx oi = make_memop_idx(MO_BEUQ, mmu_idx);
 #endif
 
     if (parallel) {
@@ -794,23 +788,13 @@ static void do_cas2l(CPUM68KState *env, uint32_t regs, uint32_t a1, uint32_t a2,
         if ((a1 & 7) == 0 && a2 == a1 + 4) {
             c = deposit64(c2, 32, 32, c1);
             u = deposit64(u2, 32, 32, u1);
-#ifdef CONFIG_USER_ONLY
-            l = helper_atomic_cmpxchgq_be(env, a1, c, u);
-#else
-            oi = make_memop_idx(MO_BEQ, mmu_idx);
-            l = helper_atomic_cmpxchgq_be_mmu(env, a1, c, u, oi, ra);
-#endif
+            l = cpu_atomic_cmpxchgq_be_mmu(env, a1, c, u, oi, ra);
             l1 = l >> 32;
             l2 = l;
         } else if ((a2 & 7) == 0 && a1 == a2 + 4) {
             c = deposit64(c1, 32, 32, c2);
             u = deposit64(u1, 32, 32, u2);
-#ifdef CONFIG_USER_ONLY
-            l = helper_atomic_cmpxchgq_be(env, a2, c, u);
-#else
-            oi = make_memop_idx(MO_BEQ, mmu_idx);
-            l = helper_atomic_cmpxchgq_be_mmu(env, a2, c, u, oi, ra);
-#endif
+            l = cpu_atomic_cmpxchgq_be_mmu(env, a2, c, u, oi, ra);
             l2 = l >> 32;
             l1 = l;
         } else

@@ -20,6 +20,8 @@
 #include "trace.h"
 #include "exec/log.h"
 #include "qemu.h"
+#include "user-internals.h"
+#include "user-mmap.h"
 
 static pthread_mutex_t mmap_mutex = PTHREAD_MUTEX_INITIALIZER;
 static __thread int mmap_lock_count;
@@ -449,6 +451,20 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
     if (offset & ~TARGET_PAGE_MASK) {
         errno = EINVAL;
         goto fail;
+    }
+
+    /*
+     * If we're mapping shared memory, ensure we generate code for parallel
+     * execution and flush old translations.  This will work up to the level
+     * supported by the host -- anything that requires EXCP_ATOMIC will not
+     * be atomic with respect to an external process.
+     */
+    if (flags & MAP_SHARED) {
+        CPUState *cpu = thread_cpu;
+        if (!(cpu->tcg_cflags & CF_PARALLEL)) {
+            cpu->tcg_cflags |= CF_PARALLEL;
+            tb_flush(cpu);
+        }
     }
 
     real_start = start & qemu_host_page_mask;

@@ -18,8 +18,8 @@ jobs:
   build_linux:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    # if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
@@ -88,7 +88,7 @@ jobs:
           cd ${{ runner.workspace }}/MINI404/build
           mv buddy-softmmu Mini404-dev-linux
           mv assets Mini404-dev-linux
-          mv pc-bios Mini404-dev-linux
+          mkdir Mini404-dev-linux/pc-bios && mv pc-bios/keymaps Mini404-dev-linux/pc-bios/
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
@@ -100,10 +100,10 @@ jobs:
   build_macos:
     # The type of runner that the job will run on
     runs-on: macos-latest
-    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
-    # Steps represent a sequence of tasks that will be executed as part of the job
+  #   if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+  #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
       uses: actions/checkout@v2.2.0
       if: ${{ github.event.pull_request }}
@@ -134,6 +134,9 @@ jobs:
       run: |
         cd ${{ runner.workspace }}/MINI404/build
         mv buddy-softmmu Mini404-dev-macos
+        mv assets Mini404-dev-macos
+          mkdir Mini404-dev-macos/pc-bios
+          mv pc-bios/keymaps Mini404-dev-macos/pc-bios/
         tar -jhcvf Mini404-dev-macos.tar.bz2 Mini404-dev-macos
 
     - name: Upload artifact
@@ -143,32 +146,16 @@ jobs:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
 
-  build_cygwin:
+  build_msys:
     # The type of runner that the job will run on
-    runs-on: windows-2019
+    runs-on: windows-latest
     if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
     steps:
-      - uses: actions/cache@v1
-        with:
-          path: C:\tools\chococache
-          key: ${{ runner.os }}-cygwin-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-cygwin-
-      - name: Cygwin package cache
-        uses: actions/cache@v1
-        with:
-          path: C:\tools\cygcache
-          key: ${{ runner.os }}-cygwinpkgs-1_1
-          restore-keys: |
-            ${{ runner.os }}-cygwinpkgs-
-      - name: Install cygwin
-        run: |
-          choco config set cacheLocation C:\tools\chococache
-          choco install --no-progress cygwin
-      - name: Install cygwin dependencies
-        run: |
-          C:\tools\cygwin\cygwinsetup.exe -qgnNdO -l C:/tools/cygcache -R C:/tools/cygwin -s http://mirrors.kernel.org/sourceware/cygwin/ -P "mingw64-x86_64-gcc-g++,mingw64-x86_64-glew,mingw64-x86_64-freeglut,mingw64-x86_64-curl,mingw64-x86_64-glib-2.0,mingw64-x86_64-gtk3,mingw64-x86_64-openssl,mingw64-x86_64-libepoxy,mingw64-x86_64-pixman,mingw64-x86_64-pkg-config,mingw64-x86_64-libusb1.0,mingw64-x86_64-usbredir,python3-setuptools,git,gcc-core,make,zip,ninja"
-        shell: cmd
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with: 
+          msystem: MINGW64
+          install: make git zip mingw-w64-x86_64-diffutils diffutils python mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl mingw-w64-x86_64-SDL2_image
 
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
@@ -193,40 +180,33 @@ jobs:
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
       - name: Configure build
         run: |
-          cd MINI404
           git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
-          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "../configure --with-git-submodules=ignore --cross-prefix=x86_64-w64-mingw32- --target-list=buddy-softmmu --enable-gtk --enable-libusb"
-          bash.exe -c "sed -i 's/LDFLAGS_NOPIE=-no-pie/LDFLAGS_NOPIE=/g' config-host.mak" 
-        shell: cmd
+          ../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
+        shell: msys2 {0}
 
       - name: Build
         run: |
-          cd ${{runner.workspace}}\MINI404\build
-          pwd
-          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "make -j3"
-        shell: cmd
+          cd build
+          ninja
+        shell: msys2 {0}
       - name: Assemble artifacts and libraries
-        if: ${{ !github.event.pull_request }}
+#        if: ${{ !github.event.pull_request }}
         run: |
-          cd ${{ runner.workspace }}/MINI404/build
+          cd build
           mkdir Mini404-dev-w64
-          mv qemu-system-buddy.exe Mini404-dev-w64
+          mv qemu-*.exe Mini404-dev-w64
           mv assets Mini404-dev-w64
           cd Mini404-dev-w64
-          set PATH=C:\tools\cygwin\bin;C:\tools\cygwin\usr\bin
-          bash.exe -c "mkdir pc-bios && echo \"Placeholder. DO NOT DELETE THIS DIRECTORY, IT MUST EXIST OR QEMU WILL HANG ON BOOT\" > pc-bios/README.txt" 
-          bash.exe -c "for i in `ldd qemu-system-buddy.exe | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done"
-          bash.exe -c "while `ldd *.dll | grep -q \"not found\"`; do for i in `ldd *.dll | grep \"not found\" | cut -f2 | cut -d\" \" -f1 | sort | uniq`; do echo Copying $i; cp /usr/x86_64-w64-mingw32/sys-root/mingw/bin/$i .; done; sleep 2; done" 
+          mkdir pc-bios && mv ../pc-bios/keymaps pc-bios/
+          for i in `cat ../../.github/workflows/dll-list.txt`; do echo "Copying $i"; cp /mingw64/bin/$i .; done;
           cd ..
           zip -r Mini404-dev-w64.zip Mini404-dev-w64
-        shell: cmd
+        shell: msys2 {0}
 
       - name: Upload Cygwin artifact
-        if: ${{ !github.event.pull_request }}
+#        if: ${{ !github.event.pull_request }}
         uses: actions/upload-artifact@v2
         with:
           name: Binaries
@@ -235,7 +215,7 @@ jobs:
   Publish:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request }}
-    needs: [build_linux, build_cygwin, build_macos]
+    needs: [build_linux, build_msys, build_macos]
     steps:
       - name: Retrieve platform binaries
         uses: actions/download-artifact@v2

@@ -135,7 +135,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     {
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI3), "ssi");
         dev = qdev_new(cfg->flash_chip);
-        dinfo = drive_get_next(IF_MTD);
+        dinfo = drive_get(IF_MTD,0,0);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
                                 blk_by_legacy_dinfo(dinfo));
@@ -153,7 +153,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
         qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
-        dinfo = drive_get_next(IF_PFLASH);
+        dinfo = drive_get(IF_PFLASH, 0, 0);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
                                 blk_by_legacy_dinfo(dinfo));
@@ -165,7 +165,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x57);
         qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
-        dinfo = drive_get_next(IF_PFLASH);
+        dinfo = drive_get(IF_PFLASH, 0, 1);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
                                 blk_by_legacy_dinfo(dinfo));

@@ -153,6 +153,7 @@ typedef enum {
     MIG_PRI_DEFAULT = 0,
     MIG_PRI_IOMMU,              /* Must happen before PCI devices */
     MIG_PRI_PCI_BUS,            /* Must happen before IOMMU */
+    MIG_PRI_VIRTIO_MEM,         /* Must happen before IOMMU */
     MIG_PRI_GICV3_ITS,          /* Must happen before PCI devices */
     MIG_PRI_GICV3,              /* Must happen before the ITS */
     MIG_PRI_MAX,
@@ -180,9 +181,7 @@ struct VMStateDescription {
     int unmigratable;
     int version_id;
     int minimum_version_id;
-    int minimum_version_id_old;
     MigrationPriority priority;
-    LoadStateHandler *load_state_old;
     int (*pre_load)(void *opaque);
     int (*post_load)(void *opaque, int version_id);
     int (*pre_save)(void *opaque);
@@ -193,8 +192,6 @@ struct VMStateDescription {
     const VMStateField *fields;
     const VMStateDescription **subsections;
 };
-
-extern const VMStateDescription vmstate_dummy;
 
 extern const VMStateInfo vmstate_info_bool;
 

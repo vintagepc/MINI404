@@ -1,5 +1,5 @@
 test_env = environment()
-test_env.set('PYTHONPATH', meson.source_root() / 'scripts')
+test_env.set('PYTHONPATH', meson.project_source_root() / 'scripts')
 test_env.set('PYTHONIOENCODING', 'utf-8')
 
 schemas = [
@@ -14,6 +14,7 @@ schemas = [
   'alternate-conflict-string.json',
   'alternate-conflict-bool-string.json',
   'alternate-conflict-num-string.json',
+  'alternate-data-invalid.json',
   'alternate-empty.json',
   'alternate-invalid-dict.json',
   'alternate-nested.json',
@@ -36,9 +37,13 @@ schemas = [
   'bad-data.json',
   'bad-ident.json',
   'bad-if.json',
+  'bad-if-all.json',
   'bad-if-empty.json',
   'bad-if-empty-list.json',
+  'bad-if-key.json',
+  'bad-if-keys.json',
   'bad-if-list.json',
+  'bad-if-not.json',
   'bad-type-bool.json',
   'bad-type-dict.json',
   'bad-type-int.json',
@@ -102,22 +107,6 @@ schemas = [
   'features-name-bad-type.json',
   'features-no-list.json',
   'features-unknown-key.json',
-  'flat-union-array-branch.json',
-  'flat-union-bad-base.json',
-  'flat-union-bad-discriminator.json',
-  'flat-union-base-any.json',
-  'flat-union-base-union.json',
-  'flat-union-clash-member.json',
-  'flat-union-discriminator-bad-name.json',
-  'flat-union-empty.json',
-  'flat-union-inline-invalid-dict.json',
-  'flat-union-int-branch.json',
-  'flat-union-invalid-branch-key.json',
-  'flat-union-invalid-discriminator.json',
-  'flat-union-invalid-if-discriminator.json',
-  'flat-union-no-base.json',
-  'flat-union-optional-discriminator.json',
-  'flat-union-string-discriminator.json',
   'funny-char.json',
   'funny-word.json',
   'ident-with-escape.json',
@@ -133,9 +122,11 @@ schemas = [
   'indented-expr.json',
   'leading-comma-list.json',
   'leading-comma-object.json',
+  'missing-array-rsqb.json',
   'missing-colon.json',
   'missing-comma-list.json',
   'missing-comma-object.json',
+  'missing-object-member-element.json',
   'missing-type.json',
   'nested-struct-data.json',
   'nested-struct-data-invalid-dict.json',
@@ -161,7 +152,6 @@ schemas = [
   'reserved-member-q.json',
   'reserved-member-u.json',
   'reserved-member-underscore.json',
-  'reserved-type-kind.json',
   'reserved-type-list.json',
   'returns-alternate.json',
   'returns-array-bad.json',
@@ -184,24 +174,42 @@ schemas = [
   'unclosed-list.json',
   'unclosed-object.json',
   'unclosed-string.json',
+  'union-array-branch.json',
+  'union-bad-base.json',
+  'union-bad-discriminator.json',
+  'union-base-any.json',
   'union-base-empty.json',
   'union-base-no-discriminator.json',
-  'union-branch-case.json',
+  'union-base-union.json',
   'union-branch-if-invalid.json',
   'union-branch-invalid-dict.json',
-  'union-clash-branches.json',
+  'union-clash-member.json',
+  'union-discriminator-bad-name.json',
   'union-empty.json',
+  'union-inline-invalid-dict.json',
+  'union-int-branch.json',
   'union-invalid-base.json',
-  'union-optional-branch.json',
+  'union-invalid-branch-key.json',
+  'union-invalid-data.json',
+  'union-invalid-discriminator.json',
+  'union-invalid-if-discriminator.json',
+  'union-no-base.json',
+  'union-optional-discriminator.json',
+  'union-string-discriminator.json',
   'union-unknown.json',
   'unknown-escape.json',
   'unknown-expr-key.json',
 ]
+schemas = files(schemas)
+
+# Intentionally missing schema file test -- not passed through files():
+schemas += [meson.current_source_dir() / 'missing-schema.json']
 
 # Because people may want to use test-qapi.py from the command line, we
 # are not using the "#! /usr/bin/env python3" trick here.  See
-# docs/devel/build-system.txt
-test('QAPI schema regression tests', python, args: files('test-qapi.py', schemas),
+# docs/devel/build-system.rst
+test('QAPI schema regression tests', python,
+     args: files('test-qapi.py') + schemas,
      env: test_env, suite: ['qapi-schema', 'qapi-frontend'])
 
 diff = find_program('diff')
@@ -233,15 +241,17 @@ if build_docs
                                output: ['doc-good.txt'],
                                input: files('doc-good.json', 'doc-good.rst'),
                                build_by_default: true,
-                               depend_files: sphinx_extn_depends,
+                               depfile: 'docs.d',
                                # We use -E to suppress Sphinx's caching, because
                                # we want it to always really run the QAPI doc
                                # generation code. It also means we don't
                                # clutter up the build dir with the cache.
                                command: [SPHINX_ARGS,
                                          '-b', 'text', '-E',
-                                         '-c', meson.source_root() / 'docs',
+                                         '-c', meson.project_source_root() / 'docs',
                                          '-D', 'master_doc=doc-good',
+                                         '-Ddepfile=@DEPFILE@',
+                                         '-Ddepfile_stamp=doc-good.stamp',
                                          meson.current_source_dir(),
                                          meson.current_build_dir()])
 

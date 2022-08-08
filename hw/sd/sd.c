@@ -116,8 +116,8 @@ struct SDState {
     int32_t state;    /* current card state, one of SDCardStates */
     uint32_t vhs;
     bool wp_switch;
-    unsigned long *wp_groups;
-    int32_t wpgrps_size;
+    unsigned long *wp_group_bmap;
+    int32_t wp_group_bits;
     uint64_t size;
     uint32_t blk_len;
     uint32_t multi_blk_cnt;
@@ -290,12 +290,6 @@ FIELD(OCR, CARD_POWER_UP,              31,  1)
                                | R_OCR_CARD_CAPACITY_MASK \
                                | R_OCR_CARD_POWER_UP_MASK)
 
-static void sd_set_ocr(SDState *sd)
-{
-    /* All voltages OK */
-    sd->ocr = R_OCR_VDD_VOLTAGE_WIN_HI_MASK;
-}
-
 static void sd_ocr_powerup(void *opaque)
 {
     SDState *sd = opaque;
@@ -308,6 +302,22 @@ static void sd_ocr_powerup(void *opaque)
 
     if (sd->size > SDSC_MAX_CAPACITY) {
         sd->ocr = FIELD_DP32(sd->ocr, OCR, CARD_CAPACITY, 1);
+    }
+}
+
+static void sd_set_ocr(SDState *sd)
+{
+    /* All voltages OK */
+    sd->ocr = R_OCR_VDD_VOLTAGE_WIN_HI_MASK;
+
+    if (sd->spi) {
+        /*
+         * We don't need to emulate power up sequence in SPI-mode.
+         * Thus, the card's power up status bit should be set to 1 when reset.
+         * The card's capacity status bit should also be set if SD card size
+         * is larger than 2GB for SDHC support.
+         */
+        sd_ocr_powerup(sd);
     }
 }
 
@@ -560,6 +570,7 @@ static void sd_reset(DeviceState *dev)
 
     sd->state = sd_idle_state;
     sd->rca = 0x0000;
+    sd->size = size;
     sd_set_ocr(sd);
     sd_set_scr(sd);
     sd_set_cid(sd);
@@ -567,14 +578,13 @@ static void sd_reset(DeviceState *dev)
     sd_set_cardstatus(sd);
     sd_set_sdstatus(sd);
 
-    g_free(sd->wp_groups);
+    g_free(sd->wp_group_bmap);
     sd->wp_switch = sd->blk ? !blk_is_writable(sd->blk) : false;
-    sd->wpgrps_size = sect;
-    sd->wp_groups = bitmap_new(sd->wpgrps_size);
+    sd->wp_group_bits = sect;
+    sd->wp_group_bmap = bitmap_new(sd->wp_group_bits);
     memset(sd->function_group, 0, sizeof(sd->function_group));
     sd->erase_start = INVALID_ADDRESS;
     sd->erase_end = INVALID_ADDRESS;
-    sd->size = size;
     sd->blk_len = 0x200;
     sd->pwd_len = 0;
     sd->expecting_acmd = false;
@@ -673,7 +683,7 @@ static const VMStateDescription sd_vmstate = {
         VMSTATE_UINT32(card_status, SDState),
         VMSTATE_PARTIAL_BUFFER(sd_status, SDState, 1),
         VMSTATE_UINT32(vhs, SDState),
-        VMSTATE_BITMAP(wp_groups, SDState, 0, wpgrps_size),
+        VMSTATE_BITMAP(wp_group_bmap, SDState, 0, wp_group_bits),
         VMSTATE_UINT32(blk_len, SDState),
         VMSTATE_UINT32(multi_blk_cnt, SDState),
         VMSTATE_UINT32(erase_start, SDState),
@@ -803,8 +813,8 @@ static void sd_erase(SDState *sd)
         if (sdsc) {
             /* Only SDSC cards support write protect groups */
             wpnum = sd_addr_to_wpnum(erase_addr);
-            assert(wpnum < sd->wpgrps_size);
-            if (test_bit(wpnum, sd->wp_groups)) {
+            assert(wpnum < sd->wp_group_bits);
+            if (test_bit(wpnum, sd->wp_group_bmap)) {
                 sd->card_status |= WP_ERASE_SKIP;
                 continue;
             }
@@ -821,8 +831,15 @@ static uint32_t sd_wpbits(SDState *sd, uint64_t addr)
     wpnum = sd_addr_to_wpnum(addr);
 
     for (i = 0; i < 32; i++, wpnum++, addr += WPGROUP_SIZE) {
-        assert(wpnum < sd->wpgrps_size);
-        if (addr < sd->size && test_bit(wpnum, sd->wp_groups)) {
+        if (addr >= sd->size) {
+            /*
+             * If the addresses of the last groups are outside the valid range,
+             * then the corresponding write protection bits shall be set to 0.
+             */
+            continue;
+        }
+        assert(wpnum < sd->wp_group_bits);
+        if (test_bit(wpnum, sd->wp_group_bmap)) {
             ret |= (1 << i);
         }
     }
@@ -862,7 +879,7 @@ static void sd_function_switch(SDState *sd, uint32_t arg)
 
 static inline bool sd_wp_addr(SDState *sd, uint64_t addr)
 {
-    return test_bit(sd_addr_to_wpnum(addr), sd->wp_groups);
+    return test_bit(sd_addr_to_wpnum(addr), sd->wp_group_bmap);
 }
 
 static void sd_lock_command(SDState *sd)
@@ -890,7 +907,7 @@ static void sd_lock_command(SDState *sd)
             sd->card_status |= LOCK_UNLOCK_FAILED;
             return;
         }
-        bitmap_zero(sd->wp_groups, sd->wpgrps_size);
+        bitmap_zero(sd->wp_group_bmap, sd->wp_group_bits);
         sd->csd[14] &= ~0x10;
         sd->card_status &= ~CARD_IS_LOCKED;
         sd->pwd_len = 0;
@@ -935,6 +952,19 @@ static void sd_lock_command(SDState *sd)
         sd->card_status |= CARD_IS_LOCKED;
     else
         sd->card_status &= ~CARD_IS_LOCKED;
+}
+
+static bool address_in_range(SDState *sd, const char *desc,
+                             uint64_t addr, uint32_t length)
+{
+    if (addr + length > sd->size) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s offset %"PRIu64" > card %"PRIu64" [%%%u]\n",
+                      desc, addr, sd->size, length);
+        sd->card_status |= ADDRESS_ERROR;
+        return false;
+    }
+    return true;
 }
 
 static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
@@ -1218,8 +1248,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
         switch (sd->state) {
         case sd_transfer_state:
 
-            if (addr + sd->blk_len > sd->size) {
-                sd->card_status |= ADDRESS_ERROR;
+            if (!address_in_range(sd, "READ_BLOCK", addr, sd->blk_len)) {
                 return sd_r1;
             }
 
@@ -1264,8 +1293,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
         switch (sd->state) {
         case sd_transfer_state:
 
-            if (addr + sd->blk_len > sd->size) {
-                sd->card_status |= ADDRESS_ERROR;
+            if (!address_in_range(sd, "WRITE_BLOCK", addr, sd->blk_len)) {
                 return sd_r1;
             }
 
@@ -1325,13 +1353,12 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
 
         switch (sd->state) {
         case sd_transfer_state:
-            if (addr >= sd->size) {
-                sd->card_status |= ADDRESS_ERROR;
+            if (!address_in_range(sd, "SET_WRITE_PROT", addr, 1)) {
                 return sd_r1b;
             }
 
             sd->state = sd_programming_state;
-            set_bit(sd_addr_to_wpnum(addr), sd->wp_groups);
+            set_bit(sd_addr_to_wpnum(addr), sd->wp_group_bmap);
             /* Bzzzzzzztt .... Operation complete.  */
             sd->state = sd_transfer_state;
             return sd_r1b;
@@ -1348,13 +1375,12 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
 
         switch (sd->state) {
         case sd_transfer_state:
-            if (addr >= sd->size) {
-                sd->card_status |= ADDRESS_ERROR;
+            if (!address_in_range(sd, "CLR_WRITE_PROT", addr, 1)) {
                 return sd_r1b;
             }
 
             sd->state = sd_programming_state;
-            clear_bit(sd_addr_to_wpnum(addr), sd->wp_groups);
+            clear_bit(sd_addr_to_wpnum(addr), sd->wp_group_bmap);
             /* Bzzzzzzztt .... Operation complete.  */
             sd->state = sd_transfer_state;
             return sd_r1b;
@@ -1371,6 +1397,11 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
 
         switch (sd->state) {
         case sd_transfer_state:
+            if (!address_in_range(sd, "SEND_WRITE_PROT",
+                                  req.arg, sd->blk_len)) {
+                return sd_r1;
+            }
+
             sd->state = sd_sendingdata_state;
             *(uint32_t *) sd->data = sd_wpbits(sd, req.arg);
             sd->data_start = addr;
@@ -1504,7 +1535,8 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
         return sd_illegal;
     }
 
-    qemu_log_mask(LOG_GUEST_ERROR, "SD: CMD%i in a wrong state\n", req.cmd);
+    qemu_log_mask(LOG_GUEST_ERROR, "SD: CMD%i in a wrong state: %s\n",
+                  req.cmd, sd_state_name(sd->state));
     return sd_illegal;
 }
 
@@ -1825,8 +1857,8 @@ void sd_write_byte(SDState *sd, uint8_t value)
     case 25:	/* CMD25:  WRITE_MULTIPLE_BLOCK */
         if (sd->data_offset == 0) {
             /* Start of the block - let's check the address is valid */
-            if (sd->data_start + sd->blk_len > sd->size) {
-                sd->card_status |= ADDRESS_ERROR;
+            if (!address_in_range(sd, "WRITE_MULTIPLE_BLOCK",
+                                  sd->data_start, sd->blk_len)) {
                 break;
             }
             if (sd->size <= SDSC_MAX_CAPACITY) {
@@ -1998,8 +2030,8 @@ uint8_t sd_read_byte(SDState *sd)
 
     case 18:	/* CMD18:  READ_MULTIPLE_BLOCK */
         if (sd->data_offset == 0) {
-            if (sd->data_start + io_len > sd->size) {
-                sd->card_status |= ADDRESS_ERROR;
+            if (!address_in_range(sd, "READ_MULTIPLE_BLOCK",
+                                  sd->data_start, io_len)) {
                 return 0x00;
             }
             BLK_READ_BLOCK(sd->data_start, io_len);

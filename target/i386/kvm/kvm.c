@@ -17,17 +17,19 @@
 #include "qapi/error.h"
 #include <sys/ioctl.h>
 #include <sys/utsname.h>
+#include <sys/syscall.h>
 
 #include <linux/kvm.h>
 #include "standard-headers/asm-x86/kvm_para.h"
 
 #include "cpu.h"
+#include "host-cpu.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/hw_accel.h"
 #include "sysemu/kvm_int.h"
 #include "sysemu/runstate.h"
 #include "kvm_i386.h"
-#include "sev_i386.h"
+#include "sev.h"
 #include "hyperv.h"
 #include "hyperv-proto.h"
 
@@ -36,6 +38,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
+#include "qemu/memalign.h"
 #include "hw/i386/x86.h"
 #include "hw/i386/apic.h"
 #include "hw/i386/apic_internal.h"
@@ -43,7 +46,6 @@
 #include "hw/i386/intel_iommu.h"
 #include "hw/i386/x86-iommu.h"
 #include "hw/i386/e820_memory_layout.h"
-#include "sysemu/sev.h"
 
 #include "hw/pci/pci.h"
 #include "hw/pci/msi.h"
@@ -105,6 +107,7 @@ static bool has_msr_hv_reenlightenment;
 static bool has_msr_xss;
 static bool has_msr_umwait;
 static bool has_msr_spec_ctrl;
+static bool has_tsc_scale_msr;
 static bool has_msr_tsx_ctrl;
 static bool has_msr_virt_ssbd;
 static bool has_msr_smi_count;
@@ -121,14 +124,20 @@ static uint32_t num_architectural_pmu_gp_counters;
 static uint32_t num_architectural_pmu_fixed_counters;
 
 static int has_xsave;
+static int has_xsave2;
 static int has_xcrs;
 static int has_pit_state2;
+static int has_sregs2;
 static int has_exception_payload;
 
 static bool has_msr_mcg_ext_ctl;
 
 static struct kvm_cpuid2 *cpuid_cache;
+static struct kvm_cpuid2 *hv_cpuid_cache;
 static struct kvm_msr_list *kvm_feature_msrs;
+
+#define BUS_LOCK_SLICE_TIME 1000000000ULL /* ns */
+static RateLimit bus_lock_ratelimit_ctrl;
 
 int kvm_has_pit_state2(void)
 {
@@ -288,7 +297,7 @@ static bool host_tsx_broken(void)
     int family, model, stepping;\
     char vendor[CPUID_VENDOR_SZ + 1];
 
-    host_vendor_fms(vendor, &family, &model, &stepping);
+    host_cpu_vendor_fms(vendor, &family, &model, &stepping);
 
     /* Check if we are running on a Haswell host known to have broken TSX */
     return !strcmp(vendor, CPUID_VENDOR_INTEL) &&
@@ -342,6 +351,7 @@ uint32_t kvm_arch_get_supported_cpuid(KVMState *s, uint32_t function,
     struct kvm_cpuid2 *cpuid;
     uint32_t ret = 0;
     uint32_t cpuid_1_edx;
+    uint64_t bitmask;
 
     cpuid = get_supported_cpuid(s);
 
@@ -399,6 +409,34 @@ uint32_t kvm_arch_get_supported_cpuid(KVMState *s, uint32_t function,
         if (!has_msr_arch_capabs) {
             ret &= ~CPUID_7_0_EDX_ARCH_CAPABILITIES;
         }
+    } else if (function == 0xd && index == 0 &&
+               (reg == R_EAX || reg == R_EDX)) {
+        /*
+         * The value returned by KVM_GET_SUPPORTED_CPUID does not include
+         * features that still have to be enabled with the arch_prctl
+         * system call.  QEMU needs the full value, which is retrieved
+         * with KVM_GET_DEVICE_ATTR.
+         */
+        struct kvm_device_attr attr = {
+            .group = 0,
+            .attr = KVM_X86_XCOMP_GUEST_SUPP,
+            .addr = (unsigned long) &bitmask
+        };
+
+        bool sys_attr = kvm_check_extension(s, KVM_CAP_SYS_ATTRIBUTES);
+        if (!sys_attr) {
+            return ret;
+        }
+
+        int rc = kvm_ioctl(s, KVM_GET_DEVICE_ATTR, &attr);
+        if (rc < 0) {
+            if (rc != -ENXIO) {
+                warn_report("KVM_GET_DEVICE_ATTR(0, KVM_X86_XCOMP_GUEST_SUPP) "
+                            "error: %d", rc);
+            }
+            return ret;
+        }
+        ret = (reg == R_EAX) ? bitmask : bitmask >> 32;
     } else if (function == 0x80000001 && reg == R_ECX) {
         /*
          * It's safe to enable TOPOEXT even if it's not returned by
@@ -531,7 +569,7 @@ static void kvm_mce_inject(X86CPU *cpu, hwaddr paddr, int code)
 
     if (code == BUS_MCEERR_AR) {
         status |= MCI_STATUS_AR | 0x134;
-        mcg_status |= MCG_STATUS_EIPV;
+        mcg_status |= MCG_STATUS_RIPV | MCG_STATUS_EIPV;
     } else {
         status |= 0xc0;
         mcg_status |= MCG_STATUS_RIPV;
@@ -714,8 +752,7 @@ unsigned long kvm_arch_vcpu_id(CPUState *cs)
 
 static bool hyperv_enabled(X86CPU *cpu)
 {
-    CPUState *cs = CPU(cpu);
-    return kvm_check_extension(cs->kvm_state, KVM_CAP_HYPERV) > 0 &&
+    return kvm_check_extension(kvm_state, KVM_CAP_HYPERV) > 0 &&
         ((cpu->hyperv_spinlock_attempts != HYPERV_SPINLOCK_NEVER_NOTIFY) ||
          cpu->hyperv_features || cpu->hyperv_passthrough);
 }
@@ -800,7 +837,8 @@ static bool tsc_is_stable_and_known(CPUX86State *env)
 static struct {
     const char *desc;
     struct {
-        uint32_t fw;
+        uint32_t func;
+        int reg;
         uint32_t bits;
     } flags[2];
     uint64_t dependencies;
@@ -808,68 +846,63 @@ static struct {
     [HYPERV_FEAT_RELAXED] = {
         .desc = "relaxed timing (hv-relaxed)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
-             .bits = HV_HYPERCALL_AVAILABLE},
-            {.fw = FEAT_HV_RECOMM_EAX,
+            {.func = HV_CPUID_ENLIGHTMENT_INFO, .reg = R_EAX,
              .bits = HV_RELAXED_TIMING_RECOMMENDED}
         }
     },
     [HYPERV_FEAT_VAPIC] = {
         .desc = "virtual APIC (hv-vapic)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
-             .bits = HV_HYPERCALL_AVAILABLE | HV_APIC_ACCESS_AVAILABLE},
-            {.fw = FEAT_HV_RECOMM_EAX,
-             .bits = HV_APIC_ACCESS_RECOMMENDED}
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
+             .bits = HV_APIC_ACCESS_AVAILABLE}
         }
     },
     [HYPERV_FEAT_TIME] = {
         .desc = "clocksources (hv-time)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
-             .bits = HV_HYPERCALL_AVAILABLE | HV_TIME_REF_COUNT_AVAILABLE |
-             HV_REFERENCE_TSC_AVAILABLE}
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
+             .bits = HV_TIME_REF_COUNT_AVAILABLE | HV_REFERENCE_TSC_AVAILABLE}
         }
     },
     [HYPERV_FEAT_CRASH] = {
         .desc = "crash MSRs (hv-crash)",
         .flags = {
-            {.fw = FEAT_HYPERV_EDX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EDX,
              .bits = HV_GUEST_CRASH_MSR_AVAILABLE}
         }
     },
     [HYPERV_FEAT_RESET] = {
         .desc = "reset MSR (hv-reset)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_RESET_AVAILABLE}
         }
     },
     [HYPERV_FEAT_VPINDEX] = {
         .desc = "VP_INDEX MSR (hv-vpindex)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_VP_INDEX_AVAILABLE}
         }
     },
     [HYPERV_FEAT_RUNTIME] = {
         .desc = "VP_RUNTIME MSR (hv-runtime)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_VP_RUNTIME_AVAILABLE}
         }
     },
     [HYPERV_FEAT_SYNIC] = {
         .desc = "synthetic interrupt controller (hv-synic)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_SYNIC_AVAILABLE}
         }
     },
     [HYPERV_FEAT_STIMER] = {
         .desc = "synthetic timers (hv-stimer)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_SYNTIMERS_AVAILABLE}
         },
         .dependencies = BIT(HYPERV_FEAT_SYNIC) | BIT(HYPERV_FEAT_TIME)
@@ -877,23 +910,23 @@ static struct {
     [HYPERV_FEAT_FREQUENCIES] = {
         .desc = "frequency MSRs (hv-frequencies)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_ACCESS_FREQUENCY_MSRS},
-            {.fw = FEAT_HYPERV_EDX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EDX,
              .bits = HV_FREQUENCY_MSRS_AVAILABLE}
         }
     },
     [HYPERV_FEAT_REENLIGHTENMENT] = {
         .desc = "reenlightenment MSRs (hv-reenlightenment)",
         .flags = {
-            {.fw = FEAT_HYPERV_EAX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EAX,
              .bits = HV_ACCESS_REENLIGHTENMENTS_CONTROL}
         }
     },
     [HYPERV_FEAT_TLBFLUSH] = {
         .desc = "paravirtualized TLB flush (hv-tlbflush)",
         .flags = {
-            {.fw = FEAT_HV_RECOMM_EAX,
+            {.func = HV_CPUID_ENLIGHTMENT_INFO, .reg = R_EAX,
              .bits = HV_REMOTE_TLB_FLUSH_RECOMMENDED |
              HV_EX_PROCESSOR_MASKS_RECOMMENDED}
         },
@@ -902,7 +935,7 @@ static struct {
     [HYPERV_FEAT_EVMCS] = {
         .desc = "enlightened VMCS (hv-evmcs)",
         .flags = {
-            {.fw = FEAT_HV_RECOMM_EAX,
+            {.func = HV_CPUID_ENLIGHTMENT_INFO, .reg = R_EAX,
              .bits = HV_ENLIGHTENED_VMCS_RECOMMENDED}
         },
         .dependencies = BIT(HYPERV_FEAT_VAPIC)
@@ -910,7 +943,7 @@ static struct {
     [HYPERV_FEAT_IPI] = {
         .desc = "paravirtualized IPI (hv-ipi)",
         .flags = {
-            {.fw = FEAT_HV_RECOMM_EAX,
+            {.func = HV_CPUID_ENLIGHTMENT_INFO, .reg = R_EAX,
              .bits = HV_CLUSTER_IPI_RECOMMENDED |
              HV_EX_PROCESSOR_MASKS_RECOMMENDED}
         },
@@ -919,14 +952,22 @@ static struct {
     [HYPERV_FEAT_STIMER_DIRECT] = {
         .desc = "direct mode synthetic timers (hv-stimer-direct)",
         .flags = {
-            {.fw = FEAT_HYPERV_EDX,
+            {.func = HV_CPUID_FEATURES, .reg = R_EDX,
              .bits = HV_STIMER_DIRECT_MODE_AVAILABLE}
         },
         .dependencies = BIT(HYPERV_FEAT_STIMER)
     },
+    [HYPERV_FEAT_AVIC] = {
+        .desc = "AVIC/APICv support (hv-avic/hv-apicv)",
+        .flags = {
+            {.func = HV_CPUID_ENLIGHTMENT_INFO, .reg = R_EAX,
+             .bits = HV_DEPRECATING_AEOI_RECOMMENDED}
+        }
+    },
 };
 
-static struct kvm_cpuid2 *try_get_hv_cpuid(CPUState *cs, int max)
+static struct kvm_cpuid2 *try_get_hv_cpuid(CPUState *cs, int max,
+                                           bool do_sys_ioctl)
 {
     struct kvm_cpuid2 *cpuid;
     int r, size;
@@ -935,7 +976,11 @@ static struct kvm_cpuid2 *try_get_hv_cpuid(CPUState *cs, int max)
     cpuid = g_malloc0(size);
     cpuid->nent = max;
 
-    r = kvm_vcpu_ioctl(cs, KVM_GET_SUPPORTED_HV_CPUID, cpuid);
+    if (do_sys_ioctl) {
+        r = kvm_ioctl(kvm_state, KVM_GET_SUPPORTED_HV_CPUID, cpuid);
+    } else {
+        r = kvm_vcpu_ioctl(cs, KVM_GET_SUPPORTED_HV_CPUID, cpuid);
+    }
     if (r == 0 && cpuid->nent >= max) {
         r = -E2BIG;
     }
@@ -959,16 +1004,44 @@ static struct kvm_cpuid2 *try_get_hv_cpuid(CPUState *cs, int max)
 static struct kvm_cpuid2 *get_supported_hv_cpuid(CPUState *cs)
 {
     struct kvm_cpuid2 *cpuid;
-    int max = 7; /* 0x40000000..0x40000005, 0x4000000A */
+    /* 0x40000000..0x40000005, 0x4000000A, 0x40000080..0x40000080 leaves */
+    int max = 10;
+    int i;
+    bool do_sys_ioctl;
+
+    do_sys_ioctl =
+        kvm_check_extension(kvm_state, KVM_CAP_SYS_HYPERV_CPUID) > 0;
+
+    /*
+     * Non-empty KVM context is needed when KVM_CAP_SYS_HYPERV_CPUID is
+     * unsupported, kvm_hyperv_expand_features() checks for that.
+     */
+    assert(do_sys_ioctl || cs->kvm_state);
 
     /*
      * When the buffer is too small, KVM_GET_SUPPORTED_HV_CPUID fails with
      * -E2BIG, however, it doesn't report back the right size. Keep increasing
      * it and re-trying until we succeed.
      */
-    while ((cpuid = try_get_hv_cpuid(cs, max)) == NULL) {
+    while ((cpuid = try_get_hv_cpuid(cs, max, do_sys_ioctl)) == NULL) {
         max++;
     }
+
+    /*
+     * KVM_GET_SUPPORTED_HV_CPUID does not set EVMCS CPUID bit before
+     * KVM_CAP_HYPERV_ENLIGHTENED_VMCS is enabled but we want to get the
+     * information early, just check for the capability and set the bit
+     * manually.
+     */
+    if (!do_sys_ioctl && kvm_check_extension(cs->kvm_state,
+                            KVM_CAP_HYPERV_ENLIGHTENED_VMCS) > 0) {
+        for (i = 0; i < cpuid->nent; i++) {
+            if (cpuid->entries[i].function == HV_CPUID_ENLIGHTMENT_INFO) {
+                cpuid->entries[i].eax |= HV_ENLIGHTENED_VMCS_RECOMMENDED;
+            }
+        }
+    }
+
     return cpuid;
 }
 
@@ -1065,254 +1138,238 @@ static struct kvm_cpuid2 *get_supported_hv_cpuid_legacy(CPUState *cs)
     return cpuid;
 }
 
-static int hv_cpuid_get_fw(struct kvm_cpuid2 *cpuid, int fw, uint32_t *r)
+static uint32_t hv_cpuid_get_host(CPUState *cs, uint32_t func, int reg)
 {
     struct kvm_cpuid_entry2 *entry;
-    uint32_t func;
-    int reg;
+    struct kvm_cpuid2 *cpuid;
 
-    switch (fw) {
-    case FEAT_HYPERV_EAX:
-        reg = R_EAX;
-        func = HV_CPUID_FEATURES;
-        break;
-    case FEAT_HYPERV_EDX:
-        reg = R_EDX;
-        func = HV_CPUID_FEATURES;
-        break;
-    case FEAT_HV_RECOMM_EAX:
-        reg = R_EAX;
-        func = HV_CPUID_ENLIGHTMENT_INFO;
-        break;
-    default:
-        return -EINVAL;
+    if (hv_cpuid_cache) {
+        cpuid = hv_cpuid_cache;
+    } else {
+        if (kvm_check_extension(kvm_state, KVM_CAP_HYPERV_CPUID) > 0) {
+            cpuid = get_supported_hv_cpuid(cs);
+        } else {
+            /*
+             * 'cs->kvm_state' may be NULL when Hyper-V features are expanded
+             * before KVM context is created but this is only done when
+             * KVM_CAP_SYS_HYPERV_CPUID is supported and it implies
+             * KVM_CAP_HYPERV_CPUID.
+             */
+            assert(cs->kvm_state);
+
+            cpuid = get_supported_hv_cpuid_legacy(cs);
+        }
+        hv_cpuid_cache = cpuid;
+    }
+
+    if (!cpuid) {
+        return 0;
     }
 
     entry = cpuid_find_entry(cpuid, func, 0);
     if (!entry) {
-        return -ENOENT;
-    }
-
-    switch (reg) {
-    case R_EAX:
-        *r = entry->eax;
-        break;
-    case R_EDX:
-        *r = entry->edx;
-        break;
-    default:
-        return -EINVAL;
-    }
-
-    return 0;
-}
-
-static int hv_cpuid_check_and_set(CPUState *cs, struct kvm_cpuid2 *cpuid,
-                                  int feature)
-{
-    X86CPU *cpu = X86_CPU(cs);
-    CPUX86State *env = &cpu->env;
-    uint32_t r, fw, bits;
-    uint64_t deps;
-    int i, dep_feat;
-
-    if (!hyperv_feat_enabled(cpu, feature) && !cpu->hyperv_passthrough) {
         return 0;
     }
+
+    return cpuid_entry_get_reg(entry, reg);
+}
+
+static bool hyperv_feature_supported(CPUState *cs, int feature)
+{
+    uint32_t func, bits;
+    int i, reg;
+
+    for (i = 0; i < ARRAY_SIZE(kvm_hyperv_properties[feature].flags); i++) {
+
+        func = kvm_hyperv_properties[feature].flags[i].func;
+        reg = kvm_hyperv_properties[feature].flags[i].reg;
+        bits = kvm_hyperv_properties[feature].flags[i].bits;
+
+        if (!func) {
+            continue;
+        }
+
+        if ((hv_cpuid_get_host(cs, func, reg) & bits) != bits) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/* Checks that all feature dependencies are enabled */
+static bool hv_feature_check_deps(X86CPU *cpu, int feature, Error **errp)
+{
+    uint64_t deps;
+    int dep_feat;
 
     deps = kvm_hyperv_properties[feature].dependencies;
     while (deps) {
         dep_feat = ctz64(deps);
         if (!(hyperv_feat_enabled(cpu, dep_feat))) {
-                fprintf(stderr,
-                        "Hyper-V %s requires Hyper-V %s\n",
-                        kvm_hyperv_properties[feature].desc,
-                        kvm_hyperv_properties[dep_feat].desc);
-                return 1;
+            error_setg(errp, "Hyper-V %s requires Hyper-V %s",
+                       kvm_hyperv_properties[feature].desc,
+                       kvm_hyperv_properties[dep_feat].desc);
+            return false;
         }
         deps &= ~(1ull << dep_feat);
     }
 
-    for (i = 0; i < ARRAY_SIZE(kvm_hyperv_properties[feature].flags); i++) {
-        fw = kvm_hyperv_properties[feature].flags[i].fw;
-        bits = kvm_hyperv_properties[feature].flags[i].bits;
+    return true;
+}
 
-        if (!fw) {
+static uint32_t hv_build_cpuid_leaf(CPUState *cs, uint32_t func, int reg)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    uint32_t r = 0;
+    int i, j;
+
+    for (i = 0; i < ARRAY_SIZE(kvm_hyperv_properties); i++) {
+        if (!hyperv_feat_enabled(cpu, i)) {
             continue;
         }
 
-        if (hv_cpuid_get_fw(cpuid, fw, &r) || (r & bits) != bits) {
-            if (hyperv_feat_enabled(cpu, feature)) {
-                fprintf(stderr,
-                        "Hyper-V %s is not supported by kernel\n",
-                        kvm_hyperv_properties[feature].desc);
-                return 1;
-            } else {
-                return 0;
+        for (j = 0; j < ARRAY_SIZE(kvm_hyperv_properties[i].flags); j++) {
+            if (kvm_hyperv_properties[i].flags[j].func != func) {
+                continue;
             }
+            if (kvm_hyperv_properties[i].flags[j].reg != reg) {
+                continue;
+            }
+
+            r |= kvm_hyperv_properties[i].flags[j].bits;
         }
-
-        env->features[fw] |= bits;
     }
 
-    if (cpu->hyperv_passthrough) {
-        cpu->hyperv_features |= BIT(feature);
-    }
-
-    return 0;
+    return r;
 }
 
 /*
- * Fill in Hyper-V CPUIDs. Returns the number of entries filled in cpuid_ent in
- * case of success, errno < 0 in case of failure and 0 when no Hyper-V
- * extentions are enabled.
+ * Expand Hyper-V CPU features. In partucular, check that all the requested
+ * features are supported by the host and the sanity of the configuration
+ * (that all the required dependencies are included). Also, this takes care
+ * of 'hv_passthrough' mode and fills the environment with all supported
+ * Hyper-V features.
  */
-static int hyperv_handle_properties(CPUState *cs,
-                                    struct kvm_cpuid_entry2 *cpuid_ent)
+bool kvm_hyperv_expand_features(X86CPU *cpu, Error **errp)
 {
-    X86CPU *cpu = X86_CPU(cs);
-    CPUX86State *env = &cpu->env;
-    struct kvm_cpuid2 *cpuid;
-    struct kvm_cpuid_entry2 *c;
-    uint32_t cpuid_i = 0;
-    int r;
+    CPUState *cs = CPU(cpu);
+    Error *local_err = NULL;
+    int feat;
 
     if (!hyperv_enabled(cpu))
-        return 0;
+        return true;
 
-    if (hyperv_feat_enabled(cpu, HYPERV_FEAT_EVMCS) ||
-        cpu->hyperv_passthrough) {
-        uint16_t evmcs_version;
-
-        r = kvm_vcpu_enable_cap(cs, KVM_CAP_HYPERV_ENLIGHTENED_VMCS, 0,
-                                (uintptr_t)&evmcs_version);
-
-        if (hyperv_feat_enabled(cpu, HYPERV_FEAT_EVMCS) && r) {
-            fprintf(stderr, "Hyper-V %s is not supported by kernel\n",
-                    kvm_hyperv_properties[HYPERV_FEAT_EVMCS].desc);
-            return -ENOSYS;
-        }
-
-        if (!r) {
-            env->features[FEAT_HV_RECOMM_EAX] |=
-                HV_ENLIGHTENED_VMCS_RECOMMENDED;
-            env->features[FEAT_HV_NESTED_EAX] = evmcs_version;
-        }
-    }
-
-    if (kvm_check_extension(cs->kvm_state, KVM_CAP_HYPERV_CPUID) > 0) {
-        cpuid = get_supported_hv_cpuid(cs);
-    } else {
-        cpuid = get_supported_hv_cpuid_legacy(cs);
-    }
+    /*
+     * When kvm_hyperv_expand_features is called at CPU feature expansion
+     * time per-CPU kvm_state is not available yet so we can only proceed
+     * when KVM_CAP_SYS_HYPERV_CPUID is supported.
+     */
+    if (!cs->kvm_state &&
+        !kvm_check_extension(kvm_state, KVM_CAP_SYS_HYPERV_CPUID))
+        return true;
 
     if (cpu->hyperv_passthrough) {
-        memcpy(cpuid_ent, &cpuid->entries[0],
-               cpuid->nent * sizeof(cpuid->entries[0]));
+        cpu->hyperv_vendor_id[0] =
+            hv_cpuid_get_host(cs, HV_CPUID_VENDOR_AND_MAX_FUNCTIONS, R_EBX);
+        cpu->hyperv_vendor_id[1] =
+            hv_cpuid_get_host(cs, HV_CPUID_VENDOR_AND_MAX_FUNCTIONS, R_ECX);
+        cpu->hyperv_vendor_id[2] =
+            hv_cpuid_get_host(cs, HV_CPUID_VENDOR_AND_MAX_FUNCTIONS, R_EDX);
+        cpu->hyperv_vendor = g_realloc(cpu->hyperv_vendor,
+                                       sizeof(cpu->hyperv_vendor_id) + 1);
+        memcpy(cpu->hyperv_vendor, cpu->hyperv_vendor_id,
+               sizeof(cpu->hyperv_vendor_id));
+        cpu->hyperv_vendor[sizeof(cpu->hyperv_vendor_id)] = 0;
 
-        c = cpuid_find_entry(cpuid, HV_CPUID_VENDOR_AND_MAX_FUNCTIONS, 0);
-        if (c) {
-            cpu->hyperv_vendor_id[0] = c->ebx;
-            cpu->hyperv_vendor_id[1] = c->ecx;
-            cpu->hyperv_vendor_id[2] = c->edx;
-        }
+        cpu->hyperv_interface_id[0] =
+            hv_cpuid_get_host(cs, HV_CPUID_INTERFACE, R_EAX);
+        cpu->hyperv_interface_id[1] =
+            hv_cpuid_get_host(cs, HV_CPUID_INTERFACE, R_EBX);
+        cpu->hyperv_interface_id[2] =
+            hv_cpuid_get_host(cs, HV_CPUID_INTERFACE, R_ECX);
+        cpu->hyperv_interface_id[3] =
+            hv_cpuid_get_host(cs, HV_CPUID_INTERFACE, R_EDX);
 
-        c = cpuid_find_entry(cpuid, HV_CPUID_INTERFACE, 0);
-        if (c) {
-            cpu->hyperv_interface_id[0] = c->eax;
-            cpu->hyperv_interface_id[1] = c->ebx;
-            cpu->hyperv_interface_id[2] = c->ecx;
-            cpu->hyperv_interface_id[3] = c->edx;
-        }
+        cpu->hyperv_ver_id_build =
+            hv_cpuid_get_host(cs, HV_CPUID_VERSION, R_EAX);
+        cpu->hyperv_ver_id_major =
+            hv_cpuid_get_host(cs, HV_CPUID_VERSION, R_EBX) >> 16;
+        cpu->hyperv_ver_id_minor =
+            hv_cpuid_get_host(cs, HV_CPUID_VERSION, R_EBX) & 0xffff;
+        cpu->hyperv_ver_id_sp =
+            hv_cpuid_get_host(cs, HV_CPUID_VERSION, R_ECX);
+        cpu->hyperv_ver_id_sb =
+            hv_cpuid_get_host(cs, HV_CPUID_VERSION, R_EDX) >> 24;
+        cpu->hyperv_ver_id_sn =
+            hv_cpuid_get_host(cs, HV_CPUID_VERSION, R_EDX) & 0xffffff;
 
-        c = cpuid_find_entry(cpuid, HV_CPUID_VERSION, 0);
-        if (c) {
-            cpu->hyperv_version_id[0] = c->eax;
-            cpu->hyperv_version_id[1] = c->ebx;
-            cpu->hyperv_version_id[2] = c->ecx;
-            cpu->hyperv_version_id[3] = c->edx;
-        }
+        cpu->hv_max_vps = hv_cpuid_get_host(cs, HV_CPUID_IMPLEMENT_LIMITS,
+                                            R_EAX);
+        cpu->hyperv_limits[0] =
+            hv_cpuid_get_host(cs, HV_CPUID_IMPLEMENT_LIMITS, R_EBX);
+        cpu->hyperv_limits[1] =
+            hv_cpuid_get_host(cs, HV_CPUID_IMPLEMENT_LIMITS, R_ECX);
+        cpu->hyperv_limits[2] =
+            hv_cpuid_get_host(cs, HV_CPUID_IMPLEMENT_LIMITS, R_EDX);
 
-        c = cpuid_find_entry(cpuid, HV_CPUID_FEATURES, 0);
-        if (c) {
-            env->features[FEAT_HYPERV_EAX] = c->eax;
-            env->features[FEAT_HYPERV_EBX] = c->ebx;
-            env->features[FEAT_HYPERV_EDX] = c->edx;
-        }
+        cpu->hyperv_spinlock_attempts =
+            hv_cpuid_get_host(cs, HV_CPUID_ENLIGHTMENT_INFO, R_EBX);
 
-        c = cpuid_find_entry(cpuid, HV_CPUID_IMPLEMENT_LIMITS, 0);
-        if (c) {
-            cpu->hv_max_vps = c->eax;
-            cpu->hyperv_limits[0] = c->ebx;
-            cpu->hyperv_limits[1] = c->ecx;
-            cpu->hyperv_limits[2] = c->edx;
-        }
-
-        c = cpuid_find_entry(cpuid, HV_CPUID_ENLIGHTMENT_INFO, 0);
-        if (c) {
-            env->features[FEAT_HV_RECOMM_EAX] = c->eax;
-
-            /* hv-spinlocks may have been overriden */
-            if (cpu->hyperv_spinlock_attempts != HYPERV_SPINLOCK_NEVER_NOTIFY) {
-                c->ebx = cpu->hyperv_spinlock_attempts;
+        /*
+         * Mark feature as enabled in 'cpu->hyperv_features' as
+         * hv_build_cpuid_leaf() uses this info to build guest CPUIDs.
+         */
+        for (feat = 0; feat < ARRAY_SIZE(kvm_hyperv_properties); feat++) {
+            if (hyperv_feature_supported(cs, feat)) {
+                cpu->hyperv_features |= BIT(feat);
             }
         }
-        c = cpuid_find_entry(cpuid, HV_CPUID_NESTED_FEATURES, 0);
-        if (c) {
-            env->features[FEAT_HV_NESTED_EAX] = c->eax;
+    } else {
+        /* Check features availability and dependencies */
+        for (feat = 0; feat < ARRAY_SIZE(kvm_hyperv_properties); feat++) {
+            /* If the feature was not requested skip it. */
+            if (!hyperv_feat_enabled(cpu, feat)) {
+                continue;
+            }
+
+            /* Check if the feature is supported by KVM */
+            if (!hyperv_feature_supported(cs, feat)) {
+                error_setg(errp, "Hyper-V %s is not supported by kernel",
+                           kvm_hyperv_properties[feat].desc);
+                return false;
+            }
+
+            /* Check dependencies */
+            if (!hv_feature_check_deps(cpu, feat, &local_err)) {
+                error_propagate(errp, local_err);
+                return false;
+            }
         }
     }
-
-    if (cpu->hyperv_no_nonarch_cs == ON_OFF_AUTO_ON) {
-        env->features[FEAT_HV_RECOMM_EAX] |= HV_NO_NONARCH_CORESHARING;
-    } else if (cpu->hyperv_no_nonarch_cs == ON_OFF_AUTO_AUTO) {
-        c = cpuid_find_entry(cpuid, HV_CPUID_ENLIGHTMENT_INFO, 0);
-        if (c) {
-            env->features[FEAT_HV_RECOMM_EAX] |=
-                c->eax & HV_NO_NONARCH_CORESHARING;
-        }
-    }
-
-    /* Features */
-    r = hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_RELAXED);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_VAPIC);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_TIME);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_CRASH);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_RESET);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_VPINDEX);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_RUNTIME);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_SYNIC);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_STIMER);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_FREQUENCIES);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_REENLIGHTENMENT);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_TLBFLUSH);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_EVMCS);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_IPI);
-    r |= hv_cpuid_check_and_set(cs, cpuid, HYPERV_FEAT_STIMER_DIRECT);
 
     /* Additional dependencies not covered by kvm_hyperv_properties[] */
     if (hyperv_feat_enabled(cpu, HYPERV_FEAT_SYNIC) &&
         !cpu->hyperv_synic_kvm_only &&
         !hyperv_feat_enabled(cpu, HYPERV_FEAT_VPINDEX)) {
-        fprintf(stderr, "Hyper-V %s requires Hyper-V %s\n",
-                kvm_hyperv_properties[HYPERV_FEAT_SYNIC].desc,
-                kvm_hyperv_properties[HYPERV_FEAT_VPINDEX].desc);
-        r |= 1;
+        error_setg(errp, "Hyper-V %s requires Hyper-V %s",
+                   kvm_hyperv_properties[HYPERV_FEAT_SYNIC].desc,
+                   kvm_hyperv_properties[HYPERV_FEAT_VPINDEX].desc);
+        return false;
     }
 
-    /* Not exposed by KVM but needed to make CPU hotplug in Windows work */
-    env->features[FEAT_HYPERV_EDX] |= HV_CPU_DYNAMIC_PARTITIONING_AVAILABLE;
+    return true;
+}
 
-    if (r) {
-        r = -ENOSYS;
-        goto free;
-    }
-
-    if (cpu->hyperv_passthrough) {
-        /* We already copied all feature words from KVM as is */
-        r = cpuid->nent;
-        goto free;
-    }
+/*
+ * Fill in Hyper-V CPUIDs. Returns the number of entries filled in cpuid_ent.
+ */
+static int hyperv_fill_cpuids(CPUState *cs,
+                              struct kvm_cpuid_entry2 *cpuid_ent)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    struct kvm_cpuid_entry2 *c;
+    uint32_t cpuid_i = 0;
 
     c = &cpuid_ent[cpuid_i++];
     c->function = HV_CPUID_VENDOR_AND_MAX_FUNCTIONS;
@@ -1331,21 +1388,48 @@ static int hyperv_handle_properties(CPUState *cs,
 
     c = &cpuid_ent[cpuid_i++];
     c->function = HV_CPUID_VERSION;
-    c->eax = cpu->hyperv_version_id[0];
-    c->ebx = cpu->hyperv_version_id[1];
-    c->ecx = cpu->hyperv_version_id[2];
-    c->edx = cpu->hyperv_version_id[3];
+    c->eax = cpu->hyperv_ver_id_build;
+    c->ebx = (uint32_t)cpu->hyperv_ver_id_major << 16 |
+        cpu->hyperv_ver_id_minor;
+    c->ecx = cpu->hyperv_ver_id_sp;
+    c->edx = (uint32_t)cpu->hyperv_ver_id_sb << 24 |
+        (cpu->hyperv_ver_id_sn & 0xffffff);
 
     c = &cpuid_ent[cpuid_i++];
     c->function = HV_CPUID_FEATURES;
-    c->eax = env->features[FEAT_HYPERV_EAX];
-    c->ebx = env->features[FEAT_HYPERV_EBX];
-    c->edx = env->features[FEAT_HYPERV_EDX];
+    c->eax = hv_build_cpuid_leaf(cs, HV_CPUID_FEATURES, R_EAX);
+    c->ebx = hv_build_cpuid_leaf(cs, HV_CPUID_FEATURES, R_EBX);
+    c->edx = hv_build_cpuid_leaf(cs, HV_CPUID_FEATURES, R_EDX);
+
+    /* Unconditionally required with any Hyper-V enlightenment */
+    c->eax |= HV_HYPERCALL_AVAILABLE;
+
+    /* SynIC and Vmbus devices require messages/signals hypercalls */
+    if (hyperv_feat_enabled(cpu, HYPERV_FEAT_SYNIC) &&
+        !cpu->hyperv_synic_kvm_only) {
+        c->ebx |= HV_POST_MESSAGES | HV_SIGNAL_EVENTS;
+    }
+
+
+    /* Not exposed by KVM but needed to make CPU hotplug in Windows work */
+    c->edx |= HV_CPU_DYNAMIC_PARTITIONING_AVAILABLE;
 
     c = &cpuid_ent[cpuid_i++];
     c->function = HV_CPUID_ENLIGHTMENT_INFO;
-    c->eax = env->features[FEAT_HV_RECOMM_EAX];
+    c->eax = hv_build_cpuid_leaf(cs, HV_CPUID_ENLIGHTMENT_INFO, R_EAX);
     c->ebx = cpu->hyperv_spinlock_attempts;
+
+    if (hyperv_feat_enabled(cpu, HYPERV_FEAT_VAPIC) &&
+        !hyperv_feat_enabled(cpu, HYPERV_FEAT_AVIC)) {
+        c->eax |= HV_APIC_ACCESS_RECOMMENDED;
+    }
+
+    if (cpu->hyperv_no_nonarch_cs == ON_OFF_AUTO_ON) {
+        c->eax |= HV_NO_NONARCH_CORESHARING;
+    } else if (cpu->hyperv_no_nonarch_cs == ON_OFF_AUTO_AUTO) {
+        c->eax |= hv_cpuid_get_host(cs, HV_CPUID_ENLIGHTMENT_INFO, R_EAX) &
+            HV_NO_NONARCH_CORESHARING;
+    }
 
     c = &cpuid_ent[cpuid_i++];
     c->function = HV_CPUID_IMPLEMENT_LIMITS;
@@ -1355,7 +1439,7 @@ static int hyperv_handle_properties(CPUState *cs,
     c->edx = cpu->hyperv_limits[2];
 
     if (hyperv_feat_enabled(cpu, HYPERV_FEAT_EVMCS)) {
-        __u32 function;
+        uint32_t function;
 
         /* Create zeroed 0x40000006..0x40000009 leaves */
         for (function = HV_CPUID_IMPLEMENT_LIMITS + 1;
@@ -1366,18 +1450,29 @@ static int hyperv_handle_properties(CPUState *cs,
 
         c = &cpuid_ent[cpuid_i++];
         c->function = HV_CPUID_NESTED_FEATURES;
-        c->eax = env->features[FEAT_HV_NESTED_EAX];
+        c->eax = cpu->hyperv_nested[0];
     }
-    r = cpuid_i;
 
-free:
-    g_free(cpuid);
-
-    return r;
+    return cpuid_i;
 }
 
 static Error *hv_passthrough_mig_blocker;
 static Error *hv_no_nonarch_cs_mig_blocker;
+
+/* Checks that the exposed eVMCS version range is supported by KVM */
+static bool evmcs_version_supported(uint16_t evmcs_version,
+                                    uint16_t supported_evmcs_version)
+{
+    uint8_t min_version = evmcs_version & 0xff;
+    uint8_t max_version = evmcs_version >> 8;
+    uint8_t min_supported_version = supported_evmcs_version & 0xff;
+    uint8_t max_supported_version = supported_evmcs_version >> 8;
+
+    return (min_version >= min_supported_version) &&
+        (max_version <= max_supported_version);
+}
+
+#define DEFAULT_EVMCS_VERSION ((1 << 8) | 1)
 
 static int hyperv_init_vcpu(X86CPU *cpu)
 {
@@ -1390,9 +1485,8 @@ static int hyperv_init_vcpu(X86CPU *cpu)
                    "'hv-passthrough' CPU flag prevents migration, use explicit"
                    " set of hv-* flags instead");
         ret = migrate_add_blocker(hv_passthrough_mig_blocker, &local_err);
-        if (local_err) {
+        if (ret < 0) {
             error_report_err(local_err);
-            error_free(hv_passthrough_mig_blocker);
             return ret;
         }
     }
@@ -1405,9 +1499,8 @@ static int hyperv_init_vcpu(X86CPU *cpu)
                    " make sure SMT is disabled and/or that vCPUs are properly"
                    " pinned)");
         ret = migrate_add_blocker(hv_no_nonarch_cs_mig_blocker, &local_err);
-        if (local_err) {
+        if (ret < 0) {
             error_report_err(local_err);
-            error_free(hv_no_nonarch_cs_mig_blocker);
             return ret;
         }
     }
@@ -1457,12 +1550,72 @@ static int hyperv_init_vcpu(X86CPU *cpu)
         }
     }
 
+    if (hyperv_feat_enabled(cpu, HYPERV_FEAT_EVMCS)) {
+        uint16_t evmcs_version = DEFAULT_EVMCS_VERSION;
+        uint16_t supported_evmcs_version;
+
+        ret = kvm_vcpu_enable_cap(cs, KVM_CAP_HYPERV_ENLIGHTENED_VMCS, 0,
+                                  (uintptr_t)&supported_evmcs_version);
+
+        /*
+         * KVM is required to support EVMCS ver.1. as that's what 'hv-evmcs'
+         * option sets. Note: we hardcode the maximum supported eVMCS version
+         * to '1' as well so 'hv-evmcs' feature is migratable even when (and if)
+         * ver.2 is implemented. A new option (e.g. 'hv-evmcs=2') will then have
+         * to be added.
+         */
+        if (ret < 0) {
+            error_report("Hyper-V %s is not supported by kernel",
+                         kvm_hyperv_properties[HYPERV_FEAT_EVMCS].desc);
+            return ret;
+        }
+
+        if (!evmcs_version_supported(evmcs_version, supported_evmcs_version)) {
+            error_report("eVMCS version range [%d..%d] is not supported by "
+                         "kernel (supported: [%d..%d])", evmcs_version & 0xff,
+                         evmcs_version >> 8, supported_evmcs_version & 0xff,
+                         supported_evmcs_version >> 8);
+            return -ENOTSUP;
+        }
+
+        cpu->hyperv_nested[0] = evmcs_version;
+    }
+
+    if (cpu->hyperv_enforce_cpuid) {
+        ret = kvm_vcpu_enable_cap(cs, KVM_CAP_HYPERV_ENFORCE_CPUID, 0, 1);
+        if (ret < 0) {
+            error_report("failed to enable KVM_CAP_HYPERV_ENFORCE_CPUID: %s",
+                         strerror(-ret));
+            return ret;
+        }
+    }
+
     return 0;
 }
 
 static Error *invtsc_mig_blocker;
 
 #define KVM_MAX_CPUID_ENTRIES  100
+
+static void kvm_init_xsave(CPUX86State *env)
+{
+    if (has_xsave2) {
+        env->xsave_buf_len = QEMU_ALIGN_UP(has_xsave2, 4096);
+    } else if (has_xsave) {
+        env->xsave_buf_len = sizeof(struct kvm_xsave);
+    } else {
+        return;
+    }
+
+    env->xsave_buf = qemu_memalign(4096, env->xsave_buf_len);
+    memset(env->xsave_buf, 0, env->xsave_buf_len);
+    /*
+     * The allocated storage must be large enough for all of the
+     * possible XSAVE state components.
+     */
+    assert(kvm_arch_get_supported_cpuid(kvm_state, 0xd, 0, R_ECX) <=
+           env->xsave_buf_len);
+}
 
 int kvm_arch_init_vcpu(CPUState *cs)
 {
@@ -1493,6 +1646,8 @@ int kvm_arch_init_vcpu(CPUState *cs)
 
     cpuid_i = 0;
 
+    has_xsave2 = kvm_check_extension(cs->kvm_state, KVM_CAP_XSAVE2);
+
     r = kvm_arch_set_tsc_khz(cs);
     if (r < 0) {
         return r;
@@ -1514,12 +1669,26 @@ int kvm_arch_init_vcpu(CPUState *cs)
 
     env->apic_bus_freq = KVM_APIC_BUS_FREQUENCY;
 
-    /* Paravirtualization CPUIDs */
-    r = hyperv_handle_properties(cs, cpuid_data.entries);
-    if (r < 0) {
-        return r;
-    } else if (r > 0) {
-        cpuid_i = r;
+    /*
+     * kvm_hyperv_expand_features() is called here for the second time in case
+     * KVM_CAP_SYS_HYPERV_CPUID is not supported. While we can't possibly handle
+     * 'query-cpu-model-expansion' in this case as we don't have a KVM vCPU to
+     * check which Hyper-V enlightenments are supported and which are not, we
+     * can still proceed and check/expand Hyper-V enlightenments here so legacy
+     * behavior is preserved.
+     */
+    if (!kvm_hyperv_expand_features(cpu, &local_err)) {
+        error_report_err(local_err);
+        return -ENOSYS;
+    }
+
+    if (hyperv_enabled(cpu)) {
+        r = hyperv_init_vcpu(cpu);
+        if (r) {
+            return r;
+        }
+
+        cpuid_i = hyperv_fill_cpuids(cs, cpuid_data.entries);
         kvm_base = KVM_CPUID_SIGNATURE_NEXT;
         has_msr_hv_hypercall = true;
     }
@@ -1540,6 +1709,16 @@ int kvm_arch_init_vcpu(CPUState *cs)
     }
 
     cpu_x86_cpuid(env, 0, 0, &limit, &unused, &unused, &unused);
+
+    if (cpu->kvm_pv_enforce_cpuid) {
+        r = kvm_vcpu_enable_cap(cs, KVM_CAP_ENFORCE_PV_FEATURE_CPUID, 0, 1);
+        if (r < 0) {
+            fprintf(stderr,
+                    "failed to enable KVM_CAP_ENFORCE_PV_FEATURE_CPUID: %s",
+                    strerror(-r));
+            abort();
+        }
+    }
 
     for (i = 0; i <= limit; i++) {
         if (cpuid_i == KVM_MAX_CPUID_ENTRIES) {
@@ -1615,7 +1794,28 @@ int kvm_arch_init_vcpu(CPUState *cs)
             }
             break;
         case 0x7:
-        case 0x14: {
+        case 0x12:
+            for (j = 0; ; j++) {
+                c->function = i;
+                c->flags = KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
+                c->index = j;
+                cpu_x86_cpuid(env, i, j, &c->eax, &c->ebx, &c->ecx, &c->edx);
+
+                if (j > 1 && (c->eax & 0xf) != 1) {
+                    break;
+                }
+
+                if (cpuid_i == KVM_MAX_CPUID_ENTRIES) {
+                    fprintf(stderr, "cpuid_data is full, no space for "
+                                "cpuid(eax:0x12,ecx:0x%x)\n", j);
+                    abort();
+                }
+                c = &cpuid_data.entries[cpuid_i++];
+            }
+            break;
+        case 0x14:
+        case 0x1d:
+        case 0x1e: {
             uint32_t times;
 
             c->function = i;
@@ -1789,6 +1989,11 @@ int kvm_arch_init_vcpu(CPUState *cs)
                                   !!(c->ecx & CPUID_EXT_SMX);
     }
 
+    c = cpuid_find_entry(&cpuid_data.cpuid, 7, 0);
+    if (c && (c->ebx & CPUID_7_0_EBX_SGX)) {
+        has_msr_feature_control = true;
+    }
+
     if (env->mcg_cap & MCG_LMCE_P) {
         has_msr_mcg_ext_ctl = has_msr_feature_control = true;
     }
@@ -1800,9 +2005,8 @@ int kvm_arch_init_vcpu(CPUState *cs)
                        "State blocked by non-migratable CPU device"
                        " (invtsc flag)");
             r = migrate_add_blocker(invtsc_mig_blocker, &local_err);
-            if (local_err) {
+            if (r < 0) {
                 error_report_err(local_err);
-                error_free(invtsc_mig_blocker);
                 return r;
             }
         }
@@ -1833,11 +2037,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
     if (r) {
         goto fail;
     }
-
-    if (has_xsave) {
-        env->xsave_buf = qemu_memalign(4096, sizeof(struct kvm_xsave));
-        memset(env->xsave_buf, 0, sizeof(struct kvm_xsave));
-    }
+    kvm_init_xsave(env);
 
     max_nested_state_len = kvm_max_nested_state_length();
     if (max_nested_state_len > 0) {
@@ -1868,11 +2068,6 @@ int kvm_arch_init_vcpu(CPUState *cs)
 
     kvm_init_msrs(cpu);
 
-    r = hyperv_init_vcpu(cpu);
-    if (r) {
-        goto fail;
-    }
-
     return 0;
 
  fail:
@@ -1885,6 +2080,8 @@ int kvm_arch_destroy_vcpu(CPUState *cs)
 {
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env = &cpu->env;
+
+    g_free(env->xsave_buf);
 
     if (cpu->kvm_msr_buf) {
         g_free(cpu->kvm_msr_buf);
@@ -2067,6 +2264,9 @@ static int kvm_get_supported_msrs(KVMState *s)
             case MSR_IA32_SPEC_CTRL:
                 has_msr_spec_ctrl = true;
                 break;
+            case MSR_AMD64_TSC_RATIO:
+                has_tsc_scale_msr = true;
+                break;
             case MSR_IA32_TSX_CTRL:
                 has_msr_tsx_ctrl = true;
                 break;
@@ -2134,7 +2334,7 @@ static void register_smram_listener(Notifier *n, void *unused)
 
     address_space_init(&smram_address_space, &smram_as_root, "KVM-SMRAM");
     kvm_memory_listener_register(kvm_state, &smram_listener,
-                                 &smram_address_space, 1);
+                                 &smram_address_space, 1, "kvm-smram");
 }
 
 int kvm_arch_init(MachineState *ms, KVMState *s)
@@ -2171,6 +2371,7 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     has_xsave = kvm_check_extension(s, KVM_CAP_XSAVE);
     has_xcrs = kvm_check_extension(s, KVM_CAP_XCRS);
     has_pit_state2 = kvm_check_extension(s, KVM_CAP_PIT_STATE2);
+    has_sregs2 = kvm_check_extension(s, KVM_CAP_SREGS2) > 0;
 
     hv_vpindex_settable = kvm_check_extension(s, KVM_CAP_HYPERV_VP_INDEX);
 
@@ -2264,6 +2465,28 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         if (ret < 0) {
             error_report("kvm: guest stopping CPU not supported: %s",
                          strerror(-ret));
+        }
+    }
+
+    if (object_dynamic_cast(OBJECT(ms), TYPE_X86_MACHINE)) {
+        X86MachineState *x86ms = X86_MACHINE(ms);
+
+        if (x86ms->bus_lock_ratelimit > 0) {
+            ret = kvm_check_extension(s, KVM_CAP_X86_BUS_LOCK_EXIT);
+            if (!(ret & KVM_BUS_LOCK_DETECTION_EXIT)) {
+                error_report("kvm: bus lock detection unsupported");
+                return -ENOTSUP;
+            }
+            ret = kvm_vm_enable_cap(s, KVM_CAP_X86_BUS_LOCK_EXIT, 0,
+                                    KVM_BUS_LOCK_DETECTION_EXIT);
+            if (ret < 0) {
+                error_report("kvm: Failed to enable bus lock detection cap: %s",
+                             strerror(-ret));
+                return ret;
+            }
+            ratelimit_init(&bus_lock_ratelimit_ctrl);
+            ratelimit_set_speed(&bus_lock_ratelimit_ctrl,
+                                x86ms->bus_lock_ratelimit, BUS_LOCK_SLICE_TIME);
         }
     }
 
@@ -2396,54 +2619,15 @@ static int kvm_put_fpu(X86CPU *cpu)
     return kvm_vcpu_ioctl(CPU(cpu), KVM_SET_FPU, &fpu);
 }
 
-#define XSAVE_FCW_FSW     0
-#define XSAVE_FTW_FOP     1
-#define XSAVE_CWD_RIP     2
-#define XSAVE_CWD_RDP     4
-#define XSAVE_MXCSR       6
-#define XSAVE_ST_SPACE    8
-#define XSAVE_XMM_SPACE   40
-#define XSAVE_XSTATE_BV   128
-#define XSAVE_YMMH_SPACE  144
-#define XSAVE_BNDREGS     240
-#define XSAVE_BNDCSR      256
-#define XSAVE_OPMASK      272
-#define XSAVE_ZMM_Hi256   288
-#define XSAVE_Hi16_ZMM    416
-#define XSAVE_PKRU        672
-
-#define XSAVE_BYTE_OFFSET(word_offset) \
-    ((word_offset) * sizeof_field(struct kvm_xsave, region[0]))
-
-#define ASSERT_OFFSET(word_offset, field) \
-    QEMU_BUILD_BUG_ON(XSAVE_BYTE_OFFSET(word_offset) != \
-                      offsetof(X86XSaveArea, field))
-
-ASSERT_OFFSET(XSAVE_FCW_FSW, legacy.fcw);
-ASSERT_OFFSET(XSAVE_FTW_FOP, legacy.ftw);
-ASSERT_OFFSET(XSAVE_CWD_RIP, legacy.fpip);
-ASSERT_OFFSET(XSAVE_CWD_RDP, legacy.fpdp);
-ASSERT_OFFSET(XSAVE_MXCSR, legacy.mxcsr);
-ASSERT_OFFSET(XSAVE_ST_SPACE, legacy.fpregs);
-ASSERT_OFFSET(XSAVE_XMM_SPACE, legacy.xmm_regs);
-ASSERT_OFFSET(XSAVE_XSTATE_BV, header.xstate_bv);
-ASSERT_OFFSET(XSAVE_YMMH_SPACE, avx_state);
-ASSERT_OFFSET(XSAVE_BNDREGS, bndreg_state);
-ASSERT_OFFSET(XSAVE_BNDCSR, bndcsr_state);
-ASSERT_OFFSET(XSAVE_OPMASK, opmask_state);
-ASSERT_OFFSET(XSAVE_ZMM_Hi256, zmm_hi256_state);
-ASSERT_OFFSET(XSAVE_Hi16_ZMM, hi16_zmm_state);
-ASSERT_OFFSET(XSAVE_PKRU, pkru_state);
-
 static int kvm_put_xsave(X86CPU *cpu)
 {
     CPUX86State *env = &cpu->env;
-    X86XSaveArea *xsave = env->xsave_buf;
+    void *xsave = env->xsave_buf;
 
     if (!has_xsave) {
         return kvm_put_fpu(cpu);
     }
-    x86_cpu_xsave_all_areas(cpu, xsave);
+    x86_cpu_xsave_all_areas(cpu, xsave, env->xsave_buf_len);
 
     return kvm_vcpu_ioctl(CPU(cpu), KVM_SET_XSAVE, xsave);
 }
@@ -2469,11 +2653,11 @@ static int kvm_put_sregs(X86CPU *cpu)
     CPUX86State *env = &cpu->env;
     struct kvm_sregs sregs;
 
+    /*
+     * The interrupt_bitmap is ignored because KVM_SET_SREGS is
+     * always followed by KVM_SET_VCPU_EVENTS.
+     */
     memset(sregs.interrupt_bitmap, 0, sizeof(sregs.interrupt_bitmap));
-    if (env->interrupt_injected >= 0) {
-        sregs.interrupt_bitmap[env->interrupt_injected / 64] |=
-                (uint64_t)1 << (env->interrupt_injected % 64);
-    }
 
     if ((env->eflags & VM_MASK)) {
         set_v8086_seg(&sregs.cs, &env->segs[R_CS]);
@@ -2513,6 +2697,61 @@ static int kvm_put_sregs(X86CPU *cpu)
 
     return kvm_vcpu_ioctl(CPU(cpu), KVM_SET_SREGS, &sregs);
 }
+
+static int kvm_put_sregs2(X86CPU *cpu)
+{
+    CPUX86State *env = &cpu->env;
+    struct kvm_sregs2 sregs;
+    int i;
+
+    sregs.flags = 0;
+
+    if ((env->eflags & VM_MASK)) {
+        set_v8086_seg(&sregs.cs, &env->segs[R_CS]);
+        set_v8086_seg(&sregs.ds, &env->segs[R_DS]);
+        set_v8086_seg(&sregs.es, &env->segs[R_ES]);
+        set_v8086_seg(&sregs.fs, &env->segs[R_FS]);
+        set_v8086_seg(&sregs.gs, &env->segs[R_GS]);
+        set_v8086_seg(&sregs.ss, &env->segs[R_SS]);
+    } else {
+        set_seg(&sregs.cs, &env->segs[R_CS]);
+        set_seg(&sregs.ds, &env->segs[R_DS]);
+        set_seg(&sregs.es, &env->segs[R_ES]);
+        set_seg(&sregs.fs, &env->segs[R_FS]);
+        set_seg(&sregs.gs, &env->segs[R_GS]);
+        set_seg(&sregs.ss, &env->segs[R_SS]);
+    }
+
+    set_seg(&sregs.tr, &env->tr);
+    set_seg(&sregs.ldt, &env->ldt);
+
+    sregs.idt.limit = env->idt.limit;
+    sregs.idt.base = env->idt.base;
+    memset(sregs.idt.padding, 0, sizeof sregs.idt.padding);
+    sregs.gdt.limit = env->gdt.limit;
+    sregs.gdt.base = env->gdt.base;
+    memset(sregs.gdt.padding, 0, sizeof sregs.gdt.padding);
+
+    sregs.cr0 = env->cr[0];
+    sregs.cr2 = env->cr[2];
+    sregs.cr3 = env->cr[3];
+    sregs.cr4 = env->cr[4];
+
+    sregs.cr8 = cpu_get_apic_tpr(cpu->apic_state);
+    sregs.apic_base = cpu_get_apic_base(cpu->apic_state);
+
+    sregs.efer = env->efer;
+
+    if (env->pdptrs_valid) {
+        for (i = 0; i < 4; i++) {
+            sregs.pdptrs[i] = env->pdptrs[i];
+        }
+        sregs.flags |= KVM_SREGS2_FLAGS_PDPTRS_VALID;
+    }
+
+    return kvm_vcpu_ioctl(CPU(cpu), KVM_SET_SREGS2, &sregs);
+}
+
 
 static void kvm_msr_buf_reset(X86CPU *cpu)
 {
@@ -2630,8 +2869,6 @@ static uint64_t make_vmx_msr_value(uint32_t index, uint32_t features)
     return must_be_one | (((uint64_t)can_be_one) << 32);
 }
 
-#define VMCS12_MAX_FIELD_INDEX (0x17)
-
 static void kvm_msr_entry_add_vmx(X86CPU *cpu, FeatureWordArray f)
 {
     uint64_t kvm_vmx_basic =
@@ -2721,8 +2958,14 @@ static void kvm_msr_entry_add_vmx(X86CPU *cpu, FeatureWordArray f)
                       CR0_PE_MASK | CR0_PG_MASK | CR0_NE_MASK);
     kvm_msr_entry_add(cpu, MSR_IA32_VMX_CR4_FIXED0,
                       CR4_VMXE_MASK);
-    kvm_msr_entry_add(cpu, MSR_IA32_VMX_VMCS_ENUM,
-                      VMCS12_MAX_FIELD_INDEX << 1);
+
+    if (f[FEAT_VMX_SECONDARY_CTLS] & VMX_SECONDARY_EXEC_TSC_SCALING) {
+        /* TSC multiplier (0x2032).  */
+        kvm_msr_entry_add(cpu, MSR_IA32_VMX_VMCS_ENUM, 0x32);
+    } else {
+        /* Preemption timer (0x482E).  */
+        kvm_msr_entry_add(cpu, MSR_IA32_VMX_VMCS_ENUM, 0x2E);
+    }
 }
 
 static void kvm_msr_entry_add_perf(X86CPU *cpu, FeatureWordArray f)
@@ -2836,6 +3079,10 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
     if (has_msr_spec_ctrl) {
         kvm_msr_entry_add(cpu, MSR_IA32_SPEC_CTRL, env->spec_ctrl);
     }
+    if (has_tsc_scale_msr) {
+        kvm_msr_entry_add(cpu, MSR_AMD64_TSC_RATIO, env->amd_tsc_scale_msr);
+    }
+
     if (has_msr_tsx_ctrl) {
         kvm_msr_entry_add(cpu, MSR_IA32_TSX_CTRL, env->tsx_ctrl);
     }
@@ -3030,6 +3277,24 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
             }
         }
 
+        if (env->features[FEAT_7_0_ECX] & CPUID_7_0_ECX_SGX_LC) {
+            kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH0,
+                              env->msr_ia32_sgxlepubkeyhash[0]);
+            kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH1,
+                              env->msr_ia32_sgxlepubkeyhash[1]);
+            kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH2,
+                              env->msr_ia32_sgxlepubkeyhash[2]);
+            kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH3,
+                              env->msr_ia32_sgxlepubkeyhash[3]);
+        }
+
+        if (env->features[FEAT_XSAVE] & CPUID_D_1_EAX_XFD) {
+            kvm_msr_entry_add(cpu, MSR_IA32_XFD,
+                              env->msr_xfd);
+            kvm_msr_entry_add(cpu, MSR_IA32_XFD_ERR,
+                              env->msr_xfd_err);
+        }
+
         /* Note: MSR_IA32_FEATURE_CONTROL is written separately, see
          *       kvm_put_msr_feature_control. */
     }
@@ -3084,18 +3349,19 @@ static int kvm_get_fpu(X86CPU *cpu)
 static int kvm_get_xsave(X86CPU *cpu)
 {
     CPUX86State *env = &cpu->env;
-    X86XSaveArea *xsave = env->xsave_buf;
-    int ret;
+    void *xsave = env->xsave_buf;
+    int type, ret;
 
     if (!has_xsave) {
         return kvm_get_fpu(cpu);
     }
 
-    ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_XSAVE, xsave);
+    type = has_xsave2 ? KVM_GET_XSAVE2 : KVM_GET_XSAVE;
+    ret = kvm_vcpu_ioctl(CPU(cpu), type, xsave);
     if (ret < 0) {
         return ret;
     }
-    x86_cpu_xrstor_all_areas(cpu, xsave);
+    x86_cpu_xrstor_all_areas(cpu, xsave, env->xsave_buf_len);
 
     return 0;
 }
@@ -3129,22 +3395,55 @@ static int kvm_get_sregs(X86CPU *cpu)
 {
     CPUX86State *env = &cpu->env;
     struct kvm_sregs sregs;
-    int bit, i, ret;
+    int ret;
 
     ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_SREGS, &sregs);
     if (ret < 0) {
         return ret;
     }
 
-    /* There can only be one pending IRQ set in the bitmap at a time, so try
-       to find it and save its number instead (-1 for none). */
-    env->interrupt_injected = -1;
-    for (i = 0; i < ARRAY_SIZE(sregs.interrupt_bitmap); i++) {
-        if (sregs.interrupt_bitmap[i]) {
-            bit = ctz64(sregs.interrupt_bitmap[i]);
-            env->interrupt_injected = i * 64 + bit;
-            break;
-        }
+    /*
+     * The interrupt_bitmap is ignored because KVM_GET_SREGS is
+     * always preceded by KVM_GET_VCPU_EVENTS.
+     */
+
+    get_seg(&env->segs[R_CS], &sregs.cs);
+    get_seg(&env->segs[R_DS], &sregs.ds);
+    get_seg(&env->segs[R_ES], &sregs.es);
+    get_seg(&env->segs[R_FS], &sregs.fs);
+    get_seg(&env->segs[R_GS], &sregs.gs);
+    get_seg(&env->segs[R_SS], &sregs.ss);
+
+    get_seg(&env->tr, &sregs.tr);
+    get_seg(&env->ldt, &sregs.ldt);
+
+    env->idt.limit = sregs.idt.limit;
+    env->idt.base = sregs.idt.base;
+    env->gdt.limit = sregs.gdt.limit;
+    env->gdt.base = sregs.gdt.base;
+
+    env->cr[0] = sregs.cr0;
+    env->cr[2] = sregs.cr2;
+    env->cr[3] = sregs.cr3;
+    env->cr[4] = sregs.cr4;
+
+    env->efer = sregs.efer;
+
+    /* changes to apic base and cr8/tpr are read back via kvm_arch_post_run */
+    x86_update_hflags(env);
+
+    return 0;
+}
+
+static int kvm_get_sregs2(X86CPU *cpu)
+{
+    CPUX86State *env = &cpu->env;
+    struct kvm_sregs2 sregs;
+    int i, ret;
+
+    ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_SREGS2, &sregs);
+    if (ret < 0) {
+        return ret;
     }
 
     get_seg(&env->segs[R_CS], &sregs.cs);
@@ -3168,6 +3467,14 @@ static int kvm_get_sregs(X86CPU *cpu)
     env->cr[4] = sregs.cr4;
 
     env->efer = sregs.efer;
+
+    env->pdptrs_valid = sregs.flags & KVM_SREGS2_FLAGS_PDPTRS_VALID;
+
+    if (env->pdptrs_valid) {
+        for (i = 0; i < 4; i++) {
+            env->pdptrs[i] = sregs.pdptrs[i];
+        }
+    }
 
     /* changes to apic base and cr8/tpr are read back via kvm_arch_post_run */
     x86_update_hflags(env);
@@ -3230,6 +3537,10 @@ static int kvm_get_msrs(X86CPU *cpu)
     if (has_msr_spec_ctrl) {
         kvm_msr_entry_add(cpu, MSR_IA32_SPEC_CTRL, 0);
     }
+    if (has_tsc_scale_msr) {
+        kvm_msr_entry_add(cpu, MSR_AMD64_TSC_RATIO, 0);
+    }
+
     if (has_msr_tsx_ctrl) {
         kvm_msr_entry_add(cpu, MSR_IA32_TSX_CTRL, 0);
     }
@@ -3367,6 +3678,18 @@ static int kvm_get_msrs(X86CPU *cpu)
         for (i = 0; i < addr_num; i++) {
             kvm_msr_entry_add(cpu, MSR_IA32_RTIT_ADDR0_A + i, 0);
         }
+    }
+
+    if (env->features[FEAT_7_0_ECX] & CPUID_7_0_ECX_SGX_LC) {
+        kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH0, 0);
+        kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH1, 0);
+        kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH2, 0);
+        kvm_msr_entry_add(cpu, MSR_IA32_SGXLEPUBKEYHASH3, 0);
+    }
+
+    if (env->features[FEAT_XSAVE] & CPUID_D_1_EAX_XFD) {
+        kvm_msr_entry_add(cpu, MSR_IA32_XFD, 0);
+        kvm_msr_entry_add(cpu, MSR_IA32_XFD_ERR, 0);
     }
 
     ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_MSRS, cpu->kvm_msr_buf);
@@ -3634,6 +3957,9 @@ static int kvm_get_msrs(X86CPU *cpu)
         case MSR_IA32_SPEC_CTRL:
             env->spec_ctrl = msrs[i].data;
             break;
+        case MSR_AMD64_TSC_RATIO:
+            env->amd_tsc_scale_msr = msrs[i].data;
+            break;
         case MSR_IA32_TSX_CTRL:
             env->tsx_ctrl = msrs[i].data;
             break;
@@ -3657,6 +3983,16 @@ static int kvm_get_msrs(X86CPU *cpu)
             break;
         case MSR_IA32_RTIT_ADDR0_A ... MSR_IA32_RTIT_ADDR3_B:
             env->msr_rtit_addrs[index - MSR_IA32_RTIT_ADDR0_A] = msrs[i].data;
+            break;
+        case MSR_IA32_SGXLEPUBKEYHASH0 ... MSR_IA32_SGXLEPUBKEYHASH3:
+            env->msr_ia32_sgxlepubkeyhash[index - MSR_IA32_SGXLEPUBKEYHASH0] =
+                           msrs[i].data;
+            break;
+        case MSR_IA32_XFD:
+            env->msr_xfd = msrs[i].data;
+            break;
+        case MSR_IA32_XFD_ERR:
+            env->msr_xfd_err = msrs[i].data;
             break;
         }
     }
@@ -4000,7 +4336,7 @@ int kvm_arch_put_registers(CPUState *cpu, int level)
     assert(cpu_is_stopped(cpu) || qemu_cpu_is_self(cpu));
 
     /* must be before kvm_put_nested_state so that EFER.SVME is set */
-    ret = kvm_put_sregs(x86_cpu);
+    ret = has_sregs2 ? kvm_put_sregs2(x86_cpu) : kvm_put_sregs(x86_cpu);
     if (ret < 0) {
         return ret;
     }
@@ -4105,7 +4441,7 @@ int kvm_arch_get_registers(CPUState *cs)
     if (ret < 0) {
         goto out;
     }
-    ret = kvm_get_sregs(cpu);
+    ret = has_sregs2 ? kvm_get_sregs2(cpu) : kvm_get_sregs(cpu);
     if (ret < 0) {
         goto out;
     }
@@ -4221,6 +4557,15 @@ void kvm_arch_pre_run(CPUState *cpu, struct kvm_run *run)
     }
 }
 
+static void kvm_rate_limit_on_bus_lock(void)
+{
+    uint64_t delay_ns = ratelimit_calculate_delay(&bus_lock_ratelimit_ctrl, 1);
+
+    if (delay_ns) {
+        g_usleep(delay_ns / SCALE_US);
+    }
+}
+
 MemTxAttrs kvm_arch_post_run(CPUState *cpu, struct kvm_run *run)
 {
     X86CPU *x86_cpu = X86_CPU(cpu);
@@ -4235,6 +4580,9 @@ MemTxAttrs kvm_arch_post_run(CPUState *cpu, struct kvm_run *run)
         env->eflags |= IF_MASK;
     } else {
         env->eflags &= ~IF_MASK;
+    }
+    if (run->flags & KVM_RUN_X86_BUS_LOCK) {
+        kvm_rate_limit_on_bus_lock();
     }
 
     /* We need to protect the apic state against concurrent accesses from
@@ -4528,6 +4876,35 @@ void kvm_arch_update_guest_debug(CPUState *cpu, struct kvm_guest_debug *dbg)
     }
 }
 
+static bool has_sgx_provisioning;
+
+static bool __kvm_enable_sgx_provisioning(KVMState *s)
+{
+    int fd, ret;
+
+    if (!kvm_vm_check_extension(s, KVM_CAP_SGX_ATTRIBUTE)) {
+        return false;
+    }
+
+    fd = qemu_open_old("/dev/sgx_provision", O_RDONLY);
+    if (fd < 0) {
+        return false;
+    }
+
+    ret = kvm_vm_enable_cap(s, KVM_CAP_SGX_ATTRIBUTE, 0, fd);
+    if (ret) {
+        error_report("Could not enable SGX PROVISIONKEY: %s", strerror(-ret));
+        exit(1);
+    }
+    close(fd);
+    return true;
+}
+
+bool kvm_enable_sgx_provisioning(KVMState *s)
+{
+    return MEMORIZE(__kvm_enable_sgx_provisioning(s), has_sgx_provisioning);
+}
+
 static bool host_supports_vmx(void)
 {
     uint32_t ecx, unused;
@@ -4594,6 +4971,10 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         ioapic_eoi_broadcast(run->eoi.vector);
         ret = 0;
         break;
+    case KVM_EXIT_X86_BUS_LOCK:
+        /* already handled in kvm_arch_post_run */
+        ret = 0;
+        break;
     default:
         fprintf(stderr, "KVM: unknown exit reason %d\n", run->exit_reason);
         ret = -1;
@@ -4623,16 +5004,18 @@ void kvm_arch_init_irq_routing(KVMState *s)
     kvm_gsi_routing_allowed = true;
 
     if (kvm_irqchip_is_split()) {
+        KVMRouteChange c = kvm_irqchip_begin_route_changes(s);
         int i;
 
         /* If the ioapic is in QEMU and the lapics are in KVM, reserve
            MSI routes for signaling interrupts to the local apics. */
         for (i = 0; i < IOAPIC_NUM_PINS; i++) {
-            if (kvm_irqchip_add_msi_route(s, 0, NULL) < 0) {
+            if (kvm_irqchip_add_msi_route(&c, 0, NULL) < 0) {
                 error_report("Could not enable split IRQ mode.");
                 exit(1);
             }
         }
+        kvm_irqchip_commit_route_changes(&c);
     }
 }
 
@@ -4831,4 +5214,40 @@ bool kvm_has_waitpkg(void)
 bool kvm_arch_cpu_check_are_resettable(void)
 {
     return !sev_es_enabled();
+}
+
+#define ARCH_REQ_XCOMP_GUEST_PERM       0x1025
+
+void kvm_request_xsave_components(X86CPU *cpu, uint64_t mask)
+{
+    KVMState *s = kvm_state;
+    uint64_t supported;
+
+    mask &= XSTATE_DYNAMIC_MASK;
+    if (!mask) {
+        return;
+    }
+    /*
+     * Just ignore bits that are not in CPUID[EAX=0xD,ECX=0].
+     * ARCH_REQ_XCOMP_GUEST_PERM would fail, and QEMU has warned
+     * about them already because they are not supported features.
+     */
+    supported = kvm_arch_get_supported_cpuid(s, 0xd, 0, R_EAX);
+    supported |= (uint64_t)kvm_arch_get_supported_cpuid(s, 0xd, 0, R_EDX) << 32;
+    mask &= supported;
+
+    while (mask) {
+        int bit = ctz64(mask);
+        int rc = syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_GUEST_PERM, bit);
+        if (rc) {
+            /*
+             * Older kernel version (<5.17) do not support
+             * ARCH_REQ_XCOMP_GUEST_PERM, but also do not return
+             * any dynamic feature from kvm_arch_get_supported_cpuid.
+             */
+            warn_report("prctl(ARCH_REQ_XCOMP_GUEST_PERM) failure "
+                        "for feature bit %d", bit);
+        }
+        mask &= ~BIT_ULL(bit);
+    }
 }

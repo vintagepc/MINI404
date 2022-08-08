@@ -382,7 +382,7 @@ SRST
 ERST
 
     {
-        .name       = "stop",
+        .name       = "stop|s",
         .args_type  = "",
         .params     = "",
         .help       = "stop emulation",
@@ -390,7 +390,7 @@ ERST
     },
 
 SRST
-``stop``
+``stop`` or ``s``
   Stop emulation.
 ERST
 
@@ -1269,6 +1269,7 @@ ERST
         .help       = "add host network device",
         .cmd        = hmp_netdev_add,
         .command_completion = netdev_add_completion,
+        .flags      = "p",
     },
 
 SRST
@@ -1283,6 +1284,7 @@ ERST
         .help       = "remove host network device",
         .cmd        = hmp_netdev_del,
         .command_completion = netdev_del_completion,
+        .flags      = "p",
     },
 
 SRST
@@ -1297,6 +1299,7 @@ ERST
         .help       = "create QOM object",
         .cmd        = hmp_object_add,
         .command_completion = object_add_completion,
+        .flags      = "p",
     },
 
 SRST
@@ -1311,6 +1314,7 @@ ERST
         .help       = "destroy QOM object",
         .cmd        = hmp_object_del,
         .command_completion = object_del_completion,
+        .flags      = "p",
     },
 
 SRST
@@ -1510,34 +1514,35 @@ ERST
 
     {
         .name       = "set_password",
-        .args_type  = "protocol:s,password:s,connected:s?",
-        .params     = "protocol password action-if-connected",
+        .args_type  = "protocol:s,password:s,display:-ds,connected:s?",
+        .params     = "protocol password [-d display] [action-if-connected]",
         .help       = "set spice/vnc password",
         .cmd        = hmp_set_password,
     },
 
 SRST
-``set_password [ vnc | spice ] password [ action-if-connected ]``
-  Change spice/vnc password.  Use zero to make the password stay valid
-  forever.  *action-if-connected* specifies what should happen in
-  case a connection is established: *fail* makes the password change
-  fail.  *disconnect* changes the password and disconnects the
-  client.  *keep* changes the password and keeps the connection up.
-  *keep* is the default.
+``set_password [ vnc | spice ] password [ -d display ] [ action-if-connected ]``
+  Change spice/vnc password.  *display* can be used with 'vnc' to specify
+  which display to set the password on.  *action-if-connected* specifies
+  what should happen in case a connection is established: *fail* makes
+  the password change fail.  *disconnect* changes the password and
+  disconnects the client.  *keep* changes the password and keeps the
+  connection up.  *keep* is the default.
 ERST
 
     {
         .name       = "expire_password",
-        .args_type  = "protocol:s,time:s",
-        .params     = "protocol time",
+        .args_type  = "protocol:s,time:s,display:-ds",
+        .params     = "protocol time [-d display]",
         .help       = "set spice/vnc password expire-time",
         .cmd        = hmp_expire_password,
     },
 
 SRST
-``expire_password [ vnc | spice ]`` *expire-time*
-  Specify when a password for spice/vnc becomes
-  invalid. *expire-time* accepts:
+``expire_password [ vnc | spice ] expire-time [ -d display ]``
+  Specify when a password for spice/vnc becomes invalid.
+  *display* behaves the same as in ``set_password``.
+  *expire-time* accepts:
 
   ``now``
     Invalidate password instantly.
@@ -1667,7 +1672,7 @@ ERST
 
     {
         .name       = "replay_break",
-        .args_type  = "icount:i",
+        .args_type  = "icount:l",
         .params     = "icount",
         .help       = "set breakpoint at the specified instruction count",
         .cmd        = hmp_replay_break,
@@ -1699,7 +1704,7 @@ ERST
 
     {
         .name       = "replay_seek",
-        .args_type  = "icount:i",
+        .args_type  = "icount:l",
         .params     = "icount",
         .help       = "replay execution to the specified instruction count",
         .cmd        = hmp_replay_seek,
@@ -1725,3 +1730,19 @@ ERST
         .flags      = "p",
     },
 
+SRST
+``calc_dirty_rate`` *second*
+  Start a round of dirty rate measurement with the period specified in *second*.
+  The result of the dirty rate measurement may be observed with ``info
+  dirty_rate`` command.
+ERST
+
+    {
+        .name       = "calc_dirty_rate",
+        .args_type  = "dirty_ring:-r,dirty_bitmap:-b,second:l,sample_pages_per_GB:l?",
+        .params     = "[-r] [-b] second [sample_pages_per_GB]",
+        .help       = "start a round of guest dirty rate measurement (using -r to"
+                      "\n\t\t\t specify dirty ring as the method of calculation and"
+                      "\n\t\t\t -b to specify dirty bitmap as method of calculation)",
+        .cmd        = hmp_calc_dirty_rate,
+    },
