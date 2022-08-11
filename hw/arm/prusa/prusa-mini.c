@@ -29,13 +29,16 @@
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
-#include "stm32f407/stm32f407_soc.h"
 #include "hw/arm/boot.h"
 #include "hw/ssi/ssi.h"
 #include "hw/loader.h"
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 #include "parts/dashboard_types.h"
+#include "stm32_common/stm32_shared.h"
+#include "stm32_common/stm32_common.h"
+#include "stm32_common/stm32_types.h"
+#include "hw/arm/armv7m.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
