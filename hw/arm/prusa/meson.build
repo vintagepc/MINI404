@@ -54,6 +54,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'utility/p404_keyclient.c',
         'utility/p404_motor_if.c',
         'utility/text_helper.c',
+        'utility/usbip_server.c',
     ))
 
 # Use CONFIG_PRUSA_STM32_HACKS when building our target to enable our specific workarounds
