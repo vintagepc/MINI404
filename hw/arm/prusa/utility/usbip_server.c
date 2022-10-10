@@ -1,7 +1,7 @@
 #include "usbip_server.h"
 #include "usbip.h"
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+//#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 
 
 static void pack(int * data, int size)
@@ -204,6 +204,8 @@ static void unpack(int * data, int size)
 
 static void handle_device_list(const USB_DEVICE_DESCRIPTOR *dev_dsc, OP_REP_DEVLIST *list)
 {
+//     DEVSTATE(USBIP_DATA)
+printf("devlist req\n");
   CONFIG_GEN * conf= (CONFIG_GEN *)configuration;
   int i;
   list->header.version=htons(273);

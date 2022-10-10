@@ -1,6 +1,6 @@
 /* ########################################################################
 
-   USBIP hardware emulation 
+   USBIP hardware emulation
 
    ########################################################################
 
@@ -221,7 +221,7 @@ typedef struct __attribute__ ((__packed__)) _CONFIG_CDC
 } CONFIG_CDC;
 
 //=================================================================================
-//USBIP data struct 
+//USBIP data struct
 
 typedef struct  __attribute__ ((__packed__)) _OP_REQ_DEVLIST
 {
@@ -254,7 +254,7 @@ byte bDeviceClass;
 byte bDeviceSubClass;
 byte bDeviceProtocol;
 byte bConfigurationValue;
-byte bNumConfigurations; 
+byte bNumConfigurations;
 byte bNumInterfaces;
 }OP_REP_DEVLIST_DEVICE;
 
@@ -346,7 +346,7 @@ int status;
 int actual_length;
 int start_frame;
 int number_of_packets;
-int error_count; 
+int error_count;
 long long setup;
 }USBIP_RET_SUBMIT;
 
@@ -398,3 +398,5 @@ extern const unsigned char *strings[];
 
 void handle_data(int sockfd, USBIP_RET_SUBMIT *usb_req, int bl);
 void handle_unknown_control(int sockfd, StandardDeviceRequest * control_req, USBIP_RET_SUBMIT *usb_req);
+
+#undef word
