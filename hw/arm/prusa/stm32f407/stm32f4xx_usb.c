@@ -1081,8 +1081,8 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 				}
 				else
 				{
-					printf("Starting USB IP thread...\n");
-					pthread_create(&s->usbip_thread, NULL, usbip_thread_run, (void*)&s->usbip_cfg);
+					// printf("Starting USB IP thread...\n");
+					// pthread_create(&s->usbip_thread, NULL, usbip_thread_run, (void*)&s->usbip_cfg);
 				}
            		s->device_state = DEV_ST_USBIP;
             	timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
@@ -1272,7 +1272,7 @@ static void STM32F4xx_cdc_helper(void* opaque) {
 }
 
 // end CDC handlers.
-
+/*
 static void STM32F4xx_usbip_handle_packet(USBIPIF *self, USBIP_CMD_SUBMIT* cmd, USBIP_RET_SUBMIT* usb_req)
 {
     printf("Handle packet called: Setup: %llx\n", cmd->setup);
@@ -1366,7 +1366,7 @@ static void STM32F4xx_usbip_handle_packet(USBIPIF *self, USBIP_CMD_SUBMIT* cmd, 
     s->usbip_tx_level = 0;
     pthread_mutex_unlock(&s->usbip_tx_mtx);
 }
-
+*/
 // Packet handling for device mode (chardev CDC, or USBIP.)
 static void STM32F4xx_usb_devmode_packet(STM32F4xxUSBState *s, int epnum)
 {
@@ -3287,8 +3287,8 @@ static void STM32F4xx_class_init(ObjectClass *klass, void *data)
     resettable_class_set_parent_phases(rc, STM32F4xx_reset_enter, STM32F4xx_reset_hold,
                                        STM32F4xx_reset_exit, &c->parent_phases);
 
-    USBIPServerClass *sc = USBIP_SERVER_CLASS(dc);
-    sc->usbip_handle_packet = STM32F4xx_usbip_handle_packet;
+    //USBIPServerClass *sc = USBIP_SERVER_CLASS(dc);
+    //sc->usbip_handle_packet = STM32F4xx_usbip_handle_packet;
 }
 
 static const TypeInfo STM32F4xx_usb_type_info = {
