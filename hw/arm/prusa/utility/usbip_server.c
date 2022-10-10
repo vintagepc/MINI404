@@ -268,7 +268,7 @@ extern bool usbip_read_payload(usbip_cfg_t* cfg, char* buffer, unsigned int size
     int nb;
     if ((nb = recv (cfg->_private_fd, buffer , size, 0)) != size)
     {
-        printf ("read_payload recv error : %s %d of %d bytes \n", strerror (errno), nb, size);
+        printf ("read_payload recv error : %s %d of %u bytes \n", strerror (errno), nb, size);
         return false;
     };
     return true;
@@ -448,16 +448,16 @@ void * usbip_thread_run(void* run_info)
              print_recv((char *)&cmd, sizeof(USBIP_CMD_SUBMIT),"USBIP_CMD_SUBMIT");
 #endif
              unpack((int *)&cmd,sizeof(USBIP_CMD_SUBMIT));
-             printf("usbip cmd %u\n",cmd.command);
-             printf("usbip seqnum %u\n",cmd.seqnum);
-             printf("usbip devid %u\n",cmd.devid);
-             printf("usbip direction %u\n",cmd.direction);
-             printf("usbip ep %u\n",cmd.ep);
-             printf("usbip flags %u\n",cmd.transfer_flags);
-             printf("usbip number of packets %u\n",cmd.number_of_packets);
-             printf("usbip interval %u\n",cmd.interval);
+             printf("usbip cmd %d\n",cmd.command);
+             printf("usbip seqnum %d\n",cmd.seqnum);
+             printf("usbip devid %d\n",cmd.devid);
+             printf("usbip direction %d\n",cmd.direction);
+             printf("usbip ep %d\n",cmd.ep);
+             printf("usbip flags %d\n",cmd.transfer_flags);
+             printf("usbip number of packets %d\n",cmd.number_of_packets);
+             printf("usbip interval %d\n",cmd.interval);
             //  printf("usbip setup %"PRI"\n",cmd.setup);
-             printf("usbip buffer lenght  %u\n",cmd.transfer_buffer_length);
+             printf("usbip buffer lenght  %d\n",cmd.transfer_buffer_length);
              usb_req.command=0;
              usb_req.seqnum=cmd.seqnum;
              usb_req.devid=cmd.devid;
@@ -481,7 +481,7 @@ void * usbip_thread_run(void* run_info)
 
              if(cmd.command == 2) //unlink urb
              {
-                printf("####################### Unlink URB %u  (not working!!!)\n",cmd.transfer_flags);
+                printf("####################### Unlink URB %d  (not working!!!)\n",cmd.transfer_flags);
              //FIXME
                /*
                 USBIP_RET_UNLINK ret;

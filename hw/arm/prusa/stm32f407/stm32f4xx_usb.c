@@ -62,6 +62,8 @@
 #define USB_HZ_HS       96000000 // was 96, this might be wrong but STM clocks usb at 48 mhz
 #define USB_FRMINTVL    12000
 
+#define USBIP_ENABLED 0
+
 // Register indexes.
 enum REGDEF {
 	RI_HREG_BEGIN = 0x500/4,
@@ -645,7 +647,7 @@ struct STM32F4xxUSBState {
 	// Dev mode storage block:
 		USB_DEVICE_DESCRIPTOR dev_descriptor;
 	// -- End storage block:
-
+#if USBIP_ENABLED
     // ALERT: this stuff crosses thread boundaries!
         pthread_t usbip_thread;
         pthread_mutex_t usbip_rx_mtx;
@@ -660,7 +662,7 @@ struct STM32F4xxUSBState {
         pthread_cond_t usip_reply_ready;
         usbip_cfg_t usbip_cfg;
     // END ALERT
-
+#endif
     bool debug;
 
 	bool is_device_mode;
@@ -1073,6 +1075,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             s->dregi[0].DIEPCTL.EPENA = 0;
 			if (!qemu_chr_fe_backend_connected(&s->cdc))
 			{
+#if USBIP_ENABLED
 				// USBIP mode since there is no attached chardev.
 				// Start the thread.
 				if (s->usbip_thread)
@@ -1086,6 +1089,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 				}
            		s->device_state = DEV_ST_USBIP;
             	timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
+#endif
 			}
 			else
 			{
@@ -1177,6 +1181,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                 STM32F4xx_raise_device_ep_in_irq(s, 2, DIEPMSK_XFERCOMPLMSK);
 			}
 		break;
+#if USBIP_ENABLED
 		case DEV_ST_USBIP:
 		{
             bool has_data = false;
@@ -1262,6 +1267,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         }
         timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 1000);
         break;
+#endif
 		default:
 			printf("FIXME: %s - don't know how to handle packet in state %d\n", __func__, s->device_state);
 	}
@@ -1427,6 +1433,7 @@ static void STM32F4xx_usb_devmode_packet(STM32F4xxUSBState *s, int epnum)
 			}
 		}
 		break;
+#if USBIP_ENABLED
 		case DEV_ST_USBIP:
 		{
 			pthread_mutex_lock(&s->usbip_tx_mtx);
@@ -1469,6 +1476,7 @@ static void STM32F4xx_usb_devmode_packet(STM32F4xxUSBState *s, int epnum)
 			pthread_mutex_unlock(&s->usbip_tx_mtx);
 		}
 		break;
+#endif
 		default:
 			printf("FIXME: %s - don't know how to handle packet in state %d\n", __func__, s->device_state);
 	}
@@ -2559,11 +2567,11 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
                 //DC connected, start setup.
                 if (s->dreg_defs.DCTL.SDIS) {
                     s->device_state = 0;//DEV_ST_RESET;
-                } else if (!s->usbip_cfg.self) {
-                    if (!qemu_chr_fe_backend_connected(&s->cdc))
-					{
-                        s->usbip_cfg.self = USBIP_SERVER(s);
-                    }
+                } else {
+                    // if (!qemu_chr_fe_backend_connected(&s->cdc))
+					// {
+					// 	s->usbip_cfg.self = USBIP_SERVER(s); #endif
+                    // }
                     f4xx_usb_cdc_setup(s);
                 }
             }
@@ -2918,17 +2926,18 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     {
         words_needed++;
     }
-    s->usbip_pending_tx_size[index] = words_needed;
 
     if ( (s->fifo_level[index]) >= words_needed && packets_left>0) {
         // Enough data written to do a transfer...
     //     //printf("Data ready for tx on %u\n", index);
     //     if (s->device_state == DEV_ST_RESET) {
     //         // NOT CDC hack
+#if USBIP_ENABLED
 			if (s->device_state >= DEV_ST_USBIP)
 			{
 	        	s->usbip_pending_tx_bytes[index] = bytes_needed;
 			}
+#endif
             STM32F4xx_tx_packet(s, index<<3);
     //     } else {
     //         STM32F4xx_cdc_schedule(s);
@@ -3148,8 +3157,9 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
     qemu_chr_fe_set_handlers(&s->cdc, f4xx_usb_cdc_can_receive, f4xx_usb_cdc_receive, NULL,
             NULL,s,NULL,true);
     qemu_chr_fe_set_echo(&s->cdc, true);
-
+#if USBIP_ENABLED
 	s->usbip_cfg.port = 3240;
+#endif
 }
 
 static void STM32F4xx_init(Object *obj)
@@ -3299,7 +3309,7 @@ static const TypeInfo STM32F4xx_usb_type_info = {
     .class_size    = sizeof(STM32F4xxClass),
     .class_init    = STM32F4xx_class_init,
     .interfaces = (InterfaceInfo[]) {
-        { TYPE_USBIP_SERVER },
+//        { TYPE_USBIP_SERVER },
         { }
     }
 };
