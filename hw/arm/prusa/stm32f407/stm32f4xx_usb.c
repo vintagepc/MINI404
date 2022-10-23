@@ -1016,7 +1016,7 @@ static void STM32F4xx_cdc_schedule(STM32F4xxUSBState *s) {
 static int f4xx_usb_cdc_can_receive(void *opaque)
 {
     STM32F4xxUSBState *s = STM32F4xx_USB(opaque);
-    return s->cdc_in == 0;
+    return s->cdc_in == 0 && s->drego[2].DIEPTSIZ.XFRSIZ == 64;
 }
 
 static void f4xx_usb_cdc_receive(void *opaque, const uint8_t *buf, int size)
