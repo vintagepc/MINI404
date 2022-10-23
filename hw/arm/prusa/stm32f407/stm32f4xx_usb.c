@@ -1420,8 +1420,18 @@ static void STM32F4xx_usb_devmode_packet(STM32F4xxUSBState *s, int epnum)
 		{
 			if (epnum > 0)
 			{
-				qemu_chr_fe_write_all(&s->cdc, (uint8_t*)s->tx_fifos[epnum], s->dregi[epnum].DIEPTSIZ.XFRSIZ);
-				qemu_chr_fe_write(&s->cdc, (const uint8_t*)"\r",1);
+				//qemu_chr_fe_write_all(&s->cdc, (uint8_t*)s->tx_fifos[epnum], s->dregi[epnum].DIEPTSIZ.XFRSIZ);
+				// qemu_chr_fe_write(&s->cdc, (const uint8_t*)"\r",1);
+				uint8_t* ptr =(uint8_t*)s->tx_fifos[epnum];
+				for (int i=0; i<s->dregi[epnum].DIEPTSIZ.XFRSIZ; i++)
+				{
+					if (*ptr == '\n')
+					{
+						qemu_chr_fe_write(&s->cdc, (const uint8_t*)"\r",1);
+					}
+					qemu_chr_fe_write(&s->cdc, ptr++,1);
+
+				}
 				STM32F4xx_lower_device_ep_in_irq(s, epnum, DIEPMSK_TXFIFOEMPTY);
 				s->fifo_head[epnum] = s->fifo_tail[epnum] = s->fifo_level[epnum] = 0;
 				s->dregi[epnum].DIEPTSIZ.XFRSIZ = 0;
