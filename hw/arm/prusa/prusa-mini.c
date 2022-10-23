@@ -74,16 +74,19 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     dev = qdev_new(TYPE_STM32F407xG_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-	DeviceState* dev_soc = dev;
-    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
-    // Parse those now.
-    arghelper_setargs(machine->kernel_cmdline);
+	arghelper_setargs(machine->kernel_cmdline);
     int default_flash_size = stm32_soc_get_flash_size(dev);
     if (arghelper_is_arg("4x_flash"))
     {
         default_flash_size <<=2; // quadruple the flash size for debug code.
     }
+    qdev_prop_set_uint32(dev,"flash-size", default_flash_size);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+	DeviceState* dev_soc = dev;
+    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
+    // Parse those now.
+
+
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
