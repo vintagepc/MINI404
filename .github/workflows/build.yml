@@ -23,7 +23,7 @@ jobs:
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v2.5.0
       if: ${{ github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -31,7 +31,7 @@ jobs:
         submodules: false
 
     - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v2.5.0
       if: ${{ !github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -39,7 +39,7 @@ jobs:
         submodules: false
 
     - name: Cache packages
-      uses: actions/cache@v1.0.3
+      uses: actions/cache@v3.0.11
       id: cache-pkgs
       with:
           path: "packages"
@@ -65,7 +65,7 @@ jobs:
       run: cd ${{ runner.workspace }}/MINI404 && make -j3
 
     - name: Checkout Wiki
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v2.5.0
       if: ${{ !github.event.pull_request }}
       with:
         repository: vintagepc/MINI404.wiki.git
@@ -92,7 +92,7 @@ jobs:
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3.1.1
       with:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
@@ -105,7 +105,7 @@ jobs:
     steps:
   #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v2.5.0
       if: ${{ github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -113,7 +113,7 @@ jobs:
         submodules: true
 
     - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v2.5.0
       if: ${{ !github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -140,7 +140,7 @@ jobs:
 
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3.1.1
       with:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
@@ -160,7 +160,7 @@ jobs:
         run: git config --global core.autocrlf false
 
       - name: Checkout ${{ github.event.pull_request.head.ref }}
-        uses: actions/checkout@v2.2.0
+        uses: actions/checkout@v2.5.0
         if: ${{ github.event.pull_request }}
         with:
           repository: ${{ github.repository }}
@@ -168,7 +168,7 @@ jobs:
           submodules: false
 
       - name: Checkout ${{ github.event.ref }}
-        uses: actions/checkout@v2.2.0
+        uses: actions/checkout@v2.5.0
         if: ${{ !github.event.pull_request }}
         with:
           repository: ${{ github.repository }}
@@ -206,7 +206,7 @@ jobs:
 
       - name: Upload Cygwin artifact
         if: ${{ !github.event.pull_request }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3.1.1
         with:
           name: Binaries
           path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-w64.zip
@@ -217,7 +217,7 @@ jobs:
     needs: [build_linux, build_msys, build_macos]
     steps:
       - name: Retrieve platform binaries
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3.0.1
         with:
           name: Binaries
 
