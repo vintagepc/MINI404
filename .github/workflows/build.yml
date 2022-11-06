@@ -62,7 +62,7 @@ jobs:
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
 
     - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && make -j3
+      run: cd ${{ runner.workspace }}/MINI404/build && ninja
 
     - name: Checkout Wiki
       uses: actions/checkout@v3

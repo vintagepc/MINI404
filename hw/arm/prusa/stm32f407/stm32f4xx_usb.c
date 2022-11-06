@@ -714,7 +714,7 @@ typedef union {
         uint32_t DPID :2;
         uint32_t PKTSTS :4;
         uint32_t :11;
-    } HOST QEMU_PACKED;
+    } QEMU_PACKED HOST;
     struct {
         uint32_t EPNUM :4;
         uint32_t BCNT :11;
@@ -723,7 +723,7 @@ typedef union {
         uint32_t FRMNUM :4;
         uint32_t :6;
         REG_B32(INCOMPLETE); // NB- this isn't used by the device, rather by us to handle multi-packet IN transfers.
-    } DEV QEMU_PACKED;
+    } QEMU_PACKED DEV;
 } buffer_header_t;
 
 enum {
