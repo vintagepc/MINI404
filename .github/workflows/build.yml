@@ -153,8 +153,15 @@ jobs:
         uses: msys2/setup-msys2@v2
         with: 
           msystem: MINGW64
-          install: make git zip mingw-w64-x86_64-diffutils diffutils python-3.9.13-1-x86_64 mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl mingw-w64-x86_64-SDL2_image
-
+          install: make git zip wget mingw-w64-x86_64-diffutils diffutils mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl mingw-w64-x86_64-SDL2_image
+      
+      - name: Install old Python
+        run: |
+          wget https://repo.msys2.org/msys/x86_64/python-3.9.13-1-x86_64.pkg.tar.zst
+          wget https://repo.msys2.org/msys/x86_64/python-3.9.13-1-x86_64.pkg.tar.zst.sig
+          pacman -U python-3.9.13-1-x86_64.pkg.tar.zst
+        shell: msys2 {0}
+        
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
 
