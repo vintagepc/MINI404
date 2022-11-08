@@ -70,6 +70,7 @@ jobs:
       with:
         repository: vintagepc/MINI404.wiki.git
         path: ref
+        ref: master
 
     - name: Regen docs
       if: ${{ !github.event.pull_request }}
