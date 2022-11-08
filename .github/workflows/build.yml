@@ -157,9 +157,9 @@ jobs:
       
       - name: Install old Python
         run: |
-          wget https://repo.msys2.org/msys/x86_64/python-3.9.13-1-x86_64.pkg.tar.zst
-          wget https://repo.msys2.org/msys/x86_64/python-3.9.13-1-x86_64.pkg.tar.zst.sig
-          pacman --noconfirm -U python-3.9.13-1-x86_64.pkg.tar.zst
+          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
+          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst.sig
+          pacman --noconfirm -U mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
         shell: msys2 {0}
         
       - name: Fix CRLF Checkout
