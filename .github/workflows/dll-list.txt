@@ -30,6 +30,7 @@ libharfbuzz-*.dll
 libharfbuzz-gobject-*.dll
 libharfbuzz-icu-*.dll
 libharfbuzz-subset-*.dll
+libhwy*.dll
 libiconv-*.dll
 libidn2-*.dll
 libintl-*.dll
@@ -37,6 +38,7 @@ libjbig-*.dll
 libjpeg-*.dll
 libjxl.dll
 libLerc.dll
+liblcms2*.dll
 liblzma-*.dll
 liblzo2-*.dll
 libncursesw*.dll
@@ -46,6 +48,7 @@ libpangocairo-*.dll
 libpangoft2-*.dll
 libpangowin32-*.dll
 libpcre-*.dll
+libpcre2*.dll
 libpixman-*.dll
 libpng16-*.dll
 libpsl-*.dll
