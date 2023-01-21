@@ -618,6 +618,7 @@ static const VMStateDescription vmstate_STM32F2xx_RCC = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+		VMSTATE_STM32COMRCC_PARENT(parent, Stm32f2xxRcc),
         VMSTATE_STRUCT(SYSCLK,Stm32f2xxRcc, 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(RTCCLK,Stm32f2xxRcc, 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(PLLM,Stm32f2xxRcc, 1, vmstate_stm32_common_rcc_clk, Clk_t),

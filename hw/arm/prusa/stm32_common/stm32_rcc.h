@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "qom/object.h"
+#include "migration/vmstate.h"
 #include "stm32_types.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
@@ -58,6 +59,17 @@ typedef struct COM_STRUCT_NAME(Rcc) {
 	DeviceRealize realize_func;
 
 } COM_STRUCT_NAME(Rcc);
+
+extern const VMStateDescription vmstate_stm32_common_rcc;
+
+#define VMSTATE_STM32COMRCC_PARENT(_field, _state) {                     \
+    .name       = (stringify(_field)),                               \
+    .size       = sizeof(COM_STRUCT_NAME(Rcc)),                             \
+    .vmsd       = &vmstate_stm32_common_rcc,                           \
+    .flags      = VMS_STRUCT,                                        \
+    .offset     = vmstate_offset_value(_state, _field, COM_STRUCT_NAME(Rcc)), \
+}
+
 
 extern void stm32_common_rcc_connect_cpu_clocks(DeviceState *dev, DeviceState *cpu);
 
