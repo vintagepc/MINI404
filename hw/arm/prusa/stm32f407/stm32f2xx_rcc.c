@@ -141,7 +141,7 @@ static const stm32_reginfo_t stm32f407_rcc_reginfo[RI_END] =
 {
 	[RI_CR] = {.mask = 0x0F0FFFFB, .reset_val = 0x83},
 
-	[RI_PLLCFGR] = {.mask = 0x7FFF, .reset_val = 0x24003010, .unimp_mask = 0x7FFF}, //
+	[RI_PLLCFGR] = {.mask = 0xF437FFF, .reset_val = 0x24003010, .unimp_mask = 0xF437FFF}, //
 	[RI_CFGR] = {.mask = 0xFFFF7F3F, .unimp_mask = 0xFFFF0000}, //
 	[RI_CIR] = {.mask = 0xFF3F7F73, .reset_val =  0x1000, .unimp_mask = UINT32_MAX}, //
 	[RI_AHB1RSTR] = {.mask = 0x226011FF},
@@ -485,7 +485,7 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
     hclk_freq = clktree_get_output_freq(&s->HCLK);
 
     /* Only update the scales if the frequency is not zero. */
-	clock_set_hz(s->parent.REFCLK, hclk_freq);
+	clock_set_hz(s->parent.REFCLK, hclk_freq / 8U);
 	clock_propagate(s->parent.REFCLK);
 }
 
@@ -509,7 +509,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
     clktree_create_clk(&s->PLLM, "PLLM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, &s->parent.HSICLK,
                                  &s->parent.HSECLK, NULL);
-    clktree_create_clk(&s->PLLCLK, "PLLCLK", 1, 2, false, 120000000, 0, &s->PLLM, NULL);
+    clktree_create_clk(&s->PLLCLK, "PLLCLK", 1, 2, false, 168000000, 0, &s->PLLM, NULL);
     clktree_create_clk(&s->PLL48CLK, "PLL48CLK", 1, 1, false, 48000000, 0, &s->PLLM, NULL);
 
     clktree_create_clk(&s->PLLI2SM, "PLLI2SM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, &s->PLLM, NULL);
