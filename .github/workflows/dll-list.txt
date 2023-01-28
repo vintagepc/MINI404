@@ -53,7 +53,7 @@ libpixman-*.dll
 libpng16-*.dll
 libpsl-*.dll
 libssh2-*.dll
-libssl-1_*-x64.dll
+libssl-*-x64.dll
 libssp-*.dll
 libstdc++-6.dll
 libthai-*.dll
