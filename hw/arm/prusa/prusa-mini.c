@@ -158,7 +158,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_I2C1),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
         dinfo = drive_get(IF_PFLASH, 0, 0);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
@@ -170,7 +170,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         // bus = qdev_get_child_bus(DEVICE(&SOC->i2cs[0]),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x57);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
         dinfo = drive_get(IF_PFLASH, 0, 1);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",

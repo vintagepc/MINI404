@@ -15,6 +15,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "sysemu/block-backend.h"
+#include "migration/vmstate.h"
 #include "qom/object.h"
 
 /* #define DEBUG_AT24C */
@@ -149,18 +150,8 @@ static void at24c_eeprom_realize(DeviceState *dev, Error **errp)
     }
 
     ee->mem = g_malloc0(ee->rsize);
-}
 
-static
-void at24c_eeprom_reset(DeviceState *state)
-{
-    EEPROMState *ee = AT24C_EE(state);
-
-    ee->changed = false;
-    ee->cur = 0;
-    ee->haveaddr = 0;
-    // WTF.. I disabled this because real EEPROMS do not erase themselves on reset. ~VintagePC
-  //  memset(ee->mem, 0, ee->rsize);
+    memset(ee->mem, 0, ee->rsize);
 
     if (ee->blk) {
         int len = blk_pread(ee->blk, 0, ee->mem, ee->rsize);
@@ -172,6 +163,35 @@ void at24c_eeprom_reset(DeviceState *state)
         DPRINTK("Reset read backing file\n");
     }
 }
+
+static
+void at24c_eeprom_reset(DeviceState *state)
+{
+    EEPROMState *ee = AT24C_EE(state);
+
+    ee->changed = false;
+    ee->cur = 0;
+    ee->haveaddr = 0;
+    // WTF.. I disabled this because real EEPROMS do not erase themselves on reset. ~VintagePC
+}
+
+static const VMStateDescription vmstate_eeprom_at24c = {
+    .name = TYPE_AT24C_EE,
+    .version_id = 1,
+    .minimum_version_id = 1,
+  //  .post_load = at24c_eeprom_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_I2C_SLAVE(parent_obj, EEPROMState),
+        VMSTATE_UINT16(cur, EEPROMState),
+        VMSTATE_UINT32(rsize, EEPROMState),
+        VMSTATE_BOOL(writable, EEPROMState),
+        VMSTATE_BOOL(changed, EEPROMState), 
+        VMSTATE_UINT8(haveaddr, EEPROMState),
+        VMSTATE_VARRAY_UINT32(mem, EEPROMState, rsize, 0,
+                              vmstate_info_uint8, uint8_t),
+        VMSTATE_END_OF_LIST()
+    } 
+};
 
 static Property at24c_eeprom_props[] = {
     DEFINE_PROP_UINT32("rom-size", EEPROMState, rsize, 0),
@@ -190,6 +210,7 @@ void at24c_eeprom_class_init(ObjectClass *klass, void *data)
     k->event = &at24c_eeprom_event;
     k->recv = &at24c_eeprom_recv;
     k->send = &at24c_eeprom_send;
+    dc->vmsd = &vmstate_eeprom_at24c;
 
     device_class_set_props(dc, at24c_eeprom_props);
     dc->reset = at24c_eeprom_reset;
