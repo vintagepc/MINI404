@@ -24,11 +24,10 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/units.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "exec/address-spaces.h"
 #include "sysemu/sysemu.h"
-#include "stm32f407_soc.h"
 #include "hw/misc/unimp.h"
 #include "net/net.h"
 #include "hw/i2c/smbus_eeprom.h"
@@ -40,6 +39,25 @@
 #include "../stm32_common/stm32_rcc_if.h"
 #include "../stm32_common/stm32_rcc.h"
 #include "../stm32_chips/stm32f407xx.h"
+#include "hw/arm/armv7m.h"
+
+#include "qom/object.h"
+
+OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XX_STRUCT_NAME(), STM32F4XX_BASE)
+
+struct STM32F4XX_STRUCT_NAME() {
+    /*< protected >*/
+    STM32SOC parent;
+    /*< public >*/
+
+    ARMv7MState armv7m;
+
+
+    MemoryRegion sram;
+    MemoryRegion flash;
+    MemoryRegion flash_alias;
+    MemoryRegion ccmsram;
+};
 
 static const stm32_soc_cfg_t* stm32_f4xx_variants[] = {
 	&stm32f407xx_cfg,
@@ -127,30 +145,30 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
     // TODO - Connect EXTI and WAKEUP to the GPIOs.
 
-    /* Attach UART (uses USART registers) and USART controllers */
-    struct Chardev;
-
-    Chardev* chrdev_assigns[STM_NUM_USARTS];
-
     char name[]="stm32uart0";
 
     // First assign by ID
-    for (i = 0; i< STM_NUM_USARTS; i++) {
+    for (i = STM32_P_USART_BEGIN; i< STM32_P_USART_END; i++) {
         name[9] = '0' + i;
-        chrdev_assigns[i] = qemu_chr_find(name);
-        if (chrdev_assigns[i]!=NULL) {
+        Chardev* cdev = qemu_chr_find(name);
+        if (NULL != stm32_soc_get_periph(dev_soc, i) && NULL != cdev) {
             printf("Found ID %s - assigned to UART %d\n",name, i+1);
-			qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, STM32_P_UART1 +i ), "chardev", chrdev_assigns[i]);
+			qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, i), "chardev", cdev);
         }
     }
 
 	for (int i=STM32_P_ADC_BEGIN; i<STM32_P_ADC_END; i++)
-	object_property_set_link(
+    {
+        if (NULL == stm32_soc_get_periph(dev_soc, i))
+        {
+            continue;
+        }
+	    object_property_set_link(
 			OBJECT(stm32_soc_get_periph(dev_soc, i)),
 			"common",
 			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_ADCC)),
-		&error_fatal);
-
+		    &error_fatal);
+    }
 
 	DeviceState* syscfg = stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG);
     for (i = 0; i < 16; i++) {

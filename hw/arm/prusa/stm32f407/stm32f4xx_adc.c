@@ -138,8 +138,7 @@ static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
     }
 
     // Mask: RES 0..3 == 12..6 bit mask.
-    uint32_t mask = (0xFFF >> (s->defs.CR1.RES<<1));
-    s->defs.DR &= mask;
+    s->defs.DR = (s->defs.DR & 0xFFF)>>(s->defs.CR1.RES<<1);
 
     if (s->defs.CR2.ALIGN) {
         return (s->defs.DR << 1) & 0xFFF0;

@@ -58,6 +58,7 @@ do { fprintf(stderr, "st7789v: error: " fmt , ## __VA_ARGS__);} while (0)
 #define REMAP_SPLIT_COM   0x40
 
 #define CMD_NOP 0x00
+#define CMD_READ_MADCTL 0x0B
 #define CMD_SLPOUT 0x11
 #define CMD_DISPON 0x29
 #define CMD_CASET 0x2A
@@ -96,6 +97,8 @@ struct st7789v_state {
     uint32_t mode;
     uint32_t framebuffer[DPY_ROWS * DPY_COLS];
 
+	uint32_t madctl;
+
     script_handle handle;
 };
 
@@ -129,6 +132,9 @@ static uint32_t st7789v_transfer(SSIPeripheral *dev, uint32_t data)
             break;
         case CMD_SLPOUT:
             break;
+		case CMD_READ_MADCTL:
+			return 0xF0; // HACK ALERT!!
+			break;
         case CMD_CASET: /* Set column.  */
             DATA(4);
             s->col = s->col_start = (s->cmd_data[0]<<8|s->cmd_data[1]) % DPY_COLS;
@@ -144,7 +150,8 @@ static uint32_t st7789v_transfer(SSIPeripheral *dev, uint32_t data)
         case CMD_MADCTL:
             DATA(1);
             printf("TODO: MADCTL: %02x\n",s->cmd_data[0]);
-            break;
+			s->madctl = s->cmd_data[0];
+			break;
         case CMD_COLMOD:
             DATA(1);
             uint32_t value = s->cmd_data[0];

@@ -29,13 +29,16 @@
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
-#include "stm32f407/stm32f407_soc.h"
 #include "hw/arm/boot.h"
 #include "hw/ssi/ssi.h"
 #include "hw/loader.h"
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 #include "parts/dashboard_types.h"
+#include "stm32_common/stm32_shared.h"
+#include "stm32_common/stm32_common.h"
+#include "stm32_common/stm32_types.h"
+#include "hw/arm/armv7m.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -71,16 +74,19 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     dev = qdev_new(TYPE_STM32F407xG_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-	DeviceState* dev_soc = dev;
-    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
-    // Parse those now.
-    arghelper_setargs(machine->kernel_cmdline);
+	arghelper_setargs(machine->kernel_cmdline);
     int default_flash_size = stm32_soc_get_flash_size(dev);
     if (arghelper_is_arg("4x_flash"))
     {
         default_flash_size <<=2; // quadruple the flash size for debug code.
     }
+    qdev_prop_set_uint32(dev,"flash-size", default_flash_size);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+	DeviceState* dev_soc = dev;
+    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
+    // Parse those now.
+
+
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
@@ -152,7 +158,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_I2C1),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
         dinfo = drive_get(IF_PFLASH, 0, 0);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",
@@ -164,7 +170,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         // bus = qdev_get_child_bus(DEVICE(&SOC->i2cs[0]),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x57);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
         dinfo = drive_get(IF_PFLASH, 0, 1);
         if (dinfo) {
             qdev_prop_set_drive(dev, "drive",

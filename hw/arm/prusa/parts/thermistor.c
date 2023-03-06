@@ -84,6 +84,7 @@ static void thermistor_read_request(void *opaque, int n, int level) {
 				tt = s->table[i] + (d_adc * (delta / d_temp));
 			}
 			int value = (((tt / s->oversampling)));
+			value <<=2; // Note - ADC takes full 12 bit input, but the tables are only 10-bit
 			qemu_set_irq(s->irq_value,value);
             return;
 		}

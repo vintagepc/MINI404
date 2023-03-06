@@ -22,6 +22,7 @@
 
 #include "qemu/osdep.h"
 #include "../utility/p404scriptable.h"
+#include "../utility/p404_keyclient.h"
 #include "../utility/macros.h"
 #include "../utility/ScriptHost_C.h"
 #include "../utility/ArgHelper.h"
@@ -45,11 +46,11 @@ struct IRState {
 };
 
 enum {
-    ACT_SET, 
+    ACT_SET,
     ACT_TOGGLE,
 };
 
-OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(IRState, irsensor, IRSENSOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL})
+OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(IRState, irsensor, IRSENSOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_KEYCLIENT}, {NULL})
 
 
 static void irsensor_finalize(Object *obj)
@@ -86,6 +87,17 @@ static int irsensor_process_action(P404ScriptIF *obj, unsigned int action, scrip
     return ScriptLS_Finished;
 }
 
+static void irsensor_input_handle_key(P404KeyIF *opaque, Key keycode)
+{
+	IRState *s = IRSENSOR(opaque);
+    if (keycode == 'f')
+	{
+		s->state ^=1;
+		printf("IR sensor toggled - new level: %u\n",s->state);
+		irsensor_update(s);
+	}
+}
+
 static void irsensor_init(Object *obj)
 {
     IRState *s = IRSENSOR(obj);
@@ -98,6 +110,10 @@ static void irsensor_init(Object *obj)
     script_register_action(s->handle, "Toggle",  "Toggles IR sensor state", ACT_TOGGLE);
 
     scripthost_register_scriptable(s->handle);
+
+	p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(obj));
+    p404_register_keyhandler(pKey, 'f',"Toggles IR sensor state");
+
 }
 
 static const VMStateDescription vmstate_irsensor = {
@@ -117,4 +133,7 @@ static void irsensor_class_init(ObjectClass *oc, void *data)
     dc->vmsd = &vmstate_irsensor;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = irsensor_process_action;
+
+	P404KeyIFClass *kc = P404_KEYCLIENT_CLASS(oc);
+    kc->KeyHandler = irsensor_input_handle_key;
 }

@@ -157,7 +157,7 @@ static Property stm32_common_rcc_properties[] = {
 	DEFINE_PROP_END_OF_LIST()
 };
 
-static const VMStateDescription vmstate_stm32_common_rcc = {
+const VMStateDescription vmstate_stm32_common_rcc = {
     .name = TYPE_STM32COM_RCC,
     .version_id = 1,
     .minimum_version_id = 1,

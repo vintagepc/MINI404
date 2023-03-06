@@ -1,7 +1,7 @@
 /*
     stm32f4xx_flashint.c - Flash I/F Configuration block for STM32
 
-	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+	Copyright 2021-2 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -20,11 +20,12 @@
  */
 
 
-#include "stm32f4xx_flashint.h"
+#include "qemu/osdep.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "../stm32_common/stm32_common.h"
 
 enum RegIndex{
     RI_ACR,
@@ -36,6 +37,96 @@ enum RegIndex{
     RI_OPTCR1,
     RI_END
 };
+
+OBJECT_DECLARE_TYPE(STM32F4XX_STRUCT_NAME(FlashIF), COM_CLASS_NAME(F4xxFlashIF), STM32F4xx_FINT)
+
+REGDEF_BLOCK_BEGIN()
+    REG_K32(LATENCY, 4);
+    REG_R(5);
+    REG_B32(PRFTEN);
+    REG_B32(ICEN);
+    REG_B32(DCEN);
+    REG_B32(ICRST);
+    REG_B32(DCRST);
+REGDEF_BLOCK_END(flashif, acr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(EOP);
+    REG_B32(OPER);
+    REG_R(2);
+    REG_B32(WRPERR);
+    REG_B32(PGAERR);
+    REG_B32(PGPERR);
+    REG_B32(PGSERR);
+    REG_R(8);
+    REG_B32(BSY);
+    REG_R(15);
+REGDEF_BLOCK_END(flashif, sr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(PG);
+    REG_B32(SER);
+    REG_B32(MER);
+    REG_K32(SNB, 5);
+    REG_K32(PSIZE,2);
+    REG_R(5);
+    REG_B32(MER1);
+    REG_B32(STRT);
+    REG_R(7);
+    REG_B32(EOPIE);
+    REG_R(6);
+    REG_B32(LOCK);
+REGDEF_BLOCK_END(flashif, cr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(OPTLOCK);
+    REG_B32(OPTSTRT);
+    REG_K32(BOR_LEV,2);
+    REG_B32(BFB2);
+    REG_B32(WDG_SW);
+    REG_B32(nRST_STOP);
+    REG_B32(nRST_STDBY);
+    REG_K32(RDP,8);
+    REG_K32(nWRP, 12);
+    REG_R(2);
+	REG_B32(DB1M);
+	REG_B32(SPRMOD);
+REGDEF_BLOCK_END(flashif, optcr);
+
+REGDEF_BLOCK_BEGIN()
+	REG_R(16);
+    REG_K32(nWRP, 12);
+	REG_R(4);
+REGDEF_BLOCK_END(flashif, optcr1);
+
+
+typedef struct STM32F4XX_STRUCT_NAME(FlashIF) {
+    STM32Peripheral parent;
+    MemoryRegion iomem;
+
+    union {
+        struct {
+			REGDEF_NAME(flashif, acr) ACR;
+            uint32_t KEYR;
+            uint32_t OPTKEYR;
+            REGDEF_NAME(flashif, sr) SR;
+            REGDEF_NAME(flashif, cr) CR;
+            REGDEF_NAME(flashif, optcr) OPTCR;
+            REGDEF_NAME(flashif, optcr1) OPTCR1;
+		} defs;
+        uint32_t raw[RI_END];
+    } regs;
+
+
+    uint8_t flash_state;
+
+    MemoryRegion* flash;
+
+	stm32_reginfo_t* reginfo;
+
+    qemu_irq irq;
+
+} STM32F4XX_STRUCT_NAME(FlashIF);
 
 enum wp_state
 {
@@ -93,12 +184,9 @@ static uint32_t sector_boundaries[][2] =
     {(1U*MiB) + 896U*KiB, ((1U * MiB) + 1U*MiB)-1U},
 };
 
-
-QEMU_BUILD_BUG_MSG(RI_END != STM32_FINT_MAX, "Register index misaligned in " __FILE__);
-
 typedef struct COM_CLASS_NAME(F4xxFlashIF) {
 	STM32PeripheralClass parent_class;
-    stm32_reginfo_t var_reginfo[STM32_FINT_MAX];
+    stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(F4xxFlashIF);
 
 static uint64_t
@@ -243,7 +331,7 @@ static const VMStateDescription vmstate_stm32f4xx_fint = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw, STM32F4XX_STRUCT_NAME(FlashIF),STM32_FINT_MAX),
+        VMSTATE_UINT32_ARRAY(regs.raw, STM32F4XX_STRUCT_NAME(FlashIF),RI_END),
         VMSTATE_UINT8(flash_state, STM32F4XX_STRUCT_NAME(FlashIF)),
         VMSTATE_END_OF_LIST()
     }

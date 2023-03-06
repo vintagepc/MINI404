@@ -31,7 +31,6 @@
 #include "../stm32f407/stm32f4xx_adc.h"
 #include "../stm32f407/stm32f4xx_adcc.h"
 #include "../stm32f407/stm32f2xx_crc.h"
-#include "../stm32_common/stm32_f2xx_f4xx_dma.h"
 #include "../stm32f407/stm32f2xx_gpio.h"
 #include "../stm32f407/stm32f2xx_i2c.h"
 #include "../stm32f407/stm32f4xx_iwdg.h"

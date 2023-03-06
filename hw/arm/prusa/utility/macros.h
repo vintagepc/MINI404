@@ -80,16 +80,26 @@
 #define REGDEF_R(addr) uint32_t _JOIN2R(_reserved, addr)
 // Block of reserved 32 bit registers:
 
+// Offset helper for REGINDEX enumerations.
+#define REGENUM_OFFSET(reg_name, base) _JOIN2R(RO_,reg_name) = _JOIN2R(RI_,reg_name) - base
 
+// Block size helper for REGINDEX enumerations.
+#define REGENUM_SIZE(block_name) _JOIN2R(RSZ_,block_name) = (_JOIN3R(RI_,block_name,_END) - _JOIN3R(RI_,block_name,_BEGIN) + 1U)
 
-
+// The typename of a previous REGDEF_BLOCK
 #define REGDEF_NAME(part, x) _JOIN3R(stm32reg_,part##_##x,_t)
 
 #define REGDEF_BLOCK_BEGIN() typedef union { \
 	struct {
 
+// Closing declaration for a REGDEF_BLOCK_BEGIN() of a single register.
 #define REGDEF_BLOCK_END(part, x) } QEMU_PACKED; \
 	uint32_t raw; \
+} REGDEF_NAME(part, x);
+
+// Closing declaration for a REGDEF_BLOCK_BEGIN of an array of registers. NOT packed.
+#define REGDEF_DEF_END(part, x, size) }; \
+	uint32_t raw[size]; \
 } REGDEF_NAME(part, x);
 
 // Helper for auto-naming reserved blocks.

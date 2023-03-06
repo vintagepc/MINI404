@@ -23,7 +23,7 @@ jobs:
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v3
       if: ${{ github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -31,7 +31,7 @@ jobs:
         submodules: false
 
     - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v3
       if: ${{ !github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -39,7 +39,7 @@ jobs:
         submodules: false
 
     - name: Cache packages
-      uses: actions/cache@v1.0.3
+      uses: actions/cache@v3.0.11
       id: cache-pkgs
       with:
           path: "packages"
@@ -62,14 +62,15 @@ jobs:
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
 
     - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && make -j3
+      run: cd ${{ runner.workspace }}/MINI404/build && ninja
 
     - name: Checkout Wiki
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v3
       if: ${{ !github.event.pull_request }}
       with:
         repository: vintagepc/MINI404.wiki.git
         path: ref
+        ref: master
 
     - name: Regen docs
       if: ${{ !github.event.pull_request }}
@@ -92,7 +93,7 @@ jobs:
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3.1.1
       with:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
@@ -105,7 +106,7 @@ jobs:
     steps:
   #   # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v3
       if: ${{ github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -113,7 +114,7 @@ jobs:
         submodules: true
 
     - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v2.2.0
+      uses: actions/checkout@v3
       if: ${{ !github.event.pull_request }}
       with:
         repository: ${{ github.repository }}
@@ -134,14 +135,13 @@ jobs:
       run: |
         cd ${{ runner.workspace }}/MINI404/build
         mv buddy-softmmu Mini404-dev-macos
-        mv assets Mini404-dev-macos
-          mkdir Mini404-dev-macos/pc-bios
-          mv pc-bios/keymaps Mini404-dev-macos/pc-bios/
+        mkdir Mini404-dev-macos/pc-bios
+        mv pc-bios/keymaps Mini404-dev-macos/pc-bios/
         tar -jhcvf Mini404-dev-macos.tar.bz2 Mini404-dev-macos
 
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3.1.1
       with:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
@@ -149,19 +149,25 @@ jobs:
   build_msys:
     # The type of runner that the job will run on
     runs-on: windows-latest
-    if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
     steps:
       - name: Install MSYS2
         uses: msys2/setup-msys2@v2
         with: 
           msystem: MINGW64
-          install: make git zip mingw-w64-x86_64-diffutils diffutils python mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl mingw-w64-x86_64-SDL2_image
-
+          install: make git zip wget mingw-w64-x86_64-diffutils diffutils mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl mingw-w64-x86_64-SDL2_image mingw-w64-x86_64-pcre
+      
+      - name: Install old Python
+        run: |
+          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
+          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst.sig
+          pacman --noconfirm -U mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
+        shell: msys2 {0}
+        
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
 
       - name: Checkout ${{ github.event.pull_request.head.ref }}
-        uses: actions/checkout@v2.2.0
+        uses: actions/checkout@v3
         if: ${{ github.event.pull_request }}
         with:
           repository: ${{ github.repository }}
@@ -169,7 +175,7 @@ jobs:
           submodules: false
 
       - name: Checkout ${{ github.event.ref }}
-        uses: actions/checkout@v2.2.0
+        uses: actions/checkout@v3
         if: ${{ !github.event.pull_request }}
         with:
           repository: ${{ github.repository }}
@@ -206,8 +212,8 @@ jobs:
         shell: msys2 {0}
 
       - name: Upload Cygwin artifact
-#        if: ${{ !github.event.pull_request }}
-        uses: actions/upload-artifact@v2
+        if: ${{ !github.event.pull_request }}
+        uses: actions/upload-artifact@v3.1.1
         with:
           name: Binaries
           path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-w64.zip
@@ -218,7 +224,7 @@ jobs:
     needs: [build_linux, build_msys, build_macos]
     steps:
       - name: Retrieve platform binaries
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3.0.1
         with:
           name: Binaries
 
