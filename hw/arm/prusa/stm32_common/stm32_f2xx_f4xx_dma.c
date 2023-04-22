@@ -302,6 +302,7 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 	else
 	{
 		printf("FIXME: M2M transfer!");
+		abort();
 	}
 	uint8_t xfersize = MIN(src_size, dest_size);
 	// if (*src == 0x40004404)
