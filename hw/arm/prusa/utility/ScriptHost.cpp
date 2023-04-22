@@ -607,7 +607,7 @@ void ScriptHost::AddScriptable(const std::string &strName, IScriptable* src)
 		int i=0;
 		std::string strNew;
 		std::cout << "ScriptHost: NOTE: Duplicate context name (" << strName << ") with different pointer. Incrementing ID...\n";
-		while (i<10)
+		while (i<20)
 		{
 			i++;
 			strNew = strName + std::to_string(i);
@@ -623,7 +623,7 @@ void ScriptHost::AddScriptable(const std::string &strName, IScriptable* src)
 				return;
 			}
 		};
-		std::cerr << "ScriptHost: More than 10 duplicate identifiers. You should do something about that.\n";
+		std::cerr << "ScriptHost: More than 20 duplicate identifiers. You should do something about that.\n";
 
 	}
 }

@@ -48,7 +48,7 @@ struct f2xx_tim {
     MemoryRegion iomem;
 
     QEMUTimer *timer, *ccrtimer[4];
-    qemu_irq irq;
+    qemu_irq irq, public_irq;
     // Union-ized for my/code sanity and easier inspection during debugging.
     union {
         uint32_t regs[R_TIM_MAX];

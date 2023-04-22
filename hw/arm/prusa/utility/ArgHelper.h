@@ -35,7 +35,7 @@ class ArgHelper
     public:
         void SetArgs(std::string strArgs);
         bool Parse();
-        
+
         static ArgHelper& Get()
 		{
 			static ArgHelper h;
@@ -51,20 +51,24 @@ class ArgHelper
 };
 
 extern "C" {
-#endif 
-// Sets the arguments for future use. 
+#endif
+// Sets the arguments for future use.
 extern void arghelper_setargs(const char* args);
 
 // Processes the args after startup. Return code indicates whether
 // the machine should continue execution (T) or quit (F)
-// e.g. after some kind of help output.  
+// e.g. after some kind of help output.
 extern bool arghelper_parseargs(void);
 
-// Returns whether a given argument was observed. 
+// Returns whether a given argument was observed.
 extern bool arghelper_is_arg(const char* arg);
 
-// Returns the string value of the given argument. 
+// Returns the string value of the given argument.
 extern const char* arghelper_get_string(const char* arg);
+
+#define XFLASH_ID "mini404-xflash"
+#define EEPROM_ID "mini404-eeprom"
+#define EEPROM_SYS_ID "mini404-eeprom-sys"
 
 #ifdef __cplusplus
 }

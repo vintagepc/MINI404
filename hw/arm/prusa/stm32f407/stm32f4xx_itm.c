@@ -116,7 +116,7 @@ static void
 stm32f4xx_itm_init(Object *obj)
 {
     STM32F4XX_STRUCT_NAME(Itm) *s = STM32F4xx_ITM(obj);
-    memory_region_init_io(&s->iomem, obj, &stm32f4xx_itm_ops, s, "itm", 4U*KiB);
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32f4xx_itm_ops, s, 4U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
     s->regs[RI_TCR] = 1; // actually enable it
     s->regs[RI_TER] = 1;

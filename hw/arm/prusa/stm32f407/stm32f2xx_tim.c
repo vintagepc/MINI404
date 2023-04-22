@@ -154,6 +154,7 @@ f2xx_tim_timer(void *arg)
    if (s->defs.DIER.UIE)
    {
         qemu_set_irq(s->irq, 1);
+        qemu_set_irq(s->public_irq, 1);
    }
 }
 
@@ -167,6 +168,7 @@ f2xx_tim_ccmr1(void *arg)
    if (s->defs.DIER.CC1IE)
    {
         qemu_set_irq(s->irq, 1);
+        qemu_set_irq(s->public_irq, 1);
    }
 }
 
@@ -375,6 +377,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         if ((s->regs[addr] & data) == 0) {
             //printf("f2xx tim clearing int\n");
             qemu_set_irq(s->irq, 0);
+            qemu_set_irq(s->public_irq, 0);
         }
         s->regs[addr] &= data;
         break;
@@ -480,7 +483,7 @@ f2xx_tim_init(Object *obj)
 
 
     // End size check.
-    memory_region_init_io(&s->iomem, obj, &f2xx_tim_ops, s, "tim", 0xa0);
+    STM32_MR_IO_INIT(&s->iomem, obj, &f2xx_tim_ops, s, 0xa0);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
     //s->regs[R_RTC_ISR] = R_RTC_ISR_RESET;
     ////s->regs[R_RTC_PRER] = R_RTC_PRER_RESET
@@ -492,6 +495,7 @@ f2xx_tim_init(Object *obj)
 		s->ccrtimer[i] = timer_new_ns(QEMU_CLOCK_VIRTUAL, f2xx_tim_ccmr1, s);
 	}
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
+	qdev_init_gpio_out_named(DEVICE(dev), &s->public_irq, "timer", 1);
 
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);

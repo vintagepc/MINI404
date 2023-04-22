@@ -3,7 +3,7 @@
  *
  * Original Copyright (c) 2020 Paul Zimmerman <pauldzim@gmail.com>
  * Based on hw/usb/hcd-dwc2.c as shipped with QEMU
- * Adapted for Mini404/STM32F4xx 2021-2 by VintagePC <http://github.com/vintagepc>
+ * Adapted for Mini404/STM32F4xx 2021-3 by VintagePC <http://github.com/vintagepc>
  *
  * Some useful documentation used to develop this emulation can be
  * found online (as of April 2020) at:
@@ -388,6 +388,9 @@ REGDEF_BLOCK_END(usb, gintsts);
 struct STM32F4xxUSBState {
     /*< private >*/
     STM32Peripheral parent_obj;
+
+	MemoryRegion* cpu_mr;
+	AddressSpace cpu_as;
 
     /*< public >*/
     USBBus bus;
@@ -1586,7 +1589,7 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
 			if (s->gahbcfg & GAHBCFG_DMA_EN)
 			{
 				// Note - USB DMA doesn't use the normal peripheral DMA engine.
-				if (MEMTX_OK != dma_memory_read(&address_space_memory, r_chan->HCDMA, s->usb_buf[chan], tlen, MEMTXATTRS_UNSPECIFIED))
+				if (MEMTX_OK != dma_memory_read(&s->cpu_as, r_chan->HCDMA, s->usb_buf[chan], tlen, MEMTXATTRS_UNSPECIFIED))
 				{
 					qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory read failed - transfer aborted.", __func__);
 					return;
@@ -1681,9 +1684,9 @@ babble:
                 {
                     qemu_log_mask(LOG_GUEST_ERROR,"Receive FIFO full, data discarded!");
                 }
-				if (s->gahbcfg | GAHBCFG_DMA_EN)
+				if (s->gahbcfg & GAHBCFG_DMA_EN)
 				{
-					if (MEMTX_OK != dma_memory_write(&address_space_memory, r_chan->HCDMA, s->usb_buf[chan], actual, MEMTXATTRS_UNSPECIFIED))
+					if (MEMTX_OK != dma_memory_write(&s->cpu_as, r_chan->HCDMA, s->usb_buf[chan], actual, MEMTXATTRS_UNSPECIFIED))
 					{
 						qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory write failed - transfer aborted.", __func__);
 						return;
@@ -2226,7 +2229,7 @@ static void STM32F4xx_glbreg_write(void *ptr, hwaddr addr, int index, uint64_t v
             printf("USB OTG: Changing to device mode\n");
 			s->is_device_mode = true;
             s->GINTSTS.CMOD = 0;
-			s->dreg_defs.DSTS.ENUMSPD = (s->parent_obj.periph == STM32_P_USB ? DSTS_SPEED_HS : DSTS_SPEED_FS);
+			s->dreg_defs.DSTS.ENUMSPD = (s->parent_obj.periph == STM32_P_USBHS ? DSTS_SPEED_HS : DSTS_SPEED_FS);
         }
         break;
     case GRSTCTL:
@@ -2685,7 +2688,7 @@ static void STM32F4xx_dregout_write(void *ptr, hwaddr addr, int index,
             }
             break;
         case RO_DOEPINT: // DOEPINT
-            printf("DREGout int write %"PRIX64"\n",val);
+            // printf("DREGout int write %"PRIX64"\n",val);
             s->drego[chan].raw[offset] &= ~val;
             STM32F4xx_update_device_common_irq(s);
             break;
@@ -2918,7 +2921,7 @@ static void STM32F4xx_hreg2_write(void *ptr, hwaddr addr, uint64_t val,
     // %size ensures we automatically loop back around.
     s->fifo_tail[index] %= STM32F4xx_EP_FIFO_SIZE;
     s->fifo_level[index]++;
-    printf("TX fifo write EP %u val %08"PRIx64"\n",index,val);
+    // printf("TX fifo write EP %u val %08"PRIx64"\n",index,val);
     STM32F4xx_lower_device_ep_in_irq(s, index, DIEPMSK_TXFIFOEMPTY);
     assert(s->fifo_tail[index]<STM32F4xx_EP_FIFO_SIZE); // laziness ftw
     uint32_t bytes_needed;
@@ -3141,6 +3144,15 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     STM32F4xxUSBState *s = STM32F4xx_USB(dev);
 
+	if (s->cpu_mr == NULL)
+	{
+		printf("No CPU memory region specified for %s - using global system memory.\n", _PERIPHNAMES[s->parent_obj.periph]);
+		s->cpu_mr = get_system_memory();
+	}
+	gchar* name = g_strdup_printf("STM32_%s", _PERIPHNAMES[s->parent_obj.periph]);
+	address_space_init(&s->cpu_as, s->cpu_mr, name);
+	g_free(name);
+
 	//s->debug = s->parent_obj.periph == STM32_P_USB2;
 
     usb_bus_new(&s->bus, sizeof(s->bus), &STM32F4xx_bus_ops, dev);
@@ -3200,16 +3212,16 @@ static void STM32F4xx_init(Object *obj)
     CHECK_TYPEDEF_u32(REGDEF_NAME(usb, hreg),HCTSIZ);
     CHECK_TYPEDEF_u32(REGDEF_NAME(usb, hreg),HCDMA);
 
+	STM32_MR_INIT(&s->container, obj, 52U * KiB);
 
-    memory_region_init(&s->container, obj, "STM32F4xx", 52*KiB);
     sysbus_init_mmio(sbd, &s->container);
 
-    memory_region_init_io(&s->hsotg, obj, &STM32F4xx_mmio_hsotg_ops, s,
-                          "STM32F4xx-io", 4 * KiB);
+	STM32_MR_IO_INIT(&s->hsotg, obj, &STM32F4xx_mmio_hsotg_ops, s, 4U * KiB);
+
     memory_region_add_subregion(&s->container, 0x0000, &s->hsotg);
 
-    memory_region_init_io(&s->fifos, obj, &STM32F4xx_mmio_hreg2_ops, s,
-                         "STM32F4xx-fifo", 64 * KiB);
+    STM32_MR_IO_INIT(&s->fifos, obj, &STM32F4xx_mmio_hreg2_ops, s, 64U * KiB);
+
     memory_region_add_subregion(&s->container, 0x1000, &s->fifos);
 
     // memory_region_init_io(&s->dma_mr, obj, &STM32F4xx_mmio_hreg2_ops, s,
@@ -3290,6 +3302,7 @@ const VMStateDescription vmstate_STM32F4xx_state = {
 static Property STM32F4xx_usb_properties[] = {
     DEFINE_PROP_UINT32("usb_version", STM32F4xxUSBState, usb_version, 2),
     DEFINE_PROP_CHR("chardev", STM32F4xxUSBState, cdc),
+	DEFINE_PROP_LINK("system-memory", STM32F4xxUSBState, cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
     DEFINE_PROP_END_OF_LIST(),
 };
 

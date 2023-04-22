@@ -129,6 +129,23 @@
                 "showReuseMessage": true,
                 "clear": true
             }
+        },
+        {
+            "label": "Build QEMU (16 threads)",
+            "type": "shell",
+            "command": "make -j16",
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
         }
     ]
 }

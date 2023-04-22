@@ -1,7 +1,14 @@
 /*-
  * QEMU crc emulation
  * Copyright (c) 2013 https://github.com/pebble/qemu/
- * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
+ * Adapted for QEMU 5.2 in 2020-3 by VintagePC <http://github.com/vintagepc>
+ * Further refined to be shared among the entire STM32 family in 2021
+ *
+ * This layout is known to be shared amongst the following SOCs:
+ * - STM32F030x
+ * - STM32G070
+ * - STM32F2xx (given it originally appeared in the Pebble QEMU fork and was adapted)
+ * - STM32F4xx
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,16 +29,58 @@
  * THE SOFTWARE.
  */
 
-#include "stm32f2xx_crc.h"
+#include "qemu/osdep.h"
+#include "qemu-common.h"
+#include "hw/sysbus.h"
+#include "stm32_common.h"
+#include "stm32_shared.h"
+#include "stm32_types.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
-#include "../stm32_common/stm32_rcc_if.h"
+#include "hw/qdev-properties.h"
+#include "stm32_rcc_if.h"
 
-#define R_CRC_DR            (0x00 / 4)
-#define R_CRC_DR_RESET 0xffffffff
-#define R_CRC_IDR           (0x04 / 4)
-#define R_CRC_CR            (0x08 / 4)
-#define R_CRC_MAX           (0x0c / 4)
+enum regIndex
+{
+	RI_DR, // 0x00
+	RI_IDR,// 0x04
+	RI_CR, // 0x08
+	RI_RESERVED,
+	RI_INIT = (0x10/4),// 0x10
+	RI_POL,	// 0x14
+	RI_END,
+};
+
+OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Crc), COM_CLASS_NAME(Crc), STM32COM_CRC);
+
+REGDEF_BLOCK_BEGIN()
+	REG_B32(RESET);
+	REG_R(4);
+	REG_K32(REV_IN,2);
+	REG_B32(REV_OUT);
+	REG_R(24);
+REGDEF_BLOCK_END(crc, cr);
+
+typedef struct COM_STRUCT_NAME(Crc) {
+    STM32Peripheral parent;
+    MemoryRegion iomem;
+
+	union {
+		struct {
+			uint32_t DR;
+			uint32_t IDR;
+			REGDEF_NAME(crc,cr) CR;
+			uint32_t _reserved;
+			uint32_t INIT;
+			uint32_t POL;
+		} defs;
+		uint32_t raw[RI_END];
+	} regs;
+
+	const stm32_reginfo_t* reginfo;
+
+} COM_STRUCT_NAME(Crc);
+
 
 /*****************************************************************/
 /*                                                               */
@@ -100,6 +149,59 @@ static unsigned long crctable[256] =
  0xBCB4666DL, 0xB8757BDAL, 0xB5365D03L, 0xB1F740B4L
 };
 
+typedef struct COM_CLASS_NAME(Crc) {
+	SysBusDeviceClass parent_class;
+    stm32_reginfo_t var_reginfo[RI_END];
+} COM_CLASS_NAME(Crc);
+
+
+static const stm32_reginfo_t stm32f030_crc_reginfo[RI_END] =
+{
+	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
+	[RI_IDR] = {.mask = 0xFF},
+	[RI_CR] = {.mask = 0xE1, .unimp_mask = 0xE0},
+	[RI_RESERVED] = {.is_reserved = true},
+	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
+	[RI_POL] = { .is_reserved = true }
+};
+
+static const stm32_reginfo_t stm32g070_crc_reginfo[RI_END] =
+{
+	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
+	[RI_IDR] = {.mask = 0xFF},
+	[RI_CR] = {.mask = 0xE1, .unimp_mask = 0xE0},
+	[RI_RESERVED] = {.is_reserved = true},
+	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
+	[RI_POL] = { .mask = UINT32_MAX, .reset_val = 0x04C11DB7, .unimp_mask = UINT32_MAX }
+};
+
+static const stm32_reginfo_t stm32f2xx_crc_reginfo[RI_END] =
+{
+	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
+	[RI_IDR] = {.mask = 0xFF},
+	[RI_CR] = {.mask = 0x01},
+	[RI_RESERVED] = {.is_reserved = true},
+	[RI_INIT] = {.is_reserved = true, .reset_val = UINT32_MAX},
+	[RI_POL] = {.is_reserved = true}
+};
+
+static const stm32_reginfo_t stm32f4xx_crc_reginfo[RI_END] =
+{
+	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
+	[RI_IDR] = {.mask = 0xFF},
+	[RI_CR] = {.mask = 0x01},
+	[RI_RESERVED] = {.is_reserved = true},
+	[RI_INIT] = {.is_reserved = true, .reset_val = UINT32_MAX},
+	[RI_POL] = {.is_reserved = true}
+};
+
+static const stm32_periph_variant_t stm32_crc_variants[4] = {
+	{TYPE_STM32F030_CRC, stm32f030_crc_reginfo},
+	{TYPE_STM32G070_CRC, stm32g070_crc_reginfo},
+	{TYPE_STM32F2xx_CRC, stm32f2xx_crc_reginfo},
+	{TYPE_STM32F4xx_CRC, stm32f4xx_crc_reginfo}
+};
+
 static inline uint32_t
 update_crc(uint32_t crc, uint8_t byte)
 {
@@ -107,76 +209,89 @@ update_crc(uint32_t crc, uint8_t byte)
 }
 
 static uint64_t
-f2xx_crc_read(void *arg, hwaddr addr, unsigned int size)
+stm32_common_crc_read(void *arg, hwaddr addr, unsigned int size)
 {
-    f2xx_crc *s = arg;
+    COM_STRUCT_NAME(Crc) *s = STM32COM_CRC(arg);
 
     if (size != 4) {
-        qemu_log_mask(LOG_UNIMP, "f2xx crc only supports 4-byte reads\n");
+        qemu_log_mask(LOG_UNIMP, "crc only supports 4-byte reads\n");
         return 0;
     }
 
     addr >>= 2;
-    if (addr >= R_CRC_MAX) {
-        qemu_log_mask(LOG_GUEST_ERROR, "invalid read f2xx crc register 0x%x\n",
-          (unsigned int)addr << 2);
-        return 0;
-    }
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32 CRC");
+
     switch(addr) {
-    case R_CRC_DR:
-        if (stm32_rcc_if_check_periph_clk(&s->parent)) 
+    case RI_DR:
+        if (stm32_rcc_if_check_periph_clk(&s->parent))
         {
-            return s->crc;
+            return s->regs.defs.DR;
         }
         else
         {
             return 0;
         }
-    case R_CRC_IDR:
-        return s->idr;
+    default:
+        return s->regs.raw[addr];
     }
     return 0;
 }
 
 
 static void
-f2xx_crc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
+stm32_common_crc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 {
-    f2xx_crc *s = arg;
+    COM_STRUCT_NAME(Crc) *s = STM32COM_CRC(arg);
 
-    /* XXX Check periph clock enable. */
-    if (size != 4) {
-        qemu_log_mask(LOG_UNIMP, "f2xx crc only supports 4-byte writes\n");
-        return;
-    }
-
+	uint8_t offset = addr & 0x03;
     addr >>= 2;
-    if (addr >= R_CRC_MAX) {
-        qemu_log_mask(LOG_GUEST_ERROR, "invalid write f2xx crc register 0x%x\n",
-          (unsigned int)addr << 2);
-        return;
+    /* XXX Check periph clock enable. */
+
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 CRC");
+
+    switch(size) {
+    case 1:
+        data = (s->regs.raw[addr] & ~(0xff << (offset * 8))) | data << (offset * 8);
+        break;
+    case 2:
+        data = (s->regs.raw[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
+        break;
+    case 4:
+        break;
+    default:
+        abort();
     }
+
+
     switch(addr) {
-    case R_CRC_DR:
-        s->crc = update_crc(s->crc, (data >> 24) & 0xff);
-        s->crc = update_crc(s->crc, (data >> 16) & 0xff);
-        s->crc = update_crc(s->crc, (data >> 8) & 0xff);
-        s->crc = update_crc(s->crc, data & 0xff);
+    case RI_DR:
+        s->regs.defs.DR = update_crc(s->regs.defs.DR, (data >> 24) & 0xff);
+        s->regs.defs.DR = update_crc(s->regs.defs.DR, (data >> 16) & 0xff);
+        s->regs.defs.DR = update_crc(s->regs.defs.DR, (data >> 8) & 0xff);
+        s->regs.defs.DR = update_crc(s->regs.defs.DR, data & 0xff);
         break;
-    case R_CRC_IDR:
-        s->idr = data;
+    case RI_IDR:
+		ENFORCE_RESERVED(data, s->reginfo, RI_IDR);
+        s->regs.defs.IDR = data;
         break;
-    case R_CRC_CR:
-        if (data & 0x1) {
-            s->crc = R_CRC_DR_RESET;
+    case RI_CR:
+		CHECK_UNIMP_RESVD(data, s->reginfo, RI_CR);
+		s->regs.defs.CR.raw = data;
+        if (s->regs.defs.CR.RESET) {
+            s->regs.defs.DR = s->regs.defs.INIT;
+			s->regs.defs.CR.RESET = 0;
         }
+		break;
+	case RI_INIT:
+		s->regs.defs.INIT = data;
+		s->regs.defs.DR = data;
         break;
     }
 }
 
-static const MemoryRegionOps f2xx_crc_ops = {
-    .read = f2xx_crc_read,
-    .write = f2xx_crc_write,
+static const MemoryRegionOps stm32_common_crc_ops = {
+    .read = stm32_common_crc_read,
+    .write = stm32_common_crc_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
     .impl = {
         .min_access_size = 1,
@@ -184,56 +299,81 @@ static const MemoryRegionOps f2xx_crc_ops = {
     }
 };
 
-static void
-f2xx_crc_init(Object *obj)
-{
-    f2xx_crc *s = STM32F2XX_CRC(obj);
 
-    memory_region_init_io(&s->iomem, obj, &f2xx_crc_ops, s, "crc", 0x400);
+static void
+stm32_common_crc_reset(DeviceState *ds)
+{
+    COM_STRUCT_NAME(Crc) *s = STM32COM_CRC(ds);
+
+	for (int i=0;i<RI_END; i++)
+	{
+		s->regs.raw[i] = s->reginfo[i].reset_val;
+	}
+}
+
+static void
+stm32_common_crc_init(Object *obj)
+{
+    COM_STRUCT_NAME(Crc) *s = STM32COM_CRC(obj);
+	CHECK_ALIGN(sizeof(s->regs.raw), sizeof(s->regs.defs), "Union misaligned!");
+	CHECK_ALIGN(sizeof(s->regs.defs), sizeof(uint32_t)*RI_END, "Union overall size");
+	CHECK_REG_u32(s->regs.defs.CR);
+
+	COM_CLASS_NAME(Crc) *k = STM32COM_CRC_GET_CLASS(obj);
+
+	s->reginfo = k->var_reginfo;
+
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32_common_crc_ops, s, 1U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 }
 
-static void
-f2xx_crc_reset(DeviceState *ds)
-{
-    f2xx_crc *s = STM32F2XX_CRC(ds);
 
-    s->crc = R_CRC_DR_RESET;
-}
-
-static const VMStateDescription vmstate_stm32f2xx_crc = {
-    .name = TYPE_STM32F2XX_CRC,
+static const VMStateDescription vmstate_stm32stm32_common_crc = {
+    .name = TYPE_STM32COM_CRC,
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32(crc, f2xx_crc),
-        VMSTATE_UINT8(idr, f2xx_crc),
+        VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(Crc), RI_END),
         VMSTATE_END_OF_LIST()
     }
 };
 
-
 static void
-f2xx_crc_class_init(ObjectClass *klass, void *data)
+stm32_common_crc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = f2xx_crc_reset;
-    dc->vmsd = &vmstate_stm32f2xx_crc;
+    dc->reset = stm32_common_crc_reset;
+    dc->vmsd = &vmstate_stm32stm32_common_crc;
+
+	COM_CLASS_NAME(Crc) *k = STM32COM_CRC_CLASS(klass);
+	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));
+	QEMU_BUILD_BUG_MSG(sizeof(k->var_reginfo) != sizeof(stm32_reginfo_t[RI_END]), "Reginfo not sized correctly!");
+
 }
 
 static const TypeInfo
-f2xx_crc_info = {
-    .name          = TYPE_STM32F2XX_CRC,
+stm32_common_crc_info = {
+    .name          = TYPE_STM32COM_CRC,
     .parent        = TYPE_STM32_PERIPHERAL,
-    .instance_size = sizeof(f2xx_crc),
-    .instance_init = f2xx_crc_init,
-    .class_init    = f2xx_crc_class_init,
+    .instance_size = sizeof(COM_STRUCT_NAME(Crc)),
+	.class_size	   = sizeof(COM_CLASS_NAME(Crc)),
+	.abstract	   = true,
 };
 
 static void
-f2xx_crc_register_types(void)
+stm32_common_crc_register_types(void)
 {
-    type_register_static(&f2xx_crc_info);
+    type_register_static(&stm32_common_crc_info);
+	for (int i = 0; i < ARRAY_SIZE(stm32_crc_variants); ++i) {
+        TypeInfo ti = {
+            .name       = stm32_crc_variants[i].variant_name,
+            .parent     = TYPE_STM32COM_CRC,
+            .class_init = stm32_common_crc_class_init,
+            .class_data = (void *)stm32_crc_variants[i].variant_regs,
+			.instance_init = stm32_common_crc_init,
+        };
+        type_register(&ti);
+    }
 }
 
-type_init(f2xx_crc_register_types)
+type_init(stm32_common_crc_register_types)

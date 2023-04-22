@@ -1,11 +1,11 @@
 /*
- * STM32F4 ethernet. 
+ * STM32F4 ethernet.
  *
  * derived from the Xilinx AXI-Ethernet by Edgar E. Iglesias.
  * (Based on hw/net/xgmac.c)
  *
  * Copyright (c) 2011 Calxeda, Inc.
- * 
+ *
  * Modified for STM32/Mini404 2021 by VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -40,6 +40,7 @@
 #include "hw/net/mii.h"
 #include "qom/object.h"
 #include "../utility/macros.h"
+#include "../stm32_common/stm32_common.h"
 
 #ifdef DEBUG_STM32F4XXETH
 #define DEBUGF_BRK(message, args...) do { \
@@ -154,7 +155,7 @@ typedef struct RxTxStats {
 OBJECT_DECLARE_SIMPLE_TYPE(Stm32F4xx_Eth, STM32F4XXETH)
 
 struct Stm32F4xx_Eth {
-    SysBusDevice parent_obj;
+    STM32Peripheral parent_obj;
 
     MemoryRegion iomem;
     qemu_irq sbd_irq;
@@ -205,10 +206,10 @@ static void stm32f4xx_eth_write_desc(Stm32F4xx_Eth *s, struct desc *d, int rx)
     uint32_t addr = s->regs[reg];
     // Need to write back to the same place, not the next slot for TX!
     if (!rx) cpu_physical_memory_write(addr, d, sizeof(*d));
-    
+
     s->regs[reg] = d->buffer2_nextdescaddr;
 
-    // STM doesn't use these flags ATM, it is set up in "second address chained" mode. 
+    // STM doesn't use these flags ATM, it is set up in "second address chained" mode.
     // Leaving this here in case it changes with a HAL upgrade.
     // if (!rx && (d->ctl_stat & 0x00200000)) {
     //     s->regs[reg] = s->regs[DMA_TX_BASE_ADDR];
@@ -274,8 +275,8 @@ static void stm32f4xx_eth_send(Stm32F4xx_Eth *s)
         if (bd.ctl_stat & 0x20000000) {
             /* Last buffer in frame.  */
             if ((bd.ctl_stat & 0x00C00000U) ==0x00C00000U) { // HW is expected to do checksum
-               net_checksum_calculate(frame, frame_size, CSUM_TCP);  
-               eth_fix_ip4_checksum(frame+14,0x14);            
+               net_checksum_calculate(frame, frame_size, CSUM_TCP);
+               eth_fix_ip4_checksum(frame+14,0x14);
             }
 
             // printf("Eth TX len %d\n", frame_size);
@@ -323,7 +324,7 @@ static void phy_read(Stm32F4xx_Eth *s) {
 static void phy_write(Stm32F4xx_Eth *s) {
     // printf("PHY write %02x : %04x\n", s->defs.MACMIIAR.MR, s->defs.MACMIIDR.MD);
     uint16_t data = s->defs.MACMIIDR.MD;
-    switch (s->defs.MACMIIAR.MR) 
+    switch (s->defs.MACMIIAR.MR)
     {
         case MII_BMCR:
             if (data & MII_BMCR_AUTOEN) {
@@ -470,16 +471,17 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
     CHECK_REG_u32(s->defs.MACMIIAR);
     CHECK_REG_u32(s->defs.MACMIIDR);
 
-    memory_region_init_io(&s->iomem, OBJECT(s), &enet_mem_ops, s,
-                          "stm32-eth", 0x1400);
+	g_stm32_periph_init = STM32_P_ETH;
+    STM32_MR_IO_INIT(&s->iomem, OBJECT(s), &enet_mem_ops, s, 5U * KiB);
+	g_stm32_periph_init = STM32_P_UNDEFINED;
     sysbus_init_mmio(sbd, &s->iomem);
     sysbus_init_irq(sbd, &s->sbd_irq);
     sysbus_init_irq(sbd, &s->pmt_irq);
     sysbus_init_irq(sbd, &s->mci_irq);
-    
+
     // FIXME - set based on netdev presence!
     if (s->is_connected) {
-        s->mii[MII_BMSR] |= MII_BMSR_LINK_ST; // link up. 
+        s->mii[MII_BMSR] |= MII_BMSR_LINK_ST; // link up.
     }
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
@@ -539,7 +541,7 @@ static void stm32f4xx_eth_class_init(ObjectClass *klass, void *data)
 
 static const TypeInfo stm32f4xx_eth_info = {
     .name          = TYPE_STM32F4XXETH,
-    .parent        = TYPE_SYS_BUS_DEVICE,
+    .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(Stm32F4xx_Eth),
     .class_init    = stm32f4xx_eth_class_init,
 };

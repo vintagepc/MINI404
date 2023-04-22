@@ -35,12 +35,16 @@ extern uint32_t stm32_rcc_if_get_periph_freq(STM32Peripheral* p)
 {
 	if (p->rcc == NULL)
 	{
-		printf("ERR: No RCC set when checking clock frequency!\n");
+		printf("ERR: No RCC set for %s when checking clock frequency!\n", _PERIPHNAMES[p->periph]);
 		return 0;
 	}
 	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(p->rcc);
     Clk_t* clk = &s->pclocks[p->periph];
 
+	if (!clk->is_initialized)
+	{
+		printf("ERR: Clock for %s is not initialized!\n", _PERIPHNAMES[p->periph]);
+	}
     assert(clk->is_initialized);
 
     return clktree_get_output_freq(clk);
@@ -145,7 +149,7 @@ static void stm32_common_rcc_instance_init(Object* obj)
 	s->realize_func = stm32_common_rcc_realize;
 	s->REFCLK = clock_new(obj,"REFCLK");
 	s->CPUCLOCK = clock_new(obj,"CPUCLK");
-	clock_set_mul_div(s->REFCLK, 8,1);
+	clock_set_mul_div(s->REFCLK, 1,8);
 	clock_set_mul_div(s->CPUCLOCK, 1, 1);
 }
 

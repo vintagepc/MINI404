@@ -138,7 +138,7 @@ static void
 stm32f4xx_rng_init(Object *obj)
 {
     Stm32f4xxRNGState *s = STM32F4XX_RNG(obj);
-    memory_region_init_io(&s->iomem, obj, &stm32f4xx_rng_ops, s, "rng", R_RNG_MAX * 4U);
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32f4xx_rng_ops, s, R_RNG_MAX * 4U);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 }
