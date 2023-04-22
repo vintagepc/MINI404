@@ -79,6 +79,11 @@ extern "C"{
 
 void ScriptHost::PrintScriptHelp(bool bMarkdown)
 {
+	if (m_clients.empty())
+	{
+		return; // Early invocation before clients is needed for some printers.
+		// Print no headers if the list is empty.
+	}
 	if (bMarkdown)
 	{
 		std::cout << "# Scripting options for the selected printer:\n";
@@ -91,6 +96,7 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 	{
 		client.second->PrintRegisteredActions(bMarkdown);
 	}
+	std::cout << "End Scripting options\n";
 }
 
 ScriptHost::~ScriptHost() {

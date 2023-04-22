@@ -120,7 +120,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
     if (kernel_len >3)
     {
         const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bin",3)==0)
+        if (strncmp(kernel_ext, "bbf",3)==0)
         {
             // TODO... use initrd_image as a bootloader alternative?
             struct stat bootloader;

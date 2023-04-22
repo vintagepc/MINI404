@@ -637,6 +637,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
     // Check for high-level non configuration arguments like help outputs and handle them.
     if (!args_continue_running)
     {
+		arghelper_parseargs(); // Reparse to get the help output for everything initialized since the first call.
         // We processed an arg that wants us to quit after it's done.
         qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
     }
