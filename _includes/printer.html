@@ -18,8 +18,15 @@
     <input type ="hidden" id="-{{ include.name }}{{ include.index }}-enabled" value=1 />
 {% endif %}
     <label for="-{{ include.name }}{{ include.index }}"> {{ include.label }}:</label>
-    <select  id="-{{ include.name }}{{ include.index }}" onchange="updateParam('-{{ include.name }}{{ include.index }}')"  {% if include.disabled == 1 %}disabled{% endif %}>
+    <select  id="-{{ include.name }}{{ include.index }}" onchange="showHide('-{{ include.name }}{{ include.index }}-' + document.getElementById('-{{ include.name }}{{ include.index }}').value); updateParam('-{{ include.name }}{{ include.index }}'); "  {% if include.disabled == 1 %}disabled{% endif %}>
         <option value="prusa-mini">Prusa Mini</option>
-        <option value="prusa-mk4">Prusa MK4</option> <!-- (Hehe, you found the easter egg. Wait for the printer to actually exist though, I can't simulate what I don't have! -->
+        <option value="prusa-mk4-027c">Prusa MK4 0.2.7c</option>
+        <option value="prusa-mk4-034">Prusa MK4 0.3.4</option>
+         <option value="prusa-xl-040">Prusa XL 0.4.0</option>
+         <option value="prusa-xl-050">Prusa XL 0.5.0</option>
+         <option value="prusa-xl-bed-060">Prusa XL Modular Bed v0.6.0</option>
+         <option value="prusa-xl-bed-070">Prusa XL Modular Bed v0.7.0</option>
+         <option value="prusa-xl-extruder-040-0">Prusa XL Extruder v0.4.0 #0</option>
+         <option value="prusa-xl-extruder-060-0">Prusa XL Extruder v0.6.0 #0</option>
       </select>
 </p>

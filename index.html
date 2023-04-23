@@ -1,0 +1,128 @@
+---
+layout: default
+---
+<link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.css"/>
+<!-- Add the slick-theme.css if you want default styling -->
+<link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick-theme.css"/>
+<script
+  src="https://code.jquery.com/jquery-3.6.4.min.js"
+  integrity="sha256-oP6HI9z1XaZNBrJURtCoUT5SUnxFr8s3BzRl+cbzUq8="
+  crossorigin="anonymous"></script>
+  
+       <p><img src="https://github.com/vintagepc/MINI404/workflows/CI%20Build/badge.svg" alt="CI Build" /> <img src="https://github.com/vintagepc/MINI404/workflows/Code%20Lint/badge.svg" alt="Code Lint" /></p>
+<h1 id="mini404---like-mk404-but-with-an-appendix-you-can-un-break">Mini404 - Like MK404, but with an appendix you can un-break!</h1>
+
+<p><img src="https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/Line.png" alt="" /></p>
+
+<h2 id="introduction">Introduction</h2>
+
+<p>Mini404 is the natural successor to <a href="https://vintagepc.github.io/MK404/">MK404</a> for Prusa’s STM32-based Mini printer! It’s still relatively young in its development and the ARM architecture and peripherals are much more complex to simulate. It is a spare time project but I am still actively developing features and capabilities where time permits. It’s built on QEMU this time as that was the best ARM emulation platform I could find - or, at least, one with an ARM MCU and a bare-bones STM32F implementation. Be sure to check out the MK404 page for some additional background and motivation on how these projects came about.</p>
+
+<p>We feature many overlapping features with MK404, including the scripting engine, advanced arm-gdb debugging capabilities, and 3D printer visuals!</p>
+<h2> Gallery </h2>
+<div class="gallery" data-slick='{"slidesToShow": 2, "slidesToScroll": 1}'>
+<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/99891866-7b1ba000-2c3c-11eb-804b-427196de95df.png" alt="" /></div>
+<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/99891868-8242ae00-2c3c-11eb-91fd-7bab7657e3ee.png" alt="image" /></div>
+<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/101267602-70770580-3728-11eb-97f5-f6258eec8e11.png" alt="image" /></div>
+<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/101993374-12967080-3c88-11eb-915a-82a25005cbed.png" alt="image" /></div>
+<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/104094225-76975f00-525d-11eb-8bba-1d2388fc085d.png" alt="image" /></div>
+</div>
+
+
+<p>In addition, the use of QEMU gives us even more features to leverage:</p>
+
+<ul>
+  <li>
+    <p>Simulated Ethernet to the host</p>
+  </li>
+  <li>
+    <p>Simulated or physical USB drive on the host computer</p>
+  </li>
+  <li>
+    <p>Emulation save states so you can snapshot the machine state and resume it later</p>
+  </li>
+  <li>
+    <p>Many more capabilities that are implicitly provided by QEMU’s system, such as virtual consoles, host serial devices, pipes, and file-backed storage for EEPROMs and data.</p>
+  </li>
+</ul>
+
+<p><img src="https://raw.githubusercontent.com/wiki/vintagepc/MINI404/images/3D_model.png" alt="" /></p>
+
+<h2 id="new-tool">New Tool:</h2>
+
+<ul>
+  <li><a href="https://vintagepc.github.io/MINI404/Mini404Exec.html">Command Line Configurator</a> for helping you figure out the QEMU command line parameters you need.</li>
+</ul>
+
+<h2 id="supported-printers">Supported Printers</h2>
+
+  {% capture printers %}    
+  {% include printers.md %}
+  {% endcapture %}
+  {{ printers | markdownify }}
+
+<h2 id="prusa-mini-features" onClick="$('.mini-features').fadeToggle('normal');"><span class="mini-features">+ </span><span style="display:none;" class="mini-features">- </span><a href='#' onclick="return false;">Prusa Mini Feature Status</a></h2>
+<div class="mini-features" style="display:none;">
+<p>This is an overview of the current status of the Mini implementation.</p>
+
+  {% capture mini-features %}    
+  {% include mini-features.md %}
+  {% endcapture %}
+  {{ mini-features | markdownify }}
+
+</div>
+<hr />
+<h2 id="prusa-mk4-features" onClick="$('.mk4-features').fadeToggle('normal');"><span class="mk4-features">+ </span><span style="display:none;" class="mk4-features">- </span><a href='#' onclick="return false;">Prusa Mk4 Feature Status</a></h2>
+<div class="mk4-features" style="display:none;">
+Coming soon!
+</div>
+<hr />
+
+<h2 id="prusa-xl-features" onClick="$('.xl-features').fadeToggle('normal');"><span class="xl-features">+ </span><span style="display:none;" class="xl-features">- </span><a href='#' onclick="return false;">Prusa XL Feature Status</a></h2>
+<div class="xl-features" style="display:none;">
+Coming soon!
+</div>
+<hr />
+
+<h2 id="non-hardware-specific-feature-highlights">Non-hardware-specific feature highlights</h2>
+
+<ul>
+  <li>
+    <p>ARM-gdb debugging - the ARM version of GDB is new enough that it can be used together with the <code class="language-plaintext highlighter-rouge">Native debugging</code> extension in VS Code for a very nice debugging experience.</p>
+  </li>
+  <li>
+    <p>Mini404 can run the factory .bbf files if the Mini boot-loader is installed as <code class="language-plaintext highlighter-rouge">bootloader.bin</code> in the same location as the <code class="language-plaintext highlighter-rouge">qemu-system-buddy</code> binary. You will need to source the bootloader.bin file yourself (URL can be found in the bootstrap script of the Mini firmware repo as I have not yet sought permission to hotlink or redistribute it. If you self-compile a noboot .bin file the bootloader is not required)</p>
+  </li>
+  <li>
+    <p>Modular approach - Much like MK404, (and partly due to QEMU’s architecture) the design is modular so it will be easy to re-use components to support additional printer models.</p>
+  </li>
+</ul>
+
+<h1 id="supported-platforms">Supported platforms</h1>
+
+<p>At current we only actively support Linux, and a Windows/MinGW64 build will be passively maintained via a GitHub build runner. While it should be possible to compile QEMU and probably the Mini404 components for OSX, I do not have the requisite hardware/development environment and it is not something I can support nor maintain. For either of these cases you are always welcome to report any issues you may find or submit fixes and I’ll do my best to assist, but cannot make any guarantees. For Linux I recommend you compile yourself, as each distribution has its own set of libraries. Until I get time to create a more portable package distributable, it is the best way to avoid a headache.</p>
+
+<p>See <a href="https://github.com/vintagepc/MINI404/wiki/Getting-Started">Getting Started</a> for a primer on what you need to compile and how to get started.</p>
+
+<h1 id="a-note-on-the-stm32-architecture">A Note on the STM32 architecture</h1>
+
+<ul>
+  <li>The STM32F4xx architecture in Mini404’s fork of QEMU has received significant expansion over the development of this project with my own peripheral implementations. So far it’s the most complete one I’m aware of, and I’d like to thank both the QEMU developers/contributors for their work in the STM32 components that come “stock” with QEMU, as well as the <a href="https://github.com/pebble/qemu">pebble-qemu</a> fork for their prior work Mini404 was able to leverage or adapt to make this project possible! Long term as these implementations stabilize, I hope these improvements will make it upstream, but currently I do not have the time to do so and maintain the upstream versions myself.</li>
+</ul>
+
+<h1 id="more-reading">More Reading</h1>
+
+<p>Head on over to the <a href="https://github.com/vintagepc/MINI404/tree/MINI404">Main Repo</a> to get started, or…</p>
+
+<p>… browse the <a href="https://github.com/vintagepc/MINI404/wiki">Wiki</a> for some more in-depth reading on features and how to use them.</p>
+<script type="text/javascript" src="//cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.min.js"></script>
+<script>
+$(".gallery").slick({
+
+  // normal options...
+  infinite: true,
+  dots: true, 
+
+});
+
+</script>

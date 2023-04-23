@@ -27,6 +27,14 @@ In addition, the use of QEMU gives us even more features to leverage:
 
 - [Command Line Configurator](https://vintagepc.github.io/MINI404/Mini404Exec.html) for helping you figure out the QEMU command line parameters you need.
 
+## Supported Printers
+
+Name|Status
+----|------
+Prusa Mini | ✔️ Complete
+Prusa Mk4 |  ⚠ Partial. Both the firmware and the printer sim are still evolving to support all capabilities
+Prusa XL |  ⚠ Partial. The firmware can boot and do some basic things but will not pass selftest due to bed current threshold.
+
 ## Prusa Mini Features 
 
 This is an overview of the current status of the Mini implementation. 

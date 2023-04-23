@@ -4,102 +4,132 @@ layout: default
 
 <h1 id="form-elements">Mini404 Command Line Generator</h1>
 
-Note: This tool is still in development. Please report any issues you may encounter so it can be improved! <br><br>
+Note: This tool is still in development. Please <a href="https://github.com/vintagepc/MINI404/issues/new?assignees=&labels=&template=config_tool.md&title=%5BCFG+TOOL%5D">report any issues</a> you may encounter so it can be improved! <br><br>
 
 <h3> Daunted by all the command line options? We've got you covered! </h3>
 
-<link rel="stylesheet" href="style.css">
-<script>
-  function toggleClass(param,bBlock) {
-    baseclass = param.replace(/[0-9]/g,'');
-    items = document.getElementsByClassName(baseclass+'-block');
-    for(i=0; i<items.length; i++) {
-      // alert(items[i].id)
-      if (bBlock) {
-        if(items[i].id != param+"-p") {
-          items[i].style.display='none';
-        }
-      } else {
-        items[i].style.display='initial';
-      }
-    }
-  }
+Just pick the options you'd like and watch the full command built right before your eyes!<br><br>
 
+<link rel="stylesheet" href="style.css">
+<script
+  src="https://code.jquery.com/jquery-3.6.4.min.js"
+  integrity="sha256-oP6HI9z1XaZNBrJURtCoUT5SUnxFr8s3BzRl+cbzUq8="
+  crossorigin="anonymous"></script>
+<script>
   function updateParam(param, format) {
     sourceCtl = document.getElementById(param);
     enableCtl = document.getElementById(param + "-enabled");
+    baseclass = param.replace(/[0-9]/g,'');
     if (arguments.length == 1) {
       format = param + " %1";
     }
     //alert(event.target.id);
+    
     if (enableCtl.value == 1 || enableCtl.checked) { 
-      newstring = format.replace('%1',"" + sourceCtl.value);
-      newvis = "block";
-      toggleClass(param,true)
+        document.getElementById(param + "-val").innerHTML = format.replace('%1',"" + sourceCtl.value);
+        $("." + baseclass + '-block:not(#'+param+'-p)').fadeOut("normal");
+        $.when($("#" + param + "-p pre").fadeIn("fast")).done(updateCmd());
     } else {
-      newstring = "";
-      newvis = "none";
-      toggleClass(param,false)
+        $("." + baseclass + '-block').fadeIn("normal");
+        $.when($("#" + param + "-p pre").fadeOut("fast")).done( function () {
+            document.getElementById(param + "-val").innerHTML = "";
+            updateCmd();
+            });
     }
-    document.getElementById(param + "-val").innerHTML = newstring;
-    document.getElementById(param + "-val").style.display = newvis;
-    updateCmd();
+  }
+  function showHide(control)
+  {
+    //alert("ShowHide called with: " + control);
+    $(".hide-default").slideUp("normal");
+    $(".show-default").slideDown("normal");
+    $(".show"+control).slideDown("normal");
+    $(".hide"+control).slideUp("normal");
   }
   </script>
   
 
-<fieldset>
+<fieldset class="main-content">
   <legend>Options</legend>
   <form>
-    {% include printer.html name="machine" label="Printer" default="prusa-mini" disabled=1 %} 
+    {% include printer.html name="machine" label="Printer" default="prusa-mini" %} 
+    <div class="hide-default {{ site.content.show_xls }}"><hr><pre style="max-width:100% !important;">Note: XL Setup requires launching multiple instances of QEMU to spawn the different components of the system (Modular bed, extruder(s) etc). See the launch-xl.sh script in hw/arm/prusa as a starting point for your own configuration.</pre><hr></div>
+    <div class="hide-default {{ site.content.show_xl_es }}"><hr><pre style="max-width:100% !important;">Note: To create "additional" tool heads, increment the final "-0" in the machine name. For example, "-machine prusa-xl-extruder-060-1". Valid values are 0-4. They must be spawned before the main instance is unpaused, see launch-xl.sh for examples.</pre><hr></div>
     {% include textinput.html name="kernel" label="Firmware filename" default="firmware.bin" %} 
-    {% include textinput.html name="mtdblock" default="xflash.bin" label="SPI Flash Storage filename" optional=1 format="-drive file=%1,if=mtd,format=raw" %}
-    {% include textinput.html name="pflash" default="eeprom.bin" label="I2C Flash Storage filename" optional=1 %}
-    {% include textinput.html name="pflash" default="eeprom_system.bin" index=2 label="I2C Flash System Block filename" optional=1 %}
+    <fieldset>
+    <legend>EEPROMs</legend>
+    <div class="hide-default {{ site.content.show_mk4s }}">
+    {% include textinput.html name="lb-eeprom" default="loveboard_eeprom.bin" label="LoveBoard EEPROM Block filename" optional=1 format="-drive file=%1,id=loveboard-eeprom,format=raw" %}
+    </div>
+    {% include textinput.html name="xflash" default="xflash.bin" label="SPI Flash filename" optional=1 format="-drive file=%1,id=mini404-xflash,format=raw" %}
+    {% include textinput.html name="pflash" default="eeprom.bin" label="I2C Flash filename" optional=1 format="-drive file=%1,id=mini404-eeprom,format=raw" %}
+    {% include textinput.html name="pflash" default="eeprom_system.bin" index=2 label="I2C Flash System Block filename" optional=1  format="-drive file=%1,id=mini404-eeprom-sys,format=raw" last=1 %}
+    </fieldset>
+    <br>
+    <div class="hide-default {{ site.content.show_mk4s }} {{ site.content.show_minis }} {{ site.content.show_xls }}">
     {% include spinbox.html name="netdev" label="Ethernet bridge host port" optional=1 default=3333 format="-netdev user,id=mini-eth,hostfwd=tcp::%1-:80" %}
+    </div>
     <hr/>
-    Note: Correct assignment of the serial ports requires a build that supports assignment by chardev ID; otherwise handles will be assigned and filled starting from the lowest ID (so if you need access to UART6 on older builds, 1-5 must also be attached)
     Note- STM numbers UARTs starting at 1, but internally my indexing starts at zero, hence the off-by-one counting seen here. <br/><br/>If you choose "Serial" or "TTY" be sure to edit the device path <pre style="display:inline">/dev/tty???</pre> to point to the correct device - e.g. <pre style="display:inline"p>/dev/tty[USB0|ACM0|S0|S1...]</pre>!
     <br/><br/>
+    <fieldset>
+    <legend>Common UARTs (F407/G070)</legend>
     {% include dropdown.html name="serial" index=0 label="Serial 0 (UART1)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart0" %}
     {% include dropdown.html name="serial" index=1 label="Serial 1 (UART2)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart1" %}
     {% include dropdown.html name="serial" index=2 label="Serial 2 (UART3)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart2" %}
     {% include dropdown.html name="serial" index=3 label="Serial 3 (UART4)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart3" %}
     {% include dropdown.html name="serial" index=4 label="Serial 4 (UART5)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart4" %}
-    {% include dropdown.html name="serial" index=5 label="Serial 5 (UART6)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart5" %}
+    {% include dropdown.html name="serial" index=5 label="Serial 5 (UART6)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart5" last=1 %}
+    </fieldset>
+    <fieldset class="hide-default {{ site.content.show_mk4s }} {{ site.content.show_xls }}">
+    <legend>STM32F427 UARTs</legend>
     {% include dropdown.html name="serial" index=6 label="Serial 6 (UART7)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart6" %}
+    {% include dropdown.html name="serial" index=7 label="Serial 7 (UART8)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart7" last=1 %}  
+    </fieldset>
     <hr />
     {% include textinput.html excludes= "-drive" name="drive" label="USB Storage filename" optional=1 default="fat32.img" format="-drive if=none,id=usbstick,format=raw,file=%1 -device usb-storage,drive=usbstick" %}
     {% include textinput.html excludes= "-drive" name="drive" index=1 label="USB via Folder (vvfat/read-only)" optional=1 format="-drive id=usbstick,readonly=on,file=fat:%1 -device usb-storage,drive=usbstick" %}
     {% include textinput.html excludes= "-drive" name="drive" index=2 label="USB via Folder (vvfat/read-write)" optional=1 format="-drive id=usbstick,file=fat:rw:%1 -device usb-storage,drive=usbstick" %}
     {% include checkbox.html name="chardev" label="Fake USB CDC via virtual console" optional=1 format="-chardev vc,rows=25,cols=80,id=stm32usbfscdc" %}
+    {% include dropdown.html name="icount" label="Enable instruction counting" optional=1 options="auto@1@2@3@4@5@6" format="-icount %1" %}
+    {% include checkbox.html name="append" index=3 label="Appendix (Mini404 warranty void if unchecked 😉)" optional=1 format="-append appendix" %}
+    <fieldset>
+    <legend>3D Visuals</legend>
     {% include dropdown.html name="append" index=0 label="Extra Visuals" optional=1 options="gfx-lite@gfx-full" %}
     {% include dropdown.html name="append" index=1 label="Extrusion type" optional=1 options="Quad_Avg@Quad_HR@Tube_Avg@Tube_HR" format="-append extrusion=%1" %}
-    {% include checkbox.html name="append" index=2 label="Colour Extrusion" optional=1 format = "-append colour-extrusion" %}
-    {% include checkbox.html name="append" index=3 label="Appendix (Mini404 warranty void if unchecked 😉)" optional=1 format="-append appendix" %}
+    {% include checkbox.html name="append" index=2 label="Colour Extrusion" optional=1 format = "-append colour-extrusion" last=1 %}
+    </fieldset>
+    <fieldset>
+    <legend>Scripting</legend>
     {% include checkbox.html name="append" index=4 label="Print Script Help" optional=1 format="-append scripthelp" %}
-    {% include textinput.html name="append" index=5 default="myscript.txt" label="Execute a script file" optional=1 format="-append script=%1" %}
-    {% include checkbox.html name="append" index=6 label="4x default flash storage" optional=1 format = "-append 4x_flash" %}
-    {% include checkbox.html name="icount" label="Enable instruction counting" optional=1 format="-icount auto" %}
+    {% include dropdown.html name="p404" label="Enable scripting console" optional=1 options="vc,cols=80,rows=24@pty@stdio" format="-chardev %1,id=p404-scriptcon" %}
+    {% include textinput.html name="append" index=5 default="myscript.txt" label="Execute a script file" optional=1 format="-append script=%1" last=1 %}
+    </fieldset>
+    <fieldset>
+    <legend>Advanced/Debugging</legend>
     {% include checkbox.html name="S" label="Pause CPU at startup" optional=1 %}
     {% include spinbox.html name="s" label="Enable GDB debugging on port" optional=1 default=1234 format="-gdb tcp::%1" %}
+    {% include checkbox.html name="append" index=6 label="4x default flash storage" optional=1 format = "-append 4x_flash" %}
     {% include textinput.html name="m" default="196608" label="SRAM size in bytes" optional=1 %}
-    {% include dropdown.html name="p404" label="Enable scripting console" optional=1 options="vc,cols=80,rows=24@pty@stdio" format="-chardev %1,id=p404-scriptcon" %}
-    {% include checkbox.html name="p404echo" label="Disable echo in P404 console" optional=1 format="-global p404-scriptcon.no_echo=true" %}
-
+    {% include dropdown.html name="itm" label="Enable ARM ITM debug output" optional=1 options="vc,cols=80,rows=24@pty@stdio" format="-chardev %1,id=stm32_itm" %}
+    {% include checkbox.html name="p404echo" label="Disable echo in P404 console" optional=1 format="-global p404-scriptcon.no_echo=true" last=1 %}
+    </fieldset>
   </form>
 </fieldset>
+<div class="footer">
 <hr>
+<center>
 <h2>Generated command line:</h2>
-<pre id="finalCmd" style="max-width:100%;" >qemu-system-buddy</pre>
-
+<pre id="finalCmd" style="max-width:95%;" >qemu-system-buddy</pre>
+</center>
+<br>
+</div>
 <script>
   function updateCmd() {
     params = document.getElementsByClassName("paramItem");
     cmdLine = "qemu-system-buddy";
     appendLine = ""
     for(i=0; i<params.length; i++) {
-      if (params[i].innerHTML !="")
+      if (params[i].offsetParent !== null)
         cmdLine += ' ' + params[i].innerHTML.trim();
     }
     params = document.getElementsByClassName("paramAppend");
@@ -113,7 +143,14 @@ Note: This tool is still in development. Please report any issues you may encoun
     cmdLine = cmdLine + ' ' + appendLine;
     document.getElementById('finalCmd').innerHTML = cmdLine.replace(/\s+/g,' ');
   }
-  document.onload = updateCmd();
+  function init()
+  {
+   document.getElementById('-icount-enabled').checked = true;
+   document.getElementById('-icount-enabled').onchange();
+    updateCmd();
+    showHide('-machine-prusa-mini');
+  }
+  document.onload = init();
 </script>
 
 <!--
@@ -307,5 +344,3 @@ Note: This tool is still in development. Please report any issues you may encoun
       <input class="button" type="submit" value="Submit" />
     </p>
   </form> -->
-
-</fieldset>
