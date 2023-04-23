@@ -104,6 +104,8 @@ class MK3SGL: public Scriptable, private IKeyClient
 
     private:
 
+		MK3SGL(const MK3SGL& other); // not implemented. this class is a signleton.
+
 		void OnKeyPress(const Key& key) override;
 
         void TimerCB(int i);
