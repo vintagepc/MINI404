@@ -31,6 +31,7 @@ typedef struct stm32_mem_cfg_t
 
 typedef struct stm32_soc_cfg_t
 {
+	const char* name;
 	const uint32_t nvic_irqs;
 	const uint32_t rcc_hsi_freq;
 	const uint32_t rcc_hse_freq;
@@ -41,7 +42,7 @@ typedef struct stm32_soc_cfg_t
 	const hwaddr sram_base;
 	const stm32_mem_cfg_t sram_variants[STM32_MAX_FLASH_OPTS +1];
 	const hwaddr ccmsram_base;
-	const stm32_mem_cfg_t ccmssram_variants[STM32_MAX_FLASH_OPTS +1];
+	const stm32_mem_cfg_t ccmsram_variants[STM32_MAX_FLASH_OPTS +1];
 	const stm32_periph_cfg_t perhipherals[STM32_P_COUNT];
 } stm32_soc_cfg_t;
 

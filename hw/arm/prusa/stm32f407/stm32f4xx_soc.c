@@ -39,6 +39,7 @@
 #include "../stm32_common/stm32_rcc_if.h"
 #include "../stm32_common/stm32_rcc.h"
 #include "../stm32_chips/stm32f407xx.h"
+#include "../stm32_chips/stm32f427xx.h"
 #include "hw/arm/armv7m.h"
 
 #include "qom/object.h"
@@ -61,6 +62,7 @@ struct STM32F4XX_STRUCT_NAME() {
 
 static const stm32_soc_cfg_t* stm32_f4xx_variants[] = {
 	&stm32f407xx_cfg,
+	&stm32f427xx_cfg,
 };
 
 
@@ -124,7 +126,6 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
     memory_region_add_subregion(system_memory, cfg->ccmsram_base, &s->ccmsram);
 
-
     armv7m = DEVICE(&s->armv7m);
 	stm32_common_rcc_connect_cpu_clocks(stm32_soc_get_periph(dev_soc, STM32_P_RCC), armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", cfg->nvic_irqs);
@@ -149,12 +150,16 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
     // First assign by ID
     for (i = STM32_P_USART_BEGIN; i< STM32_P_USART_END; i++) {
-        name[9] = '0' + i;
-        Chardev* cdev = qemu_chr_find(name);
-        if (NULL != stm32_soc_get_periph(dev_soc, i) && NULL != cdev) {
-            printf("Found ID %s - assigned to UART %d\n",name, i+1);
-			qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, i), "chardev", cdev);
-        }
+		if (stm32_soc_is_periph(dev_soc, i))
+		{
+			// Note - F407 and F427 have differing number of UARTs.
+			name[9] = '0' + (i - STM32_P_USART_BEGIN);
+			Chardev* cdev = qemu_chr_find(name);
+			if (NULL != cdev) {
+				printf("Found serial %s - assigned to %s\n",name, _PERIPHNAMES[i]);
+				qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, i), "chardev", cdev);
+			}
+		}
     }
 
 	for (int i=STM32_P_ADC_BEGIN; i<STM32_P_ADC_END; i++)
@@ -199,7 +204,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
 
     //s->otg_fs.debug = true;
-    qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, STM32_P_USB2), "chardev", qemu_chr_find("stm32usbfscdc"));
+    qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, STM32_P_USBFS), "chardev", qemu_chr_find("stm32usbfscdc"));
 
     // IRQs: FS wakeup: 42 FS Global: 67
 	// STM32_RLZ_AND_MAP(s, usb_fs, armv7m, true, NULL);
@@ -221,11 +226,23 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
 	qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, STM32_P_ITM), "chardev", qemu_chr_find("stm32_itm"));
 
+	for (int i = STM32_P_DMA_BEGIN; i <= STM32_P_DMA_END; i++)
+	{
+		object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, i)), "system-memory", OBJECT(system_memory), &error_fatal);
+	}
+
+	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_USBFS)), "system-memory", OBJECT(system_memory), &error_fatal);
+	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_USBHS)), "system-memory", OBJECT(system_memory), &error_fatal);
+
 	stm32_soc_realize_all_peripherals(dev_soc, errp);
 
-	//ITM is special, we need to overlay it at the top level because otherwise the NVIC
+	//ITM and DWT are special, we need to overlay at the top level because otherwise the NVIC
 	// intercepts our read/write calls.
 	memory_region_add_subregion_overlap(&s->armv7m.container, cfg->perhipherals[STM32_P_ITM].base_addr, sysbus_mmio_get_region(SYS_BUS_DEVICE(stm32_soc_get_periph(dev_soc, STM32_P_ITM)),0) ,10);
+	if (stm32_soc_is_periph(dev_soc, STM32_P_DWT))
+	{
+		memory_region_add_subregion_overlap(&s->armv7m.container, cfg->perhipherals[STM32_P_DWT].base_addr, sysbus_mmio_get_region(SYS_BUS_DEVICE(stm32_soc_get_periph(dev_soc, STM32_P_DWT)),0) ,10);
+	}
 
     create_unimplemented_device("WWDG",        0x40002C00, 0x400);
     create_unimplemented_device("I2S2ext",     0x40003000, 0x400);
@@ -235,8 +252,6 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("DAC",         0x40007400, 0x400);
     create_unimplemented_device("SDIO",        0x40012C00, 0x400);
     create_unimplemented_device("BKPSRAM",     0x40024000, 0x400);
-    create_unimplemented_device("Ethernet",    0x40028000, 0x1400);
-    create_unimplemented_device("USB OTG FS",  0x50000000, 0x31000); // Note - FS is the serial port/micro-usb connector
     create_unimplemented_device("DCMI",        0x50050000, 0x400);
     create_unimplemented_device("SYSRAM/RSVD",         0x1FFF0000, 0x8000);
     create_unimplemented_device("ETM/DBGMCU/TIPU", 0xE0001000, 0xFEFFF);

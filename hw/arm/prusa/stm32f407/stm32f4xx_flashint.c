@@ -25,6 +25,7 @@
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "../utility/macros.h"
 #include "../stm32_common/stm32_common.h"
 
 enum RegIndex{
@@ -146,8 +147,19 @@ static const stm32_reginfo_t stm32f40x_41x_flashif_reginfo[RI_END] = {
 	[RI_OPTCR1] = {.is_reserved = true }
 };
 
+static const stm32_reginfo_t stm32f42xxx_flashif_reginfo[RI_END] = {
+    [RI_ACR] = {.mask = 0x1F0F, .unimp_mask = 0x1F0F},
+    [RI_KEYR] = {.mask = UINT32_MAX},
+    [RI_OPTKEYR] = {.unimp_mask = UINT32_MAX },
+    [RI_SR]  = {.mask = 0x100F3, .unimp_mask = 0x100F3},
+    [RI_CR] = {.mask = 0x810183FF, .unimp_mask = 0x1018304},
+    [RI_OPTCR] = {.unimp_mask = UINT32_MAX, .reset_val =0x0FFFAAED },
+	[RI_OPTCR1] = {.mask = 0x0FFF0000, .unimp_mask = UINT32_MAX, .reset_val =0x0FFF0000 },
+};
+
 static const stm32_periph_variant_t stm32f4xx_flashif_variants[] = {
 	{TYPE_STM32F40x_F41x_FINT, stm32f40x_41x_flashif_reginfo },
+	{TYPE_STM32F42x_F43x_FINT, stm32f42xxx_flashif_reginfo },
 };
 
 #define KEY1 0x45670123UL
@@ -319,7 +331,7 @@ static void
 stm32f4xx_fint_init(Object *obj)
 {
     STM32F4XX_STRUCT_NAME(FlashIF) *s = STM32F4xx_FINT(obj);
-    memory_region_init_io(&s->iomem, obj, &stm32f4xx_fint_ops, s, "flash_if", 1U *KiB);
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32f4xx_fint_ops, s, 1U *KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 	COM_CLASS_NAME(F4xxFlashIF) *k = STM32F4xx_FINT_GET_CLASS(obj);

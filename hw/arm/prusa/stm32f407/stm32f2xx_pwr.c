@@ -25,6 +25,8 @@
 
 #include "stm32f2xx_pwr.h"
 #include "migration/vmstate.h"
+#include "../stm32_common/stm32_shared.h"
+#include "../utility/macros.h"
 #include "qemu/log.h"
 
 //#define DEBUG_STM32F2XX_PWR
@@ -138,7 +140,7 @@ f2xx_pwr_init(Object *obj)
 {
     f2xx_pwr *s = STM32F2XX_PWR(obj);
 
-    memory_region_init_io(&s->iomem, obj, &f2xx_pwr_ops, s, "pwr", 0x08);
+    STM32_MR_IO_INIT(&s->iomem, obj, &f2xx_pwr_ops, s, 0x08);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
     s->regs[R_PWR_CR] = 0;

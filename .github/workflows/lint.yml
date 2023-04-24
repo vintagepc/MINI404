@@ -15,7 +15,7 @@ jobs:
   # This workflow contains a single job called "build"
   cppcheck:
     # The type of runner that the job will run on
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -60,7 +60,7 @@ jobs:
     - name: Run CPPCheck
       run: |
         cd ${{ runner.workspace }}/MINI404
-        cppcheck --template='::{severity} file={file},line={line}::{message}' --error-exitcode=2 --inline-suppr --enable=warning --suppress='*:hw/arm/prusa/3rdParty/*' hw/arm/prusa
+        cppcheck --template='::{severity} file={file},line={line}::{message}' -I include --error-exitcode=2 --inline-suppr --enable=warning --suppress='*:hw/arm/prusa/3rdParty/*' --suppress='*:include/*' hw/arm/prusa
 
     # - name: Run Clang-tidy
     #   run: |

@@ -152,6 +152,33 @@ typedef struct COM_CLASS_NAME(Spi) {
     stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(Spi);
 
+static const stm32_reginfo_t stm32f030_spi_reginfo[RI_END] =
+{
+	[RI_CR1] = {.mask = UINT16_MAX, .unimp_mask = 0x800},
+	[RI_CR2] = {.mask = 0x7FFF, .reset_val = 0x700},
+	[RI_SR] = {.mask = 0x1FF3, .reset_val = 0x00000002},
+	[RI_DR] = {.mask = UINT16_MAX},
+	[RI_CRCPR] = {.mask = UINT16_MAX, .reset_val = 0x00000007},
+	[RI_RXCRCR] = {.mask = UINT16_MAX},
+	[RI_TXCRCR] = {.mask = UINT16_MAX},
+	[RI_I2SCFGR] = {.is_reserved = true},
+	[RI_I2SPR] = {.is_reserved = true},
+};
+
+static const stm32_reginfo_t stm32g070_spi_reginfo[RI_END] =
+{
+	[RI_CR1] = {.mask = UINT16_MAX, .unimp_mask = 0x800},
+	[RI_CR2] = {.mask = 0x7FFF, .reset_val = 0x700},
+	[RI_SR] = {.mask = 0x1FF3, .reset_val = 0x00000002},
+	[RI_DR] = {.mask = UINT16_MAX},
+	[RI_CRCPR] = {.mask = UINT16_MAX, .reset_val = 0x00000007},
+	[RI_RXCRCR] = {.mask = UINT16_MAX},
+	[RI_TXCRCR] = {.mask = UINT16_MAX},
+	[RI_I2SCFGR] = {.mask = 0x1FBF, .unimp_mask = 0x1FBF},
+	[RI_I2SPR] = {.mask = 0x3FF, .unimp_mask = 0x3FF, .reset_val = 0x2},
+};
+
+
 static const stm32_reginfo_t stm32f2xx_spi_reginfo[RI_END] =
 {
 	[RI_CR1] = {.mask = UINT16_MAX, .unimp_mask = 0x800},
@@ -178,7 +205,9 @@ static const stm32_reginfo_t stm32_common_spi_reginfo[RI_END] =
 	[RI_I2SPR] = {.mask = 0x3FF, .unimp_mask = 0x3FF, .reset_val = 0x2},
 };
 
-static const stm32_periph_variant_t stm32_spi_variants[] = {
+static const stm32_periph_variant_t stm32_spi_variants[4] = {
+	{TYPE_STM32F030_SPI, stm32f030_spi_reginfo},
+	{TYPE_STM32G070_SPI, stm32g070_spi_reginfo},
 	{TYPE_STM32F2xx_SPI, stm32f2xx_spi_reginfo},
 	{TYPE_STM32F4xx_SPI, stm32_common_spi_reginfo}
 };
@@ -246,6 +275,16 @@ static void stm32_common_spi_write(void *opaque, hwaddr addr,
             s->regs.raw[RI_CR1] = data;
 		}
 		break;
+		case RI_CR2:
+		{
+            REGDEF_NAME(spi, cr2) new = {.raw = data};
+			if (new.TXDMAEN && !s->regs.defs.CR2.TXDMAEN)
+			{
+				qemu_set_irq(s->parent.dmar[DMAR_M2P], s->mmio.addr + (4U * RI_DR));
+			}
+            s->regs.raw[RI_CR2] = data;
+		}
+		break;
         case RI_DR:
 		{
             REGDEF_NAME(spi, sr)* sr = &s->regs.defs.SR;
@@ -261,9 +300,13 @@ static void stm32_common_spi_write(void *opaque, hwaddr addr,
             sr->RXNE = true;
 			if (s->regs.defs.CR2.RXDMAEN)
 			{
-				qemu_set_irq(s->parent.dmar, s->mmio.addr + (4U * RI_DR));
+				qemu_set_irq(s->parent.dmar[DMAR_P2M], s->mmio.addr + (4U * RI_DR));
 			}
             sr->TXE = true;
+			if (s->regs.defs.CR2.TXDMAEN)
+			{
+				qemu_set_irq(s->parent.dmar[DMAR_M2P], s->mmio.addr + (4U * RI_DR));
+			}
 		}
 		break;
     default:
@@ -304,8 +347,7 @@ static void stm32_common_spi_init(Object *obj)
 
     DeviceState *dev = DEVICE(obj);
 
-    memory_region_init_io(&s->mmio, obj, &stm32_common_spi_ops, s,
-                          "spi", 1U*KiB);
+    STM32_MR_IO_INIT(&s->mmio, obj, &stm32_common_spi_ops, s, 1U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);

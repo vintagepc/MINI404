@@ -38,7 +38,7 @@
 #define TYPE_STM32F2XX_I2C "stm32f2xx-i2c"
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XXI2CState, STM32F2XX_I2C);
 
-#define R_I2C_COUNT 9u
+#define R_I2C_COUNT 10u
 
 struct STM32F2XXI2CState {
     /* <private> */
@@ -46,7 +46,7 @@ struct STM32F2XXI2CState {
 
     /* <public> */
     MemoryRegion mmio;
-    
+
     union {
         struct {
             struct {
@@ -73,7 +73,7 @@ struct STM32F2XXI2CState {
                 uint16_t ITERREN :1;
                 uint16_t ITEVTEN :1;
                 uint16_t ITBUFEN :1;
-                uint16_t DMAEN :1;                                
+                uint16_t DMAEN :1;
                 uint16_t LAST :1;
                 uint16_t :3;
             } QEMU_PACKED CR2;
@@ -121,20 +121,21 @@ struct STM32F2XXI2CState {
             } QEMU_PACKED SR2;
             uint16_t CCR;
             uint16_t TRISE;
+            uint16_t FLTR;
         } QEMU_PACKED defs;
         uint16_t regs[R_I2C_COUNT];
     } QEMU_PACKED;
 
     uint8_t last_read;
-
+    uint8_t id;
     qemu_irq evt_irq;
     qemu_irq err_irq;
     uint8_t slave_address;
-    uint8_t shiftreg; // DR shift register. 
+    uint8_t shiftreg; // DR shift register.
     int32_t rx;
-    bool shift_full; 
+    bool shift_full;
     bool is_read;
-    bool dr_unread; 
+    bool dr_unread;
     I2CBus *bus;
 };
 

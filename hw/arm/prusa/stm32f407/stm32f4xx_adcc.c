@@ -154,8 +154,7 @@ static void stm32f4xx_adcc_init(Object *obj)
     CHECK_REG_u32(s->defs.CCR);
     CHECK_REG_u32(s->defs.CDR);
 
-    memory_region_init_io(&s->mmio, obj, &stm32f4xx_adcc_ops, s,
-                          TYPE_STM32F4XX_ADCC, 0x0C);
+    STM32_MR_IO_INIT(&s->mmio, obj, &stm32f4xx_adcc_ops, s, 0x0C);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32f4xx_adcc_sr_in,"sr-in",3);

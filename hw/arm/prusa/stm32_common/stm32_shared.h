@@ -43,7 +43,7 @@ typedef struct stm32_reginfo_t
     _P(UART5), \
     _P(UART6), \
     _P(UART7), \
-    _P(UART8), \
+    _P(UART8), /* NOTE: update the convenience index below if you add more UARTS */ \
     _P(ADC_ALL), /* special common ADC for shared reset.*/ \
     _P(ADCC), \
     _P(ADC1), \
@@ -81,8 +81,8 @@ typedef struct stm32_reginfo_t
     _P(CAN1), \
     _P(CAN2), \
     _P(CAN), \
-    _P(USB2), /*DANGER WILL ROBINSON - FS must come first in init order otherwise the USB drive gets attached to the wrong port!*/ \
-    _P(USB), \
+    _P(USBFS), /*DANGER WILL ROBINSON - FS must come first in init order otherwise the USB drive gets attached to the wrong port!*/ \
+    _P(USBHS), \
     _P(SPI1), \
     _P(SPI2), \
     _P(SPI3), \
@@ -107,7 +107,8 @@ typedef struct stm32_reginfo_t
 	_P(ETH), \
 	_P(OTP), \
 	_P(DWT), \
-	_P(ITM),
+	_P(ITM), \
+	_P(DBG),
 
 #define _P(x) STM32_P_##x
 
@@ -119,9 +120,12 @@ enum STM32_PERIPHS {
 	STM32_P_DMA_END = STM32_P_DMA2,
 	STM32_P_GPIO_BEGIN = STM32_P_GPIOA,
 	STM32_P_GPIO_END = STM32_P_GPIOK + 1U,
+	STM32G070_GPIO_END = STM32_P_GPIOF + 1U,
 	STM32_P_ADC_BEGIN = STM32_P_ADC1,
 	STM32_P_ADC_END = STM32_P_ADC3 + 1U,
     STM32_P_USART_BEGIN = STM32_P_UART1,
+	STM32F030_USART_END = STM32_P_UART2 + 1U,
+	STM32G070_USART_END = STM32_P_UART6 + 1U,
     STM32_P_USART_END = STM32_P_UART8 + 1U,
 };
 #undef _P
@@ -134,6 +138,9 @@ static const char *_PERIPHNAMES[STM32_P_COUNT]  __attribute__((unused)) = {
 
 #undef PERIPHS // Clear the IRQ pairs for subsequent classes.
 
+// Globals are ugly, but this is the only way I see to easily get a value
+// available during the xxx_init routine for the purposes of a pretty set of MR names.
+extern stm32_periph_t g_stm32_periph_init;
 
 QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 
@@ -159,14 +166,14 @@ QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant t
 // Enforces the reserved mask for a register
 #define ENFORCE_RESERVED(val, reginfo, index) \
 	if (val & (~reginfo[index].mask)) { \
-		qemu_log_mask(LOG_GUEST_ERROR, "Attempted to alter a reserved bit in "#index"!\n"); \
+		qemu_log_mask(LOG_GUEST_ERROR, "%s: Attempted to alter a reserved bit in "#index"!\n", __FILE__ ); \
 	} \
 	val = val & reginfo[index].mask;
 
 // Checks if a write attempts to set any unimplemented bits and issues a LOG_UNIMP.
 #define CHECK_UNIMP(val, reginfo, index) \
 if (val & (reginfo[index].unimp_mask)) { \
-	qemu_log_mask(LOG_UNIMP, "Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64") "#index"!\n", reginfo[index].unimp_mask, val); \
+	qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64") "#index"!\n", __FILE__, reginfo[index].unimp_mask, val); \
 }
 
 // Enforces reserved bits and then checks for unimplemented ones

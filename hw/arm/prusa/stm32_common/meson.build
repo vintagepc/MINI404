@@ -1,8 +1,17 @@
 arm_ss.add(when: 'CONFIG_STM32F407_SOC',
  if_true: files(
+    'stm32_adc.c',
+    'stm32_adcc.c',
     'stm32_common.c',
+    'stm32_crc.c',
+    'stm32_dbg.c',
+    'stm32_dma.c',
+    'stm32_gpio.c',
+    'stm32_iwdg.c',
+    'stm32_otp.c',
     'stm32_rcc.c',
     'stm32_f2xx_f4xx_dma.c',
     'stm32_spi.c',
     'stm32_syscfg.c',
+    'stm32_usart.c',
 ))

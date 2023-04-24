@@ -1,7 +1,7 @@
-/*-
- * QEMU crc emulation
- * Portions Copyright (c) 2013 https://github.com/pebble/qemu/
- * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
+/*
+ * STM32 ADC Common registers
+ *
+ * Copyright (c) 2022 by VintagePC <http://github.com/vintagepc> for Mini404
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,24 +22,16 @@
  * THE SOFTWARE.
  */
 
-#ifndef STM32F2XX_CRC_H
-#define STM32F2XX_CRC_H
+#ifndef HW_STM32COMMON_ADCC_H
+#define HW_STM32COMMON_ADCC_H
 
-#include "qemu/osdep.h"
-#include "qemu-common.h"
+#include "qom/object.h"
+#include "../utility/macros.h"
 #include "../stm32_common/stm32_common.h"
+#include "../stm32_common/stm32_shared.h"
 
+OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Adcc), COM_CLASS_NAME(Adcc), STM32COM_ADCC)
 
-#define TYPE_STM32F2XX_CRC "stm32f2xx-crc"
-OBJECT_DECLARE_SIMPLE_TYPE(f2xx_crc,STM32F2XX_CRC);
+extern uint16_t stm32_common_adcc_get_adcpre(COM_STRUCT_NAME(Adcc) *s);
 
-typedef struct f2xx_crc {
-    STM32Peripheral parent;
-    MemoryRegion iomem;
-
-    uint32_t crc;
-    uint8_t idr;
-
-} f2xx_crc;
-
-#endif // STM32F2XX_CRC_H
+#endif /* HW_STM32F4XX_ADCC_H */
