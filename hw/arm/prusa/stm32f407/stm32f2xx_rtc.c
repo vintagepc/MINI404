@@ -353,6 +353,14 @@ f2xx_rtc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             DPRINTF("f2xx rtc WUT isr lowered\n");
             qemu_irq_lower(s->wut_irq);
         }
+		if (data & (1<<7))
+		{
+			data |= (1<<6);
+		}
+		else
+		{
+			data &= ~(1<<6);
+		}
         break;
     case R_RTC_PRER:
         /*
