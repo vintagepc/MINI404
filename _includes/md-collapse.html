@@ -1,0 +1,10 @@
+{% assign filename = include.file | append: ".md" %}
+
+<h2 onClick="$('.{{include.file}}').fadeToggle('normal');"><span class="{{ include.file }}">+ </span><span style="display:none;" class="{{ include.file }}">- </span><a href='#' onclick="return false;">{{include.title}}</a></h2>
+<div class="{{ include.file }}" style="display:none;">
+  {% capture tmp %}    
+  {% include {{filename}} %}
+  {% endcapture %}
+  {{ tmp | markdownify }}
+</div>
+<hr />

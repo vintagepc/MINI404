@@ -1,6 +1,7 @@
 ---
 layout: default
 ---
+
 <link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.css"/>
 <!-- Add the slick-theme.css if you want default styling -->
 <link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick-theme.css"/>
@@ -20,12 +21,22 @@ layout: default
 
 <p>We feature many overlapping features with MK404, including the scripting engine, advanced arm-gdb debugging capabilities, and 3D printer visuals!</p>
 <h2> Gallery </h2>
-<div class="gallery" data-slick='{"slidesToShow": 2, "slidesToScroll": 1}'>
-<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/99891866-7b1ba000-2c3c-11eb-804b-427196de95df.png" alt="" /></div>
-<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/99891868-8242ae00-2c3c-11eb-91fd-7bab7657e3ee.png" alt="image" /></div>
-<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/101267602-70770580-3728-11eb-97f5-f6258eec8e11.png" alt="image" /></div>
-<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/101993374-12967080-3c88-11eb-915a-82a25005cbed.png" alt="image" /></div>
-<div class="swiper-slide"><img src="https://user-images.githubusercontent.com/53943260/104094225-76975f00-525d-11eb-8bba-1d2388fc085d.png" alt="image" /></div>
+<div class="gallery" data-slick='{"slidesToShow": 1, "slidesToScroll": 1}'>
+<span class="slide"><figure><img src="https://user-images.githubusercontent.com/53943260/99891866-7b1ba000-2c3c-11eb-804b-427196de95df.png" alt="" /><center>Mini Language Select</center></figure></span>
+<span class="slide"><figure><img src="https://user-images.githubusercontent.com/53943260/99891868-8242ae00-2c3c-11eb-91fd-7bab7657e3ee.png" alt="image" /><center>Mini Home</center></figure></span>
+<span class="slide"><figure><img src="https://user-images.githubusercontent.com/53943260/101267602-70770580-3728-11eb-97f5-f6258eec8e11.png" alt="image" /><center>Mini Selftest 1</center></figure></span>
+<span class="slide"><figure><img src="https://user-images.githubusercontent.com/53943260/101993374-12967080-3c88-11eb-915a-82a25005cbed.png" alt="image" /><center>Mini Selftest 2</center></figure></span>
+<span class="slide"><figure><img src="https://user-images.githubusercontent.com/53943260/104094225-76975f00-525d-11eb-8bba-1d2388fc085d.png" alt="image" /><center>Mini Selftest 3</center></figure></span>
+<span class="slide"><figure><img src="images/xl_home.png" alt="XL Dashboard" /><center>XL Home</center></figure></span>
+<span class="slide"><figure><img src="images/xl_dwarf.png" alt="XL Dashboard" /><center>XL Extruder</center></figure></span>
+<span class="slide"><figure><img src="images/xl_modbed.png" alt="XL Dashboard" /><center>XL Modular Bed</center></figure></span>
+<span class="slide"><figure><img src="images/xl_selftest.png" alt="XL Dashboard" /><center>XL Selftest</center></figure></span>
+<span class="slide"><figure><img src="images/xl_dashboard.png" alt="XL Dashboard" /><center>XL Dashboard</center></figure></span>
+<span class="slide"><figure><img src="images/xl_multitool.png" alt="XL Dashboard" /><center>XL 2 Tool Mode</center></figure></span>
+<span class="slide"><figure><img src="images/mk4_home.png" alt="XL Dashboard" /><center>Mk4 Home (with status LED bar)</center></figure></span>
+<span class="slide"><figure><img src="images/mk4_selftest_1.png" alt="XL Dashboard" /><center>Mk4 Selftest 1</center></figure></span>
+<span class="slide"><figure><img src="images/mk4_selftest_2.png" alt="XL Dashboard" /><center>Mk4 Selftest 2</center></figure></span>
+<span class="slide"><figure><img src="images/mk4_dashboard.png" alt="XL Dashboard" /><center>Mk4 Simple Dashboard</center></figure></span>
 </div>
 
 
@@ -61,23 +72,9 @@ layout: default
   {% endcapture %}
   {{ printers | markdownify }}
 
-<h2 id="prusa-mini-features" onClick="$('.mini-features').fadeToggle('normal');"><span class="mini-features">+ </span><span style="display:none;" class="mini-features">- </span><a href='#' onclick="return false;">Prusa Mini Feature Status</a></h2>
-<div class="mini-features" style="display:none;">
-<p>This is an overview of the current status of the Mini implementation.</p>
-
-  {% capture mini-features %}    
-  {% include mini-features.md %}
-  {% endcapture %}
-  {{ mini-features | markdownify }}
-
-</div>
-<hr />
-<h2 id="prusa-mk4-features" onClick="$('.mk4-features').fadeToggle('normal');"><span class="mk4-features">+ </span><span style="display:none;" class="mk4-features">- </span><a href='#' onclick="return false;">Prusa Mk4 Feature Status</a></h2>
-<div class="mk4-features" style="display:none;">
-Coming soon!
-</div>
-<hr />
-
+{% include md-collapse.html file="mini-features" title="Prusa Mini Feature Status" %}
+{% include md-collapse.html file="mk4-features" title="Prusa Mk4 Feature Status" %}
+  
 <h2 id="prusa-xl-features" onClick="$('.xl-features').fadeToggle('normal');"><span class="xl-features">+ </span><span style="display:none;" class="xl-features">- </span><a href='#' onclick="return false;">Prusa XL Feature Status</a></h2>
 <div class="xl-features" style="display:none;">
 Coming soon!
@@ -120,9 +117,11 @@ Coming soon!
 $(".gallery").slick({
 
   // normal options...
+  autoplay: true,
   infinite: true,
   dots: true, 
-
+  centerMode: true,
+  variableWidth: true,
 });
 
 </script>
