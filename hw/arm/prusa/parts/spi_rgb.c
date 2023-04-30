@@ -30,10 +30,14 @@
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
+#include "spi_rgb.h"
 
 #define B1_10M5Hz 0b1111111000000
 #define B0_10M5Hz 0b111000000000
+#define ALT_B1_10M5Hz 0b1110000000
+#define ALT_B0_10M5Hz 0b1111111000
 #define RST_10M5Hz 535U
+#define ALT_RST_10M5Hz 12U
 
 
 typedef union {
@@ -66,12 +70,12 @@ struct RGBLedState {
     colour_t set_colour;
 
     bool passthrough;
-    bool is_ws2811;
     qemu_irq dout;
     qemu_irq reset;
     qemu_irq colour;
-
-
+    qemu_irq rgb_out[3];
+	uint8_t led_type;
+	uint8_t flags;
 };
 
 #define TYPE_RGB_LED "spi_rgb"
@@ -90,19 +94,22 @@ static void rgb_led_din(void* opaque, int n, int level) {
         s->set_colour.raw = level;
         s->passthrough = true;
         uint32_t rgb;
-        if (s->is_ws2811)
+        if (s->led_type == SPI_RGB_WS2811)
         {
-            // HACK alert, this is just to compensate for the fact this chip only uses the green channel for a white backlight
-            // on the Prusa MK4.
-            rgb = (s->set_colour.ws8211.r << 16) | (s->set_colour.ws8211.r << 8) | s->set_colour.ws8211.r;
-
+            rgb = (s->set_colour.ws8211.r << 16) | (s->set_colour.ws8211.g << 8) | s->set_colour.ws8211.b;
         }
         else
         {
             rgb = (s->set_colour.ws8212.r << 16) | (s->set_colour.ws8212.g << 8) | s->set_colour.ws8212.b;
         }
+		if (s->flags & SPI_RGB_FLAG_INVERTED)
+		{
+			rgb = 0xFFFFFF - rgb;
+		}
         qemu_set_irq(s->colour,rgb);
-        // printf("Colour received (rgb): %02x %02x %02x\n",s->set_colour.ws8212.r,s->set_colour.ws8212.g,s->set_colour.ws8212.b);
+        qemu_set_irq(s->rgb_out[0], rgb >> 16);
+        qemu_set_irq(s->rgb_out[1], (rgb >> 8) & 0xFF);
+        qemu_set_irq(s->rgb_out[2], rgb & 0xFF);
     }
 }
 
@@ -120,7 +127,6 @@ static void rgb_led_reset(void* opaque, int n, int level) {
 static uint32_t rgb_led_transfer(SSIPeripheral *dev, uint32_t data)
 {
     RGBLedState *s = RGB_LED(dev);
-//   printf("LED data: %"PRIx32"\n", data);
     for (int i=7; i>=0; i--) {
         s->chunks_in <<=1;
         bool new_bit = ((data & (1U<<i))>0);
@@ -136,19 +142,29 @@ static uint32_t rgb_led_transfer(SSIPeripheral *dev, uint32_t data)
         switch (s->chunks_in) {
             case B1_10M5Hz:
             case B0_10M5Hz:
+				if (s->flags & SPI_RGB_FLAG_ALT_TIMINGS) continue;
                 s->current_colour.raw <<=1U;
                 s->current_colour.raw |= (s->chunks_in == B1_10M5Hz);
+                s->bit_count++;
+                s->chunks_in = 0;
+                break;
+			case ALT_B0_10M5Hz:
+			case ALT_B1_10M5Hz:
+				if (!(s->flags & SPI_RGB_FLAG_ALT_TIMINGS)) continue;
+				s->current_colour.raw <<=1U;
+                s->current_colour.raw |= (s->chunks_in == ALT_B1_10M5Hz);
                 s->bit_count++;
                 s->chunks_in = 0;
                 break;
         }
         if (s->bit_count == 24)
         {
+			// if (s->no_cs) printf("LED data: %"PRIx32"\n", s->current_colour.raw);
             // Reached the RGB length.
             rgb_led_din(s, 0,s->current_colour.raw);
             s->bit_count = 0;
         }
-        if (s->zero_count == RST_10M5Hz) {
+        if (s->zero_count == (s->flags & SPI_RGB_FLAG_ALT_TIMINGS ? ALT_RST_10M5Hz : RST_10M5Hz)) {
             rgb_led_reset(s, 0,0);
         }
     }
@@ -177,6 +193,7 @@ static void rgb_led_realize(SSIPeripheral *d, Error **errp)
 {
     DeviceState *dev = DEVICE(d);
     RGBLedState *s = RGB_LED(d);
+	if (s->flags & SPI_RGB_FLAG_NO_CS) d->cs = true;
 
     rgb_led_reset(s, 0,0);
 
@@ -186,11 +203,13 @@ static void rgb_led_realize(SSIPeripheral *d, Error **errp)
     qdev_init_gpio_in_named(dev, rgb_led_reset, "reset",1);
     qdev_init_gpio_out_named(dev, &s->reset, "reset-out", 1);
     qdev_init_gpio_out_named(dev, &s->colour, "colour", 1);
+    qdev_init_gpio_out_named(dev, s->rgb_out, "rgb-out", 3);
 
 }
 
 static Property rgb_led_properties[] = {
-    DEFINE_PROP_BOOL("is_ws2811",RGBLedState, is_ws2811, false),
+    DEFINE_PROP_UINT8("led-type",RGBLedState, led_type, (uint64_t)SPI_RGB_WS2812),
+    DEFINE_PROP_UINT8("flags",RGBLedState, flags, SPI_RGB_FLAG_NONE),
     DEFINE_PROP_END_OF_LIST(),
 };
 

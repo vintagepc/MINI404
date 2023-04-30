@@ -367,6 +367,12 @@ static void spi_display_cursor(void *opaque, int n, int level)
 static void spi_display_led(void *opaque, int n, int level)
 {
     SPIDisplayState *s = SPI_DISPLAY(opaque);
+	if (n==3)
+	{
+		// backlight LED
+		uint8_t r = level >> 16;
+		level = r << 16 | r << 8 | r;
+	}
     s->leds[n] = level;
     for (int row =  s->dpy_info->rows; row<  s->dpy_info->rows + LED_HT; row++) {
         for (int col = n*LED_W; col< ((n+1)*LED_W); col++) {

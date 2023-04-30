@@ -41,6 +41,7 @@
 #include "parts/dashboard_types.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
+#include "parts/spi_rgb.h"
 
 #define BOOTLOADER_IMAGE "Prusa_Mk4_Boot.bin"
 #define XFLASH_FN  "Prusa_Mk4_xflash.bin"
@@ -258,7 +259,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
         for (int i=0; i<4; i++) {
             npixel[i] = qdev_new("spi_rgb");
             if (i==3) {
-                qdev_prop_set_bit(npixel[i],"is_ws2811",true);
+                qdev_prop_set_uint8(npixel[i],"led-type",SPI_RGB_WS2811);
             }
             ssi_realize_and_unref(npixel[i], bus, &error_fatal);
             if (i>0)

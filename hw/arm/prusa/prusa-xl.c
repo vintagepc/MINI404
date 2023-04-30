@@ -40,6 +40,7 @@
 #include "parts/xl_bridge.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
+#include "parts/spi_rgb.h"
 
 #define BOOTLOADER_IMAGE "Prusa_XL_Boot.bin"
 #define XFLASH_FN  "Prusa_XL_xflash.bin"
@@ -221,18 +222,19 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 
     /* Wire up display */
     void *bus;
+	DeviceState* npixel[6];
+	DeviceState* lcd_dev;
     {
 		bus = qdev_get_child_bus(
 				stm32_soc_get_periph(dev_soc, cfg.lcd_spi),
 			"ssi");
 
-        DeviceState *lcd_dev = ssi_create_peripheral(bus, "ili9488");
+        lcd_dev = ssi_create_peripheral(bus, "ili9488");
 
-        DeviceState *npixel[4];
         for (int i=0; i<4; i++) {
             npixel[i] = qdev_new("spi_rgb");
             if (i==3) {
-                qdev_prop_set_bit(npixel[i],"is_ws2811",true);
+                qdev_prop_set_uint8(npixel[i],"led-type",SPI_RGB_WS2811);
             }
             ssi_realize_and_unref(npixel[i], bus, &error_fatal);
             if (i>0)
@@ -244,6 +246,25 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
                 qdev_get_gpio_in_named(lcd_dev,"leds",i)
                 );
         }
+		npixel[5] = qdev_new("spi_rgb");
+		qdev_prop_set_uint8(npixel[5],"led-type",SPI_RGB_WS2811);
+		qdev_prop_set_uint8(npixel[5],"flags",SPI_RGB_FLAG_ALT_TIMINGS | SPI_RGB_FLAG_INVERTED);
+		ssi_realize_and_unref(npixel[5],
+			(SSIBus*) qdev_get_child_bus(
+				stm32_soc_get_periph(dev_soc, STM32_P_SPI4),
+			"ssi"),
+		&error_fatal);
+		npixel[4] = qdev_new("spi_rgb");
+		qdev_prop_set_uint8(npixel[4],"led-type",SPI_RGB_WS2811);
+		qdev_prop_set_uint8(npixel[4],"flags", SPI_RGB_FLAG_ALT_TIMINGS | SPI_RGB_FLAG_INVERTED | SPI_RGB_FLAG_NO_CS);
+		ssi_realize_and_unref(npixel[4],
+			(SSIBus*) qdev_get_child_bus(
+				stm32_soc_get_periph(dev_soc, STM32_P_SPI4),
+			"ssi"),
+		&error_fatal);
+		qdev_connect_gpio_out(npixel[4], 0, qdev_get_gpio_in(npixel[5], 0));
+		qdev_connect_gpio_out_named(npixel[4], "reset-out", 0, qdev_get_gpio_in_named(npixel[5], "reset", 0));
+
 		qemu_irq lcd_cs = qdev_get_gpio_in_named(lcd_dev, SSI_GPIO_CS, 0);
         if (cfg.lcd_cs_invert) {
             lcd_cs = qemu_irq_invert(lcd_cs);
@@ -256,7 +277,6 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.lcd_cd)),PIN(cfg.lcd_cd), lcd_cd);
 
 		qemu_irq led_cs = qemu_irq_split(lcd_cs, qdev_get_gpio_in_named(npixel[0], SSI_GPIO_CS, 0));
-
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.lcd_cs)),PIN(cfg.lcd_cs),led_cs);
     }
 
@@ -321,7 +341,7 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 	static const char* links[4] = {"motor[0]","motor[1]","motor[4]"};
 	qdev_prop_set_uint8(db2, "fans", 0);
 	qdev_prop_set_uint8(db2, "thermistors", 0);
-	qdev_prop_set_string(db2, "indicators", "ZF");
+	qdev_prop_set_string(db2, "indicators", "ZFRWC");
 
     {
         static int32_t stepsize[4] = { 80*16, 80*16, 800*16, 400*16 };
@@ -440,6 +460,20 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 	object_property_set_link(OBJECT(db2), "motor[3]", OBJECT(dev), &error_fatal);
 
     sysbus_realize(SYS_BUS_DEVICE(db2), &error_fatal);
+
+	// Sidebar RGB
+ 	qdev_connect_gpio_out_named(npixel[4],"colour",0,
+		qdev_get_gpio_in_named(db2,"led-rgb",2)
+	);
+	// Sidebar W
+	qdev_connect_gpio_out_named(npixel[5],"rgb-out",0,
+		qdev_get_gpio_in_named(db2,"led-w",3)
+	);
+	// Cheese LED
+	qdev_connect_gpio_out_named(npixel[5],"rgb-out",1,
+		qdev_get_gpio_in_named(db2,"led-w",4)
+	);
+
 
     uint16_t startvals[] = {18,20, 25, 512, 20};
     uint8_t channels[] = {10,4,3,5,6};
@@ -567,11 +601,26 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 #endif
     }
 
-    dev = qdev_new("encoder-input");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qdev_connect_gpio_out_named(dev, "encoder-button",  0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_btn)), PIN(cfg.enc_btn)));
-    qdev_connect_gpio_out_named(dev, "encoder-a",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
-    qdev_connect_gpio_out_named(dev, "encoder-b",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
+    DeviceState* encoder = qdev_new("encoder-input");
+    sysbus_realize(SYS_BUS_DEVICE(encoder), &error_fatal);
+    qdev_connect_gpio_out_named(encoder, "encoder-button",  0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_btn)), PIN(cfg.enc_btn)));
+    qdev_connect_gpio_out_named(encoder, "encoder-a",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
+    qdev_connect_gpio_out_named(encoder, "encoder-b",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
+
+	bus = qdev_get_child_bus(
+		stm32_soc_get_periph(dev_soc, STM32_P_I2C3),
+	"i2c");
+	dev = qdev_new("gt911");
+	qdev_prop_set_uint8(dev, "address", 0x5D);
+	qdev_realize(dev, bus, &error_fatal);
+	qdev_connect_gpio_out(dev,0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),8));
+
+	qemu_irq x_split = qemu_irq_split(qdev_get_gpio_in_named(lcd_dev, "cursor", 0), qdev_get_gpio_in_named(dev, "x_y_touch", 0));
+	qemu_irq y_split = qemu_irq_split(qdev_get_gpio_in_named(lcd_dev, "cursor", 1), qdev_get_gpio_in_named(dev, "x_y_touch", 1));
+	qemu_irq t_split = qemu_irq_split(qdev_get_gpio_in_named(lcd_dev, "cursor", 2), qdev_get_gpio_in_named(dev, "x_y_touch", 2));
+	qdev_connect_gpio_out_named(encoder, "cursor_xy", 0, x_split);
+    qdev_connect_gpio_out_named(encoder, "cursor_xy", 1, y_split);
+    qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
