@@ -80,6 +80,10 @@ class KeyController: private Scriptable
 			{ {0x21	  ,false} , 'f'},
 			{ {0x02, false}, '1'},
 			{ {0x03, false}, '2'},
+			{ {0x04, false}, '3'},
+			{ {0x05, false}, '4'},
+			{ {0x06, false}, '5'},
+			{ {0x07, false}, '6'},
 			{ {0x19	  ,false} , 'p'},
 			{ {0x14	  ,false} , 't'}
         };

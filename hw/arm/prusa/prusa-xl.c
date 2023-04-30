@@ -90,7 +90,6 @@ typedef struct xl_cfg_t {
     stm_pin z_min;
     bool has_at21;
     int e_table_index;
-    bool has_hbr_pt100;
     uint8_t motor;
     char m_label[AXIS_MAX];
 	bool m_inversion[AXIS_MAX];
@@ -122,7 +121,6 @@ static const xl_cfg_t xl_cfg = {
     .z_min = STM_PIN(GPIOB, 8),
     .has_at21 = false, // NOT IMPLEMENTED YET
     .e_table_index = 2005,
-    .has_hbr_pt100 = false,
     .motor = TMC2130,
     .m_label = {'A','B','Z','E'},
 	.m_inversion = {1,1,0,0},
@@ -153,7 +151,6 @@ static const xl_cfg_t xl_cfg_050 = {
     .z_min = STM_PIN(GPIOB, 8),
     .has_at21 = false, // NOT IMPLEMENTED YET
     .e_table_index = 2005,
-    .has_hbr_pt100 = false,
     .motor = TMC2130,
     .m_label = {'A','B','Z','E'},
 	.m_inversion = {1,0,0,0},
@@ -337,11 +334,25 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
     sysbus_realize(SYS_BUS_DEVICE(gl_db), &error_fatal);
 #endif
 
+	enum {
+		IND_Z,
+		IND_RGB,
+		IND_WHITE,
+		IND_CHEESE,
+		IND_F_UNUSED,
+		IND_FS0,
+		IND_FS1,
+		IND_FS2,
+		IND_FS3,
+		IND_FS4,
+		IND_FS5
+	};
+
 	DeviceState *db2 = qdev_new("2d-dashboard");
 	static const char* links[4] = {"motor[0]","motor[1]","motor[4]"};
 	qdev_prop_set_uint8(db2, "fans", 0);
 	qdev_prop_set_uint8(db2, "thermistors", 0);
-	qdev_prop_set_string(db2, "indicators", "ZFRWC");
+	qdev_prop_set_string(db2, "indicators", "ZRWCF123456");
 
     {
         static int32_t stepsize[4] = { 80*16, 80*16, 800*16, 400*16 };
@@ -463,24 +474,21 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 
 	// Sidebar RGB
  	qdev_connect_gpio_out_named(npixel[4],"colour",0,
-		qdev_get_gpio_in_named(db2,"led-rgb",2)
+		qdev_get_gpio_in_named(db2,"led-rgb",IND_RGB)
 	);
 	// Sidebar W
 	qdev_connect_gpio_out_named(npixel[5],"rgb-out",0,
-		qdev_get_gpio_in_named(db2,"led-w",3)
+		qdev_get_gpio_in_named(db2,"led-w",IND_WHITE)
 	);
 	// Cheese LED
 	qdev_connect_gpio_out_named(npixel[5],"rgb-out",1,
-		qdev_get_gpio_in_named(db2,"led-w",4)
+		qdev_get_gpio_in_named(db2,"led-w",IND_CHEESE)
 	);
 
 
     uint16_t startvals[] = {18,20, 25, 512, 20};
     uint8_t channels[] = {10,4,3,5,6};
-    int tables[] = {cfg.e_table_index, 1, 2000,0,5};
-    if (cfg.has_hbr_pt100) {
-        tables[4] = 22;
-    }
+    const int tables[] = {cfg.e_table_index, 1, 2000,0,5};
     for (int i=0; i<5; i++)
     {
         dev = qdev_new("thermistor");
@@ -505,26 +513,41 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
     sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
     qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
-    DeviceState *hs = qdev_new("hall-sensor");
-    sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
-#ifdef BUDDY_HAS_GL
-	qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_FSENS));
-#endif
-
     dev = qdev_new("hx717");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
   	qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
 
-    // PT100
     qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
-	if (cfg.has_hbr_pt100)
+
+	// Hall sensor mux
+	dev = qdev_new("hc4052");
+	qdev_prop_set_bit(dev, "debug",true);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF),12,qdev_get_gpio_in_named(dev,"select", 1)); // S0
+    qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),6,qdev_get_gpio_in_named(dev, "select", 0)); // S1
+    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", 10,  qdev_get_gpio_in_named(dev, "adc_read_request",0));
+    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", 4,  qdev_get_gpio_in_named(dev, "adc_read_request",1));
+	qdev_connect_gpio_out(dev,0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in", 10));
+    qdev_connect_gpio_out(dev,1, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in", 4));
+
+	#define N_HALL 6
+    DeviceState* hall[N_HALL];
+	for (int i=0; i<N_HALL; i++)
 	{
-    	//qdev_connect_gpio_out_named(hotend, "value_x1000",0, qdev_get_gpio_in_named(dev,"input_x1000",1));
-	}
-	else
-	{
-    	qdev_connect_gpio_out(hs,0, qdev_get_gpio_in_named(dev,"input_x1000",1));
+		hall[i] = qdev_new("hall-sensor");
+		qdev_prop_set_uint8(hall[i],"index",1U + i);
+		qdev_prop_set_uint32(hall[i],"present-value",4010);
+    	sysbus_realize(SYS_BUS_DEVICE(hall[i]), &error_fatal);
+		qdev_connect_gpio_out_named(hall[i],"status", 0, qdev_get_gpio_in_named(db2,"led-digital",IND_FS0 + i));
+		if (i<4)
+		{
+			qdev_connect_gpio_out(hall[i], 0, qdev_get_gpio_in_named(dev,"1Y", i));
+		}
+		else
+		{
+			qdev_connect_gpio_out(hall[i], 0, qdev_get_gpio_in_named(dev,"2Y", i-4));
+		}
 	}
 
 

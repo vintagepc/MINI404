@@ -276,7 +276,13 @@ static void stm32f4xx_adc_schedule_next(STM32F4XXADCState *s) {
     conv_cycles += adc_lookup_smpr(s->adc_smprs[channel]);
 
     uint64_t delay_ns = 1000000000000U / (clock/conv_cycles);
-    // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
+    if (s->parent.periph == STM32_P_ADC3)
+	{
+		// Yes, this is an ugly-ass hack. The above calc is off by 1000 and I still need to determine
+		// how to deal with the other channels bogging down the simulation when they run at the "real" specified rate.
+		delay_ns /= 1000;
+		//printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
+	}
     timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
 
 }

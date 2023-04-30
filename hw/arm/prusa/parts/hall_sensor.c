@@ -31,6 +31,7 @@
 #include "hw/irq.h"
 #include "qom/object.h"
 #include "hw/sysbus.h"
+#include "hw/qdev-properties.h"
 
 #define TYPE_HALL_SENSOR "hall-sensor"
 
@@ -41,9 +42,12 @@ struct HallState {
     /*< private >*/
     /*< public >*/
     uint8_t state;
+	uint32_t present_val;
+	uint32_t missing_val;
     qemu_irq irq;
     qemu_irq status;
-
+	uint8_t index;
+	p404_key_handle p_key;
 };
 
 enum {
@@ -57,22 +61,18 @@ enum {
 	STATE_RUNOUT
 };
 
-static const int hall_values[3] = {2, 1048575, 250};
-
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(HallState, hall_sensor, HALL_SENSOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_KEYCLIENT},{NULL})
-
 
 static void hall_sensor_finalize(Object *obj)
 {
 }
 
-static void hall_sensor_update(HallState *s) {
-    qemu_set_irq(s->irq,hall_values[s->state]);
-	printf("Hall FS state: %d\n",hall_values[s->state]);
+static void hall_sensor_update(HallState *s)
+{
+	uint32_t values[3] = {2, s->present_val, s->missing_val};
+    qemu_set_irq(s->irq,values[s->state]);
 	qemu_set_irq(s->status,s->state == STATE_PRESENT);
 }
-
-
 
 static void hall_sensor_toggle(HallState *s)
 {
@@ -117,9 +117,30 @@ static int hall_sensor_process_action(P404ScriptIF *obj, unsigned int action, sc
 static void hall_sensor_input_handle_key(P404KeyIF *opaque, Key keycode)
 {
     HallState *s = HALL_SENSOR(opaque);
-    if (keycode == 'f')
+	switch (keycode)
 	{
-		hall_sensor_toggle(s);
+		case 'f':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+			hall_sensor_toggle(s);
+			break;
+	}
+}
+
+static void hall_sensor_realize(DeviceState *dev, Error **errp)
+{
+    HallState *s = HALL_SENSOR(dev);
+	if (s->index == 0)
+	{
+    	p404_register_keyhandler(s->p_key, 'f',"Toggles filament sensor state");
+	}
+	else
+	{
+		p404_register_keyhandler(s->p_key, '0' + s->index ,"Toggles filament sensor state");
 	}
 }
 
@@ -137,8 +158,7 @@ static void hall_sensor_init(Object *obj)
     script_register_action(pScript, "Toggle",  "Toggles hall filament sensor enum state", ACT_TOGGLE);
 
     scripthost_register_scriptable(pScript);
-	p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(obj));
-    p404_register_keyhandler(pKey, 'f',"Toggles filament sensor state");
+	s->p_key = p404_new_keyhandler(P404_KEYCLIENT(obj));
 }
 
 static const VMStateDescription vmstate_hall_sensor = {
@@ -151,11 +171,21 @@ static const VMStateDescription vmstate_hall_sensor = {
     }
 };
 
+static Property hall_sensor_properties[] = {
+    DEFINE_PROP_UINT8("index",HallState, index, 0),
+    DEFINE_PROP_UINT32("present-value",HallState, present_val, 1048575),
+    DEFINE_PROP_UINT32("missing-value",HallState, missing_val, 250),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void hall_sensor_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     dc->reset = hall_sensor_reset;
+	dc->realize = hall_sensor_realize;
     dc->vmsd = &vmstate_hall_sensor;
+
+	device_class_set_props(dc, hall_sensor_properties);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = hall_sensor_process_action;
 
