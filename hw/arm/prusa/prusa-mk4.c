@@ -42,6 +42,7 @@
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
+#include "otp.h"
 
 #define BOOTLOADER_IMAGE "Prusa_Mk4_Boot.bin"
 #define XFLASH_FN  "Prusa_Mk4_xflash.bin"
@@ -118,6 +119,7 @@ typedef struct mk4_cfg_t {
     uint8_t m_spi;
 	uint8_t m_uart;
 	bool is_400step;
+	uint8_t dm_ver;
 
 } mk4_cfg_t;
 
@@ -154,6 +156,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
+	.dm_ver = 27
 };
 
 static const mk4_cfg_t mk4_034_cfg = {
@@ -187,10 +190,23 @@ static const mk4_cfg_t mk4_034_cfg = {
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
+	.dm_ver = 34,
 };
 
 static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
 {
+
+	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
+		.datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
+	};
+	if (cfg.dm_ver == 34)
+	{
+		otp_data.datamatrix[5]='3';
+		otp_data.datamatrix[6]='4';
+	}
+
+	uint32_t* otp_raw = (uint32_t*) &otp_data;
+
     DeviceState *dev;
 
     dev = qdev_new(TYPE_STM32F427xI_SOC);
@@ -205,6 +221,19 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
 		printf("Extended flash size: now %"PRIu64" kB\n", flash_size/1024);
     }
 	qdev_prop_set_uint32(dev,"flash-size", flash_size);
+
+	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+	qdev_prop_set_uint32(otp,"len-otp-data", 9);
+	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
+	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
+	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
+	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
+	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
+	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
+	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
+	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
+	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
