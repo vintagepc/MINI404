@@ -74,12 +74,7 @@ layout: default
 
 {% include md-collapse.html file="mini-features" title="Prusa Mini Feature Status" %}
 {% include md-collapse.html file="mk4-features" title="Prusa Mk4 Feature Status" %}
-  
-<h2 id="prusa-xl-features" onClick="$('.xl-features').fadeToggle('normal');"><span class="xl-features">+ </span><span style="display:none;" class="xl-features">- </span><a href='#' onclick="return false;">Prusa XL Feature Status</a></h2>
-<div class="xl-features" style="display:none;">
-Coming soon!
-</div>
-<hr />
+  {% include md-collapse.html file="xl-features" title="Prusa XL Feature Status" %}
 
 <h2 id="non-hardware-specific-feature-highlights">Non-hardware-specific feature highlights</h2>
 
@@ -104,7 +99,7 @@ Coming soon!
 <h1 id="a-note-on-the-stm32-architecture">A Note on the STM32 architecture</h1>
 
 <ul>
-  <li>The STM32F4xx architecture in Mini404’s fork of QEMU has received significant expansion over the development of this project with my own peripheral implementations. So far it’s the most complete one I’m aware of, and I’d like to thank both the QEMU developers/contributors for their work in the STM32 components that come “stock” with QEMU, as well as the <a href="https://github.com/pebble/qemu">pebble-qemu</a> fork for their prior work Mini404 was able to leverage or adapt to make this project possible! Long term as these implementations stabilize, I hope these improvements will make it upstream, but currently I do not have the time to do so and maintain the upstream versions myself.</li>
+  <li>The STM32 (F4xx/G070/F030) architecture in Mini404’s fork of QEMU has received significant expansion over the development of this project with my own peripheral implementations. So far it’s the most complete one I’m aware of, and I’d like to thank both the QEMU developers/contributors for their work in the STM32 components that come “stock” with QEMU, as well as the <a href="https://github.com/pebble/qemu">pebble-qemu</a> fork for their prior work Mini404 was able to leverage or adapt to make this project possible! Long term as these implementations stabilize, I hope these improvements will make it upstream, but currently I do not have the time to do so and maintain the upstream versions myself.</li>
 </ul>
 
 <h1 id="more-reading">More Reading</h1>
