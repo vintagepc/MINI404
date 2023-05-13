@@ -150,7 +150,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	DeviceState* dashboard = qdev_new("2d-dashboard");
     qdev_prop_set_uint8(dashboard, "fans", 2);
     qdev_prop_set_uint8(dashboard, "thermistors", 3);
-    qdev_prop_set_string(dashboard, "indicators", "LP");
+    qdev_prop_set_string(dashboard, "indicators", "LPF");
     qdev_prop_set_string(dashboard, "title", TOOL_NAMES[index]);
 
 	DeviceState* motor = NULL;
@@ -196,6 +196,13 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB),6,qdev_get_gpio_in(dev,0));
 	qdev_connect_gpio_out_named(dev,"colour",0,qdev_get_gpio_in_named(dashboard, "led-rgb",0));
+
+	DeviceState* hall = qdev_new("hall-sensor");
+	qdev_prop_set_uint32(hall,"present-value",70);
+	qdev_prop_set_uint32(hall,"missing-value",3000);
+	sysbus_realize(SYS_BUS_DEVICE(hall), &error_fatal);
+	qdev_connect_gpio_out_named(hall,"status", 0, qdev_get_gpio_in_named(dashboard,"led-digital",2));
+	qdev_connect_gpio_out(hall, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", 4));
 
 	// hotend = fan1
     // print fan = fan0
