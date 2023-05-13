@@ -91,6 +91,9 @@ static void hx717_channel_in_raw(void *opaque, int n, int level){
     HX717State *s = HX717(opaque);
     s->value[n] = level;
 	s->is_raw[n] = true;
+	// Tickle the channel if fsensor is pressed...
+	// Kind of a hack, but I'm also not sure why this is suddenly necessary.
+	timer_mod(s->tick, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+s->rate);
 }
 
 static void hx717_sck(void *opaque, int n, int level){

@@ -390,11 +390,6 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
 
     {
         static uint8_t is_inverted[4] = {1,0,1,1};
-		if (cfg.motor == TMC2130)
-		{
-			is_inverted[3] = 0;
-		}
-
         static int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*220,0 };
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
  		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
@@ -504,20 +499,13 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",1));
 #endif
 
-    dev = qdev_new("ir-sensor");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qemu_irq split_fsensor = qemu_irq_split( qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB),4),qemu_irq_invert(qdev_get_gpio_in_named(db2,"led-digital",1)));
-    qdev_connect_gpio_out(dev, 0, split_fsensor);
-
     DeviceState *lc = qdev_new("loadcell");
     sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
     qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
     DeviceState *hs = qdev_new("hall-sensor");
     sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
-#ifdef BUDDY_HAS_GL
-	qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_FSENS));
-#endif
+	qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
 
     dev = qdev_new("hx717");
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
