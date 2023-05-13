@@ -231,20 +231,20 @@ jobs:
       - name: Check tag version
         id: get_version
         if: startsWith(github.ref, 'refs/tags/v')
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+        run: echo "VERSION=${GITHUB_REF/refs\/tags\//}" >> "$GITHUB_ENV"
 
-      - name: Build ${{ steps.get_version.outputs.VERSION }} archives
+      - name: Build ${{ env.VERSION }} archives
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tar -jxvf Mini404-dev-linux.tar.bz2
           tar -jxvf Mini404-dev-macos.tar.bz2
           unzip Mini404-dev-w64.zip
-          mv Mini404-dev-linux Mini404-${{ steps.get_version.outputs.VERSION }}-linux
-          mv Mini404-dev-macos Mini404-${{ steps.get_version.outputs.VERSION }}-macos
-          mv Mini404-dev-w64 Mini404-${{ steps.get_version.outputs.VERSION }}-w64
-          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-linux
-          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-macos.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-macos
-          zip -r Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip Mini404-${{ steps.get_version.outputs.VERSION }}-w64
+          mv Mini404-dev-linux Mini404-${{ env.VERSION }}-linux
+          mv Mini404-dev-macos Mini404-${{ env.VERSION }}-macos
+          mv Mini404-dev-w64 Mini404-${{ env.VERSION }}-w64
+          tar -jcvf Mini404-${{ env.VERSION }}-linux.tar.bz2 Mini404-${{ env.VERSION }}-linux
+          tar -jcvf Mini404-${{ env.VERSION }}-macos.tar.bz2 Mini404-${{ env.VERSION }}-macos
+          zip -r Mini404-${{ env.VERSION }}-w64.zip Mini404-${{ env.VERSION }}-w64
 
       - name: RELEASE THE KRAKEN
         if: startsWith(github.ref, 'refs/tags/v')
@@ -253,9 +253,9 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false
           files: |
-            Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2
-            Mini404-${{ steps.get_version.outputs.VERSION }}-macos.tar.bz2
-            Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip
+            Mini404-${{ env.VERSION }}-linux.tar.bz2
+            Mini404-${{ env.VERSION }}-macos.tar.bz2
+            Mini404-${{ env.VERSION }}-w64.zip
       
       - name: Publish prerelease
         if: steps.get_version.outcome == 'Skipped'
