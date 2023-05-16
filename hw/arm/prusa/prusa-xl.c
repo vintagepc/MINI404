@@ -522,7 +522,6 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 
 	// Hall sensor mux
 	dev = qdev_new("hc4052");
-	qdev_prop_set_bit(dev, "debug",true);
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF),12,qdev_get_gpio_in_named(dev,"select", 1)); // S0
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),6,qdev_get_gpio_in_named(dev, "select", 0)); // S1
