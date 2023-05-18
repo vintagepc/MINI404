@@ -292,6 +292,7 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
                     s->shiftreg = i2c_recv(s->bus);
                     s->shift_full = true;
                     s->defs.SR1.RxNE = true;
+					s->defs.SR1.BTF = true;
                 } else {
                     s->is_read = false;
                     s->defs.SR1.TxE = true; // Ready for data
