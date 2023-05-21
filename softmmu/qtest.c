@@ -340,8 +340,8 @@ static void qtest_irq_handler(void *opaque, int n, int level)
         CharBackend *chr = &qtest->qtest_chr;
         irq_levels[n] = level;
         qtest_send_prefix(chr);
-        qtest_sendf(chr, "IRQ %s %d\n",
-                    level ? "raise" : "lower", n);
+        qtest_sendf(chr, "IRQ %d %d\n",
+                    level, n);
     }
 }
 
@@ -400,9 +400,12 @@ static void qtest_process_command(CharBackend *chr, gchar **words)
 
     g_assert(command);
     if (strcmp(words[0], "irq_intercept_out") == 0
-        || strcmp(words[0], "irq_intercept_in") == 0) {
+        || strcmp(words[0], "irq_intercept_in") == 0
+        || strcmp(words[0], "irq_intercept_out_named") == 0
+        || strcmp(words[0], "irq_intercept_in_named") == 0) {
         DeviceState *dev;
         NamedGPIOList *ngl;
+        gchar *name = NULL;
 
         g_assert(words[1]);
         dev = DEVICE(object_resolve_path(words[1], NULL));
@@ -421,10 +424,18 @@ static void qtest_process_command(CharBackend *chr, gchar **words)
             }
             return;
         }
-
+        if (strcmp(words[0], "irq_intercept_out_named") == 0
+            || strcmp(words[0], "irq_intercept_in_named") == 0) {
+            g_assert(words[2]);
+            name = words[2];
+        }
         QLIST_FOREACH(ngl, &dev->gpios, node) {
-            /* We don't support intercept of named GPIOs yet */
-            if (ngl->name) {
+            // Named GPIOs now supported... ~VintagePC 20/5/2023
+            if (name) {
+                if (!ngl->name || strcmp(name, ngl->name) != 0) {
+                    continue;
+                }
+            } else if (ngl->name) { // Legacy "no name" path.
                 continue;
             }
             if (words[0][14] == 'o') {
