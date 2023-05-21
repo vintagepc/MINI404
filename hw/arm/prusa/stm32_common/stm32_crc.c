@@ -39,17 +39,7 @@
 #include "qemu/log.h"
 #include "hw/qdev-properties.h"
 #include "stm32_rcc_if.h"
-
-enum regIndex
-{
-	RI_DR, // 0x00
-	RI_IDR,// 0x04
-	RI_CR, // 0x08
-	RI_RESERVED,
-	RI_INIT = (0x10/4),// 0x10
-	RI_POL,	// 0x14
-	RI_END,
-};
+#include "stm32_crc_regdata.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Crc), COM_CLASS_NAME(Crc), STM32COM_CRC);
 
@@ -155,45 +145,7 @@ typedef struct COM_CLASS_NAME(Crc) {
 } COM_CLASS_NAME(Crc);
 
 
-static const stm32_reginfo_t stm32f030_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0xE1, .unimp_mask = 0xE0},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_POL] = { .is_reserved = true }
-};
 
-static const stm32_reginfo_t stm32g070_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0xE1, .unimp_mask = 0xE0},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_POL] = { .mask = UINT32_MAX, .reset_val = 0x04C11DB7, .unimp_mask = UINT32_MAX }
-};
-
-static const stm32_reginfo_t stm32f2xx_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0x01},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = {.is_reserved = true, .reset_val = UINT32_MAX},
-	[RI_POL] = {.is_reserved = true}
-};
-
-static const stm32_reginfo_t stm32f4xx_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0x01},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = {.is_reserved = true, .reset_val = UINT32_MAX},
-	[RI_POL] = {.is_reserved = true}
-};
 
 static const stm32_periph_variant_t stm32_crc_variants[4] = {
 	{TYPE_STM32F030_CRC, stm32f030_crc_reginfo},
@@ -214,7 +166,7 @@ stm32_common_crc_read(void *arg, hwaddr addr, unsigned int size)
     COM_STRUCT_NAME(Crc) *s = STM32COM_CRC(arg);
 
     if (size != 4) {
-        qemu_log_mask(LOG_UNIMP, "crc only supports 4-byte reads\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "CRC only allows 4-byte reads\n");
         return 0;
     }
 
@@ -249,18 +201,13 @@ stm32_common_crc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 
 	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 CRC");
 
-    switch(size) {
-    case 1:
-        data = (s->regs.raw[addr] & ~(0xff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 2:
-        data = (s->regs.raw[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 4:
-        break;
-    default:
-        abort();
-    }
+	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b111);
+
+	if (size != 4 && addr != RI_DR)
+	{
+        qemu_log_mask(LOG_GUEST_ERROR, "CRC only allows 4-byte writes for registers other than DR\n");
+		return;
+	}
 
 
     switch(addr) {
