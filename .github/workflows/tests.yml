@@ -56,6 +56,9 @@ jobs:
     - name: Cache permissions
       run: sudo chmod -R 744 packages
 
+    - name: Test Symlink
+      run: ln -s ${{ runner.workspace }}/MINI404/hw/arm/prusa ${{ runner.workspace }}/MINI404/tests/qtest/
+
     - name: Configure build
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk --enable-gcov
 
