@@ -28,6 +28,7 @@
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_gpio.h"
+#include "stm32_gpio_regdata.h"
 #include "hw/irq.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
@@ -44,39 +45,6 @@
 #define DPRINTF(fmt, ...)
 #endif
 
-enum {
-    R_MODE_INPUT = 0,
-    R_MODE_OUTPUT,
-    R_MODE_ALT,
-    R_MODE_ANALOG
-};
-
-enum {
-    R_PUPD_NONE = 0,
-    R_PUPD_PU,
-    R_PUPD_PD,
-};
-
-enum {
-    R_OTYPE_PP = 0,
-    R_OTYPE_OD,
-};
-
-enum reg_index {
-	RI_MODER,
-	RI_OTYPER,
-	RI_OSPEEDR,
-	RI_PUPDR,
-	RI_IDR,
-	RI_ODR,
-	RI_BSRR,
-	RI_LCKR,
-	RI_AFRL,
-	RI_AFRH,
-	RI_BRR,
-	RI_END,
-	RI_BANK_SIZE = RI_END,
-};
 
 #define STM32_GPIO_PIN_COUNT 16
 
@@ -100,172 +68,11 @@ typedef struct COM_STRUCT_NAME(Gpio) {
 
 } COM_STRUCT_NAME(Gpio);
 
-#define MAX_GPIO_BANKS (STM32_P_GPIO_END - STM32_P_GPIO_BEGIN)
-
-enum {
-	BANK_A,
-	BANK_B,
-	BANK_C,
-	BANK_D,
-	BANK_E,
-	BANK_F,
-	BANK_G,
-	BANK_H,
-	BANK_I,
-	BANK_J,
-	BANK_K,
-	BANK_MAX,
-};
-
-QEMU_BUILD_BUG_MSG(MAX_GPIO_BANKS != BANK_MAX, "GPIO maximum bank index has changed and is not consistent!");
-
-
 typedef struct COM_CLASS_NAME(Gpio) {
 	SysBusDeviceClass parent_class;
     stm32_reginfo_t var_reginfo[MAX_GPIO_BANKS][RI_END];
 } COM_CLASS_NAME(Gpio);
 
-
-static const stm32_reginfo_t stm32f030_gpio_bank_a[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0x28000000 },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX, .reset_val = 0x0C000000 },
-	[RI_PUPDR] = {.mask = UINT32_MAX, .reset_val = 0x24000000 },
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.mask = (1U << 17U) - 1U },
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-
-static const stm32_reginfo_t stm32f030_gpio_bank_b[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX},
-	[RI_PUPDR] = {.mask = UINT32_MAX},
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.mask = (1U << 17U) - 1U },
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-
-static const stm32_reginfo_t stm32_gpio_bank_all_zero[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX },
-	[RI_PUPDR] = {.mask = UINT32_MAX },
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.is_reserved = true},
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-
-static const stm32_reginfo_t stm32_gpio_bank_not_present[RI_END] =
-{
-	[RI_MODER ... RI_BRR] = {.is_reserved = true},
-};
-
-static const stm32_reginfo_t* stm32f030_gpio_reginfo[MAX_GPIO_BANKS] =
-{
-	[BANK_A] = stm32f030_gpio_bank_a,
-	[BANK_B] = stm32f030_gpio_bank_b,
-	[BANK_C ... BANK_D] = stm32_gpio_bank_all_zero,
-	[BANK_E] = stm32_gpio_bank_not_present,
-	[BANK_F] = stm32_gpio_bank_all_zero,
-	[BANK_G ... BANK_K] = stm32_gpio_bank_not_present,
-
-};
-
-static const stm32_reginfo_t stm32g070_gpio_bank_a[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0xEBFFFFFF },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX, .reset_val = 0x0C000000 },
-	[RI_PUPDR] = {.mask = UINT32_MAX, .reset_val = 0x24000000 },
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.mask = (1U << 17U) - 1U },
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-static const stm32_reginfo_t stm32g070_gpio_bank_b_f[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0xFFFFFFFF },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX},
-	[RI_PUPDR] = {.mask = UINT32_MAX},
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.mask = (1U << 17U) - 1U },
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-
-static const stm32_reginfo_t* stm32g070_gpio_reginfo[RI_END] =
-{
-	[BANK_A] = stm32g070_gpio_bank_a,
-	[BANK_B ... BANK_F] = stm32g070_gpio_bank_b_f,
-	[BANK_G ... BANK_K] = stm32_gpio_bank_not_present,
-};
-
-static const stm32_reginfo_t stm32f2xx_f4xx_gpio_bank_a[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0xA8000000 },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX, .reset_val = 0x0C000000 },
-	[RI_PUPDR] = {.mask = UINT32_MAX, .reset_val = 0x64000000 },
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.mask = (1U << 17U) - 1U },
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-
-static const stm32_reginfo_t stm32f2xx_f4xx_gpio_bank_b[RI_END] =
-{
-	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0x00000280 },
-	[RI_OTYPER] = {.mask = UINT16_MAX},
-	[RI_OSPEEDR] = {.mask = UINT32_MAX, .reset_val = 0x000000C0 },
-	[RI_PUPDR] = {.mask = UINT32_MAX, .reset_val = 0x00000100 },
-	[RI_IDR] = {.mask = UINT16_MAX},
-	[RI_ODR] = {.mask = UINT16_MAX},
-	[RI_BSRR] = {.mask = UINT32_MAX},
-	[RI_LCKR] = {.mask = (1U << 17U) - 1U },
-	[RI_AFRL] = {.mask = UINT32_MAX},
-	[RI_AFRH] = {.mask = UINT32_MAX},
-	[RI_BRR] = {.mask = UINT16_MAX},
-};
-
-static const stm32_reginfo_t* stm32f2xx_gpio_reginfo[RI_END] =
-{
-	[BANK_A] = stm32f2xx_f4xx_gpio_bank_a,
-	[BANK_B] = stm32f2xx_f4xx_gpio_bank_b,
-	[BANK_C ... BANK_K] = stm32_gpio_bank_all_zero,
-};
-
-static const stm32_reginfo_t* stm32f4xx_gpio_reginfo[RI_END] =
-{
-	[BANK_A] = stm32f2xx_f4xx_gpio_bank_a,
-	[BANK_B] = stm32f2xx_f4xx_gpio_bank_b,
-	[BANK_C ... BANK_K] = stm32_gpio_bank_all_zero,
-};
 
 static const stm32_periph_banked_variant_t stm32_gpio_variants[4] = {
 	{TYPE_STM32F030_GPIO, stm32f030_gpio_reginfo},
@@ -347,20 +154,7 @@ stm32_common_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size
     addr >>= 2;
     //if (s->periph == 4) printf("GPIOD write: %"HWADDR_PRIx" 0x%"PRIx64"\n", addr, data);
  	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo[s->parent.periph - STM32_P_GPIOA], "STM32 GPIO");
-
-    switch(size) {
-    case 1:
-        data = (s->regs[addr] & ~(0xff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 2:
-        data = (s->regs[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 4:
-        break;
-    default:
-        abort();
-    }
-
+	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs[addr],data, size, offset, 0b111);
 
     // if (s->periph == 6) printf("GPIO: wrote %0"PRIx64" to  %"HWADDR_PRIx"\n", data, addr);
     switch (addr) {
@@ -392,8 +186,12 @@ stm32_common_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size
         stm32_common_gpio_update_odr(s, new_val);
         break;
     }
+	case RI_IDR:
+	{
+        qemu_log_mask(LOG_GUEST_ERROR, "Attempted to write read-only IDR register in %s\n", _PERIPHNAMES[s->parent.periph]);
+		break;
+	}
     default:
-        s->regs[addr] = data;
         qemu_log_mask(LOG_UNIMP, "f2xx GPIO %u reg 0x%x:%d write (0x%x) unimplemented\n",
           s->parent.periph,  (int)addr << 2, offset, (int)data);
     /* FALLTHRU */
@@ -458,12 +256,6 @@ stm32_common_gpio_set(void *arg, int pin, int level)
     DPRINTF("GPIO %u set pin %d level %d\n", s->periph, pin, level);
 }
 
-void
-stm32_common_gpio_exti_set(COM_STRUCT_NAME(Gpio) *s, unsigned pin, qemu_irq irq)
-{
-    s->exti[pin] = irq;
-    DPRINTF("GPIO %u set exti %u irq %p\n", s->parent.periph, pin, irq);
-}
 
 void
 stm32_common_gpio_wake_set(COM_STRUCT_NAME(Gpio) *s, unsigned pin, qemu_irq irq)
@@ -488,7 +280,6 @@ stm32_common_gpio_init(Object *obj)
 	COM_CLASS_NAME(Gpio) *k = STM32COM_GPIO_GET_CLASS(obj);
 
 	s->reginfo = k->var_reginfo;
-
 }
 
 static Property stm32_common_gpio_properties[] = {

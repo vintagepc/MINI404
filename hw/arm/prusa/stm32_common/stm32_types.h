@@ -9,9 +9,20 @@
 #define _STM_F2xx_PART(x) _STM_VAR_PART(f2xx,x)
 #define _STM_F4xx_PART(x) _STM_VAR_PART(f4xx,x)
 
+#define _STM32_SOC(var) (var "-soc")
+
+#define TYPE_STM32_MACHINE "stm32-machine"
+
+// Base names:
+#define TYPE_STM32F030xx "stm32f030xx"
+#define TYPE_STM32F030x4 "stm32f030x4"
+#define TYPE_STM32F030x6 "stm32f030x6"
+#define TYPE_STM32F030x8 "stm32f030x8"
+#define TYPE_STM32F030xC "stm32f030xC"
+
 // Chip types:
 
-#define TYPE_STM32F030x4_SOC "stm32f030x4-soc"
+#define TYPE_STM32F030x4_SOC _STM32_SOC(TYPE_STM32F030x4)
 #define TYPE_STM32F030x6_SOC "stm32f030x6-soc"
 #define TYPE_STM32F030x8_SOC "stm32f030x8-soc"
 #define TYPE_STM32F030xC_SOC "stm32f030xC-soc"

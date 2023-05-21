@@ -60,7 +60,7 @@ struct QTestState
     int wstatus;
     int expected_status;
     bool big_endian;
-    bool irq_level[MAX_IRQ];
+    int irq_level[MAX_IRQ];
     GString *rx;
     QTestTransportOps ops;
     GList *pending_events;
@@ -536,11 +536,13 @@ redo:
         g_assert_cmpint(irq, >=, 0);
         g_assert_cmpint(irq, <, MAX_IRQ);
 
-        if (strcmp(words[1], "raise") == 0) {
-            s->irq_level[irq] = true;
-        } else {
-            s->irq_level[irq] = false;
-        }
+        // if (strcmp(words[1], "raise") == 0) {
+        //     s->irq_level[irq] = true;
+        // } else {
+        //     s->irq_level[irq] = false;
+        // }
+        ret = qemu_strtoi(words[1], NULL, 0, &s->irq_level[irq]);
+        g_assert(!ret);
 
         g_strfreev(words);
         goto redo;
@@ -954,6 +956,14 @@ bool qtest_get_irq(QTestState *s, int num)
     /* dummy operation in order to make sure irq is up to date */
     qtest_inb(s, 0);
 
+    return s->irq_level[num]>0;
+}
+
+int qtest_get_irq_level(QTestState *s, int num)
+{
+    /* dummy operation in order to make sure irq is up to date */
+    qtest_inb(s, 0);
+
     return s->irq_level[num];
 }
 
@@ -1000,6 +1010,18 @@ void qtest_irq_intercept_out(QTestState *s, const char *qom_path)
 void qtest_irq_intercept_in(QTestState *s, const char *qom_path)
 {
     qtest_sendf(s, "irq_intercept_in %s\n", qom_path);
+    qtest_rsp(s);
+}
+
+void qtest_irq_intercept_out_named(QTestState *s, const char *qom_path, const char* name)
+{
+    qtest_sendf(s, "irq_intercept_out_named %s %s\n", qom_path, name);
+    qtest_rsp(s);
+}
+
+void qtest_irq_intercept_in_named(QTestState *s, const char *qom_path, const char* name)
+{
+    qtest_sendf(s, "irq_intercept_in_named %s %s\n", qom_path, name);
     qtest_rsp(s);
 }
 

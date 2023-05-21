@@ -123,7 +123,6 @@ static void software_spi_init(Object *obj)
 	qdev_init_gpio_out_named(dev, &s->miso, "miso", 1);
 
     s->ssi = ssi_create_bus(dev, "ssi");
-	printf("Init swspi");
 }
 
 static void software_spi_class_init(ObjectClass *klass, void *data)

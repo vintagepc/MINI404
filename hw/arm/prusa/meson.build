@@ -30,6 +30,11 @@ endif
 pngdep = dependency('libpng', fallback : ['libpng', 'png_dep'])
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [pngdep])
 
+# Add test sources only if coverage is enabled.
+if config_host_data.get('CONFIG_GCOV')
+    subdir('stm32_tests')
+endif
+
 subdir('stm32_common')
 subdir('stm32f407')
 subdir('stm32f030')

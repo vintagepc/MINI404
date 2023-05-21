@@ -29,6 +29,7 @@
 #include "hw/misc/unimp.h"
 #include "chardev/char.h"
 #include "net/net.h"
+#include "hw/arm/armv7m.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "exec/ramblock.h"
 #include "../stm32_common/stm32_shared.h"
@@ -191,3 +192,46 @@ stm32_f030xx_register_types(void)
 }
 
 type_init(stm32_f030xx_register_types);
+
+#include "hw/boards.h"
+
+static void stm32_f030xx_class_init(ObjectClass *oc, void *data)
+{
+	    MachineClass *mc = MACHINE_CLASS(oc);
+	    mc->desc = data;
+	    mc->family = TYPE_STM32F030xx,
+		// mc->name = data,
+	    mc->init = stm32_soc_machine_init;
+	    mc->default_ram_size = 0; // 0 = use default RAM from chip.
+	    mc->no_parallel = 1;
+		mc->no_serial = 1;
+
+		STM32SocMachineClass* smc = STM32_MACHINE_CLASS(oc);
+		smc->soc_type = data;
+		smc->cpu_type = ARM_CPU_TYPE_NAME("cortex-m0");
+}
+
+static const TypeInfo stm32f030xx_machine_types[] = {
+    {
+        .name           = TYPE_STM32_MACHINE,
+        .parent         = TYPE_MACHINE,
+		.class_size		= sizeof(STM32SocMachineClass),
+        .abstract       = true,
+    }, {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F030x4),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f030xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F030x4_SOC),
+    }, {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F030x6),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f030xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F030x6_SOC),
+    }, //{
+    //     .name           = MACHINE_TYPE_NAME("quanta-gbs-bmc"),
+    //     .parent         = TYPE_NPCM7XX_MACHINE,
+    //     .class_init     = gbs_bmc_machine_class_init,
+    // },
+};
+
+DEFINE_TYPES(stm32f030xx_machine_types)

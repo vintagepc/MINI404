@@ -30,6 +30,7 @@
 #include "hw/misc/unimp.h"
 #include "chardev/char.h"
 #include "net/net.h"
+#include "hw/arm/armv7m.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "exec/ramblock.h"
 #include "../stm32_common/stm32_shared.h"

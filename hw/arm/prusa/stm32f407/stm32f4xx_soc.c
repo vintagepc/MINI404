@@ -81,7 +81,6 @@ static void stm32f4xx_soc_unrealize(DeviceState *dev)
 
 static void stm32f4xx_soc_finalize(Object *obj)
 {
-    printf("soc finalize;");
 }
 
 static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)

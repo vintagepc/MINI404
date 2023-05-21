@@ -1,7 +1,12 @@
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qom/object.h"
 #include "sysemu/block-backend.h"
+#include "hw/boards.h"
 #include "hw/qdev-core.h"
+#include "qapi/error.h"
+#include "hw/arm/armv7m.h"
+#include "hw/arm/boot.h"
 #include "hw/qdev-properties.h"
 #include "stm32_common.h"
 #include "stm32_chip_macros.h"
@@ -248,7 +253,7 @@ extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t 
 		}
 		else
 		{
-			printf("Warning: Peripheral %s does not support the STM32 Common interface\n", _PERIPHNAMES[id]);
+			qemu_log_mask(LOG_UNIMP, "Warning: Peripheral %s does not support the STM32 Common interface\n", _PERIPHNAMES[id]);
 		}
 	}
 	if (!sysbus_realize(SYS_BUS_DEVICE(s->perhiperhals[id]), errp)) {
@@ -352,3 +357,20 @@ static void stm32_base_register_types(void)
 }
 
 type_init(stm32_base_register_types);
+
+extern void stm32_soc_machine_init(MachineState *machine)
+{
+	DeviceState *dev;
+	STM32SocMachineClass *smc = STM32_MACHINE_GET_CLASS(OBJECT(machine));
+
+    dev = qdev_new(smc->soc_type);
+	object_property_add_child(OBJECT(machine), "soc", OBJECT(dev));
+    qdev_prop_set_string(dev, "cpu-type", smc->cpu_type);
+    qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
+	uint64_t flash_size = stm32_soc_get_flash_size(dev);
+	sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
+	armv7m_load_kernel(ARM_CPU(first_cpu),
+					machine->kernel_filename,
+					flash_size);
+}

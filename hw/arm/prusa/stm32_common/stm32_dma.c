@@ -494,7 +494,7 @@ static void stm32_common_dma_realize(DeviceState *dev, Error **errp)
 	COM_STRUCT_NAME(Dma) *s = STM32COM_DMA(dev);
 	if (s->cpu_mr == NULL)
 	{
-		printf("No CPU memory region specified for %s - using global system memory.\n", _PERIPHNAMES[s->parent.periph]);
+		qemu_log_mask(LOG_UNIMP, "No CPU memory region specified for %s - using global system memory.\n", _PERIPHNAMES[s->parent.periph]);
 		s->cpu_mr = get_system_memory();
 	}
 	gchar* name = g_strdup_printf("STM32COM_DMA_%d", s->parent.periph - STM32_P_DMA_BEGIN);
