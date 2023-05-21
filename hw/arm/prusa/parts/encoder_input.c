@@ -164,7 +164,6 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, encoder_input, ENCODER_INP
 
 static void encoder_input_finalize(Object *obj)
 {
-    printf("Input_finalize\n");
 }
 
 static void encoder_input_reset(DeviceState *dev)

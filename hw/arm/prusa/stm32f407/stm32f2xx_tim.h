@@ -31,7 +31,6 @@
 #include "hw/irq.h"
 #include "qemu/timer.h"
 #include "hw/sysbus.h"
-#include "stm32.h"
 #include "../stm32_common/stm32_shared.h"
 #include "../stm32_common/stm32_common.h"
 

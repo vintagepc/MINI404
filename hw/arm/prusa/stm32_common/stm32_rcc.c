@@ -81,7 +81,7 @@ void stm32_rcc_if_set_periph_clk_irq(
 {
 	if (p->rcc == NULL)
 	{
-		printf("ERR: No RCC set when adding a clock IRQ!\n");
+		printf("# ERR: No RCC set when adding a clock IRQ!\n");
 		return;
 	}
 	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(p->rcc);

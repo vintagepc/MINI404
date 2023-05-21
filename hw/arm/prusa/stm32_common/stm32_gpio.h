@@ -34,7 +34,6 @@
 
 typedef struct COM_STRUCT_NAME(Gpio) COM_STRUCT_NAME(Gpio);
 
-void stm32_common_gpio_exti_set(COM_STRUCT_NAME(Gpio) *, unsigned, qemu_irq);
 void stm32_common_gpio_wake_set(COM_STRUCT_NAME(Gpio) *, unsigned, qemu_irq);
 
 #endif //#ifndef STM32_COMMON_GPIO_H

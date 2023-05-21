@@ -159,7 +159,7 @@ stm32_common_otp_init(Object *obj)
 {
     COM_STRUCT_NAME(Otp) *s = STM32COM_OTP(obj);
 	COM_CLASS_NAME(Otp) *c = STM32COM_OTP_GET_CLASS(s);
-	printf("FIXME: OTP and engineering bytes should be split.\n");
+	printf("# FIXME: OTP and engineering bytes should be split.\n");
     STM32_MR_IO_INIT(&s->iomem, obj, &stm32_common_otp_ops, s, MAX_OTP_SIZE_BYTES);
     s->iomem.readonly = true;
 	s->cfg_otp_end_bytes = c->otp_size;

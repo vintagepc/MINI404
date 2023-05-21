@@ -29,7 +29,7 @@ endif
 
 pngdep = dependency('libpng', fallback : ['libpng', 'png_dep'])
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: [pngdep])
-
+subdir('stm32_tests')
 subdir('stm32_common')
 subdir('stm32f407')
 subdir('stm32f030')

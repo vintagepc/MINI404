@@ -6,6 +6,7 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "sysemu/blockdev.h"
+#include "hw/boards.h"
 #include "hw/sysbus.h"
 #include "../utility/macros.h"
 #include "stm32_shared.h"
@@ -61,8 +62,20 @@ typedef struct STM32PeripheralClass
 
 // Common class data for variant storage.
 
-// Base class for a SOC with a config blob.
+// Machine class templates:
+typedef struct STM32SocMachineClass {
+    MachineClass        parent;
 
+    const char          *soc_type;
+    const char          *cpu_type;
+} STM32SocMachineClass;
+
+#define STM32_MACHINE_CLASS(klass)                                    \
+    OBJECT_CLASS_CHECK(STM32SocMachineClass, (klass), TYPE_STM32_MACHINE)
+#define STM32_MACHINE_GET_CLASS(obj)                                  \
+    OBJECT_GET_CLASS(STM32SocMachineClass, (obj), TYPE_STM32_MACHINE)
+
+// Base class for a SOC with a config blob.
 typedef struct STM32SOCClass {
 	SysBusDeviceClass parent_class;
     const struct stm32_soc_cfg_t* cfg; // Chip variant configuration store.
@@ -82,8 +95,9 @@ typedef struct STM32SOC {
 	bool has_sys_memory;
 } STM32SOC;
 
-
 OBJECT_DECLARE_TYPE(STM32SOC, STM32SOCClass, STM32_SOC);
+
+extern void stm32_soc_machine_init(MachineState *machine);
 
 extern hwaddr stm32_soc_get_flash_size(DeviceState* soc);
 extern hwaddr stm32_soc_get_sram_size(DeviceState* soc);

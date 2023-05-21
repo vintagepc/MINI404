@@ -122,16 +122,24 @@ CHECK_REG_u32(REGDEF_NAME(part,x));
 // Inits memory region with a nicely formatted name for info mtree.
 #define STM32_MR_INIT(_mr, _obj, _size) \
 { \
-	gchar* _mr_name = g_strdup_printf("%s (%s)", object_get_typename(_obj), _PERIPHNAMES[g_stm32_periph_init]); \
-		memory_region_init(_mr, _obj, _mr_name, _size); \
-	g_free(_mr_name); \
+	if (g_stm32_periph_init != STM32_P_UNDEFINED) { \
+		gchar* _mr_name = g_strdup_printf("%s (%s)", object_get_typename(_obj), _PERIPHNAMES[g_stm32_periph_init]); \
+			memory_region_init(_mr, _obj, _mr_name, _size); \
+		g_free(_mr_name); \
+	} else { \
+		memory_region_init(_mr, _obj, "UNKNOWN_INSTANCE", _size); \
+	} \
 }
 
 #define STM32_MR_IO_INIT(_mr, _obj, _ops, _opaque, _size) \
 { \
-	gchar* _mr_name = g_strdup_printf("%s (%s)", object_get_typename(_obj), _PERIPHNAMES[g_stm32_periph_init]); \
-		memory_region_init_io(_mr, _obj, _ops, _opaque, _mr_name, _size); \
-	g_free(_mr_name); \
+	if (g_stm32_periph_init != STM32_P_UNDEFINED) { \
+		gchar* _mr_name = g_strdup_printf("%s (%s)", object_get_typename(_obj), _PERIPHNAMES[g_stm32_periph_init]); \
+			memory_region_init_io(_mr, _obj, _ops, _opaque, _mr_name, _size); \
+		g_free(_mr_name); \
+	} else { \
+		memory_region_init_io(_mr, _obj, _ops, _opaque, "UNKNOWN_INSTANCE", _size); \
+	} \
 }
 
 // Some rather ugly convenience macros for
