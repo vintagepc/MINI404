@@ -173,7 +173,7 @@ extern DeviceState* stm32_soc_get_periph(DeviceState* soc, stm32_periph_t id)
 	STM32SOC *s = STM32_SOC(soc);
 	if (s->perhiperhals[id] == NULL)
 	{
-		printf("ERR: Asked to retreive a peripheral (%s) that's not defined by the SOC!\n", _PERIPHNAMES[id]);
+		printf("# ERR: Asked to retreive a peripheral (%s) that's not defined by the SOC!\n", _PERIPHNAMES[id]);
 	}
 	return s->perhiperhals[id];
 }
