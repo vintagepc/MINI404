@@ -33,15 +33,7 @@
 #include "qapi/qapi-events-run-state.h"
 #include "hw/qdev-properties.h"
 #include "stm32_rcc_if.h"
-
-enum reg_index {
-	RI_KR,
-	RI_PR,
-	RI_RLR,
-	RI_SR,
-	RI_WINR,
-	RI_END
-};
+#include "stm32_iwdg_regdata.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Iwdg), COM_CLASS_NAME(Iwdg), STM32COM_IWDG);
 
@@ -115,26 +107,24 @@ static uint64_t
 stm32_common_iwdg_read(void *opaque, hwaddr addr, unsigned int size)
 {
 	COM_STRUCT_NAME(Iwdg) *s = STM32COM_IWDG(opaque);
-    uint32_t r;
     int offset = addr & 0x3;
 
     addr >>= 2;
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32 IWDG");
-
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32 IWDG"); // LCOV_EXCL_LINE
 
     uint32_t value = s->regs.raw[addr];
 
-    r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
+	ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b110);
 
     if (addr == RI_KR)
     {
-        r = 0; // KR is write only.
+        value = 0; // KR is write only.
     }
-    return r;
+    return value;
 }
 
 static void stm32_common_iwdg_fire(void *opaque) {
-    printf("Watchdog fired without guest update, resetting!\n");
+    printf("# Watchdog fired without guest update, resetting!\n");
     qapi_event_send_watchdog(WATCHDOG_ACTION_RESET);
     qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
 
@@ -152,11 +142,16 @@ static void stm32_common_iwdg_update(COM_STRUCT_NAME(Iwdg) *s){
 		return;
 	}
 
-    uint32_t prescale = 4<<s->regs.defs.PR.PR;
+    uint32_t prescale = IWDG_PRESCALES[s->regs.defs.PR.PR];
     uint32_t tickrate = clkrate/prescale; // ticks per second.
-    uint64_t delay_us = (1000000U* s->regs.defs.RLR.RL)/tickrate;
+    uint64_t delay_us = (1000000U * s->regs.defs.RLR.RL)/tickrate;
     if (s->time_changed) {
-        printf("Watchdog configured with timeout of %"PRIu64" ms\n", delay_us/1000U);
+		uint64_t time = delay_us;
+		if (time > 1000)
+		{
+			time /= 1000U;
+		}
+        printf("# Watchdog configured with timeout of %"PRIu64" %s\n", time, delay_us>1000? "ms": "us");
         s->time_changed = false;
     }
     timer_mod(s->timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (delay_us*1000));
@@ -170,17 +165,9 @@ stm32_common_iwdg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int s
     int offset = addr & 0x3;
 
     addr >>= 2;
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 IWDG");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 IWDG"); // LCOV_EXCL_LINE
 
-    switch(size) {
-    case 2:
-        data = (s->regs.raw[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 4:
-        break;
-    default:
-        abort();
-    }
+	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b110);
 
     switch(addr) {
     case RI_KR:
@@ -212,7 +199,11 @@ stm32_common_iwdg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int s
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write read-only IWDG_SR!\n");
         break;
 	case RI_WINR:
-		CHECK_UNIMP_RESVD(data, s->reginfo, RI_KR);
+		CHECK_UNIMP_RESVD(data, s->reginfo, RI_WINR);
+		if (s->regs.defs.KR.KEY != 0x5555){
+        	qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write IWDG_WINR while it is write protected!\n");
+            return;
+        }
 		s->regs.raw[addr] = data;
 		break;
     default:
