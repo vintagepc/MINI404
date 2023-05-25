@@ -120,7 +120,7 @@ extern void stm32_soc_setup_flash(DeviceState* dev, MemoryRegion* flash, Error**
 		}
 	}
 #endif
-	printf("No flash filename configured, error opening file, or mmap is not supported (W64). Skipping file-backed flash.\n");
+	printf("# No flash filename configured, error opening file, or mmap is not supported (W64). Skipping file-backed flash.\n");
 	// Executed on error or if no filename given.
 	memory_region_init_rom(flash, OBJECT(soc), flash_name,
                            flash_size, errp);

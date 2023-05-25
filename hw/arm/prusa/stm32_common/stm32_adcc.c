@@ -115,7 +115,7 @@ static uint64_t stm32_common_adcc_read(void *opaque, hwaddr addr,
 
 	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32COMMON ADCC");
 
-	uint64_t data = s->regs.raw;
+	uint32_t data = s->regs.raw;
     switch (addr) {
         case RI_CCR:
 			break;
