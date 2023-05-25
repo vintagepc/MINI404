@@ -25,23 +25,7 @@
 #include "../stm32_common/stm32_common.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
-
-enum reg_index {
-	RI_RTSR,
-	RI_FTSR,
-	RI_SWIER,
-	RI_RPR,
-	RI_FPR,
-	RI_EXTICR_BEGIN = 0x60U/4U,
-	RI_EXTICR1 = RI_EXTICR_BEGIN,
-	RI_EXTICR2,
-	RI_EXTICR3,
-	RI_EXTICR4,
-	RI_EXTICR_END,
-	RI_IMR = 0x80U/4U,
-	RI_EMR,
-	RI_END
-};
+#include "stm32g070_exti_regdata.h"
 
 // Mostly just convenience for easier debugging while inspecting the struct.
 // All the logic takes advantage of the regularity using bitshifts and indexing.
@@ -123,10 +107,10 @@ static void stm32_g070_exti_in(void *opaque, int n, int level)
 	uint8_t port = n/16U; // the GPIO bank it's on.
 	uint8_t pin = n%16U; // the EXTI line.
 	uint8_t reg = pin/4U; // The register index.
-    uint8_t shift = 4U*(pin%4U); // The shift into the register.
+	uint8_t shift = 8U*(pin%4U); // The shift into the register.
 	uint32_t pin_mask = 1U << pin;
 
-    g_assert(RI_EXTICR1 + reg <= (RI_EXTICR4));
+	g_assert(RI_EXTICR1 + reg <= (RI_EXTICR4)); //LCOV_EXCL_LINE
 	uint32_t regval = s->regs.raw[RI_EXTICR1 + reg];
     if (((regval >> shift)&0xF) == port) {
 		switch (level)
@@ -146,7 +130,7 @@ static void stm32_g070_exti_in(void *opaque, int n, int level)
 				}
 				break;
 			default:
-				printf("FIXME: Unhandled EXTI/invalid transition - code bug...\n");
+				// No level change, ignore it.
 				break;
 		}
    }
@@ -156,12 +140,12 @@ static uint64_t
 stm32_g070_exti_read(void *opaque, hwaddr addr, unsigned int size)
 {
 	STM32G070_STRUCT_NAME(Exti) *s = STM32G070_EXTI(opaque);
-    int offset = addr & 0x3;
+	int offset = addr & 0x3;
 
-    addr >>= 2;
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32G070 EXTI");
+	addr >>= 2;
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32G070 EXTI"); // LCOV_EXCL_LINE
 
-    uint32_t value = s->regs.raw[addr];
+	uint32_t value = s->regs.raw[addr];
 
 	ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b111);
 
@@ -174,47 +158,50 @@ stm32_g070_exti_write(void *opaque, hwaddr addr, uint64_t data, unsigned int siz
 {
 	STM32G070_STRUCT_NAME(Exti) *s = STM32G070_EXTI(opaque);
 
-    int offset = addr & 0x3;
+	int offset = addr & 0x3;
 
-    addr >>= 2;
+	addr >>= 2;
 	uint32_t raw_data = data;
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32G070 EXTI ");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32G070 EXTI "); // LCOV_EXCL_LINE
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b111);
 	CHECK_UNIMP_RESVD(data, s->reginfo, addr);
 
-    switch (addr) {
-    	case RI_SWIER:
+	switch (addr) {
+		case RI_SWIER:
 			// SW generates a rising edge and HW auto clears the bit, so we may as well not set it...
-			// Do we even have an RE trigger?
-			if (raw_data & s->regs.defs.RTSR.RT)
-			{
-				s->regs.defs.RPR.RPIF |= raw_data;
-				int index = 0;
-				while (raw_data){
-					raw_data >>= 1U;
-					index++;
+			s->regs.defs.RPR.RPIF |= raw_data;
+			int index = 0;
+			while (raw_data){
+				if (raw_data & 1U)
+				{
+					qemu_irq_pulse(s->exti_out[index]);
 				}
-				qemu_irq_pulse(s->exti_out[index]);
+				raw_data >>= 1U;
+				index++;
 			}
 			break;
-		case RI_RPR ... RI_FPR: // These are w1_c registers.
-				s->regs.raw[addr] &= ~raw_data;
+		case RI_RTSR ... RI_FTSR:
+		case RI_EXTICR1 ... RI_EXTICR4:
+			s->regs.raw[addr] = data;
 			break;
-		default:
-			qemu_log_mask(LOG_UNIMP, "STM32 exti unimplemented write 0x%x+%u size %u val 0x%x\n",
+		case RI_RPR ... RI_FPR: // These are w1_c registers.
+			s->regs.raw[addr] &= ~raw_data;
+			break;
+		default: // LCOV_EXCL_LINE
+			qemu_log_mask(LOG_UNIMP, "STM32 exti unimplemented write 0x%x+%u size %u val 0x%x\n", // LCOV_EXCL_LINE
 			(unsigned int)addr << 2, offset, size, (unsigned int)data);
 		break;
-    }
+	}
 }
 
 static const MemoryRegionOps stm32_g070_exti_ops = {
-    .read = stm32_g070_exti_read,
-    .write = stm32_g070_exti_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .impl = {
-        .min_access_size = 2,
-        .max_access_size = 4,
-    }
+	.read = stm32_g070_exti_read,
+	.write = stm32_g070_exti_write,
+	.endianness = DEVICE_NATIVE_ENDIAN,
+	.impl = {
+		.min_access_size = 2,
+		.max_access_size = 4,
+	}
 };
 
 static void stm32_g070_exti_reset(DeviceState *dev)
@@ -230,11 +217,11 @@ static void
 stm32_g070_exti_init(Object *obj)
 {
 	STM32G070_STRUCT_NAME(Exti) *s = STM32G070_EXTI(obj);
-    assert(sizeof(s->regs)==sizeof(s->regs.raw)); // Make sure packing is correct.
-    CHECK_REG_u32(s->regs.defs.EXTICR1);
-    CHECK_REG_u32(s->regs.defs.EXTICR2);
-    CHECK_REG_u32(s->regs.defs.EXTICR3);
-    CHECK_REG_u32(s->regs.defs.EXTICR4);
+	assert(sizeof(s->regs)==sizeof(s->regs.raw)); // Make sure packing is correct.
+	CHECK_REG_u32(s->regs.defs.EXTICR1);
+	CHECK_REG_u32(s->regs.defs.EXTICR2);
+	CHECK_REG_u32(s->regs.defs.EXTICR3);
+	CHECK_REG_u32(s->regs.defs.EXTICR4);
 	CHECK_UNION(STM32G070_STRUCT_NAME(Exti), regs.defs.EXTICR1, regs.raw[RI_EXTICR1]);
 	CHECK_UNION(STM32G070_STRUCT_NAME(Exti), regs.defs.RPR, regs.raw[RI_RPR]);
 	CHECK_UNION(STM32G070_STRUCT_NAME(Exti), regs.defs.IMR1, regs.raw[RI_IMR]);
@@ -242,40 +229,40 @@ stm32_g070_exti_init(Object *obj)
 
 	s->reginfo = stm32g070_exti_reginfo;
 
-    STM32_MR_IO_INIT(&s->iomem, obj, &stm32_g070_exti_ops, s, 1U*KiB);
-    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
+	STM32_MR_IO_INIT(&s->iomem, obj, &stm32_g070_exti_ops, s, 1U*KiB);
+	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 	for (int i = 0; i < 16; i++) {
-        sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->exti_out[i]);
-    }
+		sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->exti_out[i]);
+	}
 
 	qdev_init_gpio_in(DEVICE(obj), stm32_g070_exti_in, (16U *(STM32G070_GPIO_END - STM32_P_GPIO_BEGIN)));
 
-}
+	}
 
-static const VMStateDescription vmstate_stm32g070_exti = {
-    .name = TYPE_STM32G070_EXTI,
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw, STM32G070_STRUCT_NAME(Exti), RI_END),
-        VMSTATE_END_OF_LIST()
-    }
+	static const VMStateDescription vmstate_stm32g070_exti = {
+	.name = TYPE_STM32G070_EXTI,
+	.version_id = 1,
+	.minimum_version_id = 1,
+	.fields = (VMStateField[]) {
+		VMSTATE_UINT32_ARRAY(regs.raw, STM32G070_STRUCT_NAME(Exti), RI_END),
+		VMSTATE_END_OF_LIST()
+	}
 };
 
 static void
 stm32_g070_exti_class_init(ObjectClass *klass, void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->vmsd = &vmstate_stm32g070_exti;
-    dc->reset = stm32_g070_exti_reset;
+	DeviceClass *dc = DEVICE_CLASS(klass);
+	dc->vmsd = &vmstate_stm32g070_exti;
+	dc->reset = stm32_g070_exti_reset;
 	QEMU_BUILD_BUG_MSG(sizeof(stm32g070_exti_reginfo) != sizeof(stm32_reginfo_t[RI_END]), "Reginfo not sized correctly!");
 }
 
 static const TypeInfo
 stm32_g070_exti_info = {
-    .name          = TYPE_STM32G070_EXTI,
-    .parent        = TYPE_STM32_PERIPHERAL,
-    .instance_size = sizeof(STM32G070_STRUCT_NAME(Exti)),
+	.name          = TYPE_STM32G070_EXTI,
+	.parent        = TYPE_STM32_PERIPHERAL,
+	.instance_size = sizeof(STM32G070_STRUCT_NAME(Exti)),
 	.instance_init = stm32_g070_exti_init,
 	.class_init = stm32_g070_exti_class_init,
 };
@@ -283,7 +270,7 @@ stm32_g070_exti_info = {
 static void
 stm32_g070_exti_register_types(void)
 {
-    type_register_static(&stm32_g070_exti_info);
+	type_register_static(&stm32_g070_exti_info);
 }
 
 type_init(stm32_g070_exti_register_types)
