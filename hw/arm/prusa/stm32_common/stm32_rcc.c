@@ -68,7 +68,7 @@ bool stm32_rcc_if_check_periph_clk(STM32Peripheral *p)
          * is disabled is a bug and give a warning to unsuspecting programmers.
          * When I made this mistake on real hardware the write had no effect.
          */
-        printf("Warning: You are attempting to use the [%s] peripheral while "
+        qemu_log_mask(LOG_GUEST_ERROR, "Warning: You are attempting to use the [%s] peripheral while "
                  "its clock is disabled.\n", clk->name);
         return false;
     }

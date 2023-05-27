@@ -108,7 +108,10 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
                              flash_size);
 
     // Kinda sketchy but needed to bypass the FW check on the Mini...
-     s->flash.ram_block->host[MiB  -1] = 0xFF;
+	if(flash_size >= (MiB -1))
+	{
+	    s->flash.ram_block->host[MiB  -1] = 0xFF;
+	}
 
     memory_region_add_subregion(system_memory, cfg->flash_base, &s->flash);
     memory_region_add_subregion(system_memory, 0, &s->flash_alias);
@@ -219,8 +222,8 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     if (qemu_find_netdev("mini-eth")!=NULL){
         qdev_prop_set_string(dev,"netdev","mini-eth");
         qdev_prop_set_bit(dev, "connected", true);
-    } else {
-        printf("Ethernet disconnected. use -netdev id=mini-eth,[opts...] to connect it.\n");
+    // } else {
+    //     printf("Ethernet disconnected. use -netdev id=mini-eth,[opts...] to connect it.\n");
     }
 
 	qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, STM32_P_ITM), "chardev", qemu_chr_find("stm32_itm"));
@@ -300,3 +303,51 @@ stm32_f4xx_register_types(void)
 }
 
 type_init(stm32_f4xx_register_types);
+
+#include "hw/boards.h"
+
+static void stm32_f4xx_class_init(ObjectClass *oc, void *data)
+{
+	    MachineClass *mc = MACHINE_CLASS(oc);
+	    mc->desc = data;
+	    mc->family = TYPE_STM32F4xx,
+	    mc->init = stm32_soc_machine_init;
+	    mc->default_ram_size = 0; // 0 = use default RAM from chip.
+	    mc->no_parallel = 1;
+		mc->no_serial = 1;
+
+		STM32SocMachineClass* smc = STM32_MACHINE_CLASS(oc);
+		smc->soc_type = data;
+		smc->cpu_type = ARM_CPU_TYPE_NAME("cortex-m4");
+}
+
+static const TypeInfo stm32f4xx_machine_types[] = {
+	{
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F407xE),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f4xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F407xE_SOC),
+    }, {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F407xG),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f4xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F407xG_SOC),
+    }, {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F427xE),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f4xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F427xE_SOC),
+    }, {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F427xG),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f4xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F427xG_SOC),
+    }, {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32F427xI),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_f4xx_class_init,
+		.class_data		= (void*)(TYPE_STM32F427xI_SOC),
+    },
+};
+
+DEFINE_TYPES(stm32f4xx_machine_types)

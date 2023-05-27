@@ -31,7 +31,6 @@
 #include "../stm32_common/stm32_rcc.h"
 #include "../stm32_common/stm32_rcc_regdefs.h"
 #include "../stm32_common/stm32_common.h"
-#include "stm32.h"
 
 REGDEF_BLOCK_BEGIN()
 	REG_B32(LSION);

@@ -518,11 +518,11 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
 
     /* Only update the scales if the frequency is not zero. */
 	clock_set_hz(s->parent.CPUCLOCK, hclk_freq);
-	printf("CPUCLOCK set to %u Hz\n",hclk_freq);
+	printf("# CPUCLOCK set to %u Hz\n",hclk_freq);
 	clock_propagate(s->parent.CPUCLOCK);
 	clock_set_hz(s->parent.REFCLK, hclk_freq/8);
 	clock_propagate(s->parent.REFCLK);
-	printf("Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
+	printf("# Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
 }
 
 

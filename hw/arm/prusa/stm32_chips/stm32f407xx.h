@@ -39,6 +39,9 @@
 #include "stm32f4xx_irqs.h"
 #include "qemu/units.h"
 
+// TODO: clean this up, stm32.h is old/a mess.
+#define TYPE_STM32_UART "stm32-uart"
+
 static const stm32_soc_cfg_t stm32f407xx_cfg =
 {
 	.nvic_irqs = F4xx_F407_COUNT_IRQ,
