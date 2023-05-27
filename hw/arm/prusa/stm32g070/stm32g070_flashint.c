@@ -26,21 +26,8 @@
 #include "qemu/log.h"
 #include "../stm32_common/stm32_common.h"
 #include "hw/irq.h"
+#include "stm32g070_flashint_regdata.h"
 
-enum RegIndex{
-    RI_ACR 		= 0x00,
-    RI_KEYR 	= 0x08/4,
-    RI_OPTKEYR	= 0x0C/4,
-    RI_SR 		= 0x10/4,
-    RI_CR		= 0x14/4,
-	RI_ECCR		= 0x18/4,
-    RI_OPTR		= 0x20/4,
-    RI_WRP1AR	= 0x2C/4,
-    RI_WRP1BR	= 0x30/4,
-    RI_WRP2AR	= 0x4C/4,
-    RI_WRP2BR	= 0x50/4,
-    RI_END
-};
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32G070_STRUCT_NAME(FlashIF), STM32G070_FINT);
 
@@ -54,45 +41,6 @@ REGDEF_BLOCK_BEGIN()
 	REG_R(4);
     REG_B32(EMPTY);
 REGDEF_BLOCK_END(flashif, acr);
-
-REGDEF_BLOCK_BEGIN()
-    REG_B32(EOP);
-    REG_B32(OPER);
-    REG_R(1);
-    REG_B32(PROGERR);
-    REG_B32(WRPERR);
-    REG_B32(PGAERR);
-    REG_B32(SIZERR);
-    REG_B32(PGSERR);
-    REG_B32(MISERR);
-    REG_B32(FASTERR);
-    REG_R(5);
-    REG_B32(OPTVERR);
-    REG_B32(BSY1);
-    REG_B32(BSY2);
-    REG_B32(CFGBSY);
-    REG_R(13);
-REGDEF_BLOCK_END(flashif, sr);
-
-REGDEF_BLOCK_BEGIN()
-    REG_B32(PG);
-    REG_B32(PER);
-    REG_B32(MER1);
-    REG_K32(PNB, 10);
-    REG_B32(BKER);
-	REG_RB();
-    REG_B32(MER2);
-    REG_B32(STRT);
-    REG_B32(OPTSTRT);
-    REG_B32(FSTPG);
-    REG_R(5);
-    REG_B32(EOPIE);
-    REG_B32(ERRIE);
-	REG_RB();
-    REG_B32(OBL_LAUNCH);
-    REG_B32(OPTLOCK);
-    REG_B32(LOCK);
-REGDEF_BLOCK_END(flashif, cr);
 
 REGDEF_BLOCK_BEGIN()
 	REG_K32(ADDR_ECC,14);
@@ -236,6 +184,8 @@ stm32g070_fint_read(void *arg, hwaddr offset, unsigned int size)
     uint32_t index = offset >> 2U;
     offset&= 0x3;
 
+	CHECK_BOUNDS_R(index, RI_END, stm32g070_flashif_reginfo, "G070 Flash Interface"); // LCOV_EXCL_LINE
+
     switch (index)
     {
         case RI_CR:
@@ -254,11 +204,11 @@ static void stm32g070_flashif_sector_erase(STM32G070_STRUCT_NAME(FlashIF) *s)
 {
     if (s->regs.defs.CR.LOCK)
     {
-		printf("ERR: Tried to erase page %u while locked!\n",s->regs.defs.CR.PNB);
+		qemu_log_mask(LOG_GUEST_ERROR, "Tried to erase page %u while locked!\n",s->regs.defs.CR.PNB);
         s->regs.defs.SR.WRPERR = 1;
         return;
     }
-    printf("Erasing flash sector %u\n", s->regs.defs.CR.PNB);
+    printf("# Erasing flash sector %u\n", s->regs.defs.CR.PNB);
     uint32_t (*p)[2] = &sector_boundaries[s->regs.defs.CR.PNB];
     uint32_t buff = 0xFFFFFFFFU;
     for (int i=(*p)[0]; i<=(*p)[1]; i+=4)
@@ -274,7 +224,7 @@ stm32g070_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     int offset = addr & 0x03;
 
     addr >>= 2;
-    CHECK_BOUNDS_W(addr, data, RI_END, stm32g070_flashif_reginfo, "F4xx Flash IF");
+    CHECK_BOUNDS_W(addr, data, RI_END, stm32g070_flashif_reginfo, "F4xx Flash IF"); // LCOV_EXCL_LINE
     ADJUST_FOR_OFFSET_AND_SIZE_W(stm32g070_fint_read(arg, addr<<2U, 4U), data, size, offset, 0b111)
     CHECK_UNIMP_RESVD(data, stm32g070_flashif_reginfo, addr);
 
@@ -291,7 +241,7 @@ stm32g070_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             else if (data == KEY2 && s->flash_state == KEY1_OK)
             {
                 s->flash_state = UNLOCKED;
-                printf("FLASH unlocked!\n");
+                printf("# Flash unlocked!\n");
                 memory_region_set_readonly(s->flash, false);
             }
         }
@@ -306,7 +256,7 @@ stm32g070_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     		}
             else if (s->flash_state == UNLOCKED && r.LOCK)
             {
-                printf("FLASH LOCKED\n");
+                printf("# Flash LOCKED\n");
                 memory_region_set_readonly(s->flash, true);
                 s->flash_state = LOCKED;
             }
@@ -327,7 +277,7 @@ stm32g070_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 		}
         break;
         default:
-            qemu_log_mask(LOG_UNIMP, "f2xx FINT reg 0x%x:%d write (0x%x) unimplemented\n",
+            qemu_log_mask(LOG_UNIMP, "G070 FINT reg 0x%x:%d write (0x%x) unimplemented\n",
          (int)addr << 2, offset, (int)data);
             s->regs.raw[addr] = data;
             break;
