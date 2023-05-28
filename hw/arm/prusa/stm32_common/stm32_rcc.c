@@ -98,6 +98,7 @@ void stm32_common_rcc_reset_write(COM_STRUCT_NAME(Rcc) *s, uint32_t mask, const 
         if (mask & 1U<<i && (*vectors)[i] != 0 ) {
 			if ((*vectors)[i] == STM32_P_ADC_ALL) // sometimes ADC is shared...
 			{
+				qemu_irq_pulse(s->reset[STM32_P_ADC1]);
 				qemu_irq_pulse(s->reset[STM32_P_ADC2]);
 				qemu_irq_pulse(s->reset[STM32_P_ADC3]);
 			}

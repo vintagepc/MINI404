@@ -280,7 +280,7 @@ static const stm32_reginfo_t stm32f030_rcc_reginfo[RI_MAX] =
 	[RI_CR] = {.mask = 0x030FFFFB, .reset_val = 0x83},
 	[RI_CFGR] = {.mask = 0xFF3F47FF, .unimp_mask = 0xFF000000},
 	[RI_CIR] = {.mask = 0xBF3FBF, .unimp_mask = UINT32_MAX},
-	[RI_APB2RSTR] = {.mask = 0x475A41, .unimp_mask = 0x400000},
+	[RI_APB2RSTR] = {.mask = 0x475A21, .unimp_mask = 0x400000},
 	[RI_APB1RSTR] = {.mask = 0x18FE4932 },
 	[RI_AHBENR] = {.mask = 0x3E0055, .reset_val = 0x14},
 	[RI_APB2ENR] = { .mask = 0x475A41},
