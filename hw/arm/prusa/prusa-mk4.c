@@ -44,10 +44,12 @@
 #include "parts/spi_rgb.h"
 #include "otp.h"
 
-#define BOOTLOADER_IMAGE "Prusa_Mk4_Boot.bin"
-#define XFLASH_FN  "Prusa_Mk4_xflash.bin"
-#define EEPROM_FN  "Prusa_Mk4_eeprom.bin"
-#define EEPROM_SYS_FN  "Prusa_Mk4_eeprom_sys.bin"
+#define TYPE_XBUDDY_MACHINE "xbuddy-machine"
+
+#define BOOTLOADER_IMAGE(x) "Prusa_"#x"_Boot.bin"
+#define XFLASH_FN(x)  "Prusa_"#x"_xflash.bin"
+#define EEPROM_FN(x)  "Prusa_"#x"_eeprom.bin"
+#define EEPROM_SYS_FN(x)  "Prusa_"#x"_eeprom_sys.bin"
 
 
 // Upper 8 pins are GPIO
@@ -108,20 +110,43 @@ typedef struct mk4_cfg_t {
     stm_pin enc_btn;
     stm_pin z_min;
     bool has_at21;
+	bool has_loadcell;
 	temp_cfg_t temps;
     uint8_t motor;
+	uint8_t e_t_mass;
     char m_label[AXIS_MAX];
     stm_pin m_step[AXIS_MAX];
     stm_pin m_dir[AXIS_MAX];
     stm_pin m_en[AXIS_MAX];
     stm_pin m_diag[AXIS_MAX];
     stm_pin m_select[AXIS_MAX];
+	bool m_inverted[AXIS_MAX];
     uint8_t m_spi;
 	uint8_t m_uart;
 	bool is_400step;
 	uint8_t dm_ver;
+	const char* boot_fn;
+	const char* eeprom_fn;
+	const char* eeprom_sys_fn;
+	const char* xflash_fn;
 
 } mk4_cfg_t;
+
+typedef struct xBuddyMachineClass {
+    MachineClass        parent;
+    const mk4_cfg_t     *cfg;
+} xBuddyMachineClass;
+
+typedef struct xBuddyData {
+	const mk4_cfg_t* cfg;
+	const char* name;
+	const char* descr;
+} xBuddyData;
+
+#define XBUDDY_MACHINE_CLASS(klass)                                    \
+    OBJECT_CLASS_CHECK(xBuddyMachineClass, (klass), TYPE_XBUDDY_MACHINE)
+#define XBUDDY_MACHINE_GET_CLASS(obj)                                  \
+    OBJECT_GET_CLASS(xBuddyMachineClass, (obj), TYPE_XBUDDY_MACHINE)
 
 #define STM32_P_GPIO_NC (STM32_P_GPIOK + 1)
 
@@ -140,6 +165,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
     .has_at21 = true,
+	.has_loadcell = true,
 	.temps =
 	{
 		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
@@ -147,6 +173,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
+	.e_t_mass = 45,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -154,9 +181,14 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
+	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
-	.dm_ver = 27
+	.dm_ver = 27,
+	.boot_fn = BOOTLOADER_IMAGE(Mk4),
+	.eeprom_fn = EEPROM_FN(Mk4),
+	.eeprom_sys_fn = EEPROM_SYS_FN(Mk4),
+	.xflash_fn = XFLASH_FN(Mk4)
 };
 
 static const mk4_cfg_t mk4_034_cfg = {
@@ -174,6 +206,7 @@ static const mk4_cfg_t mk4_034_cfg = {
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
     .has_at21 = true,
+	.has_loadcell = true,
 	.temps =
 	{
 		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
@@ -181,6 +214,7 @@ static const mk4_cfg_t mk4_034_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
+	.e_t_mass = 45,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOA,3), STM_PIN(GPIOA,0), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -188,13 +222,102 @@ static const mk4_cfg_t mk4_034_cfg = {
     .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
+	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
 	.dm_ver = 34,
+	.boot_fn = BOOTLOADER_IMAGE(Mk4),
+	.eeprom_fn = EEPROM_FN(Mk4),
+	.eeprom_sys_fn = EEPROM_SYS_FN(Mk4),
+	.xflash_fn = XFLASH_FN(Mk4)
 };
 
-static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
+static const mk4_cfg_t mk3v5_cfg = {
+    .lcd_spi = STM32_P_SPI6,
+    .lcd_cs = STM_PIN(GPIOD,11),
+    .lcd_cs_invert = false,
+    .lcd_cd = STM_PIN(GPIOD,15),
+    .w25_spi = STM32_P_SPI5,
+    .w25_cs = STM_PIN(GPIOF,2),
+    .at24_i2c = STM32_P_I2C2,
+    .hx717_data = STM_PIN(GPIOE,7),
+    .hx717_sck = STM_PIN(GPIOG,1),
+    .enc_a = STM_PIN(GPIOD,13),
+    .enc_b = STM_PIN(GPIOD,12),
+    .enc_btn = STM_PIN(GPIOG,3),
+    .z_min = STM_PIN(GPIOB, 8),
+    .has_at21 = false,
+	.temps =
+	{
+		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
+		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
+		.ambient = {18, 20, 21, 25, 19},
+		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
+	},
+	.e_t_mass = 30,
+    .motor = TMC2130,
+    .m_label = {'X','Y','Z','E'},
+    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
+    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
+    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
+    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
+    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
+	.m_inverted = {0,1,0,1},
+    .m_spi = STM32_P_SPI3,
+	.is_400step = false,
+	.dm_ver = 34,
+	.boot_fn = BOOTLOADER_IMAGE(Mk3v5),
+	.eeprom_fn = EEPROM_FN(Mk3v5),
+	.eeprom_sys_fn = EEPROM_SYS_FN(Mk3v5),
+	.xflash_fn = XFLASH_FN(Mk3v5)
+};
+
+static const mk4_cfg_t mk3v9_cfg = {
+    .lcd_spi = STM32_P_SPI6,
+    .lcd_cs = STM_PIN(GPIOD,11),
+    .lcd_cs_invert = false,
+    .lcd_cd = STM_PIN(GPIOD,15),
+    .w25_spi = STM32_P_SPI5,
+    .w25_cs = STM_PIN(GPIOF,2),
+    .at24_i2c = STM32_P_I2C2,
+    .hx717_data = STM_PIN(GPIOE,7),
+    .hx717_sck = STM_PIN(GPIOG,1),
+    .enc_a = STM_PIN(GPIOD,13),
+    .enc_b = STM_PIN(GPIOD,12),
+    .enc_btn = STM_PIN(GPIOG,3),
+    .z_min = STM_PIN(GPIOB, 8),
+    .has_at21 = true,
+	.has_loadcell = true,
+	.temps =
+	{
+		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
+		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
+		.ambient = {18, 20, 21, 25, 19},
+		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
+	},
+	.e_t_mass = 35,
+    .motor = TMC2130,
+    .m_label = {'X','Y','Z','E'},
+    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
+    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
+    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
+    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
+    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
+	.m_inverted = {0, 1, 0,1},
+    .m_spi = STM32_P_SPI3,
+	.is_400step = false,
+	.dm_ver = 34,
+	.boot_fn = BOOTLOADER_IMAGE(Mk3v9),
+	.eeprom_fn = EEPROM_FN(Mk3v9),
+	.eeprom_sys_fn = EEPROM_SYS_FN(Mk3v9),
+	.xflash_fn = XFLASH_FN(Mk3v9)
+};
+
+static void mk4_init(MachineState *machine)
 {
+
+	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+	const mk4_cfg_t cfg = *mc->cfg;
 
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
 		.datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
@@ -250,16 +373,16 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
         {
             // TODO... use initrd_image as a bootloader alternative?
             struct stat bootloader;
-            if (stat(BOOTLOADER_IMAGE,&bootloader))
+            if (stat(cfg.boot_fn,&bootloader))
             {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
+                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",cfg.boot_fn);
                 return;
             }
             // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
             // by -64 bytes and rely on the bootloader clobbering it.
             load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
             armv7m_load_kernel(ARM_CPU(first_cpu),
-                BOOTLOADER_IMAGE,
+                cfg.boot_fn,
                 flash_size);
         }
         else // Raw bin or ELF file, load directly.
@@ -330,7 +453,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
 				stm32_soc_get_periph(dev_soc, cfg.w25_spi),
 			 "ssi");
         dev = qdev_new("w25q64jv");
-        blk = get_or_create_drive(IF_MTD, 0, XFLASH_FN, XFLASH_ID,  8U*MiB, &error_fatal);
+        blk = get_or_create_drive(IF_MTD, 0, cfg.xflash_fn, XFLASH_ID,  8U*MiB, &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize_and_unref(dev, bus, &error_fatal);
         //DeviceState *flash_dev = ssi_create_slave(bus, "w25q64jv");
@@ -348,7 +471,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
         qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
-		blk = get_or_create_drive(IF_PFLASH, 0, EEPROM_FN, EEPROM_ID, 64*KiB / 8U, &error_fatal);
+		blk = get_or_create_drive(IF_PFLASH, 0, cfg.eeprom_fn, EEPROM_ID, 64*KiB / 8U, &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
@@ -356,7 +479,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x57);
         qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
-		blk = get_or_create_drive(IF_PFLASH, 1, EEPROM_SYS_FN, EEPROM_SYS_ID,  64*KiB / 8U,  &error_fatal);
+		blk = get_or_create_drive(IF_PFLASH, 1, cfg.eeprom_sys_fn, EEPROM_SYS_ID,  64*KiB / 8U,  &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
     }
@@ -389,8 +512,8 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
     qdev_prop_set_string(db2, "indicators", "ZF");
 
     {
-        static uint8_t is_inverted[4] = {1,0,1,1};
-        static int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*220,0 };
+
+        int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*(cfg.has_loadcell ? 220: 212),0 };
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
  		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         if (cfg.is_400step) {
@@ -417,7 +540,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
 			dev = qdev_new("tmc2130");
             motors[i] = dev;
             qdev_prop_set_uint8(dev, "axis",cfg.m_label[i]);
-            qdev_prop_set_uint8(dev, "inverted",is_inverted[i]);
+            qdev_prop_set_uint8(dev, "inverted",cfg.m_inverted[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
 
@@ -473,7 +596,7 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
 
     dev = qdev_new("heater");
-    qdev_prop_set_uint8(dev, "thermal_mass_x10",45);
+    qdev_prop_set_uint8(dev, "thermal_mass_x10",cfg.e_t_mass);
     qdev_prop_set_uint8(dev,"label", 'E');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
@@ -499,27 +622,49 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",1));
 #endif
 
-    DeviceState *lc = qdev_new("loadcell");
-    sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
-    qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
+	if (cfg.has_loadcell) {
+		DeviceState *lc = qdev_new("loadcell");
+		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
+		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
-    DeviceState *hs = qdev_new("hall-sensor");
-    sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
-	qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
+		DeviceState *hs = qdev_new("hall-sensor");
+		sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
+		qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
 
-    dev = qdev_new("hx717");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
-    qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
-    // PT100
-    qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
-	if (cfg.temps.table[T_BRK] == 22) // PT100
-	{
-    	qdev_connect_gpio_out_named(hotend, "value_x1000",0, qdev_get_gpio_in_named(dev,"input_x1000",1));
+		dev = qdev_new("hx717");
+		sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+		qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
+		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
+		// PT100
+		qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
+		if (cfg.temps.table[T_BRK] == 22) // PT100
+		{
+			qdev_connect_gpio_out_named(hotend, "value_x1000",0, qdev_get_gpio_in_named(dev,"input_x1000",1));
+		}
+		else
+		{
+			qdev_connect_gpio_out(hs,0, qdev_get_gpio_in_named(dev,"input",1));
+		}
+
 	}
 	else
 	{
-    	qdev_connect_gpio_out(hs,0, qdev_get_gpio_in_named(dev,"input",1));
+		DeviceState* pinda = qdev_new("pinda");
+		sysbus_realize(SYS_BUS_DEVICE(pinda), &error_fatal);
+        DeviceState* split_zmin = qdev_new("split-irq");
+		qdev_prop_set_uint16(split_zmin, "num-lines", 3);
+        qdev_realize_and_unref(DEVICE(split_zmin),NULL,  &error_fatal);
+        qdev_connect_gpio_out(split_zmin, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),6));
+        qdev_connect_gpio_out(split_zmin, 1, qdev_get_gpio_in_named(db2,"led-digital",0));
+// #ifdef BUDDY_HAS_GL
+//         qdev_connect_gpio_out(split_zmin, 2, qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_ZPROBE));
+// #endif
+        qdev_connect_gpio_out(pinda, 0,  qdev_get_gpio_in(split_zmin,0));
+		for (int i=0; i<3; i++)
+		{
+			qdev_connect_gpio_out_named(motors[i],"step-out", 0, qdev_get_gpio_in_named(pinda,"position_xyz",i));
+		}
+
 	}
 
     if (cfg.has_at21) {
@@ -662,42 +807,68 @@ static void mk4_init(MachineState *machine, mk4_cfg_t cfg)
 
 };
 
-#define VAR_JOIN(x,y,z) #x"."#y"."#z
-
-#define ADD_VARIANT(x,y,z) \
- static void mk4_##x##y##z##_init(MachineState *mc){\
-    mk4_init(mc, mk4_##x##y##z##_cfg);\
- } \
- \
- \
-static void mk4_##x##y##z##_machine_init(MachineClass *mc) \
-{ \
-    mc->desc = "Prusa MK4 "VAR_JOIN(x,y,z); \
-    mc->init = mk4_##x##y##z##_init; \
-	mc->default_ram_size = 0; \
-	mc->no_parallel = 1; \
-	mc->no_serial = 1; \
-} \
- \
- DEFINE_MACHINE("prusa-mk4-"#x#y#z, mk4_##x##y##z##_machine_init)
-
-ADD_VARIANT(0,2,7c);
-ADD_VARIANT(0,3,4);
-
-static void mk4_warn_init(MachineState *mc){
-    printf("NOTE: the 'prusa-mk4' machine will always point to the current revision. \n");
-    printf("To use a specific revision that won't be ambiguous in the future,\n");
-    printf("call it out directly by name, e.g. prusa-mk4-027c\n");
-    mk4_034_init(mc);
- }
-
-static void mk4_machine_init(MachineClass *mc)
+static void xbuddy_class_init(ObjectClass *oc, void *data)
 {
-    mc->desc = "Prusa MK4 (latest)";
-    mc->init = mk4_warn_init;
-	mc->default_ram_size = 0; // Means use chip default. user can override with -m
-	mc->no_parallel = 1;
-	mc->no_serial = 1;
+		const xBuddyData* d = (xBuddyData*)data;
+	    MachineClass *mc = MACHINE_CLASS(oc);
+	    mc->desc = d->descr;
+	    mc->family = TYPE_XBUDDY_MACHINE,
+	    mc->init = mk4_init;
+	    mc->default_ram_size = 0; // 0 = use default RAM from chip.
+	    mc->no_parallel = 1;
+		mc->no_serial = 1;
+
+		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
+		xmc->cfg = d->cfg;
 }
 
-DEFINE_MACHINE("prusa-mk4", mk4_machine_init)
+static const xBuddyData mk4_027c = {
+	.cfg = &mk4_027c_cfg,
+	.descr = "Prusa Mk4 0.2.7c",
+};
+
+static const xBuddyData mk4_034 = {
+	.cfg = &mk4_034_cfg,
+	.descr = "Prusa Mk4 0.3.4",
+};
+
+static const xBuddyData mk3v5 = {
+	.cfg = &mk3v5_cfg,
+	.descr = "Prusa Mk3.5",
+};
+
+static const xBuddyData mk3v9 = {
+	.cfg = &mk3v9_cfg,
+	.descr = "Prusa Mk3.9",
+};
+
+static const TypeInfo xbuddy_machine_types[] = {
+    {
+        .name           = TYPE_XBUDDY_MACHINE,
+        .parent         = TYPE_MACHINE,
+		.class_size		= sizeof(xBuddyMachineClass),
+        .abstract       = true,
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-027c"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_027c
+    },
+	{
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-034"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_034
+    },{
+        .name           = MACHINE_TYPE_NAME("prusa-mk3-35"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk3v5
+    },{
+        .name           = MACHINE_TYPE_NAME("prusa-mk3-39"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk3v9
+    },
+};
+DEFINE_TYPES(xbuddy_machine_types)
