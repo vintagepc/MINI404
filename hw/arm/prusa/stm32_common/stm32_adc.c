@@ -358,7 +358,7 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
 			rate_sel? s->regs.defs.SMPR.SMP2 : s->regs.defs.SMPR.SMP1
 		));
 
-    uint64_t delay_ns = 1000000000U / (clock/conv_cycles);
+    uint64_t delay_ns = (1000000000UL * conv_cycles) / clock;
     // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
     timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
 
@@ -371,28 +371,30 @@ static uint64_t stm32_adc_read(void *opaque, hwaddr addr,
 	COM_STRUCT_NAME(Adc) *s = STM32COM_ADC(opaque);
 
    // DB_PRINT("Address: 0x%" HWADDR_PRIx "\n", addr);
+	int offset = addr&0x3;
     addr>>=2;
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "Common ADC");
 
-    if (size!=4) {
-        printf("FIXME: handle non-word ADC reads!\n");
-    }
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "Common ADC"); // LCOV_EXCL_LINE
+
+    uint32_t data = s->regs.raw[addr];
 
     switch (addr) {
     case RI_ISR ... RI_CHSELR:
-        return s->regs.raw[addr];
+        break;
     case RI_DR:
         if (s->regs.defs.CR.ADEN && s->regs.defs.ISR.EOC) {
             s->regs.defs.ISR.EOC ^= s->regs.defs.ISR.EOC;
-            return stm32_adc_get_value(s);
+            data = stm32_adc_get_value(s);
         } else {
 			qemu_log_mask(LOG_GUEST_ERROR, "Read ADC while conversion not ready!\n");
             return 0;
         }
+		break;
     default:
     	return 0;
     }
-
+	ADJUST_FOR_OFFSET_AND_SIZE_R(data, size, offset, 0b111);
+	return data;
 }
 
 static void stm32_adc_convert(COM_STRUCT_NAME(Adc) *s)
@@ -479,7 +481,7 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 
 	uint8_t offset = addr&0x3;
     addr>>=2; // Get index in array.
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "Common ADC");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "Common ADC"); // LCOV_EXCL_LINE
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b100);
 
     if (addr >= 0x100) {
@@ -581,7 +583,7 @@ static void stm32_adc_init(Object *obj)
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32_adc_data_in, "adc_data_in", STM32_COM_ADC_MAX_REG_CHANNELS);
 
-    STM32_MR_IO_INIT(&s->mmio, obj, &stm32_adc_ops, s, 1U*KiB);
+    STM32_MR_IO_INIT(&s->mmio, obj, &stm32_adc_ops, s, 512);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 	COM_CLASS_NAME(Adc) *k = STM32COM_ADC_GET_CLASS(obj);
 

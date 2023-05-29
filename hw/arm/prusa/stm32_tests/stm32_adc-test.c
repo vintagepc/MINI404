@@ -182,6 +182,45 @@ static void test_channels(void)
 	writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x30, BIT(20) );
 }
 
+static void test_prescale(void)
+{
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_ADC1].base_addr;
+
+	// Enable the ADC clock
+	writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(20) );
+
+	// Ensure disabled.
+	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_CR))&1, ==, 0);
+	qtest_set_irq_in(global_qtest, "/machine/soc/ADC1", "adc_data_in", 0, 4095);
+	writel(STM32_RI_ADDRESS(base, RI_CHSELR), 0x1 );
+	//Enable ADC:
+	writel(STM32_RI_ADDRESS(base, RI_CR), 0x1 );
+
+	static uint16_t divisors[] = {1, 2, 4, 6, 8, 10, 12, 16, 32, 64, 128, 256};
+	const uint16_t expected_smpr =  875; // Default  value for 12 bit at fastest smpr.
+
+	for (int i=0; i<ARRAY_SIZE(divisors); i++)
+	{
+		// Set prescale:
+		writel(stm32g070xx_cfg.perhipherals[STM32_P_ADCC].base_addr, i << 18U);
+		g_assert_cmphex(readl(stm32g070xx_cfg.perhipherals[STM32_P_ADCC].base_addr), ==, i << 18);
+
+		// Start
+		writel(STM32_RI_ADDRESS(base, RI_CR), BIT(2));
+		int64_t start = qtest_clock_step(global_qtest, 0), end =0;
+
+		// Wait for EOC
+		while ( (readl(STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
+		{
+			end = clock_step_next();
+		}
+		g_assert_cmpint(end - start, ==, expected_smpr*divisors[i]);
+		readl(STM32_RI_ADDRESS(base, RI_DR));
+	}
+
+	// Disable it for next round. ADDIS is not implemented right now, use RCC reset.
+	writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x30, BIT(20) );
+}
 
 int main(int argc, char **argv)
 {
@@ -194,6 +233,7 @@ int main(int argc, char **argv)
     qtest_add_func("/stm32_adc/irqs", test_irqs);
     qtest_add_func("/stm32_adc/samplerates", test_samplerates);
     qtest_add_func("/stm32_adc/channels", test_channels);
+    qtest_add_func("/stm32_adc/adcc_prescale", test_prescale);
 
     qtest_start("-machine stm32g070xB");
 	qtest_irq_intercept_out_named(global_qtest, "/machine/soc/ADC1", "sysbus-irq");
