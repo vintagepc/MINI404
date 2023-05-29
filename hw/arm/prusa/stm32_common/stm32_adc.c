@@ -40,26 +40,11 @@
 #include "stm32_shared.h"
 #include "stm32_adcc.h"
 #include "stm32_rcc_if.h"
-
+#include "stm32_adc_regdata.h"
 
 #ifndef STM_ADC_ERR_DEBUG
 #define STM_ADC_ERR_DEBUG 0
 #endif
-
-enum reg_index {
-	RI_ISR,
-	RI_IER,
-	RI_CR,
-	RI_CFGR1,
-	RI_CFGR2,
-	RI_SMPR,
-	RI_AWD1TR = 8,
-	RI_AWD2TR,
-	RI_CHSELR,
-	RI_AWD3TR,
-	RI_DR = 16,
-	RI_END
-};
 
 #define STM32_COM_ADC_MAX_REG_CHANNELS 19
 
@@ -176,6 +161,11 @@ REGDEF_BLOCK_BEGIN()
 	REG_R(8);
 REGDEF_BLOCK_END(adc, ccr)
 
+enum smpr_table {
+	SMPR_UNKNOWN,
+	SMPR_F030,
+	SMPR_G070,
+};
 
 typedef struct COM_STRUCT_NAME(Adc) {
     /* <private> */
@@ -214,6 +204,8 @@ typedef struct COM_STRUCT_NAME(Adc) {
     QEMUTimer* next_eoc;
 
 	uint8_t adc_sequence_position;
+
+	int smpr_table;
 
 	COM_STRUCT_NAME(Adcc) *adcc;
 
@@ -263,6 +255,7 @@ static const stm32_reginfo_t stm32g070_adc_reginfo[RI_END] =
 typedef struct COM_CLASS_NAME(Adc) {
 	STM32PeripheralClass parent_class;
     stm32_reginfo_t var_reginfo[RI_END];
+	int smpr_table;
 } COM_CLASS_NAME(Adc);
 
 #define DB_PRINT_L(lvl, fmt, args...) do { \
@@ -287,28 +280,22 @@ static void stm32_adc_reset(DeviceState *dev)
 		timer_del(s->next_eoc);
 }
 
-static uint16_t adc_lookup_smpr(uint8_t value) {
-    switch (value) {
-        case 0:
-            return 3;
-        case 1:
-            return 15;
-        case 2:
-            return 28;
-        case 3:
-            return 56;
-        case 4:
-            return 84;
-        case 5:
-            return 112;
-        case 6:
-            return 144;
-        case 7:
-            return 480;
-        default:
-            assert(false);
-            return 0;
-    }
+// Technically these should all include half a nanosecond but
+// to keep it as integer math we include the .5ns from the conversion time here.
+static uint16_t f030_2x_smpr[] = { 2, 8, 14, 29, 42, 56, 72, 240 };
+static uint16_t g070_2x_smpr[] = { 2, 4,  8, 13, 20, 40, 80, 161 };
+
+static uint16_t adc_lookup_smpr(COM_STRUCT_NAME(Adc) *s, uint8_t value) {
+	assert(value < 8);
+	switch(s->smpr_table)
+	{
+		case SMPR_G070:
+			return g070_2x_smpr[value];
+		case SMPR_F030:
+			return f030_2x_smpr[value];
+		default: // LCOV_EXCL_LINE
+			g_assert_not_reached(); // LCOV_EXCL_LINE
+	}
 }
 
 static uint32_t stm32_adc_get_value(COM_STRUCT_NAME(Adc) *s)
@@ -329,7 +316,7 @@ static uint32_t stm32_adc_get_value(COM_STRUCT_NAME(Adc) *s)
 		else // Legacy code for the F0? leaving in place for now but it's probably wrong even though it sorta works...
 		{
 			bool rate_sel = (s->regs.defs.SMPR.SMPSEL >> s->adc_sequence_position) & 1U;
-			s->regs.defs.DR*=(adc_lookup_smpr(
+			s->regs.defs.DR*=(adc_lookup_smpr(s,
 				rate_sel ? s->regs.defs.SMPR.SMP2 : s->regs.defs.SMPR.SMP1
 			));
 		}
@@ -351,12 +338,13 @@ static void stm32_adc_data_in(void *opaque, int n, int level){
 }
 
 static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
-    if (!s->regs.defs.CR.ADEN || s->regs.defs.CHSELR.raw == 0)
+    if (!s->regs.defs.CR.ADEN || s->regs.defs.CHSELR.raw == 0 || !stm32_rcc_if_check_periph_clk(&s->parent))
+	{
         return;
-    //s->regs.defs.CR.ADSTART = 0;
+	}
+
     // Calculate the clock rate
     uint64_t clock = stm32_rcc_if_get_periph_freq(&s->parent);
-
 
 	if (s->adcc)
 	{
@@ -366,9 +354,9 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
     // #bits:
     uint32_t conv_cycles = (12U - (s->regs.defs.CFGR1.RES<<1U));
 	bool rate_sel = (s->regs.defs.SMPR.SMPSEL >> s->adc_sequence_position) & 1U;
-    conv_cycles += (adc_lookup_smpr(
+    conv_cycles += (adc_lookup_smpr(s,
 			rate_sel? s->regs.defs.SMPR.SMP2 : s->regs.defs.SMPR.SMP1
-		)/2);
+		));
 
     uint64_t delay_ns = 1000000000U / (clock/conv_cycles);
     // printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
@@ -398,7 +386,7 @@ static uint64_t stm32_adc_read(void *opaque, hwaddr addr,
             s->regs.defs.ISR.EOC ^= s->regs.defs.ISR.EOC;
             return stm32_adc_get_value(s);
         } else {
-			printf("Read while conversion not ready!\n");
+			qemu_log_mask(LOG_GUEST_ERROR, "Read ADC while conversion not ready!\n");
             return 0;
         }
     default:
@@ -580,6 +568,7 @@ static void stm32_adc_init(Object *obj)
     CHECK_REG_u32(s->regs.defs.AWD2TR);
     CHECK_REG_u32(s->regs.defs.AWD3TR);
     CHECK_REG_u32(s->regs.defs.CHSELR);
+	CHECK_UNION(COM_STRUCT_NAME(Adc), regs.defs.CHSELR, regs.raw[RI_CHSELR]);
     QEMU_BUILD_BUG_MSG(RI_END != 17, "Size of register array has changed. You need to update VMState!");
 
 
@@ -597,6 +586,7 @@ static void stm32_adc_init(Object *obj)
 	COM_CLASS_NAME(Adc) *k = STM32COM_ADC_GET_CLASS(obj);
 
 	s->reginfo = k->var_reginfo;
+	s->smpr_table = k->smpr_table;
 }
 
 static void stm32_adc_class_init(ObjectClass *klass, void *data)
@@ -609,6 +599,14 @@ static void stm32_adc_class_init(ObjectClass *klass, void *data)
 
 	COM_CLASS_NAME(Adc) *k = STM32COM_ADC_CLASS(klass);
 	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));
+	if (data == stm32f030_adc_reginfo)
+	{
+		k->smpr_table = SMPR_F030;
+	}
+	else if (data == stm32g070_adc_reginfo)
+	{
+		k->smpr_table = SMPR_G070;
+	}
 	QEMU_BUILD_BUG_MSG(sizeof(k->var_reginfo) != sizeof(stm32_reginfo_t[RI_END]), "Reginfo not sized correctly!");
 }
 
