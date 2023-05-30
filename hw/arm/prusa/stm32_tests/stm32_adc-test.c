@@ -24,7 +24,7 @@ static void test_resolution(void)
 {
 	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_ADC1].base_addr;
 
-	uint16_t resolutions[] = {4095, 1023, 255, 63};
+	uint16_t expected_vals[] = {2047, 511, 127, 31};
 	// Enable the ADC clock
 	writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(20) );
 
@@ -36,7 +36,7 @@ static void test_resolution(void)
 	{
 		// Ensure disabled.
 		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_CR))&1, ==, 0);
-		qtest_set_irq_in(global_qtest, "/machine/soc/ADC1", "adc_data_in", 0, 4095);
+		qtest_set_irq_in(global_qtest, "/machine/soc/ADC1", "adc_data_in", 0, expected_vals[0]);
 		writel(STM32_RI_ADDRESS(base, RI_CHSELR), 0x1 );
 		writel(STM32_RI_ADDRESS(base, RI_CFGR1), i << 3U );
 	 	//Enable ADC:
@@ -54,10 +54,45 @@ static void test_resolution(void)
 			end = clock_step_next();
 		}
 		g_assert_cmpint(end - start, ==, expected_rates[i]);
-		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_DR)), ==, resolutions[i]);
+		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_DR)), ==, expected_vals[i]);
 		// Ensure the bit was cleared by the DR read.
 		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2), ==, 0);
 
+
+		// Disable it for next round. ADDIS is not implemented right now, use RCC reset.
+		writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x30, BIT(20) );
+	}
+}
+
+static void test_align(void)
+{
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_ADC1].base_addr;
+
+	// Per G070 datasheet sec. 14.5.1 on alignment within a given res.
+	uint16_t expected_vals[] = {2047 << 4U, 511 << 6U, 127<< 8U, 31<< 2U};
+	// Enable the ADC clock
+	writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(20) );
+
+	for (int i=0; i<4; i++)
+	{
+		// Ensure disabled.
+		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_CR))&1, ==, 0);
+		qtest_set_irq_in(global_qtest, "/machine/soc/ADC1", "adc_data_in", 0, 2047);
+		writel(STM32_RI_ADDRESS(base, RI_CHSELR), 0x1 );
+		writel(STM32_RI_ADDRESS(base, RI_CFGR1), i << 3U | BIT(5) );
+	 	//Enable ADC:
+		writel(STM32_RI_ADDRESS(base, RI_CR), 0x1 );
+	 	// Start
+		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_CHSELR)), !=, 0);
+		writel(STM32_RI_ADDRESS(base, RI_CR), BIT(2));
+		// Wait for EOC
+
+		while ( (readl(STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
+		{
+			//Also check we don't get a reading before the adc is done:
+			clock_step_next();
+		}
+		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_DR)), ==, expected_vals[i]);
 
 		// Disable it for next round. ADDIS is not implemented right now, use RCC reset.
 		writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x30, BIT(20) );
@@ -107,6 +142,68 @@ static void test_irqs(void)
 
 	// Disable it for next round. ADDIS is not implemented right now, use RCC reset.
 	writel(stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x30, BIT(20) );
+}
+
+static void test_dmar(void)
+{
+
+	QTestState *ts = qtest_init("-machine stm32g070xB");
+	qtest_irq_intercept_out_named(ts, "/machine/soc/ADC1", "dmar");
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_ADC1].base_addr;
+
+	// Enable the ADC clock
+	qtest_writel(ts, stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(20) );
+
+	// Ensure disabled.
+	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_CR))&1, ==, 0);
+	qtest_set_irq_in(ts, "/machine/soc/ADC1", "adc_data_in", 0, 4095);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHSELR), 0x1 );
+	//Enable ADC:
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CR), 0x1 );
+	// Start
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CR), BIT(2));
+	// Wait for EOC
+
+	while ( (qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
+	{
+		g_assert_false(qtest_get_irq(ts, DMAR_P2M));
+		g_assert_false(qtest_get_irq(ts, DMAR_M2P));
+		qtest_clock_step_next(ts);
+	}
+	// Ensure still false, DMAR is disabled.
+	g_assert_false(qtest_get_irq(ts, DMAR_P2M));
+	g_assert_false(qtest_get_irq(ts, DMAR_M2P));
+	qtest_readl(ts,STM32_RI_ADDRESS(base, RI_DR));
+	// Ensure the bit was cleared by the DR read.
+	g_assert_cmphex(qtest_readl(ts,STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2), ==, 0);
+
+	// now set DMA:
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CFGR1), BIT(0) | BIT(13) );
+
+	qtest_writel(ts,STM32_RI_ADDRESS(base, RI_CR), BIT(2) );
+	// Wait for dma
+
+	while ( (qtest_readl(ts,STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
+	{
+		g_assert_false(qtest_get_irq(ts, DMAR_P2M));
+		g_assert_false(qtest_get_irq(ts, DMAR_M2P));
+		qtest_clock_step_next(ts);
+	}
+	g_assert_cmphex(qtest_get_irq_level(ts, DMAR_P2M), ==, STM32_RI_ADDRESS(base, RI_DR) );
+	g_assert_false(qtest_get_irq(ts, DMAR_M2P));
+	qtest_readl(ts,STM32_RI_ADDRESS(base, RI_DR));
+
+	// Check that CONT mode fires again.
+	while ( (qtest_readl(ts,STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
+	{
+		qtest_clock_step_next(ts);
+	}
+	g_assert_cmphex(qtest_get_irq_level(ts, DMAR_P2M), ==, STM32_RI_ADDRESS(base, RI_DR) );
+	g_assert_false(qtest_get_irq(ts, DMAR_M2P));
+
+	// Disable it for next round. ADDIS is not implemented right now, use RCC reset.
+	qtest_writel(ts,stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x30, BIT(20) );
+	qtest_quit(ts);
 }
 
 static void test_samplerates(void)
@@ -230,7 +327,9 @@ int main(int argc, char **argv)
     g_test_set_nonfatal_assertions();
 
     qtest_add_func("/stm32_adc/resolution", test_resolution);
+    qtest_add_func("/stm32_adc/align", test_align);
     qtest_add_func("/stm32_adc/irqs", test_irqs);
+    qtest_add_func("/stm32_adc/dmar", test_dmar);
     qtest_add_func("/stm32_adc/samplerates", test_samplerates);
     qtest_add_func("/stm32_adc/channels", test_channels);
     qtest_add_func("/stm32_adc/adcc_prescale", test_prescale);

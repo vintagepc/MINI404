@@ -105,7 +105,8 @@
 #define TYPE_STM32F4xx_CRC _STM_F4xx_PART(crc)
 
 #define TYPE_STM32G070_DBG _STM_G070_PART(dbg)
-#define TYPE_STM32F4xx_DBG _STM_F4xx_PART(dbg)
+#define TYPE_STM32F40x_F41x_DBG _STM_VAR_PART(f40x_f41x,dbg)
+#define TYPE_STM32F42x_F43x_DBG _STM_VAR_PART(f42x_f43x,dbg)
 
 #define TYPE_STM32F4xx_DWT _STM_F4xx_PART(dwt)
 
