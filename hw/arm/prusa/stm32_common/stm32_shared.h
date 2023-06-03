@@ -226,6 +226,6 @@ if (val & (reginfo[index].unimp_mask)) { \
     }
 
 #define RI_TO_ADDRESS(ri) (ri << 2U)
-#define STM32_RI_ADDRESS(base, ri) (base + (ri << 2U))
+#define STM32_RI_ADDRESS(base, ri) (base + ((ri) << 2U))
 
 #endif //STM32_SHARED_H
