@@ -20,6 +20,8 @@
     <label for="-{{ include.name }}{{ include.index }}"> {{ include.label }}:</label>
     <select  id="-{{ include.name }}{{ include.index }}" onchange="showHide('-{{ include.name }}{{ include.index }}-' + document.getElementById('-{{ include.name }}{{ include.index }}').value); updateParam('-{{ include.name }}{{ include.index }}'); "  {% if include.disabled == 1 %}disabled{% endif %}>
         <option value="prusa-mini">Prusa Mini</option>
+        <option value="prusa-mk3-35">Prusa MK3.5</option>
+        <option value="prusa-mk3-39">Prusa MK3.9</option>
         <option value="prusa-mk4-027c">Prusa MK4 0.2.7c</option>
         <option value="prusa-mk4-034">Prusa MK4 0.3.4</option>
          <option value="prusa-xl-040">Prusa XL 0.4.0</option>

@@ -65,7 +65,7 @@ Just pick the options you'd like and watch the full command built right before y
     {% include textinput.html name="pflash" default="eeprom_system.bin" index=2 label="I2C Flash System Block filename" optional=1  format="-drive file=%1,id=mini404-eeprom-sys,format=raw" last=1 %}
     </fieldset>
     <br>
-    <div class="hide-default {{ site.content.show_mk4s }} {{ site.content.show_minis }} {{ site.content.show_xls }}">
+    <div class="hide-default {{ site.content.show_mk3s }} {{ site.content.show_mk4s }} {{ site.content.show_minis }} {{ site.content.show_xls }}">
     {% include spinbox.html name="netdev" label="Ethernet bridge host port" optional=1 default=3333 format="-netdev user,id=mini-eth,hostfwd=tcp::%1-:80" %}
     </div>
     <hr/>
@@ -80,7 +80,7 @@ Just pick the options you'd like and watch the full command built right before y
     {% include dropdown.html name="serial" index=4 label="Serial 4 (UART5)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart4" %}
     {% include dropdown.html name="serial" index=5 label="Serial 5 (UART6)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart5" last=1 %}
     </fieldset>
-    <fieldset class="hide-default {{ site.content.show_mk4s }} {{ site.content.show_xls }}">
+    <fieldset class="hide-default   {{ site.content.show_mk3s }} {{ site.content.show_mk4s }} {{ site.content.show_xls }}">
     <legend>STM32F427 UARTs</legend>
     {% include dropdown.html name="serial" index=6 label="Serial 6 (UART7)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart6" %}
     {% include dropdown.html name="serial" index=7 label="Serial 7 (UART8)" optional=1 options="vc,cols=80,rows=24@stdio@pty@serial,path=/dev/tty???@tty,path=/dev/tty???" format="-chardev %1,id=stm32uart7" last=1 %}  

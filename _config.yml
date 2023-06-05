@@ -9,6 +9,7 @@ github:
   
 content:
     show_minis: "show-machine-prusa-mini"
-    show_mk4s: "show-machine-prusa-mk4-027c show-machine-prusa-mk4-034"
+    show_mk3s: "show-machine-prusa-mk3-35"
+    show_mk4s: "show-machine-prusa-mk4-027c show-machine-prusa-mk4-034 show-machine-prusa-mk3-39"
     show_xls: "show-machine-prusa-xl-040 show-machine-prusa-xl-050"
     show_xl_es: "show-machine-prusa-xl-extruder-040-0 show-machine-prusa-xl-extruder-060-0"
