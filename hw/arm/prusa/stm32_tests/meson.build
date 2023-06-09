@@ -10,5 +10,6 @@ qtests_buddy = [
     'prusa/stm32_tests/stm32_otp-test',
     'prusa/stm32_tests/stm32_rcc-test',
     'prusa/stm32_tests/stm32_rng-test',
-    'prusa/stm32_tests/stm32_syscfg-test'
+    'prusa/stm32_tests/stm32_syscfg-test',
+    'prusa/stm32_tests/stm32_uart-test'
 ]

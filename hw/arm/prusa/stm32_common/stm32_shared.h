@@ -2,6 +2,7 @@
 #define STM32_SHARED_H
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 
 /* Used for uniquely identifying a peripheral */
 typedef uint32_t stm32_periph_t;
@@ -120,6 +121,7 @@ enum STM32_PERIPHS {
 	STM32_P_DMA_END = STM32_P_DMA2,
 	STM32_P_GPIO_BEGIN = STM32_P_GPIOA,
 	STM32_P_GPIO_END = STM32_P_GPIOK + 1U,
+	STM32F030_GPIO_END = STM32_P_GPIOF + 1U,
 	STM32G070_GPIO_END = STM32_P_GPIOF + 1U,
 	STM32_P_ADC_BEGIN = STM32_P_ADC1,
 	STM32_P_ADC_END = STM32_P_ADC3 + 1U,
@@ -165,15 +167,25 @@ QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant t
 
 // Enforces the reserved mask for a register
 #define ENFORCE_RESERVED(val, reginfo, index) \
-	if (val & (~reginfo[index].mask)) { \
-		qemu_log_mask(LOG_GUEST_ERROR, "%s: Attempted to alter a reserved bit in "#index"!\n", __FILE__ ); \
-	} \
-	val = val & reginfo[index].mask;
+	stm32_enforce_reserved(&val, reginfo, index, __func__, #index)
+
+G_GNUC_UNUSED static void stm32_enforce_reserved(uint64_t* val, const stm32_reginfo_t* reginfo, int index, const char* name, const char* regname)
+{
+	if (*val & (~reginfo[index].mask)) {
+		qemu_log_mask(LOG_GUEST_ERROR, "%s: Attempted to alter a reserved bit in '%s'!\n", name, regname);
+		*val = *val & reginfo[index].mask;
+	}
+}
 
 // Checks if a write attempts to set any unimplemented bits and issues a LOG_UNIMP.
 #define CHECK_UNIMP(val, reginfo, index) \
-if (val & (reginfo[index].unimp_mask)) { \
-	qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64") "#index"!\n", __FILE__, reginfo[index].unimp_mask, val); \
+	stm32_check_unimp(val, reginfo, index, __func__, #index)
+
+G_GNUC_UNUSED static void stm32_check_unimp(uint64_t val, const stm32_reginfo_t *reginfo, int index, const char* name, const char* regname)
+{
+	if (val & (reginfo[index].unimp_mask)) {
+		qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64") '%s'!\n", name, reginfo[index].unimp_mask, val, regname);
+	}
 }
 
 // Enforces reserved bits and then checks for unimplemented ones
@@ -187,21 +199,26 @@ if (val & (reginfo[index].unimp_mask)) { \
 // 6 = 4 and 2 bytes only, etc.
 // disallowed writes are not blocked but log a guest error.
 #define ADJUST_FOR_OFFSET_AND_SIZE_W(old, new, size, off, allowed) \
-	if (!(size & allowed)) {\
-		qemu_log_mask(LOG_GUEST_ERROR, "Disallowed register write of size %d in %s!\n", size, __FILE__); \
-	} \
-    switch (size) { \
-        case 1: \
-			new = (old & ~(0xff << (off * 8))) | new << (off * 8); \
-            break; \
-        case 2: \
-            new = (old & ~(0xffff << (off * 8))) | new << (off * 8); \
-            break; \
-        case 4: \
-            break; \
-        default: \
-            abort(); \
+	stm32_adjust_off_size_w(old, &new, size, off, allowed, __func__);
+
+static inline void stm32_adjust_off_size_w(uint32_t old, uint64_t* new, unsigned int size, int off, uint8_t allowed, const char* name)
+{
+	if (!(size & allowed)) {
+		qemu_log_mask(LOG_GUEST_ERROR, "Disallowed register write of size %d in %s!\n", size,  name);
+	}
+    switch (size) {
+        case 1:
+			*new = (old & ~(0xff << (off * 8))) | *new << (off * 8);
+            break;
+        case 2:
+            *new = (old & ~(0xffff << (off * 8))) | *new << (off * 8);
+            break;
+        case 4:
+            break;
+        default:	// LCOV_EXCL_LINE
+            abort(); // LCOV_EXCL_LINE
     }
+}
 
 // Adjusts for read offsets and sizes given old and new register values.
 // Allowed is a bitmask of sizes, e.g:
@@ -209,21 +226,26 @@ if (val & (reginfo[index].unimp_mask)) { \
 // 6 = 4 and 2 bytes only, etc.
 // disallowed writes are not blocked but log a guest error.
 #define ADJUST_FOR_OFFSET_AND_SIZE_R(data, size, off, allowed) \
-	if (!(size & allowed)) {\
-		qemu_log_mask(LOG_GUEST_ERROR, "Disallowed register read of size %d in %s!\n", size, __func__); \
-	} \
-    switch (size) { \
-        case 1: \
-			data = (data>>(off*8U)&0xFFU); \
-            break; \
-        case 2: \
-            data = (data>>(off*8U)&0xFFFFU); \
-            break; \
-        case 4: \
-            break; \
-        default: \
-            abort(); \
+	stm32_adjust_off_size_r(&data, size, off, allowed,  __func__);
+
+static inline void stm32_adjust_off_size_r(uint32_t* data, unsigned int size, int off, uint8_t allowed, const char* name)
+{
+	if (!(size & allowed)) {
+		qemu_log_mask(LOG_GUEST_ERROR, "Disallowed register read of size %d in %s!\n", size, name);
+	}
+    switch (size) {
+        case 1:
+			*data = (*data>>(off*8U)&0xFFU);
+            break;
+        case 2:
+            *data = (*data>>(off*8U)&0xFFFFU);
+            break;
+        case 4:
+            break;
+        default: 	// LCOV_EXCL_LINE
+            abort(); // LCOV_EXCL_LINE
     }
+}
 
 #define RI_TO_ADDRESS(ri) (ri << 2U)
 #define STM32_RI_ADDRESS(base, ri) (base + ((ri) << 2U))
