@@ -33,11 +33,8 @@
 #include "exec/memory.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
+#include "stm32_f2xx_f4xx_dma_regdata.h"
 
-#define STM32_F2xx_DMA_MAX_CHAN 8
-#define STM32_F2xx_DMA_CHAN_REGS 6
-
-#define R_DMA_MAX (4+(STM32_F2xx_DMA_MAX_CHAN*STM32_F2xx_DMA_CHAN_REGS))
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XX_STRUCT_NAME(Dma), STM32F4xx_DMA);
 
@@ -135,10 +132,12 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
 			_STM32_DMA_CHAN_BLK(6)	 				//0xA0 - 0xB4
 			_STM32_DMA_CHAN_BLK(7)	 				//0xB8 - 0xCC
 		} defs;
-        uint32_t raw[R_DMA_MAX];
+        uint32_t raw[RI_MAX];
     } regs;
 
 	uint32_t original_ndtrs[STM32_F2xx_DMA_MAX_CHAN];
+	uint32_t original_cmars[STM32_F2xx_DMA_MAX_CHAN];
+	uint32_t original_cpars[STM32_F2xx_DMA_MAX_CHAN];
 	uint8_t dma_pending[STM32_F2xx_DMA_MAX_CHAN];
 
 	QEMUTimer* dma_timer;
@@ -146,27 +145,6 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
 	qemu_irq irq[STM32_F2xx_DMA_MAX_CHAN];
 
 } STM32F2XX_STRUCT_NAME(Dma);
-
-enum reg_index {
-	RI_LISR,
-	RI_HISR,
-	RI_LIFCR,
-	RI_HIFCR,
-	RI_CHAN_BASE,
-	RI_CHAN_END = RI_CHAN_BASE + (STM32_F2xx_DMA_CHAN_REGS * STM32_F2xx_DMA_MAX_CHAN),
-	RI_MAX = RI_CHAN_END,
-};
-
-enum channel_offset
-{
-	CH_OFF_SxCR,
-	CH_OFF_SxNDTR,
-	CH_OFF_SxPAR,
-	CH_OFF_SxM0AR,
-	CH_OFF_SxM1AR,
-	CH_OFF_SxFCR,
-	CH_OFF_END,
-};
 
 
 enum dma_dir
@@ -190,7 +168,6 @@ enum interrupt_bits
 
 static const uint8_t dma_xfer_size_b[4] = {1, 2, 4, 0};
 
-QEMU_BUILD_BUG_MSG(R_DMA_MAX != RI_MAX, "register definitions do not agree!");
 QEMU_BUILD_BUG_MSG(CH_OFF_END != STM32_F2xx_DMA_CHAN_REGS, "register definitions do not agree!");
 
 
@@ -280,84 +257,85 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 	uint32_t *dest = NULL;
 	uint32_t *src = NULL;
 	uint8_t src_size = 0, dest_size = 0;
-	bool dest_inc = false, src_inc = false;
+	uint8_t dest_inc = 0, src_inc = 0;
 	if (dir == DIR_P2M)
 	{
 		dest = &s->regs.raw[chan_base+CH_OFF_SxM0AR];
-		dest_inc = cr->MINC;
 		dest_size = dma_xfer_size_b[cr->MSIZE];
+		dest_inc = cr->MINC * dest_size;
 		src = &s->regs.raw[chan_base+CH_OFF_SxPAR];
-		src_inc = cr->PINC;
 		src_size = dma_xfer_size_b[cr->PSIZE];
+		if (cr->PINCOS)
+		{
+			src_inc = cr->PINC * 4U;
+		}
+		else
+		{
+			src_inc = cr->PINC * src_size;
+		}
 	}
 	else if (dir == DIR_M2P)
 	{
 		src = &s->regs.raw[chan_base+CH_OFF_SxM0AR];
-		src_inc = cr->MINC;
 		src_size = dma_xfer_size_b[cr->MSIZE];
+		src_inc = cr->MINC * src_size;
 		dest = &s->regs.raw[chan_base+CH_OFF_SxPAR];
-		dest_inc = cr->PINC;
 		dest_size = dma_xfer_size_b[cr->PSIZE];
+		if (cr->PINCOS)
+		{
+			dest_inc = cr->PINC * 4U;
+		}
+		else
+		{
+			dest_inc = cr->PINC * dest_size;
+		}
 	}
 	else
 	{
 		printf("FIXME: M2M transfer!");
 		abort();
 	}
-	uint8_t xfersize = MIN(src_size, dest_size);
 	// if (*src == 0x40004404)
 	// {
 	// 	printf("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u\n",*src, *dest, xfersize, *ndtr);
 	// }
-	(*ndtr)--; // NDTR is in transfers, not bytes.
-	uint8_t buff[4];
+	uint8_t buff[4] = {0,0,0,0};
 	dma_memory_read(
 		&s->cpu_as,
 		*src,
 		buff,
-		xfersize,
+		src_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
 	dma_memory_write(
 		&s->cpu_as,
 		*dest,
 		buff,
-		xfersize,
+		dest_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
-	if (dest_inc)
-	{
-		*dest += xfersize;
-	}
-	if (src_inc)
-	{
-		*src += xfersize;
-	}
 
-	if (*ndtr == 0 )
+	(*ndtr)--; // NDTR is in transfers, not bytes.
+	*dest += dest_inc;
+	*src +=  src_inc;
+
+	if (*ndtr == (s->original_ndtrs[channel]>>1U) )
+	{
+		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_HTIF);
+	}
+	else if (*ndtr == 0 )
 	{
 		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_TCIF);
 		if (cr->CIRC)
 		{
 			*ndtr = s->original_ndtrs[channel];
-			if (dest_inc)
-			{
-				*dest -= (*ndtr*dest_size);
-			}
-			if (src_inc)
-			{
-				*src -= (*ndtr*src_size);
-			}
+			*dest -= (*ndtr*dest_inc);
+			*src -= (*ndtr*src_inc);
 		}
 		else
 		{
 			cr->EN = false; // Transfer done, disable channel.
 		}
-	}
-
-	if (*ndtr == (s->original_ndtrs[channel]>>1U) )
-	{
-		if (cr->HTIE) stm32_f2xx_f4xx_set_int_flag(s, channel, INT_HTIF);
 	}
 }
 
@@ -408,21 +386,20 @@ static uint64_t
 stm32_f2xx_f4xx_dma_read(void *opaque, hwaddr addr, unsigned int size)
 {
 	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(opaque);
-    uint32_t r;
     int offset = addr & 0x3;
 
     addr >>= 2;
-    if (addr >= R_DMA_MAX) {
+    if (addr >= RI_MAX) { // LCOV_EXCL_START
         qemu_log_mask(LOG_GUEST_ERROR, "invalid read stm32_dma register 0x%x\n",
           (unsigned int)addr << 2);
         return 0;
-    }
+    } // LCOV_EXCL_STOP
 
 	// NOTE - IFCR is read-only, but we never change its contents in the write so it will always come back 0
     uint32_t value = s->regs.raw[addr];
 
-    r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
-    return r;
+    ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b110);
+	return value;
 }
 
 static void
@@ -442,17 +419,32 @@ stm32_f2xx_f4xx_dma_chan_write(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr addr, uint6
 				// printf("Enabled DMA channel %u\n", chan);
 				// Channel was enabled... if P2M we wait for P to signal DMAR anyway.
 			}
+			else if (!new.EN && old.EN)
+			{
+				// DMA was disabled. Reset CMAR.
+				s->regs.raw[addr+CH_OFF_SxM0AR] = s->original_cmars[chan];
+				s->regs.raw[addr+CH_OFF_SxPAR] = s->original_cpars[chan];
+			}
 			s->regs.raw[addr] = new.raw;
 		}
 		break;
 		case CH_OFF_SxNDTR:
 			s->original_ndtrs[chan] = data & UINT16_MAX;
-		/* FALLTHRU */
-		case CH_OFF_SxPAR ... CH_OFF_SxFCR:
 			s->regs.raw[addr] = data;
 			break;
-		default:
-			qemu_log_mask(LOG_GUEST_ERROR, "ERR: DMA write to reserved register!\n");
+		case CH_OFF_SxPAR:
+			s->original_cpars[chan] = data;
+			s->regs.raw[addr] = data;
+			break;
+		case CH_OFF_SxM0AR:
+			s->original_cmars[chan] = data;
+			s->regs.raw[addr] = data;
+			break;
+		case CH_OFF_SxM1AR ... CH_OFF_SxFCR:
+			s->regs.raw[addr] = data;
+			break;
+		default: //LCOV_EXCL_LINE
+			qemu_log_mask(LOG_GUEST_ERROR, "ERR: DMA write to reserved register!\n"); // LCOV_EXCL_LINE
 	}
 }
 
@@ -464,21 +456,14 @@ stm32_f2xx_f4xx_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int
     int offset = addr & 0x3;
 
     addr >>= 2;
-    if (addr >= RI_MAX) {
+
+    if (addr >= RI_MAX) { // LCOV_EXCL_START
         qemu_log_mask(LOG_GUEST_ERROR, __FILE__ "invalid write stm32_iwdg register 0x%x\n",
           (unsigned int)addr << 2);
         return;
-    }
+    } // LCOV_EXCL_STOP
 
-    switch(size) {
-    case 2:
-        data = (s->regs.raw[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 4:
-        break;
-    default:
-        abort();
-    }
+	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b110);
 
     switch(addr) {
     case RI_LISR:
@@ -493,10 +478,10 @@ stm32_f2xx_f4xx_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int
 	case RI_CHAN_BASE ... RI_CHAN_END:
 		stm32_f2xx_f4xx_dma_chan_write(s, addr, data, size);
         break;
-    default:
+    default: // LCOV_EXCL_START
         qemu_log_mask(LOG_UNIMP, __FILE__ " unimplemented write 0x%x+%u size %u val 0x%x\n",
         (unsigned int)addr << 2, offset, size, (unsigned int)data);
-    }
+    }  // LCOV_EXCL_STOP
 }
 
 static const MemoryRegionOps stm32_common_dma_ops = {
@@ -521,8 +506,8 @@ static void stm32_f2xx_f4xx_dma_realize(DeviceState *dev, Error **errp)
 	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(dev);
 	if (s->cpu_mr == NULL)
 	{
-		printf("No CPU memory region specified for %s - using global system memory.\n", _PERIPHNAMES[s->parent.periph]);
-		s->cpu_mr = get_system_memory();
+		printf("No CPU memory region specified for %s - using global system memory.\n", _PERIPHNAMES[s->parent.periph]); // LCOV_EXCL_LINE
+		s->cpu_mr = get_system_memory(); // LCOV_EXCL_LINE
 	}
 	gchar* name = g_strdup_printf("STM32COM_DMA_%d", s->parent.periph - STM32_P_DMA_BEGIN);
 	address_space_init(&s->cpu_as, s->cpu_mr, name);
@@ -561,8 +546,10 @@ static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw,STM32F2XX_STRUCT_NAME(Dma), R_DMA_MAX),
+        VMSTATE_UINT32_ARRAY(regs.raw,STM32F2XX_STRUCT_NAME(Dma), RI_MAX),
         VMSTATE_UINT32_ARRAY(original_ndtrs,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
+        VMSTATE_UINT32_ARRAY(original_cmars,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
+        VMSTATE_UINT32_ARRAY(original_cpars,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
         VMSTATE_END_OF_LIST()
     }
 };
