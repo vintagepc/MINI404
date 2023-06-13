@@ -1,5 +1,6 @@
 qtests_buddy = [
     'prusa/stm32_tests/stm32_adc-test',
+    'prusa/stm32_tests/stm32_dbg-test',
     'prusa/stm32_tests/stm32_crc-test',
     'prusa/stm32_tests/stm32_dma-test',
     'prusa/stm32_tests/stm32_f4_dma-test',

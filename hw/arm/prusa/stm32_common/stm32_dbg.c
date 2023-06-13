@@ -90,7 +90,7 @@ stm32_common_dbg_read(void *arg, hwaddr addr, unsigned int size)
     COM_STRUCT_NAME(Dbg) *s = STM32COM_DBG(arg);
     int offset = addr & 0x3;
 	addr >>=2;
-	CHECK_BOUNDS_R(addr,RI_END, s->reginfo, "STM32 Common DBG");
+	CHECK_BOUNDS_R(addr,RI_END, s->reginfo, "STM32 Common DBG"); // LCOV_EXCL_LINE
 	uint32_t data = s->regs.raw[addr];
 	ADJUST_FOR_OFFSET_AND_SIZE_R(data, size, offset, 0b100);
     return data;
@@ -102,7 +102,7 @@ stm32_common_dbg_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     COM_STRUCT_NAME(Dbg) *s = STM32COM_DBG(arg);
     uint8_t offset = addr & 0x3;
 	addr >>= 2;
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 Common DBG");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 Common DBG"); // LCOV_EXCL_LINE
 
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b100);
 	if (addr == RI_IDCODE)
@@ -127,7 +127,11 @@ static const MemoryRegionOps stm32_common_dbg_ops = {
 
 static void stm32_common_dbg_realize(DeviceState *dev, Error **errp)
 {
-
+    COM_STRUCT_NAME(Dbg) *s = STM32COM_DBG(dev);
+    for (int i=0; i<RI_END; i++)
+    {
+        s->regs.raw[i] = s->reginfo[i].reset_val;
+    }
 }
 
 static void
