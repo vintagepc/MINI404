@@ -668,6 +668,8 @@ struct STM32F4xxUSBState {
 #endif
     bool debug;
 
+    bool disable_sofi;
+
 	bool is_device_mode;
 
     char cdc_in;
@@ -932,7 +934,10 @@ static void STM32F4xx_sof(STM32F4xxUSBState *s)
     s->sof_time += s->usb_frame_time;
     // trace_usb_stm_sof(s->sof_time);
     STM32F4xx_eof_timer(s);
-    STM32F4xx_raise_global_irq(s, GINTSTS_SOF);
+    if (!s->disable_sofi) 
+    {
+        STM32F4xx_raise_global_irq(s, GINTSTS_SOF);
+    }
 }
 
 /* Do frame processing on frame boundary */
@@ -3174,6 +3179,11 @@ static void STM32F4xx_realize(DeviceState *dev, Error **errp)
     s->cdc_timer = timer_new_us(QEMU_CLOCK_VIRTUAL, STM32F4xx_cdc_helper, s);
     s->async_bh = qemu_bh_new(STM32F4xx_work_bh, s);
 
+    if (s->disable_sofi)
+    {
+        printf("USB SOF Int disabled.\n");
+    }
+
     sysbus_init_irq(sbd, &s->irq);
 
     qemu_chr_fe_set_handlers(&s->cdc, f4xx_usb_cdc_can_receive, f4xx_usb_cdc_receive, NULL,
@@ -3303,6 +3313,7 @@ static Property STM32F4xx_usb_properties[] = {
     DEFINE_PROP_UINT32("usb_version", STM32F4xxUSBState, usb_version, 2),
     DEFINE_PROP_CHR("chardev", STM32F4xxUSBState, cdc),
 	DEFINE_PROP_LINK("system-memory", STM32F4xxUSBState, cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
+    DEFINE_PROP_BOOL("disable_sof_interrupt", STM32F4xxUSBState, disable_sofi, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
