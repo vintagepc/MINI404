@@ -252,6 +252,10 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 {
 	uint8_t channel = (chan_base - RI_CHAN_BASE) / STM32_F2xx_DMA_CHAN_REGS;
 	REGDEF_NAME(dma,sxcr)* cr = (REGDEF_NAME(dma,sxcr)*)&s->regs.raw[chan_base+CH_OFF_SxCR];
+    if (!cr->EN)
+    {
+        return;
+    }
 	uint8_t dir = cr->DIR;
 	uint32_t *ndtr = &s->regs.raw[chan_base+CH_OFF_SxNDTR];
 	uint32_t *dest = NULL;
@@ -319,7 +323,7 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 	*dest += dest_inc;
 	*src +=  src_inc;
 
-	if (*ndtr == (s->original_ndtrs[channel]>>1U) )
+	if (cr->HTIE && *ndtr == (s->original_ndtrs[channel]>>1U) )
 	{
 		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_HTIF);
 	}
