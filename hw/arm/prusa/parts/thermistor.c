@@ -175,7 +175,7 @@ static void thermistor_set_table(ThermistorState *s) {
             s->table = &temptable_2004[0][0];
 			break;
         case 2005:
-            s->table_length = 21*2;
+            s->table_length = 22*2;
             s->table = &temptable_2005[0][0];
             break;
         case 21:

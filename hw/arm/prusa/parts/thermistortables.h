@@ -1350,6 +1350,7 @@ const short temptable_2004[][2] PROGMEM = {
 
 
 const short temptable_2005[][2] PROGMEM = {
+{ OVERSAMPLENR*(50), 350 }, // Synthetic value to test max temp error
 { OVERSAMPLENR*(78), 300 },
 { OVERSAMPLENR*(102), 280 },
 { OVERSAMPLENR*(134), 260 },

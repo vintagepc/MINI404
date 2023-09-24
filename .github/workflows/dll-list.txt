@@ -55,7 +55,6 @@ libpsl-*.dll
 libsharpyuv*.dll 
 libssh2-*.dll
 libssl-*-x64.dll
-libssp-*.dll
 libstdc++-6.dll
 libthai-*.dll
 libtiff-*.dll
