@@ -112,6 +112,7 @@ Just pick the options you'd like and watch the full command built right before y
     {% include textinput.html name="m" default="196608" label="SRAM size in bytes" optional=1 %}
     {% include dropdown.html name="itm" label="Enable ARM ITM debug output" optional=1 options="vc,cols=80,rows=24@pty@stdio" format="-chardev %1,id=stm32_itm" %}
     {% include checkbox.html name="p404echo" label="Disable echo in P404 console" optional=1 format="-global p404-scriptcon.no_echo=true" last=1 %}
+    {% include checkbox.html name="disable_sof" label="Disable USB SoF Interrupt (improves performance)" optional=1 format="-global STM32F4xx-usb.disable_sof_interrupt=true" last=1 %}
     </fieldset>
   </form>
 </fieldset>
