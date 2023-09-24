@@ -158,12 +158,12 @@ static void dashboard_2d_update_display(void *opaque)
     {
         if (m[i] && m[i]->status.changed)
         {
-            char pos[9];
+            char pos[10];
             vga_putcharxy(s->con, 0, i+1, m[i]->label, dashboard_2d_get_attr(m[i]) );
-            snprintf(pos, sizeof(pos),"%8.3f", m[i]->current_pos);
-            for (int j=0; j<8; j++)
+            snprintf(pos, sizeof(pos),"%8.3f%c", m[i]->current_pos, m[i]->status.dir? '<':'>');
+            for (int j=0; j<9; j++)
             {
-                vga_putcharxy(s->con, (60-8)+j, i+1, pos[j], attr_norm);
+                vga_putcharxy(s->con, (60-9)+j, i+1, pos[j], attr_norm);
             }
         }
     }

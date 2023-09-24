@@ -135,12 +135,14 @@ typedef struct mk4_cfg_t {
 typedef struct xBuddyMachineClass {
     MachineClass        parent;
     const mk4_cfg_t     *cfg;
+    bool                has_mmu;
 } xBuddyMachineClass;
 
 typedef struct xBuddyData {
 	const mk4_cfg_t* cfg;
 	const char* name;
 	const char* descr;
+    const bool has_mmu;
 } xBuddyData;
 
 #define XBUDDY_MACHINE_CLASS(klass)                                    \
@@ -173,7 +175,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
-	.e_t_mass = 45,
+	.e_t_mass = 30,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -622,12 +624,15 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",1));
 #endif
 
+    DeviceState *hs = NULL;
+
 	if (cfg.has_loadcell) {
 		DeviceState *lc = qdev_new("loadcell");
 		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
 		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
-		DeviceState *hs = qdev_new("hall-sensor");
+		hs = qdev_new("hall-sensor");
+        qdev_prop_set_bit(hs, "start-state", !mc->has_mmu); // MMU starts unloaded.
 		sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
 		qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
 
@@ -793,6 +798,19 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "cursor_xy", 1, y_split);
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
+    if (mc->has_mmu)
+    {
+        printf("Enabling MMU control channel\n");
+        dev = qdev_new("mmu-bridge");
+    	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),8,qdev_get_gpio_in_named(dev, "reset-in", 0));
+        if (hs != NULL) 
+        {
+	        qdev_connect_gpio_out_named(dev, "fs-out",0, qdev_get_gpio_in_named(hs, "ext-in", 0));
+        }
+
+    }
+
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -820,6 +838,7 @@ static void xbuddy_class_init(ObjectClass *oc, void *data)
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
+        xmc->has_mmu = d->has_mmu;
 }
 
 static const xBuddyData mk4_027c = {
@@ -827,10 +846,23 @@ static const xBuddyData mk4_027c = {
 	.descr = "Prusa Mk4 0.2.7c",
 };
 
+static const xBuddyData mk4_027c_mmu = {
+	.cfg = &mk4_027c_cfg,
+	.descr = "Prusa Mk4 0.2.7c with MMU3",
+    .has_mmu = true,
+};
+
 static const xBuddyData mk4_034 = {
 	.cfg = &mk4_034_cfg,
 	.descr = "Prusa Mk4 0.3.4",
 };
+
+static const xBuddyData mk4_034_mmu = {
+	.cfg = &mk4_034_cfg,
+	.descr = "Prusa Mk4 0.3.4 with MMU3",
+    .has_mmu = true,
+};
+
 
 static const xBuddyData mk3v5 = {
 	.cfg = &mk3v5_cfg,
@@ -853,12 +885,21 @@ static const TypeInfo xbuddy_machine_types[] = {
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk4_027c
-    },
-	{
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-027c-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_027c_mmu,
+    }, {
         .name           = MACHINE_TYPE_NAME("prusa-mk4-034"),
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk4_034
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-034-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_034_mmu
     },{
         .name           = MACHINE_TYPE_NAME("prusa-mk3-35"),
         .parent         = TYPE_XBUDDY_MACHINE,

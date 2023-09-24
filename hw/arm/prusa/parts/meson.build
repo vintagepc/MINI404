@@ -18,6 +18,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'hall_sensor.c',
         'irsensor.c',
         'loadcell.c',
+        'mmu_bridge.c',
         'modular_bed_visuals.c',
         'overcurrent_latch.c',
         'p404_key_input.c',
