@@ -188,7 +188,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          ../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
+          ../configure --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
         shell: msys2 {0}
 
       - name: Build
