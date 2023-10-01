@@ -296,6 +296,27 @@ void qtest_module_load(QTestState *s, const char *prefix, const char *libname);
  */
 bool qtest_get_irq(QTestState *s, int num);
 
+// Counterpart for actual IRQ value.
+int qtest_get_irq_level(QTestState *s, int num);
+
+/**
+ * qtest_get_irq_pulsed:
+ * @s: #QTestState instance to operate on.
+ * @num: Interrupt to observe.
+ *
+ * Returns: True if the IRQ was >0 at any point since the last call to qtest_irq_clear_pulses
+ */
+bool qtest_get_irq_pulsed(QTestState *s, int num);
+
+/**
+ * qtest_irq_clear_pulses:
+ * @s: #QTestState instance to operate on.
+ *
+ * Clears IRQ pulse tracking for all IRQs.
+ */
+void qtest_irq_clear_pulses(QTestState *s);
+
+
 /**
  * qtest_irq_intercept_in:
  * @s: #QTestState instance to operate on.
@@ -307,6 +328,17 @@ bool qtest_get_irq(QTestState *s, int num);
 void qtest_irq_intercept_in(QTestState *s, const char *string);
 
 /**
+ * qtest_irq_intercept_in_named:
+ * @s: #QTestState instance to operate on.
+ * @string: QOM path of a device.
+ * @string: Name of the GPIO.
+ *
+ * Associate qtest irqs with the named GPIO-in pins of the device
+ * whose path is specified by @string.
+ */
+void qtest_irq_intercept_in_named(QTestState *s, const char *string, const char *name);
+
+/**
  * qtest_irq_intercept_out:
  * @s: #QTestState instance to operate on.
  * @string: QOM path of a device.
@@ -315,6 +347,17 @@ void qtest_irq_intercept_in(QTestState *s, const char *string);
  * whose path is specified by @string.
  */
 void qtest_irq_intercept_out(QTestState *s, const char *string);
+
+/**
+ * qtest_irq_intercept_out_named:
+ * @s: #QTestState instance to operate on.
+ * @string: QOM path of a device.
+ * @string: Name of the GPIO.
+ *
+ * Associate qtest irqs with the named GPIO-out pins of the device
+ * whose path is specified by @string.
+ */
+void qtest_irq_intercept_out_named(QTestState *s, const char *string, const char *name);
 
 /**
  * qtest_set_irq_in:

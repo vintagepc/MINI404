@@ -37,7 +37,7 @@
 #define LINE_HEIGHT (FONT_HEIGHT)
 
 // 3 extra lines for fan, therm, indicators.
-#define DPY_MAX_ROWS (LINE_HEIGHT *(N_MOTORS + 3U)) 
+#define DPY_MAX_ROWS (LINE_HEIGHT *(N_MOTORS + 4U))
 #define DPY_MAX_COLS 480
 #define LED_HT LINE_HEIGHT
 
@@ -59,6 +59,7 @@ struct Dashboard2DState {
     uint32_t framebuffer[DPY_MAX_ROWS * DPY_MAX_COLS];
 
     char* ind_labels;
+    char* title;
 
     pixman_color_t leds[N_LEDS];
     uint32_t led_colours[N_LEDS];
@@ -101,7 +102,7 @@ static pixman_color_t attr_disabled[2] = {
 
 static pixman_color_t* dashboard_2d_get_attr(const p404_motorif_status_t *s)
 {
-    return s->status.stalled ? attr_stall : 
+    return s->status.stalled ? attr_stall :
         (!s->status.enabled? attr_disabled :
             ( s->status.stealth ? attr_stealth : attr_norm )
         );
@@ -112,10 +113,10 @@ static void dashboard_2d_update_display(void *opaque)
     Dashboard2DState *s = DB2D_DISPLAY(opaque);
     DisplaySurface *surface = qemu_console_surface(s->con);
     uint8_t *dest = NULL;
- 
+
     const p404_motorif_status_t* m[10] = {NULL};
 
-    int motor_count = 0;
+    int motor_count = 1;
 
     for (int i=0; i<N_MOTORS; i++)
     {
@@ -128,7 +129,7 @@ static void dashboard_2d_update_display(void *opaque)
                 s->redraw = true;
                 if (m[i]->max_pos>0) // negative max pos means no endstop...
                 {
-                    int row = FONT_HEIGHT*i;
+                    int row = FONT_HEIGHT*(i+1);
                     int offset = FONT_WIDTH + (FONT_WIDTH/2);
                     int index = (DPY_MAX_COLS*row)+offset;
                     uint16_t scale =  (m[i]->max_pos<=200 ? 2 : 1);
@@ -145,11 +146,9 @@ static void dashboard_2d_update_display(void *opaque)
                     }
                 }
             }
-            
         }
     }
-
-    if (!s->redraw)
+	if (!s->redraw)
         return;
 
     dest = surface_data(surface);
@@ -160,11 +159,11 @@ static void dashboard_2d_update_display(void *opaque)
         if (m[i] && m[i]->status.changed)
         {
             char pos[9];
-            vga_putcharxy(s->con, 0, i, m[i]->label, dashboard_2d_get_attr(m[i]) );
+            vga_putcharxy(s->con, 0, i+1, m[i]->label, dashboard_2d_get_attr(m[i]) );
             snprintf(pos, sizeof(pos),"%8.3f", m[i]->current_pos);
             for (int j=0; j<8; j++)
             {
-                vga_putcharxy(s->con, (60-8)+j, i, pos[j], attr_norm);
+                vga_putcharxy(s->con, (60-8)+j, i+1, pos[j], attr_norm);
             }
         }
     }
@@ -192,7 +191,7 @@ static void dashboard_2d_update_display(void *opaque)
             QEMU_RGB(0xFF*light, 0xFF*light, 0xFF*light),
             QEMU_RGB(s->therm_pwms[i], 0,0),
         };
-        
+
         vga_putcharxy(s->con, (10*i) + 0, motor_count + 1 , 'T', attr_norm);
         vga_putcharxy(s->con, (10*i) + 1, motor_count + 1 , '0' + i, attr_norm);
         vga_putcharxy(s->con, (10*i) + 2, motor_count + 1 , ':', attr_norm);
@@ -203,14 +202,20 @@ static void dashboard_2d_update_display(void *opaque)
     }
 
     for (int i=0; i<MIN(strlen(s->ind_labels), N_LEDS); i++)
-    {       
+    {
         bool light = s->leds[i].red<(128<<8) && s->leds[i].green<(128<<8) && s->leds[i].blue<(128<<8);
         pixman_color_t fg = QEMU_RGB(255*light, 255*light, 255*light);
         vga_putcharxy_s(s->con, (4*i) +1 , motor_count + 2 , s->ind_labels[i], &fg, &s->leds[i]);
         vga_putcharxy_s(s->con, (4*i) +0 , motor_count + 2 , ' ', &fg, &s->leds[i]);
         vga_putcharxy_s(s->con, (4*i) +2 , motor_count + 2 , ' ', &fg, &s->leds[i]);
     }
-
+	if (s->title != NULL)
+	{
+		for (int i=0; i<strlen(s->title); i++)
+		{
+			vga_putcharxy(s->con, i, 0, s->title[i], attr_norm);
+		}
+	}
 	s->redraw = false;
     dpy_gfx_update(s->con, 0, 0,  DPY_MAX_COLS ,  DPY_MAX_ROWS + LED_HT);
 }
@@ -232,6 +237,14 @@ static void dashboard_2d_wled_in(void *opaque, int n, int level)
     s->leds[n].red = level<<8;
     s->leds[n].green = level<<8;
     s->leds[n].blue = level<<8;
+}
+
+static void dashboard_2d_rgbled_in(void *opaque, int n, int level)
+{
+    Dashboard2DState *s = DB2D_DISPLAY(opaque);
+    s->leds[n].red = (level & 0xFF0000) >> 8;
+    s->leds[n].green = (level & 0x00FF00);
+    s->leds[n].blue = (level & 0x0000FF) << 8;
 }
 
 static void dashboard_2d_rled_in(void *opaque, int n, int level)
@@ -269,7 +282,6 @@ static void dashboard_2d_bled_in(void *opaque, int n, int level)
 static void dashboard_2d_digital_led_in(void *opaque, int n, int level)
 {
     Dashboard2DState *s = DB2D_DISPLAY(opaque);
-	
 	s->leds[n].red =   (level*255)<<8;
     s->leds[n].green = (level*255)<<8;
 }
@@ -310,6 +322,7 @@ static void dashboard_2d_init(Object *obj)
     DeviceState *dev = DEVICE(obj);
 
     qdev_init_gpio_in_named(dev, dashboard_2d_wled_in, "led-w", N_LEDS);
+    qdev_init_gpio_in_named(dev, dashboard_2d_rgbled_in, "led-rgb", N_LEDS);
 	qdev_init_gpio_in_named(dev, dashboard_2d_rled_in, "led-r", N_LEDS);
 	qdev_init_gpio_in_named(dev, dashboard_2d_gled_in, "led-g", N_LEDS);
 	qdev_init_gpio_in_named(dev, dashboard_2d_bled_in, "led-b", N_LEDS);
@@ -328,16 +341,15 @@ static void dashboard_2d_realize(DeviceState *dev, Error **errp)
     Dashboard2DState *s = DB2D_DISPLAY(dev);
 
     // Calculate total rows:
-    int i = 0;
+    int i = 1;
     for (i=0; i<N_MOTORS; i++)
     {
         if (s->motors[i] == NULL)
             break;
     }
-
     s->current_rows = LINE_HEIGHT * i;
 
-    s->current_rows += (3 * LINE_HEIGHT);
+    s->current_rows += (4 * LINE_HEIGHT);
     s->con = graphic_console_init(dev, 0, &dashboard_2d_ops, s);
     qemu_console_resize(s->con, DPY_MAX_COLS, s->current_rows);
 }
@@ -367,6 +379,7 @@ static Property dashboard_2d_properties[] = {
     DEFINE_PROP_UINT8("fans", Dashboard2DState, fan_count, 0),
     DEFINE_PROP_UINT8("thermistors", Dashboard2DState, therm_count, 0),
     DEFINE_PROP_STRING("indicators", Dashboard2DState, ind_labels),
+    DEFINE_PROP_STRING("title", Dashboard2DState, title),
     DEFINE_PROP_END_OF_LIST()
 };
 

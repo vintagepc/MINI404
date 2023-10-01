@@ -90,7 +90,17 @@ enum F4xx_IRQ{
 	_I(HASH_RNG),
 	_I(FPU),
 	_I(F407_COUNT) = 82, // last IRQ tracking.
-	_I(F4xx_MAX_COUNT) = 82,
+	_I(UART7) = 82,
+	_I(UART8),
+	_I(SPI4),
+	_I(SPI5),
+	_I(SPI6),
+	_I(SAI1),
+	_I(LCD_TFT),
+	_I(LCD_TFT_ER),
+	_I(DMA2D),
+	_I(F427_COUNT),
+	_I(F4xx_MAX_COUNT) = 91,
 
 };
 #undef _I

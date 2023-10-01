@@ -415,6 +415,8 @@ static void tmc2209_init(Object *obj){
     qdev_init_gpio_in_named( DEVICE(obj),tmc2209_receive, "byte-in",1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out, "byte-out", 1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->position_out, "step-out", 1);
+    qdev_init_gpio_out_named(DEVICE(obj),&s->um_out, "um-out", 1);
+	qdev_init_gpio_out_named(DEVICE(obj),&s->stall_indicator, "stall-indicator", 1);
     qemu_set_irq(s->irq_diag,0);
     qemu_set_irq(s->hard_out,0);
 

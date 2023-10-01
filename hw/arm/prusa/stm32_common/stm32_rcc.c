@@ -21,6 +21,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-clock.h"
@@ -35,12 +36,16 @@ extern uint32_t stm32_rcc_if_get_periph_freq(STM32Peripheral* p)
 {
 	if (p->rcc == NULL)
 	{
-		printf("ERR: No RCC set when checking clock frequency!\n");
+		printf("ERR: No RCC set for %s when checking clock frequency!\n", _PERIPHNAMES[p->periph]);
 		return 0;
 	}
 	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(p->rcc);
     Clk_t* clk = &s->pclocks[p->periph];
 
+	if (!clk->is_initialized)
+	{
+		printf("ERR: Clock for %s is not initialized!\n", _PERIPHNAMES[p->periph]);
+	}
     assert(clk->is_initialized);
 
     return clktree_get_output_freq(clk);
@@ -64,7 +69,7 @@ bool stm32_rcc_if_check_periph_clk(STM32Peripheral *p)
          * is disabled is a bug and give a warning to unsuspecting programmers.
          * When I made this mistake on real hardware the write had no effect.
          */
-        printf("Warning: You are attempting to use the [%s] peripheral while "
+        qemu_log_mask(LOG_GUEST_ERROR, "Warning: You are attempting to use the [%s] peripheral while "
                  "its clock is disabled.\n", clk->name);
         return false;
     }
@@ -77,7 +82,7 @@ void stm32_rcc_if_set_periph_clk_irq(
 {
 	if (p->rcc == NULL)
 	{
-		printf("ERR: No RCC set when adding a clock IRQ!\n");
+		printf("# ERR: No RCC set when adding a clock IRQ!\n");
 		return;
 	}
 	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(p->rcc);
@@ -93,6 +98,7 @@ void stm32_common_rcc_reset_write(COM_STRUCT_NAME(Rcc) *s, uint32_t mask, const 
         if (mask & 1U<<i && (*vectors)[i] != 0 ) {
 			if ((*vectors)[i] == STM32_P_ADC_ALL) // sometimes ADC is shared...
 			{
+				qemu_irq_pulse(s->reset[STM32_P_ADC1]);
 				qemu_irq_pulse(s->reset[STM32_P_ADC2]);
 				qemu_irq_pulse(s->reset[STM32_P_ADC3]);
 			}
@@ -145,7 +151,7 @@ static void stm32_common_rcc_instance_init(Object* obj)
 	s->realize_func = stm32_common_rcc_realize;
 	s->REFCLK = clock_new(obj,"REFCLK");
 	s->CPUCLOCK = clock_new(obj,"CPUCLK");
-	clock_set_mul_div(s->REFCLK, 8,1);
+	clock_set_mul_div(s->REFCLK, 1,8);
 	clock_set_mul_div(s->CPUCLOCK, 1, 1);
 }
 
@@ -157,7 +163,7 @@ static Property stm32_common_rcc_properties[] = {
 	DEFINE_PROP_END_OF_LIST()
 };
 
-static const VMStateDescription vmstate_stm32_common_rcc = {
+const VMStateDescription vmstate_stm32_common_rcc = {
     .name = TYPE_STM32COM_RCC,
     .version_id = 1,
     .minimum_version_id = 1,

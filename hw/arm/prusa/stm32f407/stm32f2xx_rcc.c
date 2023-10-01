@@ -22,7 +22,6 @@
  */
 
 #include "stm32f2xx_rcc.h"
-#include "qemu-common.h"
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -30,8 +29,9 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/irq.h"
-#include "../stm32_common/stm32_rcc_if.h"
 #include "../utility/macros.h"
+#include "../stm32_common/stm32_rcc_if.h"
+#include "../stm32_common/stm32_rcc_regdefs.h"
 
 QEMU_BUILD_BUG_MSG(STM32_P_COUNT>255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 
@@ -53,12 +53,12 @@ enum sw_src
 static const uint8_t AHB1_PERIPHS[32] = {
     STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, STM32_P_GPIOE, STM32_P_GPIOF, STM32_P_GPIOG, STM32_P_GPIOH,
     STM32_P_GPIOI, STM32_P_GPIOJ, STM32_P_GPIOK, 0, STM32_P_CRC, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, STM32_P_DMA1, STM32_P_DMA2,
-    0, 0, 0/*eth*/, 0, 0, STM32_P_USB, 0, 0
+    0, 0, 0, 0, 0, STM32_P_DMA1, STM32_P_DMA2, 0,
+    0, 0/*eth*/, 0, 0, 0, STM32_P_USBHS, 0, 0
 };
 
 static const uint8_t AHB2_PERIPHS[32] = {
-    STM32_P_DCMI, 0, 0, 0, STM32_P_CRYP, STM32_P_HASH, STM32_P_RNG, STM32_P_USB2,
+    STM32_P_DCMI, 0, 0, 0, STM32_P_CRYP, STM32_P_HASH, STM32_P_RNG, STM32_P_USBFS,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
@@ -141,7 +141,7 @@ static const stm32_reginfo_t stm32f407_rcc_reginfo[RI_END] =
 {
 	[RI_CR] = {.mask = 0x0F0FFFFB, .reset_val = 0x83},
 
-	[RI_PLLCFGR] = {.mask = 0x7FFF, .reset_val = 0x24003010, .unimp_mask = 0x7FFF}, //
+	[RI_PLLCFGR] = {.mask = 0xF437FFF, .reset_val = 0x24003010, .unimp_mask = 0xF437FFF}, //
 	[RI_CFGR] = {.mask = 0xFFFF7F3F, .unimp_mask = 0xFFFF0000}, //
 	[RI_CIR] = {.mask = 0xFF3F7F73, .reset_val =  0x1000, .unimp_mask = UINT32_MAX}, //
 	[RI_AHB1RSTR] = {.mask = 0x226011FF},
@@ -172,17 +172,51 @@ static const stm32_reginfo_t stm32f407_rcc_reginfo[RI_END] =
 	[RI_PLLI2SCFGR] = {.mask = 0x70007FC0, .reset_val = 0x20003000 },
 };
 
+static const stm32_reginfo_t stm32f427_rcc_reginfo[RI_END] =
+{
+	[RI_CR] = {.mask = 0x0F0FFFFB, .reset_val = 0x83},
+
+	[RI_PLLCFGR] = {.mask = 0xF437FFF, .reset_val = 0x24003010, .unimp_mask = 0xF437FFF}, //
+	[RI_CFGR] = {.mask = 0xFFFF7F3F, .unimp_mask = 0xFFFF0000}, //
+	[RI_CIR] = {.mask = 0xFF3F7F73, .reset_val =  0x1000, .unimp_mask = UINT32_MAX}, //
+	[RI_AHB1RSTR] = {.mask = 0x226017FF},
+	[RI_AHB2RSTR] = {.mask = 0x000000F1},
+	[RI_AHB3RSTR] = {.mask = 0x00000001},
+	[RI_AHB3RSTR+1U] = {.is_reserved = true},
+	[RI_APB1RSTR] = {.mask = 0xF6FEC9FF},
+	[RI_APB2RSTR] = {.mask = 0x00377933},
+	[(RI_APB2RSTR + 1U) ... (RI_APB2RSTR + 2U)] = {.is_reserved = true},
+	[RI_AHB1ENR] = {.mask = 0x7E7417FF, .unimp_mask = ~0x226017FF},
+	[RI_AHB2ENR] = {.mask = 0x000000F1},
+	[RI_AHB3ENR] = {.mask = 0x00000001},
+	[RI_AHB3ENR+1U] = {.is_reserved = true},
+	[RI_APB1ENR] = {.mask = 0xF6FEC9FF},
+	[RI_APB2ENR] = {.mask = 0x00377F33},
+	[(RI_APB2ENR + 1U) ... (RI_APB2ENR + 2U)] = {.is_reserved = true},
+	[RI_AHB1LPENR] = {.mask = 0x7E7417FF, .reset_val = 0x7E6797FF, .unimp_mask = UINT32_MAX},
+	[RI_AHB2LPENR] = {.mask = 0x000000F1, .reset_val = 0xF1, .unimp_mask = UINT32_MAX},
+	[RI_AHB3LPENR] = {.mask = 0x00000001, .reset_val = 0x01, .unimp_mask = UINT32_MAX},
+	[RI_AHB3LPENR+1U] = {.is_reserved = true},
+	[RI_APB1LPENR] = {.mask = 0xF6FEC9FF, .reset_val = 0x36FEC9FF, .unimp_mask = UINT32_MAX},
+	[RI_APB2LPENR] = {.mask = 0x00377F33, .reset_val = 0x00075F33, .unimp_mask = UINT32_MAX},
+	[(RI_APB2LPENR + 1U) ... (RI_APB2LPENR + 2U)] = {.is_reserved = true},
+	[RI_BDCR] = {.mask = 0x17D801, .unimp_mask = 0x17D801},
+	[RI_CSR] = { .mask = 0xFF000003, .reset_val = 0x0E000000},
+	[(RI_CSR + 1U) ... (RI_SSCGR - 1U)] = {.is_reserved = true},
+	[RI_SSCGR] = {.unimp_mask = UINT32_MAX, .mask = 0xCFFFFFFF},
+	[RI_PLLI2SCFGR] = {.mask = 0x70007FC0, .reset_val = 0x20003000 },
+};
 
 static const stm32_periph_variant_t stm32f4xx_rcc_variants[] =
 {
 	{TYPE_STM32F407_RCC, stm32f407_rcc_reginfo},
+	{TYPE_STM32F427_RCC, stm32f427_rcc_reginfo}
 };
 
 typedef struct COM_CLASS_NAME(F4xxRcc) {
 	STM32COMRccClass parent_class;
     stm32_reginfo_t var_reginfo[R_RCC_MAX];
 } COM_CLASS_NAME(F4xxRcc);
-
 
 QEMU_BUILD_BUG_MSG(RI_END != R_RCC_MAX, "maxima definitions for F2xx RCC Misaligned!");
 /* REGISTER IMPLEMENTATION */
@@ -194,7 +228,7 @@ QEMU_BUILD_BUG_MSG(RI_END != R_RCC_MAX, "maxima definitions for F2xx RCC Misalig
  */
 static void stm32_rcc_RCC_CR_write(Stm32f2xxRcc *s, uint32_t new_value, bool init)
 {
-    REGDEF_NAME(rcc,cr) cr = {.raw = new_value};
+    REGDEF_NAME(rcc_com,cr) cr = {.raw = new_value};
 
     if((clktree_is_enabled(&s->PLLCLK) && !cr.PLLON) &&
        s->regs.CFGR.SW == SW_PLL) {
@@ -364,7 +398,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
     switch (index) {
         case RI_CR:
 		{
-            REGDEF_NAME(rcc,cr) cr;
+            REGDEF_NAME(rcc_com,cr) cr;
 			cr.HSEON = cr.HSERDY = clktree_is_enabled(&s->parent.HSECLK);
 			cr.HSION = cr.HSIRDY = clktree_is_enabled(&s->parent.HSICLK);
 			cr.PLLON = cr.PLLRDY = clktree_is_enabled(&s->PLLCLK);
@@ -379,7 +413,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
 			break;
         case RI_BDCR:
 		{
-            REGDEF_NAME(rcc,bdcr) bdcr;
+            REGDEF_NAME(rcc_com,bdcr) bdcr;
 			bdcr.LSEON = bdcr.LSERDY = clktree_is_enabled(&s->parent.LSECLK);
 			bdcr.RTCEN = clktree_is_enabled(&s->parent.pclocks[STM32_P_RTC]);
 			data = bdcr.raw;
@@ -438,7 +472,7 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
             break;
         case RI_BDCR:
 		{
-			REGDEF_NAME(rcc, bdcr) bdcr = {.raw = data};
+			REGDEF_NAME(rcc_com, bdcr) bdcr = {.raw = data};
             clktree_set_enabled(&s->parent.LSECLK, bdcr.LSEON);
 			clktree_set_selected_input(&s->parent.pclocks[STM32_P_RTC], bdcr.RTC_SEL -1U );
 			clktree_set_enabled(&s->parent.pclocks[STM32_P_RTC], bdcr.RTCEN);
@@ -485,8 +519,12 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
     hclk_freq = clktree_get_output_freq(&s->HCLK);
 
     /* Only update the scales if the frequency is not zero. */
-	clock_set_hz(s->parent.REFCLK, hclk_freq);
+	clock_set_hz(s->parent.CPUCLOCK, hclk_freq);
+	printf("# CPUCLOCK set to %u Hz\n",hclk_freq);
+	clock_propagate(s->parent.CPUCLOCK);
+	clock_set_hz(s->parent.REFCLK, hclk_freq/8);
 	clock_propagate(s->parent.REFCLK);
+	printf("# Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
 }
 
 
@@ -509,7 +547,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
     clktree_create_clk(&s->PLLM, "PLLM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, &s->parent.HSICLK,
                                  &s->parent.HSECLK, NULL);
-    clktree_create_clk(&s->PLLCLK, "PLLCLK", 1, 2, false, 120000000, 0, &s->PLLM, NULL);
+    clktree_create_clk(&s->PLLCLK, "PLLCLK", 1, 2, false, 168000000, 0, &s->PLLM, NULL);
     clktree_create_clk(&s->PLL48CLK, "PLL48CLK", 1, 1, false, 48000000, 0, &s->PLLM, NULL);
 
     clktree_create_clk(&s->PLLI2SM, "PLLI2SM", 1, 16, true, CLKTREE_NO_MAX_FREQ, 0, &s->PLLM, NULL);
@@ -605,8 +643,7 @@ static void stm32_rcc_init(Object *obj)
 
     Stm32f2xxRcc *s = STM32F4xx_RCC(obj);
 
-    memory_region_init_io(&s->parent.iomem, obj, &stm32_rcc_ops, s,
-                          "rcc", 1U*KiB);
+    STM32_MR_IO_INIT(&s->parent.iomem, obj, &stm32_rcc_ops, s,1U*KiB);
 
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->parent.iomem);
 	COM_CLASS_NAME(F4xxRcc) *k = STM32F4xx_RCC_GET_CLASS(obj);
@@ -618,6 +655,7 @@ static const VMStateDescription vmstate_STM32F2xx_RCC = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+		VMSTATE_STM32COMRCC_PARENT(parent, Stm32f2xxRcc),
         VMSTATE_STRUCT(SYSCLK,Stm32f2xxRcc, 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(RTCCLK,Stm32f2xxRcc, 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(PLLM,Stm32f2xxRcc, 1, vmstate_stm32_common_rcc_clk, Clk_t),

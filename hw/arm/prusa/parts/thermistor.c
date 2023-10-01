@@ -3,7 +3,7 @@
 	Based on thermistor.c (C) 2008-2012 Michel Pollet <buserror@gmail.com>
 
     Rewritten for MK404/C++ in 2020 by VintagePC <https://github.com/vintagepc/>
-    Backported to C again for QEMU in Mini404 in 2021
+    Backported to C again for QEMU in Mini404 in 2021-3
 
  	This file is part of Mini404.
 	Mini404 is free software: you can redistribute it and/or modify
@@ -29,6 +29,7 @@
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
+#include <math.h>
 
 #define TYPE_THERMISTOR "thermistor"
 OBJECT_DECLARE_SIMPLE_TYPE(ThermistorState, THERMISTOR)
@@ -36,7 +37,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ThermistorState, THERMISTOR)
 struct ThermistorState {
     SysBusDevice parent;
 
-    qemu_irq irq_value, temp_out;
+    qemu_irq irq_value, value_x1000, temp_out;
 
     uint8_t index;
     uint16_t table_index;
@@ -62,20 +63,39 @@ enum {
     ActGetTemp,
 };
 
+#define KELVIN_OFFSET 273.15f
+
+static int map(long x, long in_min, long in_max, long out_min, long out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 static void thermistor_read_request(void *opaque, int n, int level) {
     if (!level) {
         return;
     }
 	ThermistorState *s = opaque;
+    float value = s->use_custom ? s->custom_temp : s->temperature;
+    qemu_set_irq(s->temp_out, 256U*value);
     if (s->table_index==0) {
         qemu_set_irq(s->irq_value,s->start_temp);
         return;
     }
-    float value = s->use_custom ? s->custom_temp : s->temperature;
-    qemu_set_irq(s->temp_out, 256U*value);
+	else if (s->table_index == 65535) // Modbed conversion map:
+	{
+		// reversal of how the temperature is calculated by the firmware...
+		value += KELVIN_OFFSET;
+		value = 1.0f/value;
+		value -= (1.0f / (25.0f + KELVIN_OFFSET));
+		value *= 4573.f;
+		value = exp(value);
+		value *= 100000; // should now have resistance.
+		value = (4095.f * value) / (value + 4700);
+		qemu_set_irq(s->irq_value, value);
+		return;
+	}
 	for (uint16_t i= 0; i<s->table_length; i+=2) {
 		if (s->table[i+1] <= value) {
-			int16_t tt = s->table[i];
+			uint16_t tt = s->table[i];
 			/* small linear regression between table samples */
 			if ( i !=0 && s->table[i+1] < value) {
 				int16_t d_adc = s->table[i] - s->table[i-2];
@@ -84,7 +104,13 @@ static void thermistor_read_request(void *opaque, int n, int level) {
 				tt = s->table[i] + (d_adc * (delta / d_temp));
 			}
 			int value = (((tt / s->oversampling)));
+			value <<=2; // Note - ADC takes full 12 bit input, but the tables are only 10-bit
 			qemu_set_irq(s->irq_value,value);
+            if (s->table_index==21) {  // Special case for PT100 on HX717 - map ADC value to direct reading.
+                value = map(value, 0,0x3FF, -980000, 2070000)*125;
+            }
+			qemu_set_irq(s->irq_value,value);
+			qemu_set_irq(s->value_x1000,value);
             return;
 		}
 	}
@@ -144,8 +170,38 @@ static void thermistor_set_table(ThermistorState *s) {
             s->table_length = 2*AMBIENTTEMPTABLE_LEN;
             s->table = &temptable_2000[0][0];
             break;
+		case 2004:
+            s->table_length = 17*2;
+            s->table = &temptable_2004[0][0];
+			break;
+        case 2005:
+            s->table_length = 22*2;
+            s->table = &temptable_2005[0][0];
+            break;
+        case 21:
+            s->table_length = 6;
+            s->table = &temptable_21[0][0];
+            break;
+        case 22:
+            s->table_length = 4;
+            s->table = &temptable_22[0][0];
+            break;
+		case 2006:
+			s->table_length = 2U*127;
+			s->table = &temptable_2006[0][0];
+			break;
+		case 2007:
+			s->table_length = 2U*291;
+			s->table = &temptable_2007[0][0];
+			break;
+		case 2008:
+			s->table_length = 2U*205;
+			s->table = &temptable_2008[0][0];
+			break;
         default:
 			printf("%s WARNING: Unhandled thermistor table %u!\n",__FILE__,s->table_index);
+			/* FALLTHRU */
+		case UINT16_MAX:
             s->table = NULL;
             s->table_length = 0;
             break;
@@ -172,6 +228,8 @@ static void thermistor_init(Object *obj)
     ThermistorState *s = THERMISTOR(obj);
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_value, "thermistor_value", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->value_x1000, "value_x1000", 1);
+
     qdev_init_gpio_out_named(DEVICE(obj), &s->temp_out, "temp_out_256x", 1);
 
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_read_request, "thermistor_read_request", 1);

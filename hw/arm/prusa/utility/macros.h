@@ -78,18 +78,31 @@
 #define REG_K32(name, len) uint32_t name : len
 
 #define REGDEF_R(addr) uint32_t _JOIN2R(_reserved, addr)
-// Block of reserved 32 bit registers:
 
+// Block of reserved 32 bit registers
+#define REGDEF_RANGE32(start, end) uint32_t _JOIN3R(_reserved, start,end)[((end-start)/4U)+1U]
 
+// Offset helper for REGINDEX enumerations.
+#define REGENUM_OFFSET(reg_name, base) _JOIN2R(RO_,reg_name) = _JOIN2R(RI_,reg_name) - base
 
+// Block size helper for REGINDEX enumerations.
+#define REGENUM_SIZE(block_name) _JOIN2R(RSZ_,block_name) = (_JOIN3R(RI_,block_name,_END) - _JOIN3R(RI_,block_name,_BEGIN) + 1U)
 
+// The typename of a previous REGDEF_BLOCK
 #define REGDEF_NAME(part, x) _JOIN3R(stm32reg_,part##_##x,_t)
 
 #define REGDEF_BLOCK_BEGIN() typedef union { \
 	struct {
 
+// Closing declaration for a REGDEF_BLOCK_BEGIN() of a single register.
 #define REGDEF_BLOCK_END(part, x) } QEMU_PACKED; \
 	uint32_t raw; \
+} REGDEF_NAME(part, x); \
+CHECK_REG_u32(REGDEF_NAME(part,x));
+
+// Closing declaration for a REGDEF_BLOCK_BEGIN of an array of registers. NOT packed.
+#define REGDEF_DEF_END(part, x, size) }; \
+	uint32_t raw[size]; \
 } REGDEF_NAME(part, x);
 
 // Helper for auto-naming reserved blocks.
@@ -105,6 +118,29 @@
 
 #define VMSTATE_INT32_2DARRAY(_f, _s, _n1, _n2)                      \
     VMSTATE_INT32_2DARRAY_V(_f, _s, _n1, _n2, 0)
+
+// Inits memory region with a nicely formatted name for info mtree.
+#define STM32_MR_INIT(_mr, _obj, _size) \
+{ \
+	if (g_stm32_periph_init != STM32_P_UNDEFINED) { \
+		gchar* _mr_name = g_strdup_printf("%s (%s)", object_get_typename(_obj), _PERIPHNAMES[g_stm32_periph_init]); \
+			memory_region_init(_mr, _obj, _mr_name, _size); \
+		g_free(_mr_name); \
+	} else { \
+		memory_region_init(_mr, _obj, "UNKNOWN_INSTANCE", _size); \
+	} \
+}
+
+#define STM32_MR_IO_INIT(_mr, _obj, _ops, _opaque, _size) \
+{ \
+	if (g_stm32_periph_init != STM32_P_UNDEFINED) { \
+		gchar* _mr_name = g_strdup_printf("%s (%s)", object_get_typename(_obj), _PERIPHNAMES[g_stm32_periph_init]); \
+			memory_region_init_io(_mr, _obj, _ops, _opaque, _mr_name, _size); \
+		g_free(_mr_name); \
+	} else { \
+		memory_region_init_io(_mr, _obj, _ops, _opaque, "UNKNOWN_INSTANCE", _size); \
+	} \
+}
 
 // Some rather ugly convenience macros for
 // more easily debugging save state symmetry. See the RCC implementation for

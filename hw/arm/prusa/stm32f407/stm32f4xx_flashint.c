@@ -1,7 +1,7 @@
 /*
     stm32f4xx_flashint.c - Flash I/F Configuration block for STM32
 
-	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+	Copyright 2021-2 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -20,22 +20,77 @@
  */
 
 
-#include "stm32f4xx_flashint.h"
+#include "qemu/osdep.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "../utility/macros.h"
+#include "../stm32_common/stm32_common.h"
+#include "stm32f4xx_flashint_regdata.h"
 
-enum RegIndex{
-    RI_ACR,
-    RI_KEYR,
-    RI_OPTKEYR,
-    RI_SR,
-    RI_CR,
-    RI_OPTCR,
-    RI_OPTCR1,
-    RI_END
-};
+
+OBJECT_DECLARE_TYPE(STM32F4XX_STRUCT_NAME(FlashIF), COM_CLASS_NAME(F4xxFlashIF), STM32F4xx_FINT)
+
+REGDEF_BLOCK_BEGIN()
+    REG_K32(LATENCY, 4);
+    REG_R(5);
+    REG_B32(PRFTEN);
+    REG_B32(ICEN);
+    REG_B32(DCEN);
+    REG_B32(ICRST);
+    REG_B32(DCRST);
+REGDEF_BLOCK_END(flashif, acr);
+
+REGDEF_BLOCK_BEGIN()
+    REG_B32(OPTLOCK);
+    REG_B32(OPTSTRT);
+    REG_K32(BOR_LEV,2);
+    REG_B32(BFB2);
+    REG_B32(WDG_SW);
+    REG_B32(nRST_STOP);
+    REG_B32(nRST_STDBY);
+    REG_K32(RDP,8);
+    REG_K32(nWRP, 12);
+    REG_R(2);
+	REG_B32(DB1M);
+	REG_B32(SPRMOD);
+REGDEF_BLOCK_END(flashif, optcr);
+
+REGDEF_BLOCK_BEGIN()
+	REG_R(16);
+    REG_K32(nWRP, 12);
+	REG_R(4);
+REGDEF_BLOCK_END(flashif, optcr1);
+
+
+typedef struct STM32F4XX_STRUCT_NAME(FlashIF) {
+    STM32Peripheral parent;
+    MemoryRegion iomem;
+
+    union {
+        struct {
+			REGDEF_NAME(flashif, acr) ACR;
+            uint32_t KEYR;
+            uint32_t OPTKEYR;
+            REGDEF_NAME(flashif, sr) SR;
+            REGDEF_NAME(flashif, cr) CR;
+            REGDEF_NAME(flashif, optcr) OPTCR;
+            REGDEF_NAME(flashif, optcr1) OPTCR1;
+		} defs;
+        uint32_t raw[RI_END];
+    } regs;
+
+
+    uint8_t flash_state;
+
+    MemoryRegion* flash;
+
+	stm32_reginfo_t* reginfo;
+
+    qemu_irq irq;
+
+} STM32F4XX_STRUCT_NAME(FlashIF);
 
 enum wp_state
 {
@@ -55,8 +110,19 @@ static const stm32_reginfo_t stm32f40x_41x_flashif_reginfo[RI_END] = {
 	[RI_OPTCR1] = {.is_reserved = true }
 };
 
+static const stm32_reginfo_t stm32f42xxx_flashif_reginfo[RI_END] = {
+    [RI_ACR] = {.mask = 0x1F0F, .unimp_mask = 0x1F0F},
+    [RI_KEYR] = {.mask = UINT32_MAX},
+    [RI_OPTKEYR] = {.unimp_mask = UINT32_MAX },
+    [RI_SR]  = {.mask = 0x100F3, .unimp_mask = 0x100F3},
+    [RI_CR] = {.mask = 0x810183FF, .unimp_mask = 0x1018304},
+    [RI_OPTCR] = {.unimp_mask = UINT32_MAX, .reset_val =0x0FFFAAED },
+	[RI_OPTCR1] = {.mask = 0x0FFF0000, .unimp_mask = UINT32_MAX, .reset_val =0x0FFF0000 },
+};
+
 static const stm32_periph_variant_t stm32f4xx_flashif_variants[] = {
 	{TYPE_STM32F40x_F41x_FINT, stm32f40x_41x_flashif_reginfo },
+	{TYPE_STM32F42x_F43x_FINT, stm32f42xxx_flashif_reginfo },
 };
 
 #define KEY1 0x45670123UL
@@ -93,12 +159,9 @@ static uint32_t sector_boundaries[][2] =
     {(1U*MiB) + 896U*KiB, ((1U * MiB) + 1U*MiB)-1U},
 };
 
-
-QEMU_BUILD_BUG_MSG(RI_END != STM32_FINT_MAX, "Register index misaligned in " __FILE__);
-
 typedef struct COM_CLASS_NAME(F4xxFlashIF) {
 	STM32PeripheralClass parent_class;
-    stm32_reginfo_t var_reginfo[STM32_FINT_MAX];
+    stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(F4xxFlashIF);
 
 static uint64_t
@@ -109,6 +172,8 @@ stm32f4xx_fint_read(void *arg, hwaddr offset, unsigned int size)
 
     uint32_t index = offset >> 2U;
     offset&= 0x3;
+
+	CHECK_BOUNDS_R(index, RI_END, s->reginfo, "F4xx Flash Interface"); // LCOV_EXCL_LINE
 
     switch (index)
     {
@@ -131,7 +196,7 @@ static void stm32f4xx_flashif_sector_erase(STM32F4XX_STRUCT_NAME(FlashIF) *s)
         s->regs.defs.SR.WRPERR = 1;
         return;
     }
-    printf("Erasing flash sector %u\n", s->regs.defs.CR.SNB);
+    printf("# Erasing flash sector %u\n", s->regs.defs.CR.SNB);
     uint32_t (*p)[2] = &sector_boundaries[s->regs.defs.CR.SNB];
     uint32_t buff = 0xFFFFFFFFU;
     for (int i=(*p)[0]; i<=(*p)[1]; i+=4)
@@ -147,7 +212,7 @@ stm32f4xx_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     int offset = addr & 0x03;
 
     addr >>= 2;
-    CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "F4xx Flash IF");
+    CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "F4xx Flash IF"); // LCOV_EXCL_LINE
     ADJUST_FOR_OFFSET_AND_SIZE_W(stm32f4xx_fint_read(arg, addr<<2U, 4U), data, size, offset, 0b111)
     CHECK_UNIMP_RESVD(data, s->reginfo, addr);
 
@@ -164,11 +229,21 @@ stm32f4xx_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             else if (data == KEY2 && s->flash_state == KEY1_OK)
             {
                 s->flash_state = UNLOCKED;
-                printf("FLASH unlocked!\n");
+                printf("# Flash unlocked!\n");
                 memory_region_set_readonly(s->flash, false);
             }
         }
         break;
+		case RI_SR:
+		{
+            REGDEF_NAME(flashif, sr) r = {.raw = data};
+			if (r.WRPERR)
+			{
+				s->regs.defs.SR.WRPERR = false;
+			}
+
+		}
+		break;
         case RI_CR:
         {
             REGDEF_NAME(flashif, cr) r = {.raw = data};
@@ -179,7 +254,7 @@ stm32f4xx_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     }
             else if (s->flash_state == UNLOCKED && r.LOCK)
             {
-                printf("FLASH LOCKED\n");
+                printf("# Flash LOCKED\n");
                 memory_region_set_readonly(s->flash, true);
                 s->flash_state = LOCKED;
             }
@@ -194,12 +269,12 @@ stm32f4xx_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             }
         }
         break;
-        default:
+        default: // LCOV_EXCL_START
             qemu_log_mask(LOG_UNIMP, "f2xx FINT reg 0x%x:%d write (0x%x) unimplemented\n",
          (int)addr << 2, offset, (int)data);
             s->regs.raw[addr] = data;
             break;
-    }
+    } // LCOV_EXCL_STOP
 }
 
 static const MemoryRegionOps stm32f4xx_fint_ops = {
@@ -231,7 +306,7 @@ static void
 stm32f4xx_fint_init(Object *obj)
 {
     STM32F4XX_STRUCT_NAME(FlashIF) *s = STM32F4xx_FINT(obj);
-    memory_region_init_io(&s->iomem, obj, &stm32f4xx_fint_ops, s, "flash_if", 1U *KiB);
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32f4xx_fint_ops, s, 1U *KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 	COM_CLASS_NAME(F4xxFlashIF) *k = STM32F4xx_FINT_GET_CLASS(obj);
@@ -243,7 +318,7 @@ static const VMStateDescription vmstate_stm32f4xx_fint = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw, STM32F4XX_STRUCT_NAME(FlashIF),STM32_FINT_MAX),
+        VMSTATE_UINT32_ARRAY(regs.raw, STM32F4XX_STRUCT_NAME(FlashIF),RI_END),
         VMSTATE_UINT8(flash_state, STM32F4XX_STRUCT_NAME(FlashIF)),
         VMSTATE_END_OF_LIST()
     }

@@ -65,6 +65,7 @@ MK3SGL::~MK3SGL()
 {
 	m_bQuit = true;
 	glutLeaveMainLoop();
+	delete m_Objs;
 	g_pMK3SGL = nullptr;
 }
 
@@ -159,8 +160,8 @@ MK3SGL::MK3SGL(const std::string &strModel, bool bMMU):Scriptable("3DVisuals"), 
 	if (strModel == "lite")
 	{
 		m_Objs = new Mini_Lite();
-	} 
-	else if (strModel == "full") 
+	}
+	else if (strModel == "full")
 	{
 		m_Objs = new Mini_Full();
 	}

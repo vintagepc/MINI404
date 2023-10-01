@@ -1,0 +1,13 @@
+// Helper for SPI_RGB types:
+
+enum {
+	SPI_RGB_WS2812 = 0,
+	SPI_RGB_WS2811,
+};
+
+enum SPI_RGB_FLAG {
+	SPI_RGB_FLAG_NONE,
+	SPI_RGB_FLAG_INVERTED = 1,
+	SPI_RGB_FLAG_ALT_TIMINGS = 2,
+	SPI_RGB_FLAG_NO_CS = 4,
+};

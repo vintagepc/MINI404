@@ -1,7 +1,7 @@
 /*
  * Prusa Buddy board machine model
  *
- * Copyright 2020-2022 VintagePC <github.com/vintagepc>
+ * Copyright 2020-2023 VintagePC <github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,15 +29,22 @@
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
-#include "stm32f407/stm32f407_soc.h"
 #include "hw/arm/boot.h"
 #include "hw/ssi/ssi.h"
 #include "hw/loader.h"
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 #include "parts/dashboard_types.h"
+#include "stm32_common/stm32_shared.h"
+#include "stm32_common/stm32_common.h"
+#include "stm32_common/stm32_types.h"
+#include "hw/arm/armv7m.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
+
+#define XFLASH_FN  "Prusa_Mini_xflash.bin"
+#define EEPROM_FN  "Prusa_Mini_eeprom.bin"
+#define EEPROM_SYS_FN  "Prusa_Mini_eeprom_sys.bin"
 
 typedef struct mini_config_t {
     const char* flash_chip;
@@ -71,8 +78,16 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     dev = qdev_new(TYPE_STM32F407xG_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-	DeviceState* dev_soc = dev;
+
+	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+	qdev_prop_set_uint32(otp, "len-otp-data",8);
+	qdev_prop_set_uint32(otp, "otp-data[1]",1081065844);
+	qdev_prop_set_uint32(otp, "otp-data[2]",0x56207942);
+	qdev_prop_set_uint32(otp, "otp-data[3]",0x61746e69);
+	qdev_prop_set_uint32(otp, "otp-data[4]",0x43506567);
+	qdev_prop_set_uint32(otp, "otp-data[6]",0x04040000);
+	qdev_prop_set_uint32(otp, "otp-data[7]",0x04040404);
+
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
     arghelper_setargs(machine->kernel_cmdline);
@@ -81,6 +96,13 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     {
         default_flash_size <<=2; // quadruple the flash size for debug code.
     }
+    qdev_prop_set_uint32(dev,"flash-size", default_flash_size);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+	DeviceState* dev_soc = dev;
+    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
+    // Parse those now.
+
+
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
@@ -122,7 +144,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI2), "ssi");
 
         DeviceState *lcd_dev = ssi_create_peripheral(bus, "st7789v");
-        qemu_irq lcd_cs = qdev_get_gpio_in_named(lcd_dev, SSI_GPIO_CS, 0);
+        qemu_irq lcd_cs = qemu_irq_invert(qdev_get_gpio_in_named(lcd_dev, SSI_GPIO_CS, 0));
 
         /* Make sure the select pin is high.  */
         qemu_irq_raise(lcd_cs);
@@ -130,16 +152,18 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
         qemu_irq lcd_cd = qdev_get_gpio_in(lcd_dev,0);
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD),11, lcd_cd);
+
+		qemu_irq lcd_reset = qdev_get_gpio_in_named(lcd_dev,"reset",0);
+		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),8,lcd_reset);
+
+		qdev_connect_gpio_out_named(lcd_dev, "reset-out", 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),8));
     }
-    DriveInfo *dinfo = NULL;
+    BlockBackend *blk = NULL;
     {
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI3), "ssi");
         dev = qdev_new(cfg->flash_chip);
-        dinfo = drive_get(IF_MTD,0,0);
-        if (dinfo) {
-            qdev_prop_set_drive(dev, "drive",
-                                blk_by_legacy_dinfo(dinfo));
-        }
+        blk = get_or_create_drive(IF_MTD, 0, XFLASH_FN, XFLASH_ID,  8U*MiB, &error_fatal);
+		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize_and_unref(dev, bus, &error_fatal);
         qemu_irq flash_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
         qemu_irq_raise(flash_cs);
@@ -152,24 +176,17 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_I2C1),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
-        dinfo = drive_get(IF_PFLASH, 0, 0);
-        if (dinfo) {
-            qdev_prop_set_drive(dev, "drive",
-                                blk_by_legacy_dinfo(dinfo));
-        }
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
+		blk = get_or_create_drive(IF_PFLASH, 0, EEPROM_FN, EEPROM_ID, 64*KiB / 8U, &error_fatal);
+		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
         // with a second instance at the SYSTEM address.
-        // bus = qdev_get_child_bus(DEVICE(&SOC->i2cs[0]),"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x57);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB);
-        dinfo = drive_get(IF_PFLASH, 0, 1);
-        if (dinfo) {
-            qdev_prop_set_drive(dev, "drive",
-                                blk_by_legacy_dinfo(dinfo));
-        }
+        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
+		blk = get_or_create_drive(IF_PFLASH, 1, EEPROM_SYS_FN, EEPROM_SYS_ID,  64*KiB / 8U,  &error_fatal);
+		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
     }
 

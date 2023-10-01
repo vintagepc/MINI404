@@ -79,6 +79,11 @@ extern "C"{
 
 void ScriptHost::PrintScriptHelp(bool bMarkdown)
 {
+	if (m_clients.empty())
+	{
+		return; // Early invocation before clients is needed for some printers.
+		// Print no headers if the list is empty.
+	}
 	if (bMarkdown)
 	{
 		std::cout << "# Scripting options for the selected printer:\n";
@@ -91,6 +96,7 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 	{
 		client.second->PrintRegisteredActions(bMarkdown);
 	}
+	std::cout << "End Scripting options\n";
 }
 
 ScriptHost::~ScriptHost() {
@@ -606,8 +612,8 @@ void ScriptHost::AddScriptable(const std::string &strName, IScriptable* src)
 	{
 		int i=0;
 		std::string strNew;
-		std::cout << "ScriptHost: NOTE: Duplicate context name (" << strName << ") with different pointer. Incrementing ID...\n";
-		while (i<10)
+		std::cout << "# ScriptHost: NOTE: Duplicate context name (" << strName << ") with different pointer. Incrementing ID...\n";
+		while (i<20)
 		{
 			i++;
 			strNew = strName + std::to_string(i);
@@ -623,7 +629,7 @@ void ScriptHost::AddScriptable(const std::string &strName, IScriptable* src)
 				return;
 			}
 		};
-		std::cerr << "ScriptHost: More than 10 duplicate identifiers. You should do something about that.\n";
+		std::cerr << "# ScriptHost: More than 20 duplicate identifiers. You should do something about that.\n";
 
 	}
 }
@@ -753,7 +759,7 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 	}
 	else
 	{
-		std::cout << "ScriptHost: ERROR: Invalid line/unrecognized command: " << m_iLine << ":" << strLine << '\n';
+		std::cout << "# ScriptHost: ERROR: Invalid line/unrecognized command: " << m_iLine << ":" << strLine << '\n';
 		m_state = State::Error;
 		m_iLine = scriptSize;
 		m_eCmdStatus = TermSyntax;
@@ -762,7 +768,6 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 
 void ScriptHost::AddScriptable_C(IScriptable* src)
 {
-    std::cout << "Registering " << src->GetName() <<'\n';
 	ScriptHost::AddScriptable(src->GetName() ,src);
 	src->m_bRegistered = true;
 }

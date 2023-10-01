@@ -10,6 +10,7 @@ Remaining To-Dos of note:
 
 - ![CI Build](https://github.com/vintagepc/MINI404/workflows/CI%20Build/badge.svg)
 - ![Code Lint](https://github.com/vintagepc/MINI404/workflows/Code%20Lint/badge.svg)
+- [![Coverage](https://codecov.io/gh/vintagepc/MINI404/branch/MINI404/graph/badge.svg)](https://codecov.io/gh/vintagepc/MINI404)
 
 # Getting Started (Building):
 

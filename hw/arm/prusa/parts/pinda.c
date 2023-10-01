@@ -49,7 +49,7 @@ struct PindaState {
 };
 
 enum {
-    ACT_SET_MBL, 
+    ACT_SET_MBL,
 
 };
 
@@ -85,7 +85,7 @@ static void pinda_update(PindaState *s) {
 
 }
 
-static void pinda_move(void *opaque, int n, int level) 
+static void pinda_move(void *opaque, int n, int level)
 {
     PindaState *s = PINDA(opaque);
     s->current_pos[n] = level;
@@ -95,8 +95,9 @@ static void pinda_move(void *opaque, int n, int level)
 }
 
 static void pinda_rebuild_mesh(PindaState *s) {
-    printf("MBL Grid: \n");
+    printf("# MBL Grid: \n");
     for (int i=0; i<4; i++) {
+		printf("# ");
         for (int j=0; j<4; j++) {
             s->step_mesh[i][j] = (s->mesh_mm[i][j])*Z_MM_TO_STEPS;
             printf("%f ",s->mesh_mm[i][j]);
@@ -118,7 +119,7 @@ static int pinda_process_action(P404ScriptIF *obj, unsigned int action, script_a
             float fZ = scripthost_get_float(args, 2);
             if (iX<0 || iY <0 || iX>3 || iY>3 || fZ<-0.99) {
                 fprintf(stderr, "Scripting error - MBL argument out of range! (index 0-4, z > -1) \n");
-                return ScriptLS_Error; // Bad input. 
+                return ScriptLS_Error; // Bad input.
             } else {
                 s->mesh_mm[iY][iX] = 1.F + fZ;
                 pinda_rebuild_mesh(s);

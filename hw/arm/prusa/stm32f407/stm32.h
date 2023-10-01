@@ -150,7 +150,6 @@ uint8_t stm32_gpio_get_config_bits(Stm32Gpio *s, unsigned pin);
 #define TYPE_STM32_RCC "stm32-rcc"
 #define STM32_RCC(obj) OBJECT_CHECK(Stm32Rcc, (obj), TYPE_STM32_RCC)
 
-
 /* TIM */
 typedef struct Stm32Timer Stm32Timer;
 #define STM32_TIM_COUNT   14

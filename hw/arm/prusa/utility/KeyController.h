@@ -67,14 +67,25 @@ class KeyController: private Scriptable
 		std::map<unsigned char, std::vector<IKeyClient*> > m_mClients {};
 		std::map<unsigned char, std::string> m_mDescrs {};
         std::vector<IKeyClient*> m_vAllClients {};
-        std::map<std::pair<int,bool>, unsigned char> m_qemu2char 
-        {   
+        std::map<std::pair<int,bool>, unsigned char> m_qemu2char
+        {
             { {0x009F ,true} , 'S'},
+			{ {0x0091 ,false} , 'w'|0x80 },
+			{ {0x009F ,false} , 's'|0x80 },
             { {0x11   ,false} , 'w'}, // shared with arrow keys for up/down
             { {0x48 ,false} , 'w'}, // shared with arrow keys for up/down
             { {0x1F   ,false} , 's'},
             { {0x50 ,false} , 's'},
-            { {0x1c   ,false} ,  0xd}
+            { {0x1c   ,false} ,  0xd},
+			{ {0x21	  ,false} , 'f'},
+			{ {0x02, false}, '1'},
+			{ {0x03, false}, '2'},
+			{ {0x04, false}, '3'},
+			{ {0x05, false}, '4'},
+			{ {0x06, false}, '5'},
+			{ {0x07, false}, '6'},
+			{ {0x19	  ,false} , 'p'},
+			{ {0x14	  ,false} , 't'}
         };
 		std::atomic_uchar m_key {0};
         bool m_bShift = false;
@@ -82,4 +93,3 @@ class KeyController: private Scriptable
 };
 
 // extern void p404_keyctl_handle_key(int keycode);
-

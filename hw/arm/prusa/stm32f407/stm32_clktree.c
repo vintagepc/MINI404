@@ -41,7 +41,7 @@
             assert((count) <= (array_size));
 
 
-#include "stm32_clk_type.h"
+#include "../stm32_common/stm32_clk.h"
 
 static void clktree_recalc_output_freq(Clk_p clk);
 

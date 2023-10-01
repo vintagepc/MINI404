@@ -19,7 +19,37 @@
             "problemMatcher": []
         },
         {
+            "label": "Configure QEMU (coverage)",
+            "type": "shell",
+            "command": "./configure --target-list=buddy-softmmu --disable-docs --enable-libusb --enable-gcov",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Configure QEMU (Debugging)",
+            "type": "shell",
+            "command": "./configure --target-list=buddy-softmmu --disable-docs --enable-libusb --enable-debug",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Configure QEMU (Debugging + ASAN)",
             "type": "shell",
             "command": "./configure --target-list=buddy-softmmu --disable-docs --enable-libusb --enable-sanitizers --enable-debug",
             "group": "build",
@@ -102,6 +132,59 @@
             "label": "Build QEMU (12 threads)",
             "type": "shell",
             "command": "make -j12",
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
+        },
+        {
+            "label": "Build QEMU (16 threads)",
+            "type": "shell",
+            "command": "make -j16",
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
+        },
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "make check-qtest-buddy -j10",
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
+        },
+        {
+            "label": "Make HTML Report",
+            "type": "shell",
+            "command": "make coverage-html -j10",
+            // lcov -extract coverage.info '*/arm/prusa/*' --rc lcov_branch_coverage=1 --output-file=c2.info
+            // genhtml --output-directory c2 --legend --show-details --branch-coverage c2.info
             "group": "build",
             "problemMatcher": [
                 "$gcc"

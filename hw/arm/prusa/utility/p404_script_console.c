@@ -231,7 +231,6 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ScriptConsoleState, scriptcon, P404_SC
 
 static void scriptcon_finalize(Object *obj)
 {
-    printf("Disp_finalize\n");
 }
 
 static void scriptcon_init(Object *obj)

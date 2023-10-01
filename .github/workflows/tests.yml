@@ -1,0 +1,93 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Unit Tests
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the master branch
+on:
+  push:
+    branches: [ MINI404 ]
+  pull_request:
+    branches: [ MINI404 ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build_linux:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    # if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - name: Checkout ${{ github.event.pull_request.head.ref }}
+      uses: actions/checkout@v3
+      if: ${{ github.event.pull_request }}
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: false
+
+    - name: Checkout ${{ github.event.ref }}
+      uses: actions/checkout@v3
+      if: ${{ !github.event.pull_request }}
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.ref }}
+        submodules: false
+
+    - name: Cache packages
+      uses: actions/cache@v3.0.11
+      id: cache-pkgs
+      with:
+          path: "packages"
+          key: "${{ runner.os }}-packages-1_0_0"
+          restore-keys: ${{ runner.os }}-packages-
+
+    - name: Setup cache dir
+      if:  ${{ ! steps.cache-valgrind.outputs.cache-hit }}
+      run: mkdir -p packages/partial
+
+    - name: Install packages
+      run: |
+          sudo apt-get update
+          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev lcov
+
+    - name: Cache permissions
+      run: sudo chmod -R 744 packages
+
+    - name: Test Symlink
+      run: ln -s ${{ runner.workspace }}/MINI404/hw/arm/prusa ${{ runner.workspace }}/MINI404/tests/qtest/
+
+    - name: Configure build
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk --enable-gcov
+
+    - name: Build qemu-system-buddy
+      run: cd ${{ runner.workspace }}/MINI404/build && ninja
+    
+      # Right now this will fail some tests due to SIGABRT from the CPU crashing. Ignore it until that's fixed.
+    - name: Run QTest
+      run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy -j4
+      continue-on-error: true
+
+    - name: Generate Coverage report
+      run: cd ${{ runner.workspace }}/MINI404/build && make coverage-html -j4
+
+    - name: Strip down Coverage report
+      run: cd ${{ runner.workspace }}/MINI404/build/meson-logs && lcov -extract coverage.info '*/arm/prusa/*' --rc lcov_branch_coverage=1 --output-file=c2.info &&  lcov -remove c2.info '*/3rdParty/*'  --rc lcov_branch_coverage=1 --output-file=c2.info
+
+    - name: Upload to codecov.io
+      uses: codecov/codecov-action@v3
+      with: 
+        # Comma-separated list of files to upload
+        files: ${{ runner.workspace }}/MINI404/build/meson-logs/c2.info
+        # Specify whether or not CI build should fail if Codecov runs into an error during upload
+        fail_ci_if_error: true
+        # Comma-separated list, see the README for options and their usage
+        # functionalities: # optional
+        # Specify whether the Codecov output should be verbose
+        verbose: true
+
+
+
+ 

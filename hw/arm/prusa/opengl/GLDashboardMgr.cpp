@@ -78,14 +78,14 @@ GLDashboardMgr::GLDashboardMgr(int iType):m_iType(iType) {
 }
 
 GLDashboardMgr::~GLDashboardMgr() {
-}   
+}
 
 void GLDashboardMgr::Start() {
 	auto fcnRun = [](void *p) { return g_pGLDashboardMgr->RunThread(p); };
 	pthread_cond_init(&m_glReady, nullptr);
 	pthread_mutex_init(&m_glMtx, nullptr);
 	pthread_create(&m_glThread, nullptr, fcnRun, nullptr);
-	// Wait for the GL thread to start so that the script host can be set up. 
+	// Wait for the GL thread to start so that the script host can be set up.
 	pthread_mutex_lock(&m_glMtx);
 	pthread_cond_wait(&m_glReady, &m_glMtx);
 	pthread_mutex_unlock(&m_glMtx);
@@ -94,7 +94,7 @@ void GLDashboardMgr::Start() {
 void GLDashboardMgr::UpdateMotor(int motor, int pos) {
 	if (motor>=0 && motor<DB_MOTOR_COUNT) {
 		if (m_p3DVis) {
-			m_p3DVis->OnMotorStep(motor,pos);
+			m_p3DVis->OnMotorStep(motor,pos<0?0U:pos);
 		}
 	} else {
 		std::cerr << "Error: Invalid motor index: "<< std::to_string(motor) <<"!\n";
@@ -120,14 +120,19 @@ void GLDashboardMgr::SetupHardware() {
 		{
 		}
 		break;
-		default: 
+		case DB_MK4_LITE:
+		case DB_MK4_DB:
+		{
+		}
+		break;
+		default:
 			std::cerr << "Invalid dashboard type specified!\n";
 	}
 }
 
 void* GLDashboardMgr::RunThread(void *p) {
 	SetupHardware();
-	// Also set up the 3D visuals. 
+	// Also set up the 3D visuals.
 	switch (m_iType) {
 		case DB_MINI_FULL:
 			m_p3DVis.reset(new MK3SGL("full",false));
@@ -136,6 +141,10 @@ void* GLDashboardMgr::RunThread(void *p) {
 		case DB_MINI_LITE:
 			m_p3DVis.reset(new MK3SGL("lite",false));
 			m_p3DVis->SetStepsPerMM(100*16, 100*16, 400*16, 320*16);
+			break;
+		case DB_MK4_LITE:
+			m_p3DVis.reset(new MK3SGL("lite",false));
+			m_p3DVis->SetStepsPerMM(200*16, 200*16, 400*16, 320*16);
 			break;
 		default:
 			break;

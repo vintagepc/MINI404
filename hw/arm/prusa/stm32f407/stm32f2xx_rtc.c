@@ -32,7 +32,10 @@
 #include "qemu/log.h"
 #include "hw/irq.h"
 #include "qemu/bcd.h"
+#include "qemu/units.h"
 #include "qemu/cutils.h"
+#include "../stm32_common/stm32_shared.h"
+#include "../utility/macros.h"
 
 //#include "hw/arm/stm32.h"
 
@@ -350,6 +353,14 @@ f2xx_rtc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             DPRINTF("f2xx rtc WUT isr lowered\n");
             qemu_irq_lower(s->wut_irq);
         }
+		if (data & (1<<7))
+		{
+			data |= (1<<6);
+		}
+		else
+		{
+			data &= ~(1<<6);
+		}
         break;
     case R_RTC_PRER:
         /*
@@ -570,7 +581,7 @@ f2xx_rtc_init(Object *obj)
 {
     f2xx_rtc *s = STM32F2XX_RTC(obj);
 
-    memory_region_init_io(&s->iomem, obj, &f2xx_rtc_ops, s, "rtc", 0x03ff);
+    STM32_MR_IO_INIT(&s->iomem, obj, &f2xx_rtc_ops, s, 1U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq[0]);
