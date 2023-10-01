@@ -23,9 +23,6 @@
 #ifndef STM32_CLKTREE_H
 #define STM32_CLKTREE_H
 
-#include "qemu-common.h"
-
-
 /* Use this when calling clktree_create_clk and clktree_set_selected_input */
 #define CLKTREE_NO_INPUT -1
 

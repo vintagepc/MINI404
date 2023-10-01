@@ -28,7 +28,6 @@
 #define STM32F2XX_RTC_H
 
 #include "qemu/osdep.h"
-#include "qemu-common.h" 
 #include "hw/sysbus.h"
 
 

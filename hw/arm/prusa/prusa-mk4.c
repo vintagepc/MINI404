@@ -383,13 +383,13 @@ static void mk4_init(MachineState *machine)
             load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
             armv7m_load_kernel(ARM_CPU(first_cpu),
                 cfg.boot_fn,
-                flash_size);
+                0, flash_size);
         }
         else // Raw bin or ELF file, load directly.
         {
             armv7m_load_kernel(ARM_CPU(first_cpu),
                             machine->kernel_filename,
-                            flash_size);
+                            0, flash_size);
         }
     }
 

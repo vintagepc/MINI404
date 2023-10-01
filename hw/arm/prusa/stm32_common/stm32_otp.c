@@ -128,7 +128,7 @@ static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
                        TYPE_STM32COM_OTP);
             return;
         }
-        int readlen = blk_pread(s->blk, 0, &s->data, MIN(sizeof(s->data), len));
+        int readlen = blk_pread(s->blk, 0, MIN(sizeof(s->data), len), &s->data, 0);
 
         if (readlen != MIN(sizeof(s->data), len)) {
             error_setg(errp, "%s: failed to read backing file!",

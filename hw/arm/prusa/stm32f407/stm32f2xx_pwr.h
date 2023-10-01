@@ -26,7 +26,6 @@
 #ifndef STM32F2XX_PWR_H
 #define STM32F2XX_PWR_H
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/sysbus.h"
 
 #define R_PWR_CR      (0x00/4)

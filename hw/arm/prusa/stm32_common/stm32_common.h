@@ -8,6 +8,7 @@
 #include "sysemu/blockdev.h"
 #include "hw/boards.h"
 #include "hw/sysbus.h"
+#include "hw/irq.h"
 #include "../utility/macros.h"
 #include "stm32_shared.h"
 #include "stm32_types.h"
@@ -111,5 +112,7 @@ extern void stm32_soc_setup_flash(DeviceState* soc, MemoryRegion* flash, Error**
 
 extern BlockBackend* get_or_create_drive(BlockInterfaceType interface, int index, const char* default_name, const char* label, uint32_t file_size, Error** errp);
 
+// We re-add this because we use it in a lot of places and the recommended replacement leads to a lot of boilerplate copy-pasta...
+qemu_irq qemu_irq_split(qemu_irq irq1, qemu_irq irq2);
 
 #endif //STM32_COMMON_H

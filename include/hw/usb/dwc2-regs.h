@@ -835,10 +835,10 @@
  * DMA Descriptor structure contains two quadlets:
  * Status quadlet and Data buffer pointer.
  */
-struct dwc2_dma_desc {
+struct __attribute__ ((__packed__)) dwc2_dma_desc {
         uint32_t status;
         uint32_t buf;
-} __packed;
+};
 
 /* Host Mode DMA descriptor status quadlet */
 

@@ -124,13 +124,13 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
             load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
             armv7m_load_kernel(ARM_CPU(first_cpu),
                 BOOTLOADER_IMAGE,
-                default_flash_size);
+                0, default_flash_size);
         }
         else // Raw bin or ELF file, load directly.
         {
             armv7m_load_kernel(ARM_CPU(first_cpu),
                             machine->kernel_filename,
-                            default_flash_size);
+                            0, default_flash_size);
         }
     }
 

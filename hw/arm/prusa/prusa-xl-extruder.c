@@ -134,13 +134,13 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
             load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
             armv7m_load_kernel(ARM_CPU(first_cpu),
                 BOOTLOADER_IMAGE,
-                FLASH_SIZE);
+                0, FLASH_SIZE);
         }
         else // Raw bin or ELF file, load directly.
         {
             armv7m_load_kernel(ARM_CPU(first_cpu),
                             machine->kernel_filename,
-                            FLASH_SIZE);
+                            0, FLASH_SIZE);
         }
     }
 
