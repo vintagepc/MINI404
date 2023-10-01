@@ -1,3 +1,5 @@
+.. _tcg:
+
 TCG Emulation
 -------------
 
@@ -7,10 +9,11 @@ are only implementing things for HW accelerated hypervisors.
 
 .. toctree::
    :maxdepth: 2
-   :includehidden:
 
    tcg
+   tcg-ops
    decodetree
    multi-thread-tcg
    tcg-icount
    tcg-plugins
+   replay

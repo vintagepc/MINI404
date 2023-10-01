@@ -23,7 +23,6 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu/sockets.h"
 #include "qemu/coroutine.h"
 #include "qemu/iov.h"
@@ -75,8 +74,7 @@ typedef struct {
 static void fd_coroutine_enter(void *opaque)
 {
     FDYieldUntilData *data = opaque;
-    aio_set_fd_handler(data->ctx, data->fd, false,
-                       NULL, NULL, NULL, NULL, NULL);
+    aio_set_fd_handler(data->ctx, data->fd, NULL, NULL, NULL, NULL, NULL);
     qemu_coroutine_enter(data->co);
 }
 
@@ -88,7 +86,7 @@ void coroutine_fn yield_until_fd_readable(int fd)
     data.ctx = qemu_get_current_aio_context();
     data.co = qemu_coroutine_self();
     data.fd = fd;
-    aio_set_fd_handler(
-        data.ctx, fd, false, fd_coroutine_enter, NULL, NULL, NULL, &data);
+    aio_set_fd_handler(data.ctx, fd, fd_coroutine_enter, NULL, NULL, NULL,
+                       &data);
     qemu_coroutine_yield();
 }

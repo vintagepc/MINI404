@@ -26,6 +26,11 @@ uint16_t nvme_check_prinfo(NvmeNamespace *ns, uint8_t prinfo, uint64_t slba,
         return NVME_INVALID_PROT_INFO | NVME_DNR;
     }
 
+    if ((NVME_ID_NS_DPS_TYPE(ns->id_ns.dps) == NVME_ID_NS_DPS_TYPE_3) &&
+        (prinfo & NVME_PRINFO_PRCHK_REF)) {
+        return NVME_INVALID_PROT_INFO;
+    }
+
     return NVME_SUCCESS;
 }
 
@@ -110,7 +115,7 @@ static void nvme_dif_pract_generate_dif_crc64(NvmeNamespace *ns, uint8_t *buf,
         uint64_t crc = crc64_nvme(~0ULL, buf, ns->lbasz);
 
         if (pil) {
-            crc = crc64_nvme(crc, mbuf, pil);
+            crc = crc64_nvme(~crc, mbuf, pil);
         }
 
         dif->g64.guard = cpu_to_be64(crc);
@@ -241,7 +246,7 @@ static uint16_t nvme_dif_prchk_crc64(NvmeNamespace *ns, NvmeDifTuple *dif,
         uint64_t crc = crc64_nvme(~0ULL, buf, ns->lbasz);
 
         if (pil) {
-            crc = crc64_nvme(crc, mbuf, pil);
+            crc = crc64_nvme(~crc, mbuf, pil);
         }
 
         trace_pci_nvme_dif_prchk_guard_crc64(be64_to_cpu(dif->g64.guard), crc);
