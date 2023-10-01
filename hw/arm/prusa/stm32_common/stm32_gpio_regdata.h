@@ -1,5 +1,6 @@
 /*-
  * GPIO module register data for STM32 SOCs in QEMU.
+ * Note this data is also shared with the unit test for the GPIO peripheral.
  * Portions Copyright (c) 2013 https://github.com/pebble/qemu/
  * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
  * Reworked for more chips in 2022 by VintagePC. Currently the layout is known

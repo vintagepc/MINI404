@@ -53,8 +53,8 @@ enum sw_src
 static const uint8_t AHB1_PERIPHS[32] = {
     STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, STM32_P_GPIOE, STM32_P_GPIOF, STM32_P_GPIOG, STM32_P_GPIOH,
     STM32_P_GPIOI, STM32_P_GPIOJ, STM32_P_GPIOK, 0, STM32_P_CRC, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, STM32_P_DMA1, STM32_P_DMA2,
-    0, 0, 0/*eth*/, 0, 0, STM32_P_USBHS, 0, 0
+    0, 0, 0, 0, 0, STM32_P_DMA1, STM32_P_DMA2, 0,
+    0, 0/*eth*/, 0, 0, 0, STM32_P_USBHS, 0, 0
 };
 
 static const uint8_t AHB2_PERIPHS[32] = {
@@ -518,11 +518,11 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
 
     /* Only update the scales if the frequency is not zero. */
 	clock_set_hz(s->parent.CPUCLOCK, hclk_freq);
-	printf("CPUCLOCK set to %u Hz\n",hclk_freq);
+	printf("# CPUCLOCK set to %u Hz\n",hclk_freq);
 	clock_propagate(s->parent.CPUCLOCK);
 	clock_set_hz(s->parent.REFCLK, hclk_freq/8);
 	clock_propagate(s->parent.REFCLK);
-	printf("Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
+	printf("# Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
 }
 
 

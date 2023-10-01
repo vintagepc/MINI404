@@ -82,8 +82,8 @@ static void stm32g070_soc_realize(DeviceState *dev_soc, Error **errp)
 	stm32_soc_setup_flash(dev_soc, &s->flash, &err);
 
     if (err != NULL) {
-        error_propagate(errp, err);
-        return;
+        error_propagate(errp, err); // LCOV_EXCL_LINE
+        return; // LCOV_EXCL_LINE
     }
     memory_region_init_alias(&s->flash_alias, OBJECT(dev_soc),
                              "STM32F030.flash.alias", &s->flash, 0,
@@ -103,8 +103,8 @@ static void stm32g070_soc_realize(DeviceState *dev_soc, Error **errp)
 	memory_region_add_subregion(system_memory, 0, &s->sram_alias);
 
     if (err != NULL) {
-        error_propagate(errp, err);
-        return;
+        error_propagate(errp, err); // LCOV_EXCL_LINE
+        return;	// LCOV_EXCL_LINE
     }
     memory_region_add_subregion(system_memory, cfg->sram_base, &s->sram);
 
@@ -120,9 +120,8 @@ static void stm32g070_soc_realize(DeviceState *dev_soc, Error **errp)
     object_property_set_link(OBJECT(&s->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {
-        return;
+        return; // LCOV_EXCL_BR_LINE
     }
-    /* System configuration controller */
     /* System configuration controller */
 	object_property_set_link(
 			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
@@ -172,13 +171,12 @@ static void stm32g070_soc_realize(DeviceState *dev_soc, Error **errp)
 	for (int i=STM32_P_GPIO_BEGIN; i<STM32G070_GPIO_END; i++)
 	{
 		DeviceState* gpio = stm32_soc_get_periph(dev_soc, i);
-		if (gpio == NULL)
+		if (gpio)
 		{
-			continue;
-		}
-		for (int j=0; j<16; j++)
-		{
-			qdev_connect_gpio_out_named(gpio, "exti", j, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_EXTI), (16*(i-STM32_P_GPIOA))+j));
+			for (int j=0; j<16; j++)
+			{
+				qdev_connect_gpio_out_named(gpio, "exti", j, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_EXTI), (16*(i-STM32_P_GPIOA))+j));
+			}
 		}
 	}
 
@@ -221,3 +219,31 @@ stm32_g070xx_register_types(void)
 }
 
 type_init(stm32_g070xx_register_types);
+
+#include "hw/boards.h"
+
+static void stm32_g070xx_class_init(ObjectClass *oc, void *data)
+{
+	    MachineClass *mc = MACHINE_CLASS(oc);
+	    mc->desc = data;
+	    mc->family = TYPE_STM32G070xx,
+	    mc->init = stm32_soc_machine_init;
+	    mc->default_ram_size = 0; // 0 = use default RAM from chip.
+	    mc->no_parallel = 1;
+		mc->no_serial = 1;
+
+		STM32SocMachineClass* smc = STM32_MACHINE_CLASS(oc);
+		smc->soc_type = data;
+		smc->cpu_type = ARM_CPU_TYPE_NAME("cortex-m0");
+}
+
+static const TypeInfo stm32g030xx_machine_types[] = {
+    {
+        .name           = MACHINE_TYPE_NAME(TYPE_STM32G070xB),
+        .parent         = TYPE_STM32_MACHINE,
+		.class_init     = stm32_g070xx_class_init,
+		.class_data		= (void*)(TYPE_STM32G070xB_SOC),
+    },
+};
+
+DEFINE_TYPES(stm32g030xx_machine_types)

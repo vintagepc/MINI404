@@ -46,20 +46,26 @@ enum REGINDEX
 
 static const stm32_reginfo_t stm32g070_dbg_reginfo[RI_END] =
 {
-	[RI_IDCODE] = {.mask = 0xFFFF0FFF, .unimp_mask = UINT32_MAX},
+	[RI_IDCODE] = {.mask = 0xFFFF0FFF, .unimp_mask = UINT32_MAX, .reset_val = 0x10000460}, // 1.0 Rev A
 	[RI_CR] = {.mask = 0b110, .unimp_mask = UINT32_MAX},
 	[RI_APB1FZ] = {.mask = 0x601C32, .unimp_mask = UINT32_MAX},
 	[RI_APB2FZ] = {.mask = 0x78800, .unimp_mask = UINT32_MAX},
 };
 
-static const stm32_reginfo_t stm32f4xx_dbg_reginfo[RI_END] =
+static const stm32_reginfo_t stm32f40x_dbg_reginfo[RI_END] =
 {
-	[RI_IDCODE] = {.mask = 0xFFFF0FFF, .unimp_mask = UINT32_MAX},
+	[RI_IDCODE] = {.mask = 0xFFFF0FFF, .unimp_mask = UINT32_MAX, .reset_val = 0x10000413}, // Rev A
+};
+
+static const stm32_reginfo_t stm32f42x_dbg_reginfo[RI_END] =
+{
+	[RI_IDCODE] = {.mask = 0xFFFF0FFF, .unimp_mask = UINT32_MAX, .reset_val = 0x10000419}, // Rev A
 };
 
 static const stm32_periph_variant_t stm32_common_dbg_variants[] = {
 	{TYPE_STM32G070_DBG, stm32g070_dbg_reginfo},
-	{TYPE_STM32F4xx_DBG, stm32f4xx_dbg_reginfo}
+	{TYPE_STM32F40x_F41x_DBG , stm32f40x_dbg_reginfo},
+	{TYPE_STM32F42x_F43x_DBG , stm32f42x_dbg_reginfo}
 };
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Dbg), COM_CLASS_NAME(Dbg), STM32COM_DBG);
@@ -84,7 +90,7 @@ stm32_common_dbg_read(void *arg, hwaddr addr, unsigned int size)
     COM_STRUCT_NAME(Dbg) *s = STM32COM_DBG(arg);
     int offset = addr & 0x3;
 	addr >>=2;
-	CHECK_BOUNDS_R(addr,RI_END, s->reginfo, "STM32 Common DBG");
+	CHECK_BOUNDS_R(addr,RI_END, s->reginfo, "STM32 Common DBG"); // LCOV_EXCL_LINE
 	uint32_t data = s->regs.raw[addr];
 	ADJUST_FOR_OFFSET_AND_SIZE_R(data, size, offset, 0b100);
     return data;
@@ -96,11 +102,17 @@ stm32_common_dbg_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     COM_STRUCT_NAME(Dbg) *s = STM32COM_DBG(arg);
     uint8_t offset = addr & 0x3;
 	addr >>= 2;
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 Common DBG");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 Common DBG"); // LCOV_EXCL_LINE
 
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b100);
-
-	s->regs.raw[addr] = data;
+	if (addr == RI_IDCODE)
+	{
+		qemu_log_mask(LOG_GUEST_ERROR, "Tried to write read-only IDCODE DBG register");
+	}
+	else
+	{
+		s->regs.raw[addr] = data;
+	}
 }
 
 static const MemoryRegionOps stm32_common_dbg_ops = {
@@ -115,7 +127,11 @@ static const MemoryRegionOps stm32_common_dbg_ops = {
 
 static void stm32_common_dbg_realize(DeviceState *dev, Error **errp)
 {
-
+    COM_STRUCT_NAME(Dbg) *s = STM32COM_DBG(dev);
+    for (int i=0; i<RI_END; i++)
+    {
+        s->regs.raw[i] = s->reginfo[i].reset_val;
+    }
 }
 
 static void

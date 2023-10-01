@@ -92,7 +92,6 @@ static void stm32_common_adcc_reset(DeviceState *dev)
 {
     COM_STRUCT_NAME(Adcc) *s = STM32COM_ADCC(dev);
     memset(&s->regs,0,sizeof(s->regs));
-
 }
 
 extern uint16_t stm32_common_adcc_get_adcpre(COM_STRUCT_NAME(Adcc) *s)
@@ -106,16 +105,12 @@ static uint64_t stm32_common_adcc_read(void *opaque, hwaddr addr,
 {
 	COM_STRUCT_NAME(Adcc) *s = STM32COM_ADCC(opaque);
 
-   // DB_PRINT("Address: 0x%" HWADDR_PRIx "\n", addr);
-    if (size!=4) {
-        printf("FIXME: handle non-word ADC reads!\n");
-    }
 	uint32_t offset = addr&0x3;
     addr>>=2;
 
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32COMMON ADCC");
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32COMMON ADCC"); // LCOV_EXCL_LINE
 
-	uint64_t data = s->regs.raw;
+	uint32_t data = s->regs.raw;
     switch (addr) {
         case RI_CCR:
 			break;
@@ -132,12 +127,10 @@ static void stm32_common_adcc_write(void *opaque, hwaddr addr,
 {
 	COM_STRUCT_NAME(Adcc) *s = STM32COM_ADCC(opaque);
 
-    // printf("ADCC_write: 0x%" HWADDR_PRIx ", Value: 0x%x\n",
-    //          addr, (uint32_t)value);
 	uint32_t offset = addr&0x3;
     addr>>=2; // Get index in array.
 
-	CHECK_BOUNDS_W(addr, value, RI_END, s->reginfo, "STM32Common ADCC");
+	CHECK_BOUNDS_W(addr, value, RI_END, s->reginfo, "STM32Common ADCC"); // LCOV_EXCL_LINE
 
 
     switch (addr) {
@@ -145,9 +138,6 @@ static void stm32_common_adcc_write(void *opaque, hwaddr addr,
 			ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw, value, size, offset, 0b100);
             s->regs.raw = value;
             break;
-        default:
-            qemu_log_mask(LOG_GUEST_ERROR,
-                        "%s: Bad write to 0x%" HWADDR_PRIx "\n", __func__, addr);
     }
 }
 
@@ -180,9 +170,8 @@ static void stm32_common_adcc_init(Object *obj)
     CHECK_ALIGN(sizeof(s->regs.defs),sizeof(s->regs.raw), "Raw array");
     CHECK_REG_u32(s->regs.defs.CCR);
 
-    STM32_MR_IO_INIT(&s->mmio, obj, &stm32common_adcc_ops, s, 4U*(RI_END-1));
+    STM32_MR_IO_INIT(&s->mmio, obj, &stm32common_adcc_ops, s, 4U*(RI_END));
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
-
 	COM_CLASS_NAME(Adcc) *k = STM32COM_ADCC_GET_CLASS(obj);
 	s->reginfo = k->var_reginfo;
 

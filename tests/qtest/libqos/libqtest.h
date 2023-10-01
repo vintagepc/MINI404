@@ -300,6 +300,24 @@ bool qtest_get_irq(QTestState *s, int num);
 int qtest_get_irq_level(QTestState *s, int num);
 
 /**
+ * qtest_get_irq_pulsed:
+ * @s: #QTestState instance to operate on.
+ * @num: Interrupt to observe.
+ *
+ * Returns: True if the IRQ was >0 at any point since the last call to qtest_irq_clear_pulses
+ */
+bool qtest_get_irq_pulsed(QTestState *s, int num);
+
+/**
+ * qtest_irq_clear_pulses:
+ * @s: #QTestState instance to operate on.
+ *
+ * Clears IRQ pulse tracking for all IRQs.
+ */
+void qtest_irq_clear_pulses(QTestState *s);
+
+
+/**
  * qtest_irq_intercept_in:
  * @s: #QTestState instance to operate on.
  * @string: QOM path of a device.
