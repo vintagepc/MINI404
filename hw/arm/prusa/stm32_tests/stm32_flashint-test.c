@@ -17,8 +17,8 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32g070xx.h"
-#include "../stm32g070/stm32g070_flashint_regdata.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32g070xx.h"
+#include "../../hw/arm/prusa/stm32g070/stm32g070_flashint_regdata.h"
 
 #define KEY1 0x45670123UL
 #define KEY2 0xCDEF89ABUL

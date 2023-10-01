@@ -17,8 +17,8 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32g070xx.h"
-#include "../stm32_common/stm32_usart_regdata.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32g070xx.h"
+#include "../../hw/arm/prusa/stm32_common/stm32_usart_regdata.h"
 
 // default delay at 9600 for one byte.
 #define DEFAULT_DELAY 1041250U

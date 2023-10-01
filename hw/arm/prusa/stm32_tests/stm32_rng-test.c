@@ -17,9 +17,9 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32f407xx.h"
-#include "../stm32f407/stm32f4xx_rng_regdata.h"
-#include "../stm32_common/stm32_shared.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32f407xx.h"
+#include "../../hw/arm/prusa/stm32f407/stm32f4xx_rng_regdata.h"
+#include "../../hw/arm/prusa/stm32_common/stm32_shared.h"
 
 static void test_disabled(void)
 {
@@ -60,9 +60,11 @@ static void test_get_number(void)
 	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_DR)), ==, 0x0);
 	// Wait for DRDY.
 	int count = 0;
-	while (count < 1000)
+	while (count++ < 1000)
 	{
-		clock_step_next();
+        // This is tied to the default speed of the periph @16Mhz... can go away once
+        // the RNG handles interrupt scheduling
+		clock_step(2500);
 		if (readl(STM32_RI_ADDRESS(base, RI_SR))&0x1)
 		{
 			break;
