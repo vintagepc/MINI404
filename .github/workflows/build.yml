@@ -186,7 +186,6 @@ jobs:
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
       - name: Configure build
         run: |
-          git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
           ../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
