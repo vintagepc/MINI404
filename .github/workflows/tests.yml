@@ -58,8 +58,7 @@ jobs:
 
     - name: Test Symlinks
       run: |
-        cd  ${{ runner.workspace }}/MINI404/tests/qtest/
-        && for i in ../../hw/arm/prusa/stm32_tests/*.c; do ln -s $i .; done
+        cd  ${{ runner.workspace }}/MINI404/tests/qtest/ && for i in ../../hw/arm/prusa/stm32_tests/*.c; do ln -s $i .; done
 
     - name: Configure build
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk --enable-gcov
