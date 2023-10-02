@@ -60,7 +60,7 @@ jobs:
     - name: Run CPPCheck
       run: |
         cd ${{ runner.workspace }}/MINI404
-        cppcheck --template='::{severity} file={file},line={line}::{message}' -I include --error-exitcode=2 --inline-suppr --enable=warning --suppress='*:hw/arm/prusa/3rdParty/*' --suppress='*:hw/arm/prusa/stm32_tests' --suppress='*:include/*' hw/arm/prusa
+        cppcheck --template='::{severity} file={file},line={line}::{message}' -I include --error-exitcode=2 --inline-suppr --enable=warning --suppress='*:hw/arm/prusa/3rdParty/*' --suppress='*:hw/arm/prusa/stm32_tests/*' --suppress='*:include/*' hw/arm/prusa
 
     # - name: Run Clang-tidy
     #   run: |
