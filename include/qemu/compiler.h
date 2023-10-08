@@ -22,8 +22,6 @@
 #define QEMU_EXTERN_C extern
 #endif
 
-#define QEMU_NORETURN __attribute__ ((__noreturn__))
-
 #if defined(_WIN32) && (defined(__x86_64__) || defined(__i386__))
 # define QEMU_PACKED __attribute__((gcc_struct, packed))
 #else
@@ -35,8 +33,8 @@
 #ifndef glue
 #define xglue(x, y) x ## y
 #define glue(x, y) xglue(x, y)
-#define stringify(s)	tostring(s)
-#define tostring(s)	#s
+#define stringify(s) tostring(s)
+#define tostring(s) #s
 #endif
 
 #ifndef likely
@@ -108,6 +106,14 @@
 #define __has_attribute(x) 0 /* compatibility with older GCC */
 #endif
 
+#if defined(__SANITIZE_ADDRESS__) || __has_feature(address_sanitizer)
+# define QEMU_SANITIZE_ADDRESS 1
+#endif
+
+#if defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
+# define QEMU_SANITIZE_THREAD 1
+#endif
+
 /*
  * GCC doesn't provide __has_attribute() until GCC 5, but we know all the GCC
  * versions we support have the "flatten" attribute. Clang may not have the
@@ -157,22 +163,6 @@
 #endif
 
 /**
- * qemu_build_not_reached()
- *
- * The compiler, during optimization, is expected to prove that a call
- * to this function cannot be reached and remove it.  If the compiler
- * supports QEMU_ERROR, this will be reported at compile time; otherwise
- * this will be reported at link time due to the missing symbol.
- */
-extern void QEMU_NORETURN QEMU_ERROR("code path is reachable")
-    qemu_build_not_reached_always(void);
-#if defined(__OPTIMIZE__) && !defined(__NO_INLINE__)
-#define qemu_build_not_reached()  qemu_build_not_reached_always()
-#else
-#define qemu_build_not_reached()  g_assert_not_reached()
-#endif
-
-/**
  * In most cases, normal "fallthrough" comments are good enough for
  * switch-case statements, but sometimes the compiler has problems
  * with those. In that case you can use QEMU_FALLTHROUGH instead.
@@ -192,6 +182,19 @@ extern void QEMU_NORETURN QEMU_ERROR("code path is reachable")
 #else
 /* If CFI is not enabled, use an empty define to not change the behavior */
 #define QEMU_DISABLE_CFI
+#endif
+
+/*
+ * Apple clang version 14 has a bug in its __builtin_subcll(); define
+ * BUILTIN_SUBCLL_BROKEN for the offending versions so we can avoid it.
+ * When a version of Apple clang which has this bug fixed is released
+ * we can add an upper bound to this check.
+ * See https://gitlab.com/qemu-project/qemu/-/issues/1631
+ * and https://gitlab.com/qemu-project/qemu/-/issues/1659 for details.
+ * The bug never made it into any upstream LLVM releases, only Apple ones.
+ */
+#if defined(__apple_build_version__) && __clang_major__ >= 14
+#define BUILTIN_SUBCLL_BROKEN
 #endif
 
 #endif /* COMPILER_H */

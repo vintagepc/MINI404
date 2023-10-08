@@ -17,9 +17,9 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32f030xx.h"
-#include "../stm32_common/stm32_iwdg_regdata.h"
-#include "../stm32_common/stm32_shared.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32f030xx.h"
+#include "../../hw/arm/prusa/stm32_common/stm32_iwdg_regdata.h"
+#include "../../hw/arm/prusa/stm32_common/stm32_shared.h"
 
 typedef struct test_info_t
 {

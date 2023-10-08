@@ -6,10 +6,12 @@ generated from in-code annotations to function prototypes.
 
 .. toctree::
    :maxdepth: 2
-   :includehidden:
 
    bitops
    loads-stores
    memory
    modules
+   qom-api
+   qdev-api
    ui
+   zoned-storage

@@ -17,9 +17,6 @@
 #include "libqos/qgraph.h"
 #include "libqos/virtio-blk.h"
 
-/* TODO actually test the results and get rid of this */
-#define qmp_discard_response(...) qobject_unref(qmp(__VA_ARGS__))
-
 #define TEST_IMAGE_SIZE         (64 * 1024 * 1024)
 #define QVIRTIO_BLK_TIMEOUT_US  (30 * 1000 * 1000)
 #define PCI_SLOT_HP             0x06
@@ -33,7 +30,7 @@ typedef struct QVirtioBlkReq {
 } QVirtioBlkReq;
 
 
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
 const bool host_is_big_endian = true;
 #else
 const bool host_is_big_endian; /* false */
@@ -49,10 +46,10 @@ static void drive_destroy(void *path)
 static char *drive_create(void)
 {
     int fd, ret;
-    char *t_path = g_strdup("/tmp/qtest.XXXXXX");
+    char *t_path;
 
     /* Create a temporary raw image */
-    fd = mkstemp(t_path);
+    fd = g_file_open_tmp("qtest.XXXXXX", &t_path, NULL);
     g_assert_cmpint(fd, >=, 0);
     ret = ftruncate(fd, TEST_IMAGE_SIZE);
     g_assert_cmpint(ret, ==, 0);
@@ -453,9 +450,10 @@ static void config(void *obj, void *data, QGuestAllocator *t_alloc)
 
     qvirtio_set_driver_ok(dev);
 
-    qmp_discard_response("{ 'execute': 'block_resize', "
-                         " 'arguments': { 'device': 'drive0', "
-                         " 'size': %d } }", n_size);
+    qtest_qmp_assert_success(global_qtest,
+                             "{ 'execute': 'block_resize', "
+                             " 'arguments': { 'device': 'drive0', "
+                             " 'size': %d } }", n_size);
     qvirtio_wait_config_isr(dev, QVIRTIO_BLK_TIMEOUT_US);
 
     capacity = qvirtio_config_readq(dev, 0);
@@ -502,9 +500,10 @@ static void msix(void *obj, void *u_data, QGuestAllocator *t_alloc)
 
     qvirtio_set_driver_ok(dev);
 
-    qmp_discard_response("{ 'execute': 'block_resize', "
-                         " 'arguments': { 'device': 'drive0', "
-                         " 'size': %d } }", n_size);
+    qtest_qmp_assert_success(global_qtest,
+                             "{ 'execute': 'block_resize', "
+                             " 'arguments': { 'device': 'drive0', "
+                             " 'size': %d } }", n_size);
 
     qvirtio_wait_config_isr(dev, QVIRTIO_BLK_TIMEOUT_US);
 
@@ -701,6 +700,11 @@ static void pci_hotplug(void *obj, void *data, QGuestAllocator *t_alloc)
     QVirtioPCIDevice *dev;
     QTestState *qts = dev1->pdev->bus->qts;
 
+    if (dev1->pdev->bus->not_hotpluggable) {
+        g_test_skip("pci bus does not support hotplug");
+        return;
+    }
+
     /* plug secondary disk */
     qtest_qmp_device_add(qts, "virtio-blk-pci", "drv1",
                          "{'addr': %s, 'drive': 'drive1'}",
@@ -753,9 +757,10 @@ static void resize(void *obj, void *data, QGuestAllocator *t_alloc)
 
     vq = test_basic(dev, t_alloc);
 
-    qmp_discard_response("{ 'execute': 'block_resize', "
-                         " 'arguments': { 'device': 'drive0', "
-                         " 'size': %d } }", n_size);
+    qtest_qmp_assert_success(global_qtest,
+                             "{ 'execute': 'block_resize', "
+                             " 'arguments': { 'device': 'drive0', "
+                             " 'size': %d } }", n_size);
 
     qvirtio_wait_queue_isr(qts, dev, vq, QVIRTIO_BLK_TIMEOUT_US);
 

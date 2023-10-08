@@ -372,6 +372,8 @@ static void stm32_rcc_RCC_CFGR_write(Stm32f2xxRcc *s, uint32_t new_value, bool i
         case 0x1:
         case 0x2:
             clktree_set_selected_input(&s->SYSCLK, cfgr.SW);
+			clock_set_hz(s->parent.CPUCLOCK, clktree_get_output_freq(&s->SYSCLK));
+			clock_propagate(s->parent.CPUCLOCK);
 			cfgr.SWS = cfgr.SW;
             break;
         default:

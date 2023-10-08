@@ -17,7 +17,7 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32g070xx.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32g070xx.h"
 
 static void test_blank(void)
 {
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
 		data[i] = i | (i+ 513) <<16;
 	}
 
-	FILE* fp = fopen("stm32_otp_test_data","wb");
+	FILE* fp = fopen("./stm32_otp_test_data","wb");
 	fwrite(&data, sizeof(data), 1, fp);
 	fclose(fp);
 

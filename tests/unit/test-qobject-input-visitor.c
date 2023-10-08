@@ -13,7 +13,6 @@
 
 #include "qemu/osdep.h"
 
-#include "qemu-common.h"
 #include "qapi/error.h"
 #include "qapi/qapi-visit-introspect.h"
 #include "qapi/qobject-input-visitor.h"
@@ -432,7 +431,7 @@ static void test_visitor_in_struct_nested(TestInputVisitorData *data,
     g_assert_cmpint(udp->dict1->dict2->userdef->integer, ==, 42);
     g_assert_cmpstr(udp->dict1->dict2->userdef->string, ==, "string");
     g_assert_cmpstr(udp->dict1->dict2->string, ==, "string2");
-    g_assert(udp->dict1->has_dict3 == false);
+    g_assert(!udp->dict1->dict3);
 }
 
 static void test_visitor_in_list(TestInputVisitorData *data,
@@ -448,9 +447,8 @@ static void test_visitor_in_list(TestInputVisitorData *data,
     g_assert(head != NULL);
 
     for (i = 0, item = head; item; item = item->next, i++) {
-        char string[12];
+        g_autofree char *string = g_strdup_printf("string%d", i);
 
-        snprintf(string, sizeof(string), "string%d", i);
         g_assert_cmpstr(item->value->string, ==, string);
         g_assert_cmpint(item->value->integer, ==, 42 + i);
     }
@@ -708,6 +706,51 @@ static void test_visitor_in_union_flat(TestInputVisitorData *data,
     g_assert(&base->enum1 == &tmp->enum1);
 }
 
+static void test_visitor_in_union_in_union(TestInputVisitorData *data,
+                                           const void *unused)
+{
+    Visitor *v;
+    g_autoptr(TestUnionInUnion) tmp = NULL;
+
+    v = visitor_input_test_init(data,
+                                "{ 'type': 'value-a', "
+                                "  'type-a': 'value-a1', "
+                                "  'integer': 2, "
+                                "  'name': 'fish' }");
+
+    visit_type_TestUnionInUnion(v, NULL, &tmp, &error_abort);
+    g_assert_cmpint(tmp->type, ==, TEST_UNION_ENUM_VALUE_A);
+    g_assert_cmpint(tmp->u.value_a.type_a, ==, TEST_UNION_ENUMA_VALUE_A1);
+    g_assert_cmpint(tmp->u.value_a.u.value_a1.integer, ==, 2);
+    g_assert_cmpint(strcmp(tmp->u.value_a.u.value_a1.name, "fish"), ==, 0);
+
+    qapi_free_TestUnionInUnion(tmp);
+
+    v = visitor_input_test_init(data,
+                                "{ 'type': 'value-a', "
+                                "  'type-a': 'value-a2', "
+                                "  'integer': 1729, "
+                                "  'size': 87539319 }");
+
+    visit_type_TestUnionInUnion(v, NULL, &tmp, &error_abort);
+    g_assert_cmpint(tmp->type, ==, TEST_UNION_ENUM_VALUE_A);
+    g_assert_cmpint(tmp->u.value_a.type_a, ==, TEST_UNION_ENUMA_VALUE_A2);
+    g_assert_cmpint(tmp->u.value_a.u.value_a2.integer, ==, 1729);
+    g_assert_cmpint(tmp->u.value_a.u.value_a2.size, ==, 87539319);
+
+    qapi_free_TestUnionInUnion(tmp);
+
+    v = visitor_input_test_init(data,
+                                "{ 'type': 'value-b', "
+                                "  'integer': 1729, "
+                                "  'onoff': true }");
+
+    visit_type_TestUnionInUnion(v, NULL, &tmp, &error_abort);
+    g_assert_cmpint(tmp->type, ==, TEST_UNION_ENUM_VALUE_B);
+    g_assert_cmpint(tmp->u.value_b.integer, ==, 1729);
+    g_assert_cmpint(tmp->u.value_b.onoff, ==, true);
+}
+
 static void test_visitor_in_alternate(TestInputVisitorData *data,
                                       const void *unused)
 {
@@ -776,6 +819,7 @@ static void test_visitor_in_alternate_number(TestInputVisitorData *data,
     AltEnumNum *aen;
     AltNumEnum *ans;
     AltEnumInt *asi;
+    AltListInt *ali;
 
     /* Parsing an int */
 
@@ -802,6 +846,12 @@ static void test_visitor_in_alternate_number(TestInputVisitorData *data,
     g_assert_cmpint(asi->u.i, ==, 42);
     qapi_free_AltEnumInt(asi);
 
+    v = visitor_input_test_init(data, "42");
+    visit_type_AltListInt(v, NULL, &ali, &error_abort);
+    g_assert_cmpint(ali->type, ==, QTYPE_QNUM);
+    g_assert_cmpint(ali->u.i, ==, 42);
+    qapi_free_AltListInt(ali);
+
     /* Parsing a double */
 
     v = visitor_input_test_init(data, "42.5");
@@ -825,6 +875,37 @@ static void test_visitor_in_alternate_number(TestInputVisitorData *data,
     visit_type_AltEnumInt(v, NULL, &asi, &err);
     error_free_or_abort(&err);
     qapi_free_AltEnumInt(asi);
+}
+
+static void test_visitor_in_alternate_list(TestInputVisitorData *data,
+                                 const void *unused)
+{
+    intList *item;
+    Visitor *v;
+    AltListInt *ali;
+    int i;
+
+    v = visitor_input_test_init(data, "[ 42, 43, 44 ]");
+    visit_type_AltListInt(v, NULL, &ali, &error_abort);
+    g_assert(ali != NULL);
+
+    g_assert_cmpint(ali->type, ==, QTYPE_QLIST);
+    for (i = 0, item = ali->u.l; item; item = item->next, i++) {
+        g_assert_cmpint(item->value, ==, 42 + i);
+    }
+
+    qapi_free_AltListInt(ali);
+    ali = NULL;
+
+    /* An empty list is valid */
+    v = visitor_input_test_init(data, "[]");
+    visit_type_AltListInt(v, NULL, &ali, &error_abort);
+    g_assert(ali != NULL);
+
+    g_assert_cmpint(ali->type, ==, QTYPE_QLIST);
+    g_assert(!ali->u.l);
+    qapi_free_AltListInt(ali);
+    ali = NULL;
 }
 
 static void input_visitor_test_add(const char *testpath,
@@ -1180,6 +1261,8 @@ int main(int argc, char **argv)
                            NULL, test_visitor_in_null);
     input_visitor_test_add("/visitor/input/union-flat",
                            NULL, test_visitor_in_union_flat);
+    input_visitor_test_add("/visitor/input/union-in-union",
+                           NULL, test_visitor_in_union_in_union);
     input_visitor_test_add("/visitor/input/alternate",
                            NULL, test_visitor_in_alternate);
     input_visitor_test_add("/visitor/input/errors",
@@ -1188,6 +1271,8 @@ int main(int argc, char **argv)
                            NULL, test_visitor_in_wrong_type);
     input_visitor_test_add("/visitor/input/alternate-number",
                            NULL, test_visitor_in_alternate_number);
+    input_visitor_test_add("/visitor/input/alternate-list",
+                           NULL, test_visitor_in_alternate_list);
     input_visitor_test_add("/visitor/input/fail/struct",
                            NULL, test_visitor_in_fail_struct);
     input_visitor_test_add("/visitor/input/fail/struct-nested",

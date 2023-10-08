@@ -17,9 +17,8 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32f407xx.h"
-
-#include "../stm32_common/stm32_f2xx_f4xx_dma_regdata.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32f407xx.h"
+#include "../../hw/arm/prusa/stm32_common/stm32_f2xx_f4xx_dma_regdata.h"
 
 static const stm32_soc_cfg_t* cfg = &stm32f407xx_cfg;
 

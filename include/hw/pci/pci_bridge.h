@@ -26,8 +26,9 @@
 #ifndef QEMU_PCI_BRIDGE_H
 #define QEMU_PCI_BRIDGE_H
 
-#include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "hw/pci/pci_bus.h"
+#include "hw/cxl/cxl.h"
 #include "qom/object.h"
 
 typedef struct PCIBridgeWindows PCIBridgeWindows;
@@ -52,6 +53,7 @@ struct PCIBridgeWindows {
 
 #define TYPE_PCI_BRIDGE "base-pci-bridge"
 OBJECT_DECLARE_SIMPLE_TYPE(PCIBridge, PCI_BRIDGE)
+#define IS_PCI_BRIDGE(dev) object_dynamic_cast(OBJECT(dev), TYPE_PCI_BRIDGE)
 
 struct PCIBridge {
     /*< private >*/
@@ -71,7 +73,7 @@ struct PCIBridge {
     MemoryRegion address_space_mem;
     MemoryRegion address_space_io;
 
-    PCIBridgeWindows *windows;
+    PCIBridgeWindows windows;
 
     pci_map_irq_fn map_irq;
     const char *bus_name;
@@ -80,6 +82,37 @@ struct PCIBridge {
 #define PCI_BRIDGE_DEV_PROP_CHASSIS_NR "chassis_nr"
 #define PCI_BRIDGE_DEV_PROP_MSI        "msi"
 #define PCI_BRIDGE_DEV_PROP_SHPC       "shpc"
+typedef struct CXLHost CXLHost;
+
+typedef struct PXBDev {
+    /*< private >*/
+    PCIDevice parent_obj;
+    /*< public >*/
+
+    uint8_t bus_nr;
+    uint16_t numa_node;
+    bool bypass_iommu;
+} PXBDev;
+
+typedef struct PXBPCIEDev {
+    /*< private >*/
+    PXBDev parent_obj;
+} PXBPCIEDev;
+
+#define TYPE_PXB_DEV "pxb"
+OBJECT_DECLARE_SIMPLE_TYPE(PXBDev, PXB_DEV)
+
+typedef struct PXBCXLDev {
+    /*< private >*/
+    PXBPCIEDev parent_obj;
+    /*< public >*/
+
+    bool hdm_for_passthrough;
+    CXLHost *cxl_host_bridge; /* Pointer to a CXLHost */
+} PXBCXLDev;
+
+#define TYPE_PXB_CXL_DEV "pxb-cxl"
+OBJECT_DECLARE_SIMPLE_TYPE(PXBCXLDev, PXB_CXL_DEV)
 
 int pci_bridge_ssvid_init(PCIDevice *dev, uint8_t offset,
                           uint16_t svid, uint16_t ssid,
@@ -116,11 +149,11 @@ void pci_bridge_map_irq(PCIBridge *br, const char* bus_name,
                         pci_map_irq_fn map_irq);
 
 /* TODO: add this define to pci_regs.h in linux and then in qemu. */
-#define  PCI_BRIDGE_CTL_VGA_16BIT	0x10	/* VGA 16-bit decode */
-#define  PCI_BRIDGE_CTL_DISCARD		0x100	/* Primary discard timer */
-#define  PCI_BRIDGE_CTL_SEC_DISCARD	0x200	/* Secondary discard timer */
-#define  PCI_BRIDGE_CTL_DISCARD_STATUS	0x400	/* Discard timer status */
-#define  PCI_BRIDGE_CTL_DISCARD_SERR	0x800	/* Discard timer SERR# enable */
+#define  PCI_BRIDGE_CTL_VGA_16BIT       0x10    /* VGA 16-bit decode */
+#define  PCI_BRIDGE_CTL_DISCARD         0x100   /* Primary discard timer */
+#define  PCI_BRIDGE_CTL_SEC_DISCARD     0x200   /* Secondary discard timer */
+#define  PCI_BRIDGE_CTL_DISCARD_STATUS  0x400   /* Discard timer status */
+#define  PCI_BRIDGE_CTL_DISCARD_SERR    0x800   /* Discard timer SERR# enable */
 
 typedef struct PCIBridgeQemuCap {
     uint8_t id;     /* Standard PCI capability header field */

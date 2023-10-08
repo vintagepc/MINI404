@@ -17,12 +17,12 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 
-#include "../stm32_chips/stm32g070xx.h"
 
 #define STM32_COM_DMA_MAX_CHAN 7
 #define STM32_COM_DMA_CHAN_REGS 5
 
-#include "../stm32_common/stm32_dma_regdata.h"
+#include "../../hw/arm/prusa/stm32_chips/stm32g070xx.h"
+#include "../../hw/arm/prusa/stm32_common/stm32_dma_regdata.h"
 
 
 static void mem_data(QTestState *ts)

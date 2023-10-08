@@ -128,6 +128,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
     memory_region_add_subregion(system_memory, cfg->ccmsram_base, &s->ccmsram);
 
+
     armv7m = DEVICE(&s->armv7m);
 	stm32_common_rcc_connect_cpu_clocks(stm32_soc_get_periph(dev_soc, STM32_P_RCC), armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", cfg->nvic_irqs);
