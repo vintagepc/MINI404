@@ -124,7 +124,7 @@ typedef struct COM_STRUCT_NAME(Dmamux) {
 } COM_STRUCT_NAME(Dmamux);
 
 typedef struct COM_CLASS_NAME(Dmamux) {
-	SysBusDeviceClass parent_class;
+	STM32PeripheralClass parent_class;
     stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(Dmamux);
 

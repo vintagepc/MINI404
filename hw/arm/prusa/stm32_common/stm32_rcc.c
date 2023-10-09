@@ -76,6 +76,18 @@ bool stm32_rcc_if_check_periph_clk(STM32Peripheral *p)
     return true;
 }
 
+bool stm32_rcc_if_has_clk(STM32Peripheral *p)
+{
+	if (p->rcc == NULL)
+	{
+		return 0;
+	}
+	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(p->rcc);
+    Clk_t* clk = &s->pclocks[p->periph];
+
+    return clk->is_initialized;
+}
+
 void stm32_rcc_if_set_periph_clk_irq(
         STM32Peripheral *p,
         qemu_irq periph_irq)

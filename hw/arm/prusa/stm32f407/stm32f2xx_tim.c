@@ -110,14 +110,14 @@ enum OCxM_val
 static uint32_t
 f2xx_tim_period(f2xx_tim *s, uint64_t multiplier)
 {
-    uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+    uint64_t clock_freq = s->parent.clock_freq;
     clock_freq/= (s->defs.PSC+1);
     return muldiv64(1000000000ULL,multiplier,clock_freq);
 }
 
 static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
 {
-    uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+    uint64_t clock_freq = s->parent.clock_freq;
 	if (clock_freq == 0)
 		return 0;
 	else

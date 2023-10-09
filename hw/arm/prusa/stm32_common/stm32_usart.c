@@ -315,7 +315,7 @@ static const uint16_t PRESCALE_DIV[] = {
 /* Update the baud rate based on the USART's peripheral clock frequency. */
 static void stm32_common_usart_baud_update(COM_STRUCT_NAME(Usart) *s)
 {
-    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+    uint32_t clk_freq = s->parent.clock_freq;
 
     uint64_t ns_per_bit;
 

@@ -174,6 +174,9 @@ struct STM32F4XXADCState {
 
     uint8_t adc_sequence_position, adc_next_seq_pos;
 
+    // Pre-computed conversion times
+    uint64_t adc_conv_times_ns[ADC_NUM_REG_CHANNELS];
+
     QEMUTimer* next_eoc;
 };
 
@@ -194,6 +197,8 @@ typedef union {
     } QEMU_PACKED;
 } adc_smpr_t;
 
+static const uint16_t adc_smpr_map[] = { 3, 15, 28, 56, 84, 112, 144, 480 };
+
 static void stm32f4xx_adc_reset(DeviceState *dev)
 {
     STM32F4XXADCState *s = STM32F4xx_ADC(dev);
@@ -210,29 +215,6 @@ static void stm32f4xx_adc_reset(DeviceState *dev)
 		timer_del(s->next_eoc);
 }
 
-static uint16_t adc_lookup_smpr(uint8_t value) {
-    switch (value) {
-        case 0:
-            return 3;
-        case 1:
-            return 15;
-        case 2:
-            return 28;
-        case 3:
-            return 56;
-        case 4:
-            return 84;
-        case 5:
-            return 112;
-        case 6:
-            return 144;
-        case 7:
-            return 480;
-        default:
-            assert(false);
-            return 0;
-    }
-}
 
 static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
 {
@@ -241,7 +223,8 @@ static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
     // I'm not sure why this is yet - some sort of built in oversampling
     // that is enabled in non-DMA mode?
     if (!s->defs.CR2.DMA) {
-        s->defs.DR*=(adc_lookup_smpr(s->adc_smprs[channel])+1);
+        assert(s->adc_smprs[channel] < ARRAY_SIZE(adc_smpr_map));
+        s->defs.DR*=(adc_smpr_map[s->adc_smprs[channel]]+1);
     }
 
     // Mask: RES 0..3 == 12..6 bit mask.
@@ -261,32 +244,33 @@ static void stm32f4xx_adc_data_in(void *opaque, int n, int level){
     // printf("ADC: Ch %d new data: %d\n",n, level);
 }
 
+static void stm32f4xx_adc_recalc_times(STM32F4XXADCState *s) {
+    // Get the clock rate
+    uint64_t clock = s->parent.clock_freq;
+    clock /= stm32f4xx_adcc_get_adcpre(s->common);
+    uint32_t conv_cycles = (12U - (s->defs.CR1.RES<<1U));
+    for (int i=0; i<ADC_NUM_REG_CHANNELS; i++)
+    {
+        assert(s->adc_smprs[i] < ARRAY_SIZE(adc_smpr_map));
+        uint32_t ch_conv_cycles = conv_cycles + adc_smpr_map[s->adc_smprs[i]];
+        s->adc_conv_times_ns[i] = 1000000000000U / (clock/ch_conv_cycles);
+        if (s->parent.periph == STM32_P_ADC3)
+        {
+		// Yes, this is an ugly-ass hack. The above calc is off by 1000 and I still need to determine
+		// how to deal with the other channels bogging down the simulation when they run at the "real" specified rate.
+	    	 s->adc_conv_times_ns[i] /= 1000;
+		//printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
+	    }
+    }
+}
+
 static void stm32f4xx_adc_schedule_next(STM32F4XXADCState *s) {
     if (!s->defs.CR2.ADON)
         return;
     s->defs.CR2.SWSTART = 0;
-    // Calculate the clock rate
-    uint64_t clock = stm32_rcc_if_get_periph_freq(&s->parent);
-
-    clock /= stm32f4xx_adcc_get_adcpre(s->common);
-
-    // #bits:
-    uint32_t conv_cycles = (12U - (s->defs.CR1.RES<<1U));
     uint8_t channel = s->adc_sequence[s->adc_next_seq_pos];
-    conv_cycles += adc_lookup_smpr(s->adc_smprs[channel]);
-
-    uint64_t delay_ns = 1000000000000U / (clock/conv_cycles);
-    if (s->parent.periph == STM32_P_ADC3)
-	{
-		// Yes, this is an ugly-ass hack. The above calc is off by 1000 and I still need to determine
-		// how to deal with the other channels bogging down the simulation when they run at the "real" specified rate.
-		delay_ns /= 1000;
-		//printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
-	}
-    timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
-
+    timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+s->adc_conv_times_ns[channel]);
 }
-
 
 static uint64_t stm32f4xx_adc_read(void *opaque, hwaddr addr,
                                      unsigned int size)
@@ -359,7 +343,7 @@ static void stm32f4xx_adc_update_sequence(STM32F4XXADCState *s)
 static void stm32f4xx_adc_convert(STM32F4XXADCState *s)
 {
     uint8_t channel = s->adc_sequence[s->adc_sequence_position];
-    qemu_irq_pulse(s->irq_read[channel]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
+    qemu_irq_raise(s->irq_read[channel]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
 }
 
 static void stm32f4xx_adc_update_irqs(STM32F4XXADCState *s, int level) {
@@ -424,8 +408,17 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
     }
 
     switch (addr) {
-        case RI_SR:
         case RI_CR1:
+            {
+                uint8_t old_res = s->defs.CR1.RES;
+                s->regs[addr] = value;
+                if (s->defs.CR1.RES != old_res)
+                {
+                    stm32f4xx_adc_recalc_times(s);
+                }
+            }
+            break;
+        case RI_SR:
         case RI_HTR:
         case RI_LTR:
             s->regs[addr] = value;
@@ -450,6 +443,7 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
             {
                 s->adc_smprs[10+i] = (value >> (3*i)) & 0x7;
             }
+            stm32f4xx_adc_recalc_times(s);
             break;
         case RI_SMPR2:
             // if (value!=0) printf("FIXME: Nonzero sample time\n");
@@ -458,7 +452,7 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
             {
                 s->adc_smprs[i] = (value >> (3*i)) & 0x7;
             }
-            break;
+            stm32f4xx_adc_recalc_times(s);
             break;
         case RI_JOFR1 ... RI_JOFR4:
             s->regs[addr] = (value & 0xFFF);
