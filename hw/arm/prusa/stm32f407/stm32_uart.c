@@ -67,9 +67,10 @@
 /* HELPER FUNCTIONS */
 
 /* Update the baud rate based on the USART's peripheral clock frequency. */
-static void stm32_uart_baud_update(Stm32Uart *s)
+static void stm32_uart_baud_update(STM32Peripheral *p)
 {
-    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+    Stm32Uart *s = STM32_UART(p);
+    uint32_t clk_freq = s->parent.clock_freq;
 
     uint64_t ns_per_bit;
 
@@ -99,19 +100,6 @@ static void stm32_uart_baud_update(Stm32Uart *s)
                 periph_name,
                 (unsigned long)s->bits_per_sec);
 #endif
-}
-
-/* Handle a change in the peripheral clock. */
-static void stm32_uart_clk_irq_handler(void *opaque, int n, int level)
-{
-    Stm32Uart *s = STM32_UART(opaque);
-
-    assert(n == 0);
-
-    /* Only update the BAUD rate if the IRQ is being set. */
-    if(level) {
-        stm32_uart_baud_update(s);
-    }
 }
 
 /* Routine which updates the USART's IRQ.  This should be called whenever
@@ -523,7 +511,7 @@ static void stm32_uart_write(void *opaque, hwaddr addr,
             break;
         case USART_BRR_OFFSET:
             s->regs[addr] = data;
-            stm32_uart_baud_update(s);
+            stm32_uart_baud_update(STM32_PERIPHERAL(s));
             break;
         case USART_CR1_OFFSET:
 		case USART_CR3_OFFSET:
@@ -583,10 +571,6 @@ static void stm32_uart_init(Object *obj)
         timer_new_ns(QEMU_CLOCK_VIRTUAL,
                   (QEMUTimerCB *)stm32_uart_idle_timer_expire, s);
 
-    /* Register handlers to handle updates to the USART's peripheral clock. */
-    s->clk_irq =
-          qemu_allocate_irqs(stm32_uart_clk_irq_handler, (void *)s, 1);
-	stm32_rcc_if_set_periph_clk_irq(&s->parent, s->clk_irq[0]);
 
     //stm32_uart_connect(s, &s->chr);
 
@@ -662,6 +646,9 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, stm32_uart_properties);
     dc->realize = stm32_uart_realize;
     dc->vmsd = &vmstate_stm32_uart;
+
+    STM32PeripheralClass *k = STM32_PERIPHERAL_CLASS(klass);
+    k->clock_update = stm32_uart_baud_update;
 }
 
 static TypeInfo stm32_uart_info = {

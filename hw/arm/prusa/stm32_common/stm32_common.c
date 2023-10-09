@@ -14,10 +14,6 @@
 #include "stm32_rcc_if.h"
 #include "stm32_shared.h"
 
-DECLARE_CLASS_CHECKERS(STM32PeripheralClass, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
-
-DECLARE_INSTANCE_CHECKER(STM32Peripheral, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
-
 static bool create_if_not_exist(const char* default_name, uint32_t file_size)
 {
 	bool exists = true;
@@ -178,6 +174,15 @@ extern DeviceState* stm32_soc_get_periph(DeviceState* soc, stm32_periph_t id)
 	return s->perhiperhals[id];
 }
 
+static void stm32_peripheral_clock_change(void *opaque, int n, int level)
+{
+    STM32Peripheral *p = STM32_PERIPHERAL(opaque);
+    p->clock_enabled = stm32_rcc_if_check_periph_clk(p);
+    p->clock_freq = stm32_rcc_if_get_periph_freq(p);
+    STM32PeripheralClass *c = STM32_PERIPHERAL_GET_CLASS(opaque);
+    if (c->clock_update)
+        c->clock_update(p);
+}
 
 static void stm32_peripheral_rcc_reset(void *opaque, int n, int level)
 {
@@ -274,6 +279,10 @@ extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t 
 		 	sysbus_mmio_map(SYS_BUS_DEVICE(s->perhiperhals[id]), 0, cfg->base_addr);
 		}
 	}
+    if (stm32_rcc_if_has_clk(STM32_PERIPHERAL(s->perhiperhals[id])))
+    {
+        stm32_rcc_if_set_periph_clk_irq(STM32_PERIPHERAL(s->perhiperhals[id]), qdev_get_gpio_in_named(s->perhiperhals[id],"clock-change",0));
+    }
 	for (const int *irq = cfg->irq; *irq != -1; irq++)
 	{
 		sysbus_connect_irq(SYS_BUS_DEVICE(s->perhiperhals[id]), irq-(cfg->irq), qdev_get_gpio_in(s->cpu, *irq));
@@ -300,6 +309,7 @@ extern void stm32_soc_realize_all_peripherals(DeviceState *soc_state,Error **err
 static void stm32_peripheral_instance_init(Object* obj)
 {
 	qdev_init_gpio_in_named(DEVICE(obj),  stm32_peripheral_rcc_reset, "rcc-reset",1);
+    qdev_init_gpio_in_named(DEVICE(obj),  stm32_peripheral_clock_change, "clock-change",1);
 	STM32Peripheral *s = STM32_PERIPHERAL(obj);
     qdev_init_gpio_out_named(DEVICE(obj),s->dmar,"dmar",2);
 }

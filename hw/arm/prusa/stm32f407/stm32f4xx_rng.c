@@ -33,7 +33,7 @@
 
 static void stm32f4xx_rng_set_next_drdy(Stm32f4xxRNGState* s)
 {
-	uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+	uint32_t clk_freq = s->parent.clock_freq;
 	// Datasheet says this is 40 clock ticks or less.
 	s->next_drdy = (1000000000LLU/(clk_freq/40U)) + qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 }

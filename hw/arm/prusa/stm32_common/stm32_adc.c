@@ -345,7 +345,7 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
 	}
 
 	// Calculate the clock rate
-	uint64_t clock = stm32_rcc_if_get_periph_freq(&s->parent);
+	uint64_t clock = s->parent.clock_freq;
 
 	if (s->adcc)
 	{

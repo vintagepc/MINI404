@@ -135,7 +135,7 @@ static void stm32_common_iwdg_update(COM_STRUCT_NAME(Iwdg) *s){
     if (!s->started){
         return;
     }
-    uint32_t clkrate = stm32_rcc_if_get_periph_freq(&s->parent);
+    uint32_t clkrate = s->parent.clock_freq;
 	if (clkrate == 0)
 	{
 		qemu_log_mask(LOG_GUEST_ERROR,"ERR: Attempted to enable IWDG with LSI clock disabled!\n");
