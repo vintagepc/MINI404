@@ -207,7 +207,11 @@ static void stm32f4xx_adc_reset(DeviceState *dev)
     s->defs.HT = 0xFFF;
 
     memset(&s->adc_sequence,0,ADC_NUM_REG_CHANNELS);
-    memset(&s->adc_data,0,ADC_NUM_REG_CHANNELS*sizeof(int));
+    // We can't reset the data here because it might 
+    // clear the initial stuff sent by other device resets. 
+
+
+    //memset(&s->adc_data,0,ADC_NUM_REG_CHANNELS*sizeof(int));
     s->adc_sequence_position = 0;
 	s->adc_next_seq_pos = 0;
 
@@ -241,7 +245,7 @@ static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
 static void stm32f4xx_adc_data_in(void *opaque, int n, int level){
     STM32F4XXADCState *s = opaque;
     s->adc_data[n] = level;
-    // printf("ADC: Ch %d new data: %d\n",n, level);
+    // printf("%s: Ch %d new data: %d\n", _PERIPHNAMES[s->parent.periph], n, level);
 }
 
 static void stm32f4xx_adc_recalc_times(STM32F4XXADCState *s) {

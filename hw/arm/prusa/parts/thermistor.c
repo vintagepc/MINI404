@@ -69,11 +69,7 @@ static int map(long x, long in_min, long in_max, long out_min, long out_max) {
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
-static void thermistor_read_request(void *opaque, int n, int level) {
-    if (!level) {
-        return;
-    }
-	ThermistorState *s = opaque;
+static void thermistor_update_output(ThermistorState *s) {
     float value = s->use_custom ? s->custom_temp : s->temperature;
     qemu_set_irq(s->temp_out, 256U*value);
     if (s->table_index==0) {
@@ -122,7 +118,7 @@ static void thermistor_temp_in(void *opaque, int n, int level)
 	ThermistorState *s = opaque;
 	float fv = (float)(level) / 256.f;
 	s->temperature = fv;
-	qemu_set_irq(s->temp_out, level);
+	thermistor_update_output(s);
 }
 
 static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -152,6 +148,7 @@ static int thermistor_process_action(P404ScriptIF *obj, unsigned int action, scr
             return ScriptLS_Unhandled;
 
     }
+    thermistor_update_output(s);
     return ScriptLS_Finished;
 }
 
@@ -206,6 +203,7 @@ static void thermistor_set_table(ThermistorState *s) {
             s->table_length = 0;
             break;
     }
+    thermistor_update_output(s);
 }
 
 static void thermistor_reset(DeviceState *dev)
@@ -213,7 +211,6 @@ static void thermistor_reset(DeviceState *dev)
     ThermistorState *s = THERMISTOR(dev);
     s->temperature = s->start_temp;
     thermistor_set_table(s);
-    qemu_set_irq(s->temp_out, 256U*s->temperature);
 }
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ThermistorState, thermistor, THERMISTOR, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {NULL});
@@ -232,7 +229,7 @@ static void thermistor_init(Object *obj)
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->temp_out, "temp_out_256x", 1);
 
-    qdev_init_gpio_in_named(DEVICE(obj),thermistor_read_request, "thermistor_read_request", 1);
+    // qdev_init_gpio_in_named(DEVICE(obj),thermistor_read_request, "thermistor_read_request", 1);
     qdev_init_gpio_in_named(DEVICE(obj),thermistor_temp_in, "thermistor_set_temperature", 1);
 
     s->oversampling = OVERSAMPLENR;

@@ -581,7 +581,7 @@ static void mk4_init(MachineState *machine)
         qdev_prop_set_uint16(dev, "temp",cfg.temps.ambient[i]);
         qdev_prop_set_uint16(dev, "table_no", cfg.temps.table[i]);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_data_in",cfg.temps.channel[i]));
         if (i==T_NOZ)
 		{
@@ -689,7 +689,7 @@ static void mk4_init(MachineState *machine)
     DeviceState* vdev = qdev_new("powersource");
     qdev_prop_set_uint32(vdev,"mV",23900);
     sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
-	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 3,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
+	// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 3,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
     qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",3));
     qdev_connect_gpio_out_named(vdev, "panic",0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 0));
 
@@ -704,7 +704,7 @@ static void mk4_init(MachineState *machine)
 			qdev_prop_set_uint32(vdev,"mA",currents[i]);
 			sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
 			qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in",channels[i]));
-			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", channels[i],  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
+			//qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", channels[i],  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
 		}
 	}
 
@@ -712,7 +712,7 @@ static void mk4_init(MachineState *machine)
     vdev = qdev_new("powersource");
     qdev_prop_set_uint32(vdev,"mV",24000);
     sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 5,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
+    // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 5,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
     qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",5));
     //qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(dev,"1Y",0));
     // qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(dev,"2Y",1));
