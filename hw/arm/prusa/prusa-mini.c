@@ -291,7 +291,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         qdev_prop_set_uint16(dev, "table_no", tables[i]);
         qdev_prop_set_uint8(dev, "index", i);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",channels[i]));
         qdev_connect_gpio_out_named(dev, "temp_out_256x", 0, qdev_get_gpio_in_named(db2,"therm-temp",i));
 
