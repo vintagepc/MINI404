@@ -167,7 +167,7 @@ struct STM32F4XXADCState {
 
     qemu_irq irq;
 
-    qemu_irq irq_read[ADC_NUM_REG_CHANNELS]; // Set when the ADC wants to get a value from the channel.
+    //qemu_irq irq_read[ADC_NUM_REG_CHANNELS]; // Set when the ADC wants to get a value from the channel.
 
     int adc_data[ADC_NUM_REG_CHANNELS]; // Store the peripheral data received.
     uint8_t adc_sequence[ADC_NUM_REG_CHANNELS];
@@ -344,11 +344,11 @@ static void stm32f4xx_adc_update_sequence(STM32F4XXADCState *s)
 
 }
 
-static void stm32f4xx_adc_convert(STM32F4XXADCState *s)
-{
-    uint8_t channel = s->adc_sequence[s->adc_sequence_position];
-    qemu_irq_raise(s->irq_read[channel]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
-}
+// static void stm32f4xx_adc_convert(STM32F4XXADCState *s)
+// {
+//     uint8_t channel = s->adc_sequence[s->adc_sequence_position];
+//     qemu_irq_raise(s->irq_read[channel]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
+// }
 
 static void stm32f4xx_adc_update_irqs(STM32F4XXADCState *s, int level) {
 
@@ -371,7 +371,7 @@ static void stm32f4xx_adc_eoc_deadline(void *opaque) {
 
     STM32F4XXADCState *s = STM32F4xx_ADC(opaque);
 	s->adc_sequence_position = s->adc_next_seq_pos;
-    stm32f4xx_adc_convert(s);
+    //stm32f4xx_adc_convert(s);
     if (s->defs.CR2.EOCS || s->adc_sequence_position==s->defs.SQR1.L)
     {
         // Either end of cycle or end-of-sequence.
@@ -533,7 +533,7 @@ static void stm32f4xx_adc_init(Object *obj)
 
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 
-    qdev_init_gpio_out_named(DEVICE(obj), s->irq_read, "adc_read", ADC_NUM_REG_CHANNELS);
+    // qdev_init_gpio_out_named(DEVICE(obj), s->irq_read, "adc_read", ADC_NUM_REG_CHANNELS);
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32f4xx_adc_data_in, "adc_data_in", ADC_NUM_REG_CHANNELS);
 
