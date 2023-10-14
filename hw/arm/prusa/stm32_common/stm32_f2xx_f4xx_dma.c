@@ -162,7 +162,7 @@ enum interrupt_bits
 	INT_HTIF = 	0b010000,
 	INT_TCIF = 	0b100000,
 	INT_ALL = 	0b111101,
-	INT_SxCR_MASK = 0b111100,
+	INT_SxCR_MASK = 0b111110,
 	INT_BLKSIZE = 6,
 };
 
@@ -200,12 +200,10 @@ static void stm32_f2xx_f4xx_update_irqs(STM32F2XX_STRUCT_NAME(Dma) *s, uint8_t c
 
 	sr &= INT_ALL;
 
-	if (sr != 0)
+	if (sr != 0 && (sr & int_en))
 	{
-		if (sr & int_en) {
-			qemu_irq_raise(s->irq[channel]);
-		}
-	}
+        qemu_irq_raise(s->irq[channel]);
+	}   
 	else
 	{
 		qemu_irq_lower(s->irq[channel]);
@@ -323,7 +321,7 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 	*dest += dest_inc;
 	*src +=  src_inc;
 
-	if (cr->HTIE && *ndtr == (s->original_ndtrs[channel]>>1U) )
+	if (*ndtr == (s->original_ndtrs[channel]>>1U) )
 	{
 		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_HTIF);
 	}
