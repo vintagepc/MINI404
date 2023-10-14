@@ -303,20 +303,19 @@ static void test_prescale(void)
 		1U, 2U, 4U, 6U, 8U, 10U, 12U, 16U, 32U, 64U, 128U, 256U, 256U, 256U, 256U, 256U
 	};
 
-	int64_t ns = 0;
-
 	for (int i=0; i<ARRAY_SIZE(PRESCALE_DIV); i++)
 	{
 		// Technically we should disable UE before changing this...
 		qtest_writel(ts, STM32_RI_ADDRESS(base, RI_PRESC), i);
+        int64_t current_ns = qtest_clock_step(ts, 0);
 		qtest_writel(ts, STM32_RI_ADDRESS(base, RI_TDR), 0xFF);
 		g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & BIT(6), ==, 0);
 		// Advance the clock:
-		ns = qtest_clock_step_next(ts) - ns;
+        int64_t ns = qtest_clock_step_next(ts);
 		// Check TC:
 		g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & BIT(6), ==, BIT(6));
-		g_assert_cmpint(ns, ==, DEFAULT_DELAY*PRESCALE_DIV[i]);
-		printf("# delay: %ld ns\n", ns);
+		g_assert_cmpint(ns - current_ns, ==, DEFAULT_DELAY*PRESCALE_DIV[i]);
+		// printf("# delay: %ld ns\n", ns);
 	}
 
 	qtest_quit(ts);
@@ -335,7 +334,7 @@ int main(int argc, char **argv)
     qtest_add_func("/stm32_uart/test_idle_and_rto", test_idle_rto);
     qtest_add_func("/stm32_uart/test_tx_irqs", test_tx_irqs);
     qtest_add_func("/stm32_uart/test_baud_rate", test_baud_rate);
-    qtest_add_func("/stm32_uart/test_prescale", test_prescale);
+   qtest_add_func("/stm32_uart/test_prescale", test_prescale);
 
     ret = g_test_run();
 

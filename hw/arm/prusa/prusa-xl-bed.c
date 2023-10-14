@@ -79,32 +79,29 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 	DeviceState* key_in = qdev_new("p404-key-input");
     sysbus_realize(SYS_BUS_DEVICE(key_in), &error_fatal);
 
-    int kernel_len = strlen(machine->kernel_filename);
-    if (kernel_len >3)
+    char* kfn = machine->kernel_filename;
+    int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
-        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bbf",3)==0)
+        // TODO... use initrd_image as a bootloader alternative?
+        struct stat bootloader;
+        if (stat(BOOTLOADER_IMAGE,&bootloader))
         {
-            // TODO... use initrd_image as a bootloader alternative?
-            struct stat bootloader;
-            if (stat(BOOTLOADER_IMAGE,&bootloader))
-            {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
-                return;
-            }
-            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
-            // by -64 bytes and rely on the bootloader clobbering it.
-            load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                BOOTLOADER_IMAGE,
-                FLASH_SIZE);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
+            return;
         }
-        else // Raw bin or ELF file, load directly.
-        {
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                            machine->kernel_filename,
-                            FLASH_SIZE);
-        }
+        // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+        // by -64 bytes and rely on the bootloader clobbering it.
+        load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+            BOOTLOADER_IMAGE,
+            FLASH_SIZE);
+    }
+    else // Raw bin or ELF file, load directly.
+    {
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+                        machine->kernel_filename,
+                        FLASH_SIZE);
     }
 
 	DeviceState* dev_soc = dev;
@@ -163,8 +160,8 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 	// 14 = 01, 15 = 10 for selection. There is no actual 4052 mux here, I'm just reusing the part because it works.
 	// Update - now it's just 1 pin to switch between 12/13 (1Y) and 14/15 (2Y)
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),6,qdev_get_gpio_in_named(mux,"select",0)); // S0
-	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 9,  qdev_get_gpio_in_named(mux, "adc_read_request",0));
-	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 11,  qdev_get_gpio_in_named(mux, "adc_read_request",1));
+	// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 9,  qdev_get_gpio_in_named(mux, "adc_read_request",0));
+	// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 11,  qdev_get_gpio_in_named(mux, "adc_read_request",1));
 	qdev_connect_gpio_out(mux,0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",9));
 	qdev_connect_gpio_out(mux,1, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",11));
 
@@ -186,18 +183,18 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 		if (i==4 || i == 5)
 		{
 			// Map so that 4 is on 1Y1, 5 is 1Y2.
-			qdev_connect_gpio_out_named(mux,"1Y_read", i-4,  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+			// qdev_connect_gpio_out_named(mux,"1Y_read", i-4,  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
 			qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(mux,"1Y", i - 4));
 		}
 		else if (i==6 || i == 7)
 		{
 			// Map so that 6 is on 2Y1, 7 is 2Y2.
-			qdev_connect_gpio_out_named(mux,"2Y_read", i-6,  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+			// qdev_connect_gpio_out_named(mux,"2Y_read", i-6,  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
 			qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(mux,"2Y", i - 6));
 		}
 		else
 		{
-			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", g0_adcs[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+			// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", g0_adcs[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
 			qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",g0_adcs[i]));
 		}
 
@@ -223,7 +220,7 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 	for (int i=0; i<2; i++)
 	{
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(current_sense[i]), &error_fatal);
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", current_adcs[i],  qdev_get_gpio_in_named(current_sense[i], "adc_read_request",0));
+		// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", current_adcs[i],  qdev_get_gpio_in_named(current_sense[i], "adc_read_request",0));
     	qdev_connect_gpio_out_named(current_sense[i], "adc_out", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",current_adcs[i]));
 	}
 
@@ -244,7 +241,7 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
         qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
     }
 
-	if (!arghelper_is_arg("no-bridge"))
+	if (kernel_len && !arghelper_is_arg("no-bridge"))
 	{
 		dev = qdev_new("xl-bridge");
 		qdev_prop_set_uint8(dev, "device", XL_DEV_BED);
