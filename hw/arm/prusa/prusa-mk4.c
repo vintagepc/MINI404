@@ -365,32 +365,30 @@ static void mk4_init(MachineState *machine)
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
-    int kernel_len = strlen(machine->kernel_filename);
-    if (kernel_len >3)
+
+    char* kfn = machine->kernel_filename;
+    int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
-        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bbf",3)==0)
+        // TODO... use initrd_image as a bootloader alternative?
+        struct stat bootloader;
+        if (stat(cfg.boot_fn,&bootloader))
         {
-            // TODO... use initrd_image as a bootloader alternative?
-            struct stat bootloader;
-            if (stat(cfg.boot_fn,&bootloader))
-            {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",cfg.boot_fn);
-                return;
-            }
-            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
-            // by -64 bytes and rely on the bootloader clobbering it.
-            load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                cfg.boot_fn,
-                flash_size);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",cfg.boot_fn);
+            return;
         }
-        else // Raw bin or ELF file, load directly.
-        {
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                            machine->kernel_filename,
-                            flash_size);
-        }
+        // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+        // by -64 bytes and rely on the bootloader clobbering it.
+        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+            cfg.boot_fn,
+            flash_size);
+    }
+    else // Raw bin or ELF file, load directly.
+    {
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+                        machine->kernel_filename,
+                        flash_size);
     }
 
 	DeviceState* key_in = qdev_new("p404-key-input");
@@ -517,7 +515,6 @@ static void mk4_init(MachineState *machine)
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
  		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         if (cfg.is_400step) {
-            printf("400-step mode enabled\n");
             stepsize[0] <<= 1;
             stepsize[1] <<= 1;
 			ends[0] <<= 1;

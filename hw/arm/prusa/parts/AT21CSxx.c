@@ -279,11 +279,13 @@ static void at21csxx_reset(DeviceState *dev)
 static void at21csxx_realize(DeviceState *dev, Error **errp)
 {
     AT21CSxxState *s = AT21CSXX(dev);
+#ifndef CONFIG_GCOV    
 	if (icount_enabled() == 0)
 	{
 		printf("WARNING: icount is disabled. AT21CSxx EEPROM will NOT WORK!\n");
 		printf("WARNING: use -icount [number] to enable it.\n");
 	}
+#endif    
     if (s->blk) {
 
         int64_t len = blk_getlength(s->blk);

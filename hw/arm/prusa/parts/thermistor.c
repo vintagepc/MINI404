@@ -196,7 +196,7 @@ static void thermistor_set_table(ThermistorState *s) {
 			s->table = &temptable_2008[0][0];
 			break;
         default:
-			printf("%s WARNING: Unhandled thermistor table %u!\n",__FILE__,s->table_index);
+			printf("# %s WARNING: Unhandled thermistor table %u!\n",__FILE__,s->table_index);
 			/* FALLTHRU */
 		case UINT16_MAX:
             s->table = NULL;

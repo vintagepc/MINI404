@@ -40,9 +40,11 @@ extern BlockBackend* get_or_create_drive(BlockInterfaceType interface, int index
 	{
 		if (create_if_not_exist(default_name, file_size))
 		{
+#ifndef CONFIG_GCOV
 			printf("No -%s drive specified, using default %s\n",
 				interface==IF_MTD? "mtdblock" : "pflash",
 				default_name);
+#endif
 			QemuOpts* drive_opts = drive_add(interface, index, default_name, "format=raw");
 			dinfo = drive_new(drive_opts, interface, errp);
 		}
@@ -104,10 +106,11 @@ extern void stm32_soc_setup_flash(DeviceState* dev, MemoryRegion* flash, Error**
 					break;
 				}
 			}
+#ifndef CONFIG_GCOV
 			printf("Using file-backed flash storage for %s: %s\n", class->cfg->name, soc->flash_filename);
+#endif
 			if (is_blank)
 			{
-				printf("Backing file is all null, filling with 0xFF\n");
 				memset(mem, 0xFF, flash_size);
 			}
 			memory_region_init_ram_ptr(flash, OBJECT(soc), flash_name, flash_size, mem);
@@ -279,7 +282,7 @@ extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t 
 		 	sysbus_mmio_map(SYS_BUS_DEVICE(s->perhiperhals[id]), 0, cfg->base_addr);
 		}
 	}
-    if (stm32_rcc_if_has_clk(STM32_PERIPHERAL(s->perhiperhals[id])))
+    if (id > STM32_P_RCC && stm32_rcc_if_has_clk(STM32_PERIPHERAL(s->perhiperhals[id])))
     {
         stm32_rcc_if_set_periph_clk_irq(STM32_PERIPHERAL(s->perhiperhals[id]), qdev_get_gpio_in_named(s->perhiperhals[id],"clock-change",0));
     }
