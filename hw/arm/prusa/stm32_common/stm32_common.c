@@ -19,7 +19,9 @@ static bool create_if_not_exist(const char* default_name, uint32_t file_size)
 	bool exists = true;
 	if (access(default_name, R_OK | W_OK) == -1)
 	{
+#ifndef CONFIG_GCOV
 		printf("%s not found - creating it.\n",default_name);
+#endif
 		// Create it.
 		int fd = creat(default_name, S_IRUSR | S_IWUSR);
 		exists = (ftruncate(fd, file_size) != -1);
