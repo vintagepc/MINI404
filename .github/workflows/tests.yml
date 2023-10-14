@@ -69,6 +69,12 @@ jobs:
     - name: Run QTest
       run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy -j4
       continue-on-error: true
+    
+    - name: Upload log
+      uses: actions/upload-artifact@v3.1.1
+      with:
+        name: Test_log
+        path: ${{ runner.workspace }}/MINI404/build/meson-logs/testlog.txt
 
     - name: Generate Coverage report
       run: cd ${{ runner.workspace }}/MINI404/build && make coverage-html -j4
