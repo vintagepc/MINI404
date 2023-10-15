@@ -290,6 +290,10 @@ extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t 
     }
 	for (const int *irq = cfg->irq; *irq != -1; irq++)
 	{
+        if (*irq == IRQ_SKIP_CONNECT)
+        {
+            continue;
+        }
 		sysbus_connect_irq(SYS_BUS_DEVICE(s->perhiperhals[id]), irq-(cfg->irq), qdev_get_gpio_in(s->cpu, *irq));
 	}
 }
