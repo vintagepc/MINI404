@@ -42,12 +42,22 @@
 #define TYPE_STM32F4XX_TIMER "stm32f4xx-timer"
 OBJECT_DECLARE_SIMPLE_TYPE(f2xx_tim, STM32F4XX_TIMER)
 
+enum TIMIRQ_TYPE 
+{
+    IRQ_GLOBAL,
+    IRQ_UPDATE,
+    IRQ_TRIG_COM,
+    IRQ_BREAK,
+    IRQ_CC,
+    IRQ_COUNT
+};
+
 struct f2xx_tim {
     STM32Peripheral parent;
     MemoryRegion iomem;
 
     QEMUTimer *timer, *ccrtimer[4];
-    qemu_irq irq, public_irq;
+    qemu_irq irq[IRQ_COUNT], public_irq;
     // Union-ized for my/code sanity and easier inspection during debugging.
     union {
         uint32_t regs[R_TIM_MAX];
