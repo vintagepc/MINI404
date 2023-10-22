@@ -135,10 +135,13 @@ static void f2xx_tim_update_irqs(f2xx_tim *s)
     flags &= s->regs[R_TIM_DIER];
     qemu_set_irq(s->irq[IRQ_GLOBAL], flags > 0);
     qemu_set_irq(s->public_irq, flags > 0);
-    qemu_set_irq(s->irq[IRQ_CC], (flags & INT_CC_MSK) > 0);
-    qemu_set_irq(s->irq[IRQ_UPDATE], (flags & INT_UIF) > 0);
-    qemu_set_irq(s->irq[IRQ_BREAK], (flags & INT_BIF) > 0);
-    qemu_set_irq(s->irq[IRQ_TRIG_COM], (flags & (INT_TIF | INT_COMF )) > 0);
+    if (!qemu_irq_is_connected(s->irq[IRQ_GLOBAL]))
+    {
+        qemu_set_irq(s->irq[IRQ_CC], (flags & INT_CC_MSK) > 0);
+        qemu_set_irq(s->irq[IRQ_UPDATE], (flags & INT_UIF) > 0);
+        qemu_set_irq(s->irq[IRQ_BREAK], (flags & INT_BIF) > 0);
+        qemu_set_irq(s->irq[IRQ_TRIG_COM], (flags & (INT_TIF | INT_COMF )) > 0);
+    }
 }
 
 static void f2xx_tim_modify_flag(f2xx_tim *s, int irq_flag, bool flag_value)
@@ -216,7 +219,12 @@ static void f2xx_tim_update_ccr_timer(f2xx_tim *s, int n, uint32_t when)
 	// Calculate timer tick for CCR event:
 	int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     // When will we match CCR?
-	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s,when));
+    int32_t curr_cnt = f2xx_tim_ns_to_ticks(s, current_time) - s->count_timebase;
+    if (curr_cnt>when)
+    {
+        when += 0xFFFF;
+    }
+	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s,when - curr_cnt));
 }
 
 // Called if there's an update to ARR without buffering (ARPE=0)
