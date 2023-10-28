@@ -218,7 +218,7 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 			}
 			else
 			{
-				printf("w1 Bus unhandled low duration: %"PRId64" instructions\n", tLow);
+				// printf("w1 Bus unhandled low duration: %"PRId64" instructions\n", tLow);
 			}
 			if (s->bit_counter == 8)
 			{

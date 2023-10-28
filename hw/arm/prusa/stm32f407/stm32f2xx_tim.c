@@ -220,7 +220,7 @@ static void f2xx_tim_update_ccr_timer(f2xx_tim *s, int n, uint32_t when)
 	int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     // When will we match CCR?
     int32_t curr_cnt = f2xx_tim_ns_to_ticks(s, current_time) - s->count_timebase;
-    if (curr_cnt>when)
+    if (curr_cnt>=when)
     {
         when += 0xFFFF;
     }

@@ -115,10 +115,21 @@ static void stm32f4xx_exti_write(void *opaque, hwaddr addr,
         return;
     case EXTI_SWIER:
         s->exti_swier = value;
+        {
+            uint32_t enabled = value & s->exti_imr;
+            uint32_t to_set = enabled & ~s->exti_pr;
+            for (int i=0; i< NUM_INTERRUPT_OUT_LINES; i++)
+            {
+                if (to_set & BIT(i)){
+                    qemu_irq_pulse(s->irq[i]);
+                }
+            }
+        }
         return;
     case EXTI_PR:
         /* This bit is cleared by writing a 1 to it */
         s->exti_pr &= ~value;
+        s->exti_swier &= ~value;
         return;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,

@@ -99,11 +99,11 @@ static void loadcell_tap_timer(void *opaque)
 	uint32_t value = 0;
 	if (s->tap < 25)
 	{
-		value = s->tap*20000;
+		value = s->tap*-20000;
 	}
 	else
 	{
-		value = (50-s->tap)*20000;
+		value = (50-s->tap)*-20000;
 	}
 	qemu_set_irq(s->irq, value);
 	s->tap++;
