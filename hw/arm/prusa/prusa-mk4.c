@@ -173,7 +173,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
-	.e_t_mass = 45,
+	.e_t_mass = 35,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -511,7 +511,7 @@ static void mk4_init(MachineState *machine)
 
     {
 
-        int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*(cfg.has_loadcell ? 220: 212),0 };
+        int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
  		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         if (cfg.is_400step) {
