@@ -64,6 +64,8 @@
 #define USART_GTPR_OFFSET   0x18/4
 #define USART_R_END         0x1c/4
 
+static const uint8_t BITS_PER_CHAR = 10;
+
 /* HELPER FUNCTIONS */
 
 /* Update the baud rate based on the USART's peripheral clock frequency. */
@@ -72,20 +74,15 @@ static void stm32_uart_baud_update(STM32Peripheral *p)
     Stm32Uart *s = STM32_UART(p);
     uint32_t clk_freq = s->parent.clock_freq;
 
-    uint64_t ns_per_bit;
-
     if((s->regs[USART_BRR_OFFSET] == 0) || (clk_freq == 0)) {
         s->bits_per_sec = 0;
     } else {
 		float scale = s->defs.CR1.OVER8 ? 8.f : 16.f;
 		float clk_div = scale * (s->defs.BRR.MANT + (float)s->defs.BRR.FRACT/scale);
-        s->bits_per_sec = clk_freq / clk_div;
-        ns_per_bit = 1000000000LL / s->bits_per_sec;
-
+        s->ns_per_char = BITS_PER_CHAR * (int64_t)((NANOSECONDS_PER_SECOND * clk_div)/clk_freq);
         /* We assume 10 bits per character.  This may not be exactly
          * accurate depending on settings, but it should be good enough.
 		 as most cases are at least 10 - 8 data, 1 start, 1 stop. */
-        s->ns_per_char = ns_per_bit * 10;
     }
 
 #ifdef DEBUG_STM32_UART
