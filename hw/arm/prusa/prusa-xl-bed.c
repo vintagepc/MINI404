@@ -220,7 +220,7 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 	for (int i=0; i<2; i++)
 	{
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(current_sense[i]), &error_fatal);
-		// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", current_adcs[i],  qdev_get_gpio_in_named(current_sense[i], "adc_read_request",0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", current_adcs[i],  qdev_get_gpio_in_named(current_sense[i], "adc_read_request",0));
     	qdev_connect_gpio_out_named(current_sense[i], "adc_out", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",current_adcs[i]));
 	}
 

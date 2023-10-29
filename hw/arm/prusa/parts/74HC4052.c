@@ -66,20 +66,21 @@ static void hc4052_reset(DeviceState *dev)
 static void hc4052_ch1_in(void *opaque, int n, int level){
     HC4052State *s = HC4052(opaque);
     s->levels[0][n] = level;
+    if (n == s->channel)
+    {
+        qemu_set_irq(s->irq[0], level);
+    }
     // printf("Ch1 %d changed to %d\n",n,level);
 }
 
 static void hc4052_ch2_in(void *opaque, int n, int level){
     HC4052State *s = HC4052(opaque);
     s->levels[1][n] = level;
+    if (n == s->channel)
+    {
+        qemu_set_irq(s->irq[1], level);
+    }
     // printf("Ch2 %d changed to %d\n",n,level);
-}
-
-static void hc4052_ch1_read_request(void *opaque, int n, int level)
-{
-    HC4052State *s = HC4052(opaque);
-	qemu_irq_raise(s->mux_read[n][s->channel]);
-    qemu_set_irq(s->irq[n], s->levels[n][s->channel]);
 }
 
 static void hc4052_select(void *opaque, int n, int level){
@@ -89,6 +90,8 @@ static void hc4052_select(void *opaque, int n, int level){
     } else {
         s->channel = (s->channel& 0x01) | ((level & 0x1)<<1);
     }
+    qemu_set_irq(s->irq[0], s->levels[0][s->channel]);
+    qemu_set_irq(s->irq[1], s->levels[1][s->channel]);
 }
 
 static void hc4052_init(Object *obj)
@@ -100,8 +103,6 @@ static void hc4052_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj),hc4052_select,"select",2);// S1, S2
     qdev_init_gpio_in_named(DEVICE(obj),hc4052_ch1_in,"1Y",4);// 1Y
     qdev_init_gpio_in_named(DEVICE(obj),hc4052_ch2_in,"2Y",4);// 2Y
-    qdev_init_gpio_in_named(DEVICE(obj),hc4052_ch1_read_request,"adc_read_request",2);
-
 }
 
 static const VMStateDescription vmstate_hc4052 = {
