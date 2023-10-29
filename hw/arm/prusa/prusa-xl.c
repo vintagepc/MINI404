@@ -163,17 +163,39 @@ static const xl_cfg_t xl_cfg_050 = {
 	.m_uart = STM32_P_UART1,
 	.is_400step = false,
 };
-
+#include "otp.h"
 #define DWARF_BOOTLOADER_IMAGE "bl_dwarf.elf.bin"
 
 static void xl_init(MachineState *machine, xl_cfg_t cfg)
 {
+
+    OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4), .bomID = 4
+		// .datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
+	};
+	if (&cfg == &xl_cfg_050)
+	{
+		otp_data.bomID = 5;
+	}
+
+	uint32_t* otp_raw = (uint32_t*) &otp_data;
     DeviceState *dev;
 
     dev = qdev_new(TYPE_STM32F427xI_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-	//qdev_prop_set_uint32(dev,"flash-size", 0);
+	
+	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+	qdev_prop_set_uint32(otp,"len-otp-data", 9);
+	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
+	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
+	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
+	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
+	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
+	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
+	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
+	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
+	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
