@@ -58,8 +58,8 @@ static void hc4052_reset(DeviceState *dev)
 {
     HC4052State *s = HC4052(dev);
     s->channel = s->start_channel;
-    qemu_set_irq(s->irq[0],0);
-    qemu_set_irq(s->irq[1],0);
+    qemu_set_irq(s->irq[0],s->levels[0][s->channel]);
+    qemu_set_irq(s->irq[1],s->levels[1][s->channel]);
 
 }
 
