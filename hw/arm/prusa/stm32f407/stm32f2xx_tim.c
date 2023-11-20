@@ -25,7 +25,6 @@
  */
 #include "stm32f2xx_tim.h"
 #include "migration/vmstate.h"
-#include "qemu-common.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
 #include "hw/qdev-properties.h"

@@ -391,5 +391,16 @@ extern void stm32_soc_machine_init(MachineState *machine)
 
 	armv7m_load_kernel(ARM_CPU(first_cpu),
 					machine->kernel_filename,
+                    0,
 					flash_size);
+}
+
+qemu_irq qemu_irq_split(qemu_irq irq1, qemu_irq irq2)
+{
+    DeviceState* splitter = qdev_new(TYPE_SPLIT_IRQ);
+    qdev_prop_set_uint32(splitter, "num-lines", 2);
+    qdev_realize_and_unref(splitter, NULL, &error_fatal);
+    qdev_connect_gpio_out(splitter, 0, irq1);
+    qdev_connect_gpio_out(splitter, 1, irq2);
+    return qdev_get_gpio_in(splitter, 0);
 }

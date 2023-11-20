@@ -30,7 +30,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"

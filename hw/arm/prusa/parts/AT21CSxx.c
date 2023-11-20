@@ -304,8 +304,7 @@ static void at21csxx_realize(DeviceState *dev, Error **errp)
                        TYPE_AT21CSXX);
             return;
         }
-        len = blk_pread(s->blk, 0, &s->data, sizeof(s->data));
-
+        len = blk_pread(s->blk, 0, sizeof(s->data), &s->data, 0);
         if (len != sizeof(s->data)) {
             error_setg(errp, "%s: failed to read backing file!",
                 TYPE_AT21CSXX);;
