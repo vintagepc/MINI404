@@ -34,6 +34,9 @@ typedef struct STM32Peripheral
 
 	struct STM32COMRccState* rcc; // RCC interfacing with clocktree.
 
+    // The clock frequency as output from the RCC
+    uint32_t clock_freq;
+    bool clock_enabled;
 	/* DMA IRQ. To send a periperhal DMA Request, set the level to the peripheral's data register.
 	* The DMA controller will check against its active streams for a match. and service it if one is found.
 	* Use index 1 if this is meant to be a write (M2P) or "ready for data" case - some peripherals have
@@ -42,6 +45,8 @@ typedef struct STM32Peripheral
 	qemu_irq dmar[2];
 
 } STM32Peripheral;
+
+DECLARE_INSTANCE_CHECKER(STM32Peripheral, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
 
 enum DMAR_TYPE {
 	DMAR_TYPE_BEGIN,
@@ -58,7 +63,11 @@ enum EXTI_TRANS {
 typedef struct STM32PeripheralClass
 {
 	SysBusDeviceClass parent;
+    // A handler to set a callback if the input clock changes.
+    void (*clock_update)(STM32Peripheral *p);
 } STM32PeripheralClass;
+
+DECLARE_CLASS_CHECKERS(STM32PeripheralClass, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
 
 // Common class data for variant storage.
 

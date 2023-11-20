@@ -65,10 +65,15 @@ jobs:
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404/build && ninja
     
-      # Right now this will fail some tests due to SIGABRT from the CPU crashing. Ignore it until that's fixed.
     - name: Run QTest
-      run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy -j4
-      continue-on-error: true
+      run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy
+    
+    - name: Upload log
+      if: failure()
+      uses: actions/upload-artifact@v3.1.1
+      with:
+        name: Test_log
+        path: ${{ runner.workspace }}/MINI404/build/meson-logs/testlog.txt
 
     - name: Generate Coverage report
       run: cd ${{ runner.workspace }}/MINI404/build && make coverage-html -j4

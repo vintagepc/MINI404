@@ -275,7 +275,9 @@ static void stm32_adc_reset(DeviceState *dev)
 		s->regs.raw[i] = s->reginfo[i].reset_val;
 	}
 	s->adc_sequence_position = 0;
-	memset(&s->adc_data,0,STM32_COM_ADC_MAX_REG_CHANNELS*sizeof(int));
+    // We can't reset the data here because it might 
+    // clear the initial stuff sent by other device resets. 
+	// memset(&s->adc_data,0,STM32_COM_ADC_MAX_REG_CHANNELS*sizeof(int));
 	if (s->next_eoc)
 		timer_del(s->next_eoc);
 }
@@ -345,7 +347,7 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
 	}
 
 	// Calculate the clock rate
-	uint64_t clock = stm32_rcc_if_get_periph_freq(&s->parent);
+	uint64_t clock = s->parent.clock_freq;
 
 	if (s->adcc)
 	{
@@ -359,7 +361,7 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
 			rate_sel? s->regs.defs.SMPR.SMP2 : s->regs.defs.SMPR.SMP1
 		));
 
-	uint64_t delay_ns = (1000000000UL * conv_cycles) / clock;
+	uint64_t delay_ns = (NANOSECONDS_PER_SECOND * conv_cycles) / clock;
 	// printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
 	timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
 
@@ -400,7 +402,7 @@ static uint64_t stm32_adc_read(void *opaque, hwaddr addr,
 
 static void stm32_adc_convert(COM_STRUCT_NAME(Adc) *s)
 {
-	qemu_irq_pulse(s->irq_read[s->adc_sequence_position]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
+	qemu_irq_raise(s->irq_read[s->adc_sequence_position]); // Toggle the data read request IRQ. The receiver can opt to send a new value (or do nothing)
 }
 
 static void stm32_adc_update_irqs(COM_STRUCT_NAME(Adc) *s, int level) {

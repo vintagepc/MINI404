@@ -140,7 +140,7 @@ static unsigned long crctable[256] =
 };
 
 typedef struct COM_CLASS_NAME(Crc) {
-	SysBusDeviceClass parent_class;
+	STM32PeripheralClass parent_class;
     stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(Crc);
 

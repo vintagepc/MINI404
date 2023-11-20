@@ -202,7 +202,7 @@ static void tmc2130_check_raise_diag(tmc2130_state *s, int32_t value){
     if (bDiag)
 	{
 		bool output = value == s->regs.defs.GCONF.diag0_int_pushpull;
-		if (output ^ s->diag_state)
+		if (output ^ s->diag_state || output)
 		{
 			qemu_set_irq(s->stall_indicator,value);
         	qemu_set_irq(s->irq_diag,output);
@@ -284,7 +284,8 @@ static void tmc2130_standstill_timer(void *opaque)
     tmc2130_state *s = opaque;
     s->regs.defs.DRV_STATUS.stst = 1;
     tmc2130_check_raise_diag(s, 0);
-    s->regs.defs.DRV_STATUS.SG_RESULT = 0;
+    s->regs.defs.DRV_STATUS.SG_RESULT = 250;
+    s->vis.status.stalled = false;
 }
 
 static void tmc2130_step(void *opaque, int n, int value) {
@@ -358,6 +359,7 @@ static void tmc2130_step(void *opaque, int n, int value) {
 static void tmc2130_dir(void *opaque, int n, int level) {
     tmc2130_state *s = opaque;
     s->dir = (level^s->is_inverted)&0x1;
+    s->vis.status.dir = s->dir;
 }
 
 static void tmc2130_create_reply(tmc2130_state *s) {

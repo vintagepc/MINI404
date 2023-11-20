@@ -69,7 +69,7 @@ typedef struct COM_STRUCT_NAME(Gpio) {
 } COM_STRUCT_NAME(Gpio);
 
 typedef struct COM_CLASS_NAME(Gpio) {
-	SysBusDeviceClass parent_class;
+	STM32PeripheralClass parent_class;
     stm32_reginfo_t var_reginfo[MAX_GPIO_BANKS][RI_END];
 } COM_CLASS_NAME(Gpio);
 

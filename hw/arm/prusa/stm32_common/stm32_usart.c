@@ -305,6 +305,7 @@ static const stm32_periph_variant_t stm32_usart_variants[] = {
 	{TYPE_STM32G070_USART, stm32g070_usart_reginfo},
 };
 
+static const uint8_t BITS_PER_CHAR = 10;
 static const uint8_t MAX_PRESCALE = 0b1011;
 static const uint16_t PRESCALE_DIV[] = {
 	1U, 2U, 4U, 6U, 8U, 10U, 12U, 16U, 32U, 64U, 128U, 256U
@@ -315,9 +316,7 @@ static const uint16_t PRESCALE_DIV[] = {
 /* Update the baud rate based on the USART's peripheral clock frequency. */
 static void stm32_common_usart_baud_update(COM_STRUCT_NAME(Usart) *s)
 {
-    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
-
-    uint64_t ns_per_bit;
+    uint32_t clk_freq = s->parent.clock_freq;
 
 	clk_freq /= PRESCALE_DIV[s->regs.defs.PRESCALE];
 
@@ -326,12 +325,10 @@ static void stm32_common_usart_baud_update(COM_STRUCT_NAME(Usart) *s)
     } else {
 		float scale = s->regs.defs.CR1.OVER8 ? 8.f : 16.f;
 		float clk_div = scale * (s->regs.defs.BRR.MANT + (float)s->regs.defs.BRR.FRACT/scale);
-        s->bits_per_sec = clk_freq / clk_div;
-        ns_per_bit = 1000000000LL / s->bits_per_sec;
-
+        s->ns_per_char = BITS_PER_CHAR * (int64_t)((NANOSECONDS_PER_SECOND * clk_div)/clk_freq);
         /* We assume 10 bits per character.  This may not be exactly
          * accurate depending on settings, but it should be good enough. */
-        s->ns_per_char = ns_per_bit * 10;
+        // printf("# NS per char %ld\n", s->ns_per_char);
     }
 
 #ifdef DEBUG_STM32_UART

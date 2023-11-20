@@ -14,16 +14,14 @@
 #include "stm32_rcc_if.h"
 #include "stm32_shared.h"
 
-DECLARE_CLASS_CHECKERS(STM32PeripheralClass, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
-
-DECLARE_INSTANCE_CHECKER(STM32Peripheral, STM32_PERIPHERAL, TYPE_STM32_PERIPHERAL);
-
 static bool create_if_not_exist(const char* default_name, uint32_t file_size)
 {
 	bool exists = true;
 	if (access(default_name, R_OK | W_OK) == -1)
 	{
+#ifndef CONFIG_GCOV
 		printf("%s not found - creating it.\n",default_name);
+#endif
 		// Create it.
 		int fd = creat(default_name, S_IRUSR | S_IWUSR);
 		exists = (ftruncate(fd, file_size) != -1);
@@ -44,9 +42,11 @@ extern BlockBackend* get_or_create_drive(BlockInterfaceType interface, int index
 	{
 		if (create_if_not_exist(default_name, file_size))
 		{
+#ifndef CONFIG_GCOV
 			printf("No -%s drive specified, using default %s\n",
 				interface==IF_MTD? "mtdblock" : "pflash",
 				default_name);
+#endif
 			QemuOpts* drive_opts = drive_add(interface, index, default_name, "format=raw");
 			dinfo = drive_new(drive_opts, interface, errp);
 		}
@@ -108,10 +108,11 @@ extern void stm32_soc_setup_flash(DeviceState* dev, MemoryRegion* flash, Error**
 					break;
 				}
 			}
+#ifndef CONFIG_GCOV
 			printf("Using file-backed flash storage for %s: %s\n", class->cfg->name, soc->flash_filename);
+#endif
 			if (is_blank)
 			{
-				printf("Backing file is all null, filling with 0xFF\n");
 				memset(mem, 0xFF, flash_size);
 			}
 			memory_region_init_ram_ptr(flash, OBJECT(soc), flash_name, flash_size, mem);
@@ -178,6 +179,15 @@ extern DeviceState* stm32_soc_get_periph(DeviceState* soc, stm32_periph_t id)
 	return s->perhiperhals[id];
 }
 
+static void stm32_peripheral_clock_change(void *opaque, int n, int level)
+{
+    STM32Peripheral *p = STM32_PERIPHERAL(opaque);
+    p->clock_enabled = stm32_rcc_if_check_periph_clk(p);
+    p->clock_freq = stm32_rcc_if_get_periph_freq(p);
+    STM32PeripheralClass *c = STM32_PERIPHERAL_GET_CLASS(opaque);
+    if (c->clock_update)
+        c->clock_update(p);
+}
 
 static void stm32_peripheral_rcc_reset(void *opaque, int n, int level)
 {
@@ -274,8 +284,16 @@ extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t 
 		 	sysbus_mmio_map(SYS_BUS_DEVICE(s->perhiperhals[id]), 0, cfg->base_addr);
 		}
 	}
+    if (id > STM32_P_RCC && stm32_rcc_if_has_clk(STM32_PERIPHERAL(s->perhiperhals[id])))
+    {
+        stm32_rcc_if_set_periph_clk_irq(STM32_PERIPHERAL(s->perhiperhals[id]), qdev_get_gpio_in_named(s->perhiperhals[id],"clock-change",0));
+    }
 	for (const int *irq = cfg->irq; *irq != -1; irq++)
 	{
+        if (*irq == IRQ_SKIP_CONNECT)
+        {
+            continue;
+        }
 		sysbus_connect_irq(SYS_BUS_DEVICE(s->perhiperhals[id]), irq-(cfg->irq), qdev_get_gpio_in(s->cpu, *irq));
 	}
 }
@@ -300,6 +318,7 @@ extern void stm32_soc_realize_all_peripherals(DeviceState *soc_state,Error **err
 static void stm32_peripheral_instance_init(Object* obj)
 {
 	qdev_init_gpio_in_named(DEVICE(obj),  stm32_peripheral_rcc_reset, "rcc-reset",1);
+    qdev_init_gpio_in_named(DEVICE(obj),  stm32_peripheral_clock_change, "clock-change",1);
 	STM32Peripheral *s = STM32_PERIPHERAL(obj);
     qdev_init_gpio_out_named(DEVICE(obj),s->dmar,"dmar",2);
 }

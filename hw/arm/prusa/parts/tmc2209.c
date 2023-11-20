@@ -213,7 +213,7 @@ static void tmc2209_enable(void *opaque, int n, int level) {
     }
 }
 
-static float tmc2209_step_to_pos(int32_t step, uint32_t max_steps_per_mm)
+static inline float tmc2209_step_to_pos(int32_t step, uint32_t max_steps_per_mm)
 {
 	return (float)(step)/(float)(max_steps_per_mm);
 }
@@ -303,19 +303,19 @@ static void tmc2209_step(void *opaque, int n, int value) {
 	bStall |= s->stalled;
     s->vis.status.stalled = bStall;
     s->vis.status.changed |= true;
-    if (bStall)
+    if (bStall && s->regs.defs.SG_RESULT.sg_result !=0)
     {
         if (s->current_step==0) qemu_set_irq(s->hard_out,1);
 		qemu_set_irq(s->stall_indicator,1);
         qemu_set_irq(s->irq_diag,1);
         s->regs.defs.SG_RESULT.sg_result = 0;
     }
-    else if (!bStall)
+    else if (!bStall && s->regs.defs.SG_RESULT.sg_result !=250 )
     {
-            qemu_set_irq(s->hard_out,0);
-            qemu_set_irq(s->irq_diag,0);
-			qemu_set_irq(s->stall_indicator,0);
-          s->regs.defs.SG_RESULT.sg_result = 250;
+        qemu_set_irq(s->hard_out,0);
+        qemu_set_irq(s->irq_diag,0);
+        qemu_set_irq(s->stall_indicator,0);
+        s->regs.defs.SG_RESULT.sg_result = 250;
     }
     s->regs.defs.DRV_STATUS.stst = false;
     // 2^20 comes from the datasheet.
@@ -327,6 +327,7 @@ static void tmc2209_step(void *opaque, int n, int value) {
 static void tmc2209_dir(void *opaque, int n, int level) {
     tmc2209_state *s = opaque;
     s->dir = (level^s->is_inverted)&0x1;
+    s->vis.status.dir = s->dir;
 }
 
 static void tmc2209_write(tmc2209_state *s)

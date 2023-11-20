@@ -163,17 +163,39 @@ static const xl_cfg_t xl_cfg_050 = {
 	.m_uart = STM32_P_UART1,
 	.is_400step = false,
 };
-
+#include "otp.h"
 #define DWARF_BOOTLOADER_IMAGE "bl_dwarf.elf.bin"
 
 static void xl_init(MachineState *machine, xl_cfg_t cfg)
 {
+
+    OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4), .bomID = 4
+		// .datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
+	};
+	if (&cfg == &xl_cfg_050)
+	{
+		otp_data.bomID = 5;
+	}
+
+	uint32_t* otp_raw = (uint32_t*) &otp_data;
     DeviceState *dev;
 
     dev = qdev_new(TYPE_STM32F427xI_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-	//qdev_prop_set_uint32(dev,"flash-size", 0);
+	
+	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+	qdev_prop_set_uint32(otp,"len-otp-data", 9);
+	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
+	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
+	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
+	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
+	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
+	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
+	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
+	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
+	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
@@ -186,32 +208,29 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
     if (arghelper_is_arg("appendix")) {
         qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
-    int kernel_len = strlen(machine->kernel_filename);
-    if (kernel_len >3)
+    char* kfn = machine->kernel_filename;
+    int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
-        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bbf",3)==0)
+        // TODO... use initrd_image as a bootloader alternative?
+        struct stat bootloader;
+        if (stat(BOOTLOADER_IMAGE,&bootloader))
         {
-            // TODO... use initrd_image as a bootloader alternative?
-            struct stat bootloader;
-            if (stat(BOOTLOADER_IMAGE,&bootloader))
-            {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
-                return;
-            }
-            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
-            // by -64 bytes and rely on the bootloader clobbering it.
-            load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                BOOTLOADER_IMAGE,
-                flash_size);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
+            return;
         }
-        else // Raw bin or ELF file, load directly.
-        {
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                            machine->kernel_filename,
-                            flash_size);
-        }
+        // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+        // by -64 bytes and rely on the bootloader clobbering it.
+        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+            BOOTLOADER_IMAGE,
+            flash_size);
+    }
+    else // Raw bin or ELF file, load directly.
+    {
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+                        machine->kernel_filename,
+                        flash_size);
     }
 
 	DeviceState* key_in = qdev_new("p404-key-input");
@@ -495,7 +514,7 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
         qdev_prop_set_uint16(dev, "temp",startvals[i]);
         qdev_prop_set_uint16(dev, "table_no", tables[i]);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",channels[i]));
     }
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
@@ -525,8 +544,8 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF),12,qdev_get_gpio_in_named(dev,"select", 1)); // S0
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),6,qdev_get_gpio_in_named(dev, "select", 0)); // S1
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", 10,  qdev_get_gpio_in_named(dev, "adc_read_request",0));
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", 4,  qdev_get_gpio_in_named(dev, "adc_read_request",1));
+    // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", 10,  qdev_get_gpio_in_named(dev, "adc_read_request",0));
+    // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", 4,  qdev_get_gpio_in_named(dev, "adc_read_request",1));
 	qdev_connect_gpio_out(dev,0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in", 10));
     qdev_connect_gpio_out(dev,1, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in", 4));
 
@@ -563,8 +582,8 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),8,qdev_get_gpio_in_named(dev,"select",0)); // S0
     qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),15,qdev_get_gpio_in_named(dev, "select", 1)); // S1
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_read", 3,  qdev_get_gpio_in_named(dev, "adc_read_request",0));
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_read", 5,  qdev_get_gpio_in_named(dev, "adc_read_request",1));
+    // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_read", 3,  qdev_get_gpio_in_named(dev, "adc_read_request",0));
+    // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_read", 5,  qdev_get_gpio_in_named(dev, "adc_read_request",1));
 	qdev_connect_gpio_out(dev,0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_data_in",3));
     qdev_connect_gpio_out(dev,1, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_data_in",5));
 
@@ -655,7 +674,7 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
         // We processed an arg that wants us to quit after it's done.
         qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
     }
-	else
+	else if (kernel_len)
 	{
 		dev = qdev_new("xl-bridge");
 		qdev_prop_set_uint8(dev, "device", XL_DEV_XBUDDY);

@@ -74,7 +74,7 @@ static void hx717_reset(DeviceState *dev)
     s->channel = false;
     s->gain = 128;
     s->sck_count = 0;
-    s->rate = 3; // every 100ms. Change to 12 for 80SPS. HX717 can do 10, 20, 80 and 320Hz sample rates.
+    s->rate = 12; // every 100ms. Change to 12 for 80SPS. HX717 can do 10, 20, 80 and 320Hz sample rates.
     s->value[0] = 0;
     //s->value[1] = 1000;
     qemu_set_irq(s->irq,1); // DOUT high when NR
@@ -148,6 +148,7 @@ static void hx717_sck(void *opaque, int n, int level){
 
 static void hx717_data_ready(void *opaque) {
     HX717State *s = HX717(opaque);
+    qemu_irq_raise(s->irq);
     qemu_irq_lower(s->irq);
     s->sck_count = 0;
     s->value_gain = s->value[s->channel];
@@ -156,6 +157,7 @@ static void hx717_data_ready(void *opaque) {
 	{
 		s->value_gain/=1000;
 	}
+    timer_mod(s->tick, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+s->rate);
 }
 
 

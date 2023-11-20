@@ -185,6 +185,7 @@ static void heater_reset(DeviceState *dev)
     s->thermalMass = ((float)s->mass10x)/10.f;
     s->ambientTemp = 18.f;
     s->currentTemp = s->ambientTemp;
+    qemu_set_irq(s->temp_out, s->currentTemp*256.f);
 }
 
 static int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {

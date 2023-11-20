@@ -106,32 +106,30 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
-    int kernel_len = strlen(machine->kernel_filename);
-    if (kernel_len >3)
+
+    char* kfn = machine->kernel_filename;
+    int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
-        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bbf",3)==0)
+        // TODO... use initrd_image as a bootloader alternative?
+        struct stat bootloader;
+        if (stat(BOOTLOADER_IMAGE,&bootloader))
         {
-            // TODO... use initrd_image as a bootloader alternative?
-            struct stat bootloader;
-            if (stat(BOOTLOADER_IMAGE,&bootloader))
-            {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
-                return;
-            }
-            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
-            // by -64 bytes and rely on the bootloader clobbering it.
-            load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                BOOTLOADER_IMAGE,
-                default_flash_size);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
+            return;
         }
-        else // Raw bin or ELF file, load directly.
-        {
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                            machine->kernel_filename,
-                            default_flash_size);
-        }
+        // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+        // by -64 bytes and rely on the bootloader clobbering it.
+        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+            BOOTLOADER_IMAGE,
+            default_flash_size);
+    }
+    else // Raw bin or ELF file, load directly.
+    {
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+                        machine->kernel_filename,
+                        default_flash_size);
     }
 
     DeviceState* key_in = qdev_new("p404-key-input");
@@ -291,7 +289,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         qdev_prop_set_uint16(dev, "table_no", tables[i]);
         qdev_prop_set_uint8(dev, "index", i);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",channels[i]));
         qdev_connect_gpio_out_named(dev, "temp_out_256x", 0, qdev_get_gpio_in_named(db2,"therm-temp",i));
 
@@ -401,6 +399,9 @@ static void prusa_mini_014_machine_init(MachineClass *mc)
 
 DEFINE_MACHINE("prusa-mini-014", prusa_mini_014_machine_init)
 
+// Don't enable this for tests, it breaks because it doesn't run.
+#ifndef CONFIG_GCOV
+
 static void buddy_machine_init(MachineClass *mc)
 {
     mc->desc = "Prusa Mini Board";
@@ -408,3 +409,4 @@ static void buddy_machine_init(MachineClass *mc)
 }
 
 DEFINE_MACHINE("prusabuddy", buddy_machine_init)
+#endif
