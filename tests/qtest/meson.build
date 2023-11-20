@@ -353,7 +353,7 @@ foreach dir : target_dirs
         deps += test_ss.all_dependencies()
       endif
       qtest_executables += {
-        test: executable(test, src, dependencies: deps)
+        test: executable(fs.name(test), src, dependencies: deps)
       }
     endif
     test('qtest-@0@/@1@'.format(target_base, test),
