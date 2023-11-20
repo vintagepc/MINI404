@@ -124,7 +124,7 @@ jobs:
     - name: Install dependencies
       run: |
         brew install libffi gettext glib pkg-config autoconf automake pixman ninja make
-        pip3 install distutils
+        pip3 install setuptools
 
     - name: Configure build
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu"
@@ -190,7 +190,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          ../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
+          ../configure --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
         shell: msys2 {0}
 
       - name: Build
