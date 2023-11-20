@@ -63,7 +63,7 @@ typedef struct Stm32f4xxRNGState {
 
     qemu_irq irq;
 
-    int64_t next_drdy;
+    QEMUTimer* next_drdy;
 
 } Stm32f4xxRNGState;
 

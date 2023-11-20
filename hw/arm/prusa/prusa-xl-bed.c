@@ -94,13 +94,13 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
         // by -64 bytes and rely on the bootloader clobbering it.
         load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
         armv7m_load_kernel(ARM_CPU(first_cpu),
-            BOOTLOADER_IMAGE,
+            BOOTLOADER_IMAGE, 0,
             FLASH_SIZE);
     }
     else // Raw bin or ELF file, load directly.
     {
         armv7m_load_kernel(ARM_CPU(first_cpu),
-                        machine->kernel_filename,
+                        machine->kernel_filename, 0,
                         FLASH_SIZE);
     }
 
