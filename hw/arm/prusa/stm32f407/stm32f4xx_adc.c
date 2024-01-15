@@ -77,7 +77,7 @@ enum RegIndex {
 
 typedef struct STM32F4XXADCCState STM32F4XXADCCState;
 
-#define ADC_NUM_REG_CHANNELS 18
+#define ADC_NUM_REG_CHANNELS 19
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XXADCState, STM32F4xx_ADC)
 
@@ -161,7 +161,7 @@ struct STM32F4XXADCState {
         } QEMU_PACKED defs;
     };
 
-    uint8_t  adc_smprs[19];
+    uint8_t  adc_smprs[ADC_NUM_REG_CHANNELS];
 
     STM32F4XXADCCState* common;
 
