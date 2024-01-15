@@ -511,7 +511,7 @@ static void mk4_init(MachineState *machine)
 
     {
 
-        int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
+        int32_t ends[4] = { 100*16*255, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
  		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         if (cfg.is_400step) {
@@ -740,11 +740,12 @@ static void mk4_init(MachineState *machine)
 
     // hotend = fan1
     // print fan = fan0
-    uint16_t fan_max_rpms[] = { 6600, 8000 };
+    uint16_t fan_max_rpms[] = { 6600, 7000 };
     uint8_t  fan_pwm_pins[] = { 11, 9};
     uint8_t fan_tach_pins[] = { 10, 14};
     uint8_t fan_labels[] = {'P','E'};
 	DeviceState* fanpwm = qdev_new("software-pwm");
+    qdev_prop_set_bit(fanpwm, "is_inverted", true);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(fanpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM14), "timer", 0, qdev_get_gpio_in_named(fanpwm, "tick-in", 0));
     for (int i=0; i<2; i++)
@@ -755,7 +756,7 @@ static void mk4_init(MachineState *machine)
         dev = qdev_new("fan");
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
-        qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
+        //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),fan_tach_pins[i]));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
