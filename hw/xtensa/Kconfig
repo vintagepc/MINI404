@@ -23,4 +23,6 @@ config XTENSA_ESP32
     select TMP105
     select LED
 
+config XTENSA_ESP8266
+    bool
 
