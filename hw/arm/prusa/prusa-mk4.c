@@ -797,7 +797,8 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "cursor_xy", 1, y_split);
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
-    if (mc->has_mmu)
+    // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
+    if (mc->has_mmu && kernel_len > 0)
     {
         printf("Enabling MMU control channel\n");
         dev = qdev_new("mmu-bridge");
