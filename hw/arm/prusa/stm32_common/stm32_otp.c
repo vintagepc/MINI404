@@ -84,13 +84,13 @@ stm32_common_otp_read(void *arg, hwaddr addr, unsigned int size)
     COM_STRUCT_NAME(Otp) *s = STM32COM_OTP(arg);
     int offset = addr & 0x3;
 
+    addr >>= 2;
+
     if (addr >= s->cfg_otp_end_bytes) {
         qemu_log_mask(LOG_GUEST_ERROR, "invalid read f4xx_otp register 0x%x\n",
           (unsigned int)addr);
         return 0;
     }
-
-    addr >>= 2;
 
     uint32_t value = s->data[addr];
 	ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 7);
@@ -121,13 +121,6 @@ static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
 
         int64_t len = blk_getlength(s->blk);
 
-        // Note - some OSes do not allow files under 1k, so as long as the source is larger it's fine.
-        if (len <= sizeof(s->data)) {
-            error_setg(errp, "%s: Backing file size %" PRId64 " != %" PRIu64,
-                       TYPE_STM32COM_OTP, len, sizeof(s->data));
-            return;
-        }
-
         if (blk_set_perm(s->blk, BLK_PERM_CONSISTENT_READ,
                          BLK_PERM_ALL, &error_fatal) < 0)
         {
@@ -135,14 +128,13 @@ static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
                        TYPE_STM32COM_OTP);
             return;
         }
-        len = blk_pread(s->blk, 0, &s->data, sizeof(s->data));
-
-        if (len != sizeof(s->data)) {
-            error_setg(errp, "%s: failed to read backing file!",
-                TYPE_STM32COM_OTP);;
+        
+        if (blk_pread(s->blk, 0, MIN(sizeof(s->data), len), &s->data, 0) < 0) {
+            error_setg(errp, "%s: failed to read backing file.",
+                TYPE_STM32COM_OTP);
         }
     }
-	else
+	else if (s->nr_init) // Otherwise, there were properties set
 	{
 		// Some defaults for Mini404.
 		// TODO - abstract this out as properties or use file backend
@@ -151,6 +143,10 @@ static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
 		{
 			s->data[i] = s->init_data[i];
 		}
+	}
+	else // Not initialized, fill first 1k with FFs.
+	{
+		memset(s->data, 0xFF, MIN(sizeof(s->data), 1U*KiB));
 	}
 }
 

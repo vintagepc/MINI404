@@ -65,16 +65,21 @@ jobs:
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404/build && ninja
     
-      # Right now this will fail some tests due to SIGABRT from the CPU crashing. Ignore it until that's fixed.
     - name: Run QTest
-      run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy -j4
-      continue-on-error: true
+      run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy
+    
+    - name: Upload log
+      if: failure()
+      uses: actions/upload-artifact@v3.1.1
+      with:
+        name: Test_log
+        path: ${{ runner.workspace }}/MINI404/build/meson-logs/testlog.txt
 
     - name: Generate Coverage report
       run: cd ${{ runner.workspace }}/MINI404/build && make coverage-html -j4
 
     - name: Strip down Coverage report
-      run: cd ${{ runner.workspace }}/MINI404/build/meson-logs && lcov -extract coverage.info '*/arm/prusa/*' --rc lcov_branch_coverage=1 --output-file=c2.info
+      run: cd ${{ runner.workspace }}/MINI404/build/meson-logs && lcov -extract coverage.info '*/arm/prusa/*' --rc lcov_branch_coverage=1 --output-file=c2.info &&  lcov -remove c2.info '*/3rdParty/*'  --rc lcov_branch_coverage=1 --output-file=c2.info
 
     - name: Upload to codecov.io
       uses: codecov/codecov-action@v3

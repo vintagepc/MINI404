@@ -23,25 +23,49 @@
 #include "../stm32_common/stm32_rcc_if.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "hw/irq.h"
 #include "../utility/macros.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
 
-#define R_OFF_CR 0U
-#define R_OFF_SR 1U
-#define R_OFF_DR 2U
+#include "stm32f4xx_rng_regdata.h"
+
+static void stm32f4xx_update_irq(Stm32f4xxRNGState* s)
+{
+    if (s->regs.defs.CR.IE)
+    {
+        qemu_set_irq(s->irq, s->regs.defs.SR.DRDY | s->regs.defs.SR.SEIS | s->regs.defs.SR.CEIS );
+    }
+}
+
+
+static void stm32f4xx_rng_set_next_drdy(Stm32f4xxRNGState* s)
+{
+	uint32_t clk_freq = s->parent.clock_freq;
+	// Datasheet says this is 40 clock ticks or less.
+    timer_mod_ns(s->next_drdy, (NANOSECONDS_PER_SECOND/(clk_freq/40U)) + qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+}
+
+static void stm32f4xx_rng_deadline(void *opaque) {
+
+    Stm32f4xxRNGState *s = STM32F4XX_RNG(opaque);
+    if (s->regs.defs.CR.RNGEN)
+    {
+        s->regs.defs.SR.DRDY = 1;
+        stm32f4xx_update_irq(s);
+    }
+}
 
 static uint64_t
 stm32f4xx_rng_read(void *arg, hwaddr addr, unsigned int size)
 {
     Stm32f4xxRNGState *s = arg;
-    uint32_t r;
     int offset = addr & 0x3;
 
     addr >>= 2;
-    if (addr >= R_RNG_MAX) {
+    if (addr >= RI_END) {
         qemu_log_mask(LOG_GUEST_ERROR, "invalid read f4xx_rng register 0x%x\n",
           (unsigned int)addr << 2);
         return 0;
@@ -49,57 +73,60 @@ stm32f4xx_rng_read(void *arg, hwaddr addr, unsigned int size)
 
     switch (addr)
     {
-        case R_OFF_SR:
-            // No DRDY until both RNG is enabled and the required time has elapsed.
-            if (s->regs.defs.CR.RNGEN && (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) >= s->next_drdy))
-            {
-                s->regs.defs.SR.DRDY = 1;
-            }
+        case RI_SR:
+			s->regs.defs.SR.CECS = (stm32_rcc_if_check_periph_clk(&s->parent) == false);
+			s->regs.defs.SR.CEIS |= s->regs.defs.SR.CECS;
+            stm32f4xx_update_irq(s);
             break;
-        case R_OFF_DR:
+        case RI_DR:
             // Clear DRDY
             if (!s->regs.defs.SR.DRDY)
             {
                 qemu_log_mask(LOG_GUEST_ERROR, "Guest attempted to read RNG DR when DRDY = 0!");
+				return 0;
             }
             s->regs.defs.SR.DRDY = 0;
+            stm32f4xx_update_irq(s);
             qemu_guest_getrandom_nofail(&s->regs.defs.DR, sizeof(&s->regs.defs.DR));
-            // Calculate next DRDY:
-            uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
-            // Datasheet says this is 40 clock ticks or less.
-            s->next_drdy = (1000000000LLU/(clk_freq/40U)) + qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-            break;
-        case R_OFF_CR:
-            break;
-        default:
-            qemu_log_mask(LOG_GUEST_ERROR, "invalid read from RNG register 0x%"HWADDR_PRIx"\n", addr);
+            stm32f4xx_rng_set_next_drdy(s);
 
+            break;
+        case RI_CR:
+            break;
     }
 
     uint32_t value = s->regs.raw[addr];
 
-    r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
+    ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b100);
 
-    return r;
+    return value;
 }
 
 static void
 stm32f4xx_rng_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 {
-    // int offset = addr & 0x3;
-    addr >>= 2;
-
     Stm32f4xxRNGState *s = STM32F4XX_RNG(arg);
+    int offset = addr & 0x3;
+    addr >>= 2;
+    ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b100);
 
     switch (addr)
     {
-        case R_OFF_CR:
+        case RI_CR:
             s->regs.raw[addr] = data;
-            if (s->regs.defs.CR.IE)
-            {
-                printf("FIXME: RNG interrupt not implemented\n");
-            }
+			if (s->regs.defs.CR.RNGEN)
+			{
+				stm32f4xx_rng_set_next_drdy(s);
+			}
             break;
+		case RI_SR:
+		{
+			uint32_t wc = data & 0x60;
+			s->regs.raw[addr] &= ~wc;
+            stm32f4xx_update_irq(s);
+
+		}
+		break;
         default:
             qemu_log_mask(LOG_GUEST_ERROR, "invalid write to RNG register 0x%"HWADDR_PRIx"\n", addr);
     }
@@ -121,7 +148,6 @@ static void stm32f4xx_rng_reset(DeviceState *ds)
 {
     Stm32f4xxRNGState *s = STM32F4XX_RNG(ds);
     memset(&s->regs.raw, 0, sizeof(s->regs.raw));
-    s->next_drdy = 0;
 }
 
 static void stm32f4xx_rng_finalize(Object *obj) {
@@ -130,8 +156,8 @@ static void stm32f4xx_rng_finalize(Object *obj) {
 
 static void stm32f4xx_rng_realize(DeviceState *dev, Error **errp)
 {
-    // Stm32f4xxRNGState *s = STM32F4XX_OTP(dev);
-
+    Stm32f4xxRNGState *s = STM32F4XX_RNG(dev);
+    s->next_drdy = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32f4xx_rng_deadline, s);
 }
 
 static void

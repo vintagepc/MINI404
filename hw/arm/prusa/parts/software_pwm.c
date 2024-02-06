@@ -25,6 +25,8 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "migration/vmstate.h"
+#include "qemu/timer.h"
+#include "hw/qdev-properties.h"
 #include "hw/sysbus.h"
 #include "hw/irq.h"
 
@@ -43,7 +45,7 @@ typedef struct SoftwarePWMState {
 	uint8_t clock_count;
 	uint8_t last_pwm[LINE_COUNT];
 	uint16_t line_state;
-
+    bool is_inverted;
 	qemu_irq pwm[LINE_COUNT];
 
 } SoftwarePWMState;
@@ -73,7 +75,7 @@ static void software_pwm_tick(void *opaque, int n, int level)
 			if (s->last_pwm[i] != s->state_count[i])
 			{
 				// printf("Software PWM %d: current %u\n",i,  s->state_count[i]);
-				qemu_set_irq(s->pwm[i], s->state_count[i]);
+				qemu_set_irq(s->pwm[i], s->is_inverted?(255U - s->state_count[i]) : s->state_count[i]);
 			}
 			s->last_pwm[i] = s->state_count[i];
 			s->state_count[i] = 0;
@@ -127,12 +129,18 @@ static void software_pwm_init(Object *obj)
 	qdev_init_gpio_out(dev, s->pwm, LINE_COUNT);
 }
 
-static void softwar_pwm_class_init(ObjectClass *klass, void *data)
+static Property software_pwm_properties[] = {
+    DEFINE_PROP_BOOL("is_inverted", SoftwarePWMState, is_inverted, false),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void software_pwm_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->reset = software_pwm_reset;
     dc->vmsd = &vmstate_software_pwm;
+    device_class_set_props(dc, software_pwm_properties);
 }
 
 static const TypeInfo SOFTWARE_PWM_info = {
@@ -140,7 +148,7 @@ static const TypeInfo SOFTWARE_PWM_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(SoftwarePWMState),
     .instance_init = software_pwm_init,
-    .class_init    = softwar_pwm_class_init,
+    .class_init    = software_pwm_class_init,
 };
 
 static void software_pwm_register_types(void)

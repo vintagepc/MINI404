@@ -39,6 +39,7 @@
 #include "qemu/bitops.h"
 #include "assert.h"
 #include "stm32_rcc_if.h"
+#include "stm32_usart_regdata.h"
 
 /* DEFINITIONS*/
 
@@ -53,22 +54,6 @@
 #else
 #define DPRINTF(fmt, ...)
 #endif
-
-enum reg_index {
-	RI_CR1,
-	RI_CR2,
-	RI_CR3,
-	RI_BRR,
-	RI_GTPR,
-	RI_RTOR,
-	RI_RQR,
-	RI_ISR,
-	RI_ICR,
-	RI_RDR,
-	RI_TDR,
-	RI_PRESC,
-	RI_END
-};
 
 #define USART_RCV_BUF_LEN 256
 
@@ -320,6 +305,7 @@ static const stm32_periph_variant_t stm32_usart_variants[] = {
 	{TYPE_STM32G070_USART, stm32g070_usart_reginfo},
 };
 
+static const uint8_t BITS_PER_CHAR = 10;
 static const uint8_t MAX_PRESCALE = 0b1011;
 static const uint16_t PRESCALE_DIV[] = {
 	1U, 2U, 4U, 6U, 8U, 10U, 12U, 16U, 32U, 64U, 128U, 256U
@@ -330,9 +316,7 @@ static const uint16_t PRESCALE_DIV[] = {
 /* Update the baud rate based on the USART's peripheral clock frequency. */
 static void stm32_common_usart_baud_update(COM_STRUCT_NAME(Usart) *s)
 {
-    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
-
-    uint64_t ns_per_bit;
+    uint32_t clk_freq = s->parent.clock_freq;
 
 	clk_freq /= PRESCALE_DIV[s->regs.defs.PRESCALE];
 
@@ -341,12 +325,10 @@ static void stm32_common_usart_baud_update(COM_STRUCT_NAME(Usart) *s)
     } else {
 		float scale = s->regs.defs.CR1.OVER8 ? 8.f : 16.f;
 		float clk_div = scale * (s->regs.defs.BRR.MANT + (float)s->regs.defs.BRR.FRACT/scale);
-        s->bits_per_sec = clk_freq / clk_div;
-        ns_per_bit = 1000000000LL / s->bits_per_sec;
-
+        s->ns_per_char = BITS_PER_CHAR * (int64_t)((NANOSECONDS_PER_SECOND * clk_div)/clk_freq);
         /* We assume 10 bits per character.  This may not be exactly
          * accurate depending on settings, but it should be good enough. */
-        s->ns_per_char = ns_per_bit * 10;
+        // printf("# NS per char %ld\n", s->ns_per_char);
     }
 
 #ifdef DEBUG_STM32_UART
@@ -446,7 +428,7 @@ static void stm32_common_usart_start_tx(COM_STRUCT_NAME(Usart) *s, uint32_t valu
 	s->transmitting = true;
 	// uint8_t chcr = '\r';
     /* Write the character out. */
-	if (s->do_rs485)
+	if (s->do_rs485) // LCOV_EXCL_START
 	{
 		s->rs485_in[s->rs485_in_i++] = ch;
     	if (s->rs485_in_i>2 && s->rs485_in_i==s->rs485_in[2])
@@ -462,13 +444,13 @@ static void stm32_common_usart_start_tx(COM_STRUCT_NAME(Usart) *s, uint32_t valu
 			s->rs485_in_i = 0;
 		}
 	}
-	else
+	else // LCOV_EXCL_END
 	{
     	//if (ch == '\n') qemu_chr_fe_write_all(&s->chr, &chcr, 1);
-		if (s->debug_rs485)
+		if (s->debug_rs485) // LCOV_EXCL_START
 		{
 			printf("RS485 TX: %02x (%c)\n", ch, ch);
-		}
+		} // LCOV_EXCL_STOP
     	qemu_chr_fe_write_all(&s->chr, &ch, 1);
 	}
     // if (s->chr_write_obj) {
@@ -604,6 +586,7 @@ static int stm32_common_usart_can_receive(void *opaque)
     return (USART_RCV_BUF_LEN - s->rcv_char_bytes);
 }
 
+// LCOV_EXCL_START
 /* Table of CRC values for high-order byte */
 static char auchCRCHi[] = {
     0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0,
@@ -703,6 +686,8 @@ static bool stm32_common_usart_rs485(COM_STRUCT_NAME(Usart) *s, const uint8_t *b
 		return true;
 	}
 }
+// LCOV_EXCL_STOP
+
 
 static void stm32_common_usart_receive(void *opaque, const uint8_t *buf, int size)
 {
@@ -712,7 +697,7 @@ static void stm32_common_usart_receive(void *opaque, const uint8_t *buf, int siz
     assert(size > 0);
     /* Copy the characters into our buffer first */
     assert (size <= USART_RCV_BUF_LEN - s->rcv_char_bytes);
-	if (s->debug_rs485)
+	if (s->debug_rs485) // LCOV_EXCL_START
 	{
 		printf("RS485 RX: %02x (%c)\n", *buf, *buf);
 	}
@@ -722,7 +707,7 @@ static void stm32_common_usart_receive(void *opaque, const uint8_t *buf, int siz
 		{
 			return; // message not complete.
 		}
-	}
+	} // LCOV_EXCL_STOP
 	else
 	{
     	memmove(s->rcv_char_buf + s->rcv_char_bytes, buf, size);
@@ -791,11 +776,13 @@ static void stm32_common_usart_USART_DR_write(COM_STRUCT_NAME(Usart) *s, uint32_
 
     if(!s->regs.defs.CR1.UE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART was disabled.");
+		return;
     }
 
     if(!s->regs.defs.CR1.TE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART transmitter "
                  "was disabled.");
+		return;
     }
 
     if(s->regs.defs.ISR.TC || !s->transmitting) {
@@ -906,14 +893,8 @@ static void stm32_common_usart_write(void *opaque, hwaddr addr,
 
     switch (addr) {
         case RI_ISR:
-            // Check write mask to see if guest tried to set a clear-only bit
-            // if ((value & ~(s->regs[RI_ISR])) & 0x360) {
-            //     qemu_log_mask(LOG_GUEST_ERROR, "USART - guest attempted to set a clear-only SR bit with value %0" HWADDR_PRIx "\n", value);
-            //     value |= 0x360;
-            // }
-            s->regs.raw[addr] &= value;
-            stm32_common_usart_update_irq(s);
-            break;
+			qemu_log_mask(LOG_GUEST_ERROR, "USART - guest attempted to write read-only ISR register");
+			break;
         case RI_TDR:
             stm32_common_usart_USART_DR_write(s,value);
             break;
@@ -941,7 +922,9 @@ static void stm32_common_usart_write(void *opaque, hwaddr addr,
 				qemu_log_mask(LOG_GUEST_ERROR,"%s PRESCALE value %u out of valid range 0-%u\n",_PERIPHNAMES[s->parent.periph], s->regs.defs.PRESCALE, MAX_PRESCALE);
 				value = MAX_PRESCALE;
 			}
-			/* FALLTHRU */
+            s->regs.raw[addr] = value;
+			stm32_common_usart_baud_update(s);
+			break;
         default:
             s->regs.raw[addr] = value;
             break;

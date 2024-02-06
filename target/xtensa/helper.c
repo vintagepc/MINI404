@@ -185,6 +185,15 @@ static void xtensa_core_class_init(ObjectClass *oc, void *data)
      * in the gdb/xtensa-config.c inside gdb source tree or inside gdb overlay.
      */
     cc->gdb_num_core_regs = config->gdb_regmap.num_regs;
+
+    /* Espressif local: allow changing the behavior here using
+     * QEMU_XTENSA_CORE_REGS_ONLY environment variable, to support different
+     * GDB builds
+     */
+    const char* core_regs_only = getenv("QEMU_XTENSA_CORE_REGS_ONLY");
+    if (core_regs_only != NULL && strcmp(core_regs_only, "0") != 0) {
+        cc->gdb_num_core_regs = config->gdb_regmap.num_core_regs;
+    }
 }
 
 void xtensa_register_core(XtensaConfigList *node)
@@ -253,7 +262,7 @@ void xtensa_cpu_do_unaligned_access(CPUState *cs,
 
     assert(xtensa_option_enabled(env->config,
                                  XTENSA_OPTION_UNALIGNED_EXCEPTION));
-    cpu_restore_state(CPU(cpu), retaddr, true);
+    cpu_restore_state(CPU(cpu), retaddr);
     HELPER(exception_cause_vaddr)(env,
                                   env->pc, LOAD_STORE_ALIGNMENT_CAUSE,
                                   addr);
@@ -284,7 +293,7 @@ bool xtensa_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
     } else if (probe) {
         return false;
     } else {
-        cpu_restore_state(cs, retaddr, true);
+        cpu_restore_state(cs, retaddr);
         HELPER(exception_cause_vaddr)(env, env->pc, ret, address);
     }
 }
@@ -297,7 +306,7 @@ void xtensa_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr, vaddr addr,
     XtensaCPU *cpu = XTENSA_CPU(cs);
     CPUXtensaState *env = &cpu->env;
 
-    cpu_restore_state(cs, retaddr, true);
+    cpu_restore_state(cs, retaddr);
     HELPER(exception_cause_vaddr)(env, env->pc,
                                   access_type == MMU_INST_FETCH ?
                                   INSTR_PIF_ADDR_ERROR_CAUSE :

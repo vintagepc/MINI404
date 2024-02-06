@@ -160,7 +160,7 @@ static void dashboard_2d_update_display(void *opaque)
         {
             char pos[10];
             vga_putcharxy(s->con, 0, i+1, m[i]->label, dashboard_2d_get_attr(m[i]) );
-            snprintf(pos, sizeof(pos),"%8.3f%c", m[i]->current_pos, m[i]->status.dir? '<':'>');
+            snprintf(pos, sizeof(pos),"%8.3f%c", m[i]->current_pos, m[i]->status.dir? '<' : '>');
             for (int j=0; j<9; j++)
             {
                 vga_putcharxy(s->con, (60-9)+j, i+1, pos[j], attr_norm);

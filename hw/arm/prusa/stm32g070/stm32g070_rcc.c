@@ -701,11 +701,11 @@ static void stm32_rcc_hclk_upd_irq_handler(void *opaque, int n, int level)
     uint32_t hclk_freq = clktree_get_output_freq(&s->HCLK);
 
 	clock_set_hz(s->parent.CPUCLOCK, hclk_freq);
-	printf("CPUCLOCK set to %u Hz\n",hclk_freq);
+	printf("# CPUCLOCK set to %u Hz\n",hclk_freq);
 	clock_propagate(s->parent.CPUCLOCK);
 	clock_set_hz(s->parent.REFCLK, hclk_freq/8);
 	clock_propagate(s->parent.REFCLK);
-	printf("Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
+	printf("# Systick frequency (REFCLK) set to %u Hz\n", hclk_freq/8);
 
 #ifdef DEBUG_STM32_RCC
     DPRINTF("Cortex SYSTICK frequency set to %lu Hz (scale set to %d).\n",

@@ -31,7 +31,7 @@
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "hw/qdev-properties.h"
-
+#include "stm32_syscfg_regdata.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Syscfg), COM_CLASS_NAME(Syscfg),  STM32COM_SYSCFG);
 
@@ -124,18 +124,6 @@ REGDEF_BLOCK_BEGIN()
 	REG_R(24);
 REGDEF_BLOCK_END(syscfg, cmpcr);
 
-enum reg_index {
-	RI_MEMRMP_CFGR1, // Shared address between F4xx and [F/G]0
-	RI_PMC,
-	RI_EXTICR1,
-	RI_EXTICR2,
-	RI_EXTICR3,
-	RI_EXTICR4,
-	RI_CFGR2,
-	RI_CMPCR = 0x20/4,
-	RI_END
-};
-
 typedef struct COM_STRUCT_NAME(Syscfg) {
     STM32Peripheral parent;
     MemoryRegion  iomem;
@@ -171,19 +159,11 @@ typedef struct COM_CLASS_NAME(Syscfg) {
 	stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(Syscfg);
 
-enum MEMMODE
-{
-	MEMMODE_MAIN,
-	MEMMODE_SYSFLASH,
-	MEMMODE_FMC_BANK1,
-	MEMMODE_SRAM1,
-	MEMMODE_SDRAM1
-};
-
 static const stm32_reginfo_t stm32f030_syscfg_reginfo[RI_END] =
 {
 	[RI_MEMRMP_CFGR1] = {.mask = 0x04DF1F13, .unimp_mask = 0x40DF1F10},
-	[RI_PMC ... RI_EXTICR4] = {.is_reserved = true},
+	[RI_PMC] = {.is_reserved = true},
+	[RI_EXTICR1 ... RI_EXTICR4] = {.mask = UINT16_MAX },
 	[RI_CFGR2] = {.mask = 0x13},
 	[RI_CMPCR] = {.is_reserved = true}
 
@@ -192,8 +172,7 @@ static const stm32_reginfo_t stm32f030_syscfg_reginfo[RI_END] =
 static const stm32_reginfo_t stm32g070_syscfg_reginfo[RI_END] =
 {
 	[RI_MEMRMP_CFGR1] = {.mask = 0x01FF07FB, .unimp_mask = 0x01FF07FC},
-	[RI_PMC] = {.is_reserved = true},
-	[RI_EXTICR1 ... RI_EXTICR4] = {.mask = UINT16_MAX },
+	[RI_PMC ... RI_EXTICR4] = {.is_reserved = true},
 	[RI_CFGR2] = {.mask = 0x17},
 	[RI_CMPCR] = {.is_reserved = true}
 
@@ -250,7 +229,7 @@ stm32_common_syscfg_read(void *opaque, hwaddr addr, unsigned int size)
     int offset = addr & 0x3;
     addr >>= 2;
 
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "Syscfg");
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "Syscfg"); // LCOV_EXCL_LINE
 
     uint32_t value = s->regs.raw[addr];
 
@@ -268,7 +247,7 @@ stm32_common_syscfg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int
     int offset = addr & 0x3;
     addr >>= 2;
 
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "Syscfg");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "Syscfg"); // LCOV_EXCL_LINE
 
 	uint32_t old = s->regs.raw[addr];
 
@@ -284,29 +263,30 @@ stm32_common_syscfg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int
 				case MEMMODE_MAIN:
 				case MEMMODE_FMC_BANK1:
 				{
-					printf("Syscfg: mapped main flash to 0x0\n");
+					printf("# Syscfg: mapped main flash to 0x0\n");
 					memory_region_set_enabled(s->sram, false);
 					memory_region_set_enabled(s->flash, true);
 				}
 				break;
 				case MEMMODE_SRAM1:
 				{
-					printf("Syscfg: mapped SRAM to 0x0\n");
+					printf("# Syscfg: mapped SRAM to 0x0\n");
 					memory_region_set_enabled(s->sram, true);
 					memory_region_set_enabled(s->flash, false);
 				}
 				break;
 				default:
-					printf("UNHANDLED: Remap SysFlash to 0x00\n");
+					qemu_log_mask(LOG_UNIMP, "UNHANDLED: Remap SysFlash to 0x00\n");
 				break;
 			}
 		break;
 		case RI_EXTICR1 ... RI_EXTICR4:
+			ENFORCE_RESERVED(data, s->reginfo, addr);
 			s->regs.raw[addr] = data;
 			break;
-    default:
-        qemu_log_mask(LOG_UNIMP, "stm32_common syscfg unimplemented write 0x%x+%u size %u val 0x%x\n",
-        (unsigned int)addr << 2, offset, size, (unsigned int)data);
+		default:
+			qemu_log_mask(LOG_UNIMP, "stm32_common syscfg unimplemented write 0x%x+%u size %u val 0x%x\n",
+			(unsigned int)addr << 2, offset, size, (unsigned int)data);
     }
 }
 

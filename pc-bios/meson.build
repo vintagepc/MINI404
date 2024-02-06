@@ -23,7 +23,7 @@ if unpack_edk2_blobs
   endforeach
 endif
 
-blobs = files(
+blobs = [
   'bios.bin',
   'bios-256k.bin',
   'bios-microvm.bin',
@@ -57,6 +57,8 @@ blobs = files(
   'efi-virtio.rom',
   'efi-e1000e.rom',
   'efi-vmxnet3.rom',
+  'esp32-v3-rom.bin',
+  'esp32-v3-rom-app.bin',
   'qemu-nsis.bmp',
   'bamboo.dtb',
   'canyonlands.dtb',
@@ -83,7 +85,7 @@ blobs = files(
   'npcm7xx_bootrom.bin',
   'vof.bin',
   'vof-nvram.bin',
-)
+]
 
 if get_option('install_blobs')
   install_data(blobs, install_dir: qemu_datadir)

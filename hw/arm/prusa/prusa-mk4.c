@@ -175,7 +175,8 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
-	.e_t_mass = 30,
+
+	.e_t_mass = 35,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -367,32 +368,30 @@ static void mk4_init(MachineState *machine)
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
-    int kernel_len = strlen(machine->kernel_filename);
-    if (kernel_len >3)
+
+    char* kfn = machine->kernel_filename;
+    int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
-        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bbf",3)==0)
+        // TODO... use initrd_image as a bootloader alternative?
+        struct stat bootloader;
+        if (stat(cfg.boot_fn,&bootloader))
         {
-            // TODO... use initrd_image as a bootloader alternative?
-            struct stat bootloader;
-            if (stat(cfg.boot_fn,&bootloader))
-            {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",cfg.boot_fn);
-                return;
-            }
-            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
-            // by -64 bytes and rely on the bootloader clobbering it.
-            load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                cfg.boot_fn,
-                flash_size);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",cfg.boot_fn);
+            return;
         }
-        else // Raw bin or ELF file, load directly.
-        {
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                            machine->kernel_filename,
-                            flash_size);
-        }
+        // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+        // by -64 bytes and rely on the bootloader clobbering it.
+        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+            cfg.boot_fn, 0,
+            flash_size);
+    }
+    else // Raw bin or ELF file, load directly.
+    {
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+                        machine->kernel_filename, 0,
+                        flash_size);
     }
 
 	DeviceState* key_in = qdev_new("p404-key-input");
@@ -515,11 +514,10 @@ static void mk4_init(MachineState *machine)
 
     {
 
-        int32_t ends[4] = { 100*16*253, 100*16*214, 400*16*(cfg.has_loadcell ? 220: 212),0 };
+        int32_t ends[4] = { 100*16*255, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
  		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         if (cfg.is_400step) {
-            printf("400-step mode enabled\n");
             stepsize[0] <<= 1;
             stepsize[1] <<= 1;
 			ends[0] <<= 1;
@@ -583,7 +581,7 @@ static void mk4_init(MachineState *machine)
         qdev_prop_set_uint16(dev, "temp",cfg.temps.ambient[i]);
         qdev_prop_set_uint16(dev, "table_no", cfg.temps.table[i]);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_data_in",cfg.temps.channel[i]));
         if (i==T_NOZ)
 		{
@@ -694,7 +692,7 @@ static void mk4_init(MachineState *machine)
     DeviceState* vdev = qdev_new("powersource");
     qdev_prop_set_uint32(vdev,"mV",23900);
     sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
-	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 3,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
+	// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 3,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
     qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",3));
     qdev_connect_gpio_out_named(vdev, "panic",0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 0));
 
@@ -709,7 +707,7 @@ static void mk4_init(MachineState *machine)
 			qdev_prop_set_uint32(vdev,"mA",currents[i]);
 			sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
 			qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in",channels[i]));
-			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", channels[i],  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
+			//qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", channels[i],  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
 		}
 	}
 
@@ -717,7 +715,7 @@ static void mk4_init(MachineState *machine)
     vdev = qdev_new("powersource");
     qdev_prop_set_uint32(vdev,"mV",24000);
     sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 5,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
+    // qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 5,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
     qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",5));
     //qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(dev,"1Y",0));
     // qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(dev,"2Y",1));
@@ -748,11 +746,12 @@ static void mk4_init(MachineState *machine)
 
     // hotend = fan1
     // print fan = fan0
-    uint16_t fan_max_rpms[] = { 6600, 8000 };
+    uint16_t fan_max_rpms[] = { 6600, 7000 };
     uint8_t  fan_pwm_pins[] = { 11, 9};
     uint8_t fan_tach_pins[] = { 10, 14};
     uint8_t fan_labels[] = {'P','E'};
 	DeviceState* fanpwm = qdev_new("software-pwm");
+    qdev_prop_set_bit(fanpwm, "is_inverted", true);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(fanpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM14), "timer", 0, qdev_get_gpio_in_named(fanpwm, "tick-in", 0));
     for (int i=0; i<2; i++)
@@ -763,7 +762,7 @@ static void mk4_init(MachineState *machine)
         dev = qdev_new("fan");
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
-        qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
+        //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),fan_tach_pins[i]));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));

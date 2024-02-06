@@ -22,7 +22,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "hw/irq.h"
 #include "exec/memory.h"
@@ -64,27 +63,25 @@
 #define USART_GTPR_OFFSET   0x18/4
 #define USART_R_END         0x1c/4
 
+static const uint8_t BITS_PER_CHAR = 10;
+
 /* HELPER FUNCTIONS */
 
 /* Update the baud rate based on the USART's peripheral clock frequency. */
-static void stm32_uart_baud_update(Stm32Uart *s)
+static void stm32_uart_baud_update(STM32Peripheral *p)
 {
-    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
-
-    uint64_t ns_per_bit;
+    Stm32Uart *s = STM32_UART(p);
+    uint32_t clk_freq = s->parent.clock_freq;
 
     if((s->regs[USART_BRR_OFFSET] == 0) || (clk_freq == 0)) {
         s->bits_per_sec = 0;
     } else {
 		float scale = s->defs.CR1.OVER8 ? 8.f : 16.f;
 		float clk_div = scale * (s->defs.BRR.MANT + (float)s->defs.BRR.FRACT/scale);
-        s->bits_per_sec = clk_freq / clk_div;
-        ns_per_bit = 1000000000LL / s->bits_per_sec;
-
+        s->ns_per_char = BITS_PER_CHAR * (int64_t)((NANOSECONDS_PER_SECOND * clk_div)/clk_freq);
         /* We assume 10 bits per character.  This may not be exactly
          * accurate depending on settings, but it should be good enough.
 		 as most cases are at least 10 - 8 data, 1 start, 1 stop. */
-        s->ns_per_char = ns_per_bit * 10;
     }
 
 #ifdef DEBUG_STM32_UART
@@ -99,19 +96,6 @@ static void stm32_uart_baud_update(Stm32Uart *s)
                 periph_name,
                 (unsigned long)s->bits_per_sec);
 #endif
-}
-
-/* Handle a change in the peripheral clock. */
-static void stm32_uart_clk_irq_handler(void *opaque, int n, int level)
-{
-    Stm32Uart *s = STM32_UART(opaque);
-
-    assert(n == 0);
-
-    /* Only update the BAUD rate if the IRQ is being set. */
-    if(level) {
-        stm32_uart_baud_update(s);
-    }
 }
 
 /* Routine which updates the USART's IRQ.  This should be called whenever
@@ -523,7 +507,7 @@ static void stm32_uart_write(void *opaque, hwaddr addr,
             break;
         case USART_BRR_OFFSET:
             s->regs[addr] = data;
-            stm32_uart_baud_update(s);
+            stm32_uart_baud_update(STM32_PERIPHERAL(s));
             break;
         case USART_CR1_OFFSET:
 		case USART_CR3_OFFSET:
@@ -583,10 +567,6 @@ static void stm32_uart_init(Object *obj)
         timer_new_ns(QEMU_CLOCK_VIRTUAL,
                   (QEMUTimerCB *)stm32_uart_idle_timer_expire, s);
 
-    /* Register handlers to handle updates to the USART's peripheral clock. */
-    s->clk_irq =
-          qemu_allocate_irqs(stm32_uart_clk_irq_handler, (void *)s, 1);
-	stm32_rcc_if_set_periph_clk_irq(&s->parent, s->clk_irq[0]);
 
     //stm32_uart_connect(s, &s->chr);
 
@@ -662,6 +642,9 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, stm32_uart_properties);
     dc->realize = stm32_uart_realize;
     dc->vmsd = &vmstate_stm32_uart;
+
+    STM32PeripheralClass *k = STM32_PERIPHERAL_CLASS(klass);
+    k->clock_update = stm32_uart_baud_update;
 }
 
 static TypeInfo stm32_uart_info = {

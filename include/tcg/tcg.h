@@ -398,7 +398,7 @@ typedef TCGv_ptr TCGv_env;
 #define TCG_CALL_NO_WRITE_GLOBALS   0x0002
 /* Helper can be safely suppressed if the return value is not used. */
 #define TCG_CALL_NO_SIDE_EFFECTS    0x0004
-/* Helper is QEMU_NORETURN.  */
+/* Helper is G_NORETURN.  */
 #define TCG_CALL_NO_RETURN          0x0008
 
 /* convenience version of most used call flags */
@@ -433,6 +433,8 @@ typedef enum TCGTempVal {
 typedef enum TCGTempKind {
     /* Temp is dead at the end of all basic blocks. */
     TEMP_NORMAL,
+    /* Temp is live across conditional branch, but dead otherwise. */
+    TEMP_EBB,
     /* Temp is saved across basic blocks but dead at the end of TBs. */
     TEMP_LOCAL,
     /* Temp is saved across both basic blocks and translation blocks. */
@@ -838,7 +840,7 @@ void tcg_register_thread(void);
 void tcg_prologue_init(TCGContext *s);
 void tcg_func_start(TCGContext *s);
 
-int tcg_gen_code(TCGContext *s, TranslationBlock *tb);
+int tcg_gen_code(TCGContext *s, TranslationBlock *tb, target_ulong pc_start);
 
 void tcg_set_frame(TCGContext *s, TCGReg reg, intptr_t start, intptr_t size);
 
@@ -1054,9 +1056,11 @@ TCGv_vec tcg_constant_vec_matching(TCGv_vec match, unsigned vece, int64_t val);
 #if UINTPTR_MAX == UINT32_MAX
 # define tcg_const_ptr(x)        ((TCGv_ptr)tcg_const_i32((intptr_t)(x)))
 # define tcg_const_local_ptr(x)  ((TCGv_ptr)tcg_const_local_i32((intptr_t)(x)))
+# define tcg_constant_ptr(x)     ((TCGv_ptr)tcg_constant_i32((intptr_t)(x)))
 #else
 # define tcg_const_ptr(x)        ((TCGv_ptr)tcg_const_i64((intptr_t)(x)))
 # define tcg_const_local_ptr(x)  ((TCGv_ptr)tcg_const_local_i64((intptr_t)(x)))
+# define tcg_constant_ptr(x)     ((TCGv_ptr)tcg_constant_i64((intptr_t)(x)))
 #endif
 
 TCGLabel *gen_new_label(void);
@@ -1227,8 +1231,7 @@ uint64_t dup_const(unsigned vece, uint64_t c);
      ? (  (VECE) == MO_8  ? 0x0101010101010101ull * (uint8_t)(C)   \
         : (VECE) == MO_16 ? 0x0001000100010001ull * (uint16_t)(C)  \
         : (VECE) == MO_32 ? 0x0000000100000001ull * (uint32_t)(C)  \
-        : (VECE) == MO_64 ? (uint64_t)(C)                          \
-        : (qemu_build_not_reached_always(), 0))                    \
+        : dup_const(VECE, C))                                      \
      : dup_const(VECE, C))
 
 #if TARGET_LONG_BITS == 64

@@ -40,20 +40,7 @@
 #define STM32_COM_DMA_MAX_CHAN 7
 #define STM32_COM_DMA_CHAN_REGS 5
 
-enum reg_index {
-	RI_ISR,
-	RI_IFCR,
-	RI_CHAN_BASE,
-	RI_CHAN1 = RI_CHAN_BASE,
-	RI_CHAN2 = 7,
-	RI_CHAN3 = 12,
-	RI_CHAN4 = 17,
-	RI_CHAN5 = 22,
-	RI_CHAN6 = 27,
-	RI_CHAN7 = 32,
-	RI_CHAN_END = 2U + (STM32_COM_DMA_CHAN_REGS * STM32_COM_DMA_MAX_CHAN),
-	RI_END = RI_CHAN_END,
-};
+#include "stm32_dma_regdata.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Dma), COM_CLASS_NAME(Dma), STM32COM_DMA);
 
@@ -124,6 +111,7 @@ typedef struct COM_STRUCT_NAME(Dma) {
 
 	uint32_t original_ndtrs[STM32_COM_DMA_MAX_CHAN];
 	uint32_t original_cmars[STM32_COM_DMA_MAX_CHAN];
+	uint32_t original_cpars[STM32_COM_DMA_MAX_CHAN];
 
 	QEMUTimer* dma_timer;
 	uint8_t dma_pending[STM32_COM_DMA_MAX_CHAN];
@@ -135,15 +123,6 @@ typedef struct COM_STRUCT_NAME(Dma) {
 } COM_STRUCT_NAME(Dma);
 
 #undef _STM32_DMA_CHAN_BLK
-
-enum channel_offset
-{
-	CH_OFF_CCR,
-	CH_OFF_CNDTR,
-	CH_OFF_CPAR,
-	CH_OFF_CMAR,
-	CH_OFF_END,
-};
 
 enum dma_dir
 {
@@ -164,7 +143,7 @@ enum interrupt_bits
 static const uint8_t dma_xfer_size_b[4] = {1, 2, 4, 0};
 
 typedef struct COM_CLASS_NAME(Dma) {
-	SysBusDeviceClass parent_class;
+	STM32PeripheralClass parent_class;
     stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(Dma);
 
@@ -263,34 +242,36 @@ static void stm32_common_dma_do_xfer(COM_STRUCT_NAME(Dma) *s, hwaddr chan_base)
 	uint8_t channel = (chan_base - RI_CHAN_BASE) / STM32_COM_DMA_CHAN_REGS;
 	REGDEF_NAME(dma,ccr)* cr = (REGDEF_NAME(dma,ccr)*)&s->regs.raw[chan_base+CH_OFF_CCR];
 	uint8_t dir = cr->DIR;
-	uint8_t psize = dma_xfer_size_b[cr->PSIZE];
-	uint8_t msize = dma_xfer_size_b[cr->MSIZE];
-	uint8_t xfersize = MIN(psize, msize);
 	uint32_t* dest = NULL;
 	uint32_t* src = NULL;
-	bool dest_inc = false, src_inc = false;
+	uint8_t dest_inc = 0, src_inc = 0;
+	uint8_t dest_size = 0, src_size  = 0;
 	if (dir == DIR_P2M)
 	{
 		dest = &s->regs.raw[chan_base+CH_OFF_CMAR];
-		dest_inc = cr->MINC;
+		dest_size = dma_xfer_size_b[cr->MSIZE];
+		dest_inc = cr->MINC * dest_size;
 		src = &s->regs.raw[chan_base+CH_OFF_CPAR];
-		src_inc = cr->PINC;
+		src_size = dma_xfer_size_b[cr->PSIZE];
+		src_inc = cr->PINC * src_size;
 	}
 	else
 	{
 		src = &s->regs.raw[chan_base+CH_OFF_CMAR];
-		src_inc = cr->MINC;
+		src_size = dma_xfer_size_b[cr->MSIZE];
+		src_inc = cr->MINC * src_size;
 		dest = &s->regs.raw[chan_base+CH_OFF_CPAR];
-		dest_inc = cr->PINC;
+		dest_size = dma_xfer_size_b[cr->PSIZE];
+		dest_inc = cr->PINC * dest_size;
 	}
 	uint32_t *ndtr = &s->regs.raw[chan_base+CH_OFF_CNDTR];
 	// printf("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u ",*src, *dest, xfersize, *ndtr);
-	uint8_t buff[4];
+	uint8_t buff[4] = {0,0,0,0};
 	dma_memory_read(
 		&s->cpu_as,
 		*src,
 		buff,
-		xfersize,
+		src_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
 	// printf("d: %02x\n", buff[0]);
@@ -298,34 +279,27 @@ static void stm32_common_dma_do_xfer(COM_STRUCT_NAME(Dma) *s, hwaddr chan_base)
 		&s->cpu_as,
 		*dest,
 		buff,
-		xfersize,
+		dest_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
-	if (dest_inc)
-	{
-		*dest += xfersize;
-	}
-	if (src_inc)
-	{
-		*src += xfersize;
-	}
+
+	*dest += dest_inc;
+	*src += src_inc;
+
 	(*ndtr)--; // NDTR is in transfers, not bytes.
 
-	if (*ndtr == 0 )
+	if (*ndtr == (s->original_ndtrs[channel]>>1))
+	{
+		stm32_common_set_int_flag(s, channel,INT_HT);
+	}
+	else if (*ndtr == 0 )
 	{
 		stm32_common_set_int_flag(s, channel,INT_TC);
 		if (cr->CIRC)
 		{
-			if (dir != DIR_P2M)
-			{
-				printf("FIXME: M2P DMA w/ circular mode buffer\n");
-				return;
-			}
 			*ndtr = s->original_ndtrs[channel];
-			if (dest_inc)
-			{
-				*dest -= (*ndtr*msize);
-			}
+			*dest -= (*ndtr*dest_inc);
+			*src -= (*ndtr*src_inc);
 		}
 		else
 		{
@@ -386,18 +360,17 @@ static uint64_t
 stm32_common_dma_read(void *opaque, hwaddr addr, unsigned int size)
 {
 	COM_STRUCT_NAME(Dma) *s = STM32COM_DMA(opaque);
-    uint32_t r;
     int offset = addr & 0x3;
 
     addr >>= 2;
 
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32 Common DMA");
+	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32 Common DMA"); // LCOV_EXCL_LINE
 
 	// NOTE - IFCR is read-only, but we never change its contents in the write so it will always come back 0
     uint32_t value = s->regs.raw[addr];
 
-    r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
-    return r;
+    ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b100);
+    return value;
 }
 
 static void
@@ -422,21 +395,24 @@ stm32_common_dma_chan_write(COM_STRUCT_NAME(Dma) *s, hwaddr addr, uint64_t data,
 			{
 				// DMA was disabled. Reset CMAR.
 				s->regs.raw[addr+CH_OFF_CMAR] = s->original_cmars[chan];
+				s->regs.raw[addr+CH_OFF_CPAR] = s->original_cpars[chan];
 			}
 		}
 		break;
 		case CH_OFF_CNDTR:
 			s->original_ndtrs[chan] = data & 0xFFFFU;
-		/* FALLTHRU */
+			s->regs.raw[addr] = data;
+			break;
 		case CH_OFF_CPAR:
+			s->original_cpars[chan] = data;
 			s->regs.raw[addr] = data;
 			break;
 		case CH_OFF_CMAR:
 			s->original_cmars[chan] = data;
 			s->regs.raw[addr] = data;
 			break;
-		case CH_OFF_END:
-			qemu_log_mask(LOG_GUEST_ERROR, "ERR: DMA write to reserved register!");
+		case CH_OFF_END: // LCOV_EXCL_LINE
+			qemu_log_mask(LOG_GUEST_ERROR, "ERR: DMA write to reserved register!"); //LCOV_EXCL_LINE
 	}
 }
 
@@ -451,7 +427,7 @@ stm32_common_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int si
 
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 6);
 
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 Common DMA");
+	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 Common DMA"); // LCOV_EXCL_LINE
 	CHECK_UNIMP_RESVD(data, s->reginfo, addr);
 
     switch(addr) {
@@ -459,16 +435,16 @@ stm32_common_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int si
 		qemu_log_mask(LOG_GUEST_ERROR, "ERR: Attempted to write read-only STM32 DMA ISR register.");
         break;
 	case RI_IFCR:
+		// Note: GIF clearing is not implemented...
 		s->regs.defs.ISR.raw &= ~(data);
 		stm32_common_update_all_irqs(s);
 		break;
 	case RI_CHAN_BASE ... RI_CHAN_END:
 		stm32_common_dma_chan_write(s, addr, data, size);
-		// TODO - route to channel controller.
         break;
-    default:
-        qemu_log_mask(LOG_UNIMP, "stm32common_dma unimplemented write 0x%x+%u size %u val 0x%x\n",
-        (unsigned int)addr << 2, offset, size, (unsigned int)data);
+    default: // LCOV_EXCL_LINE
+        qemu_log_mask(LOG_UNIMP, "stm32common_dma unimplemented write 0x%x+%u size %u val 0x%x\n", // LCOV_EXCL_LINE
+        (unsigned int)addr << 2, offset, size, (unsigned int)data); // LCOV_EXCL_LINE
     }
 }
 
@@ -481,7 +457,6 @@ static const MemoryRegionOps stm32_common_dma_ops = {
         .max_access_size = 4,
     }
 };
-
 
 static void stm32_common_dma_reset(DeviceState *dev)
 {

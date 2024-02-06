@@ -48,8 +48,8 @@
 #include "qapi/util.h"
 #include "sysemu/blockdev.h"
 #include "sysemu/sysemu.h"
-#include "sysemu/tcg.h"
 #include "sysemu/tpm.h"
+#include "sysemu/device_tree.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qerror.h"
 #include "qapi/qmp/qstring.h"
@@ -84,6 +84,9 @@
 #include "hw/s390x/storage-keys.h"
 #include "hw/s390x/storage-attributes.h"
 #endif
+
+/* Make devices configuration available for use in hmp-commands*.hx templates */
+#include CONFIG_DEVICES
 
 /* file descriptors passed via SCM_RIGHTS */
 typedef struct mon_fd_t mon_fd_t;
@@ -305,6 +308,7 @@ int monitor_get_cpu_index(Monitor *mon)
 static void hmp_info_registers(Monitor *mon, const QDict *qdict)
 {
     bool all_cpus = qdict_get_try_bool(qdict, "cpustate_all", false);
+    int vcpu = qdict_get_try_int(qdict, "vcpu", -1);
     CPUState *cs;
 
     if (all_cpus) {
@@ -313,13 +317,18 @@ static void hmp_info_registers(Monitor *mon, const QDict *qdict)
             cpu_dump_state(cs, NULL, CPU_DUMP_FPU);
         }
     } else {
-        cs = mon_get_cpu(mon);
+        cs = vcpu >= 0 ? qemu_get_cpu(vcpu) : mon_get_cpu(mon);
 
         if (!cs) {
-            monitor_printf(mon, "No CPU available\n");
+            if (vcpu >= 0) {
+                monitor_printf(mon, "CPU#%d not available\n", vcpu);
+            } else {
+                monitor_printf(mon, "No CPU available\n");
+            }
             return;
         }
 
+        monitor_printf(mon, "\nCPU#%d\n", cs->cpu_index);
         cpu_dump_state(cs, NULL, CPU_DUMP_FPU);
     }
 }
@@ -419,8 +428,7 @@ static void hmp_logfile(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
 
-    qemu_set_log_filename(qdict_get_str(qdict, "filename"), &err);
-    if (err) {
+    if (!qemu_set_log_filename(qdict_get_str(qdict, "filename"), &err)) {
         error_report_err(err);
     }
 }
@@ -429,6 +437,7 @@ static void hmp_log(Monitor *mon, const QDict *qdict)
 {
     int mask;
     const char *items = qdict_get_str(qdict, "items");
+    Error *err = NULL;
 
     if (!strcmp(items, "none")) {
         mask = 0;
@@ -439,7 +448,10 @@ static void hmp_log(Monitor *mon, const QDict *qdict)
             return;
         }
     }
-    qemu_set_log(mask);
+
+    if (!qemu_set_log(mask, &err)) {
+        error_report_err(err);
+    }
 }
 
 static void hmp_singlestep(Monitor *mon, const QDict *qdict)
@@ -720,7 +732,7 @@ static uint64_t vtop(void *ptr, Error **errp)
     uint64_t pinfo;
     uint64_t ret = -1;
     uintptr_t addr = (uintptr_t) ptr;
-    uintptr_t pagesize = qemu_real_host_page_size;
+    uintptr_t pagesize = qemu_real_host_page_size();
     off_t offset = addr / pagesize * sizeof(pinfo);
     int fd;
 

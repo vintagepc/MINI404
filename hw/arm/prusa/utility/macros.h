@@ -142,6 +142,8 @@ CHECK_REG_u32(REGDEF_NAME(part,x));
 	} \
 }
 
+#define IRQ_SKIP_CONNECT -2
+
 // Some rather ugly convenience macros for
 // more easily debugging save state symmetry. See the RCC implementation for
 // an example how this works. (STATE_DEBUG_VAR must be defined for it to work.)

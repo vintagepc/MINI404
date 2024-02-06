@@ -116,33 +116,32 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
     // Parse those now.
     arghelper_setargs(machine->kernel_cmdline);
 
-    int kernel_len = strlen(machine->kernel_filename);
-    if (kernel_len >3)
+    char* kfn = machine->kernel_filename;
+    int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
-        const char* kernel_ext = machine->kernel_filename+(kernel_len-3);
-        if (strncmp(kernel_ext, "bbf",3)==0)
+        // TODO... use initrd_image as a bootloader alternative?
+        struct stat bootloader;
+        if (stat(BOOTLOADER_IMAGE,&bootloader))
         {
-            // TODO... use initrd_image as a bootloader alternative?
-            struct stat bootloader;
-            if (stat(BOOTLOADER_IMAGE,&bootloader))
-            {
-                error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
-                return;
-            }
-            // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
-            // by -64 bytes and rely on the bootloader clobbering it.
-            load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                BOOTLOADER_IMAGE,
-                FLASH_SIZE);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
+            return;
         }
-        else // Raw bin or ELF file, load directly.
-        {
-            armv7m_load_kernel(ARM_CPU(first_cpu),
-                            machine->kernel_filename,
-                            FLASH_SIZE);
-        }
+        // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
+        // by -64 bytes and rely on the bootloader clobbering it.
+        load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+            BOOTLOADER_IMAGE, 0,
+            FLASH_SIZE);
     }
+    else // Raw bin or ELF file, load directly.
+    {
+        armv7m_load_kernel(ARM_CPU(first_cpu),
+                        machine->kernel_filename, 0,
+                        FLASH_SIZE);
+    }
+
+
 
 	DeviceState* key_in = qdev_new("p404-key-input");
     sysbus_realize(SYS_BUS_DEVICE(key_in), &error_fatal);
@@ -253,7 +252,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 		{
 			qdev_connect_gpio_out_named(htr, "temp_out",0, qdev_get_gpio_in_named(dev, "thermistor_set_temperature", 0) );
 		}
-       	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", cfg->therm_channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+       	//qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", cfg->therm_channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",cfg->therm_channels[i]));
         qdev_connect_gpio_out_named(dev, "temp_out_256x",0, qdev_get_gpio_in_named(dashboard,"therm-temp",i));
 
@@ -280,7 +279,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 0,qdev_get_gpio_in_named(mux,"B1",0));
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 1,qdev_get_gpio_in_named(mux,"B1",1));
 
-	if (arghelper_is_arg("no-bridge"))
+	if (kernel_len==0 || arghelper_is_arg("no-bridge"))
 	{
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 0, qdev_get_gpio_in_named(motor,"dir",0));
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 1, qdev_get_gpio_in_named(motor,"step",0));

@@ -21,6 +21,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-clock.h"
@@ -68,11 +69,23 @@ bool stm32_rcc_if_check_periph_clk(STM32Peripheral *p)
          * is disabled is a bug and give a warning to unsuspecting programmers.
          * When I made this mistake on real hardware the write had no effect.
          */
-        printf("Warning: You are attempting to use the [%s] peripheral while "
+        qemu_log_mask(LOG_GUEST_ERROR, "Warning: You are attempting to use the [%s] peripheral while "
                  "its clock is disabled.\n", clk->name);
         return false;
     }
     return true;
+}
+
+bool stm32_rcc_if_has_clk(STM32Peripheral *p)
+{
+	if (p->rcc == NULL)
+	{
+		return 0;
+	}
+	COM_STRUCT_NAME(Rcc) *s = STM32COM_RCC(p->rcc);
+    Clk_t* clk = &s->pclocks[p->periph];
+
+    return clk->is_initialized;
 }
 
 void stm32_rcc_if_set_periph_clk_irq(
@@ -97,6 +110,7 @@ void stm32_common_rcc_reset_write(COM_STRUCT_NAME(Rcc) *s, uint32_t mask, const 
         if (mask & 1U<<i && (*vectors)[i] != 0 ) {
 			if ((*vectors)[i] == STM32_P_ADC_ALL) // sometimes ADC is shared...
 			{
+				qemu_irq_pulse(s->reset[STM32_P_ADC1]);
 				qemu_irq_pulse(s->reset[STM32_P_ADC2]);
 				qemu_irq_pulse(s->reset[STM32_P_ADC3]);
 			}

@@ -185,7 +185,7 @@ static const VMStateDescription vmstate_hall_sensor = {
 
 static Property hall_sensor_properties[] = {
     DEFINE_PROP_UINT8("index",HallState, index, 0),
-    DEFINE_PROP_UINT32("present-value",HallState, present_val, 1048575),
+    DEFINE_PROP_UINT32("present-value",HallState, present_val, 80000),
     DEFINE_PROP_UINT32("missing-value",HallState, missing_val, 250),
     DEFINE_PROP_BOOL("start-state",HallState, start_state, true),
     DEFINE_PROP_END_OF_LIST(),
