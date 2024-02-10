@@ -28,6 +28,7 @@
 #include "../utility/macros.h"
 #include "../utility/ArgHelper.h"
 #include "hw/qdev-properties.h"
+#include "hw/qdev-properties-system.h"
 #include "sysemu/sysemu.h"
 #include "hw/sysbus.h"
 #include "qemu/readline.h"
@@ -39,6 +40,8 @@ struct ScriptConsoleState {
     Chardev *input_source;
 
     CharBackend be;
+
+    char* scriptcon_name;
 
     bool disable_echo;
 
@@ -66,7 +69,7 @@ static int scriptcon_can_read(void* opaque) {
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(opaque);
 
     if (!s->is_busy) {
-        return true;
+        return 64;
     } else {
         return 0;
     }
@@ -212,19 +215,6 @@ static void scriptcon_read(void *opaque, const uint8_t *buf, int size){
         return;
     }
     printf("err: no readline??\n");
-    // printf("Input: %02x len %d\n", *buf, size);
-    // if (*buf == 0x08){
-    //     printf("bksp\n");
-    //     if (s->cmd_len>0){
-    //         s->cmd[s->cmd_len]=0;
-    //         s->cmd_len--;
-    //     }
-    // } else if (*buf == 0x0A) { // return
-    //     printf("enter\n");
-    // } else if (*buf == 0x09) { // tab
-    // } else {
-    //     s->cmd[s->cmd_len++] = *buf;
-    // }
 }
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ScriptConsoleState, scriptcon, P404_SCRIPT_CONSOLE, SYS_BUS_DEVICE, {NULL})
@@ -253,8 +243,9 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
         // Start script timer
         timer_mod(s->scripting,  qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
     }
-
-    s->input_source = qemu_chr_find("p404-scriptcon");
+    
+    const char* id = s->scriptcon_name ? s->scriptcon_name : "p404-scriptcon";
+    s->input_source = qemu_chr_find(id);
     if (!s->input_source) {
         return;
     }
@@ -293,6 +284,7 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 
 static Property scriptcon_properties[] = {
     DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, false),
+    DEFINE_PROP_STRING("input_id", ScriptConsoleState, scriptcon_name),
     DEFINE_PROP_END_OF_LIST(),
 };
 
