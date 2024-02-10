@@ -190,6 +190,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     }
 
     DeviceState* pinda = qdev_new("pinda");
+    object_property_add_child(OBJECT(periphs), "pinda", OBJECT(pinda));
     sysbus_realize(SYS_BUS_DEVICE(pinda), &error_fatal);
 
     // DeviceState *vis = qdev_new("mini-visuals");

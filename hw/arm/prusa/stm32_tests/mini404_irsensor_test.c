@@ -43,6 +43,8 @@ static void test_reset(void)
     qtest_clock_step_next(ts);
     // Did the sensor turn back off?
     g_assert_false(qtest_get_irq(ts,0));
+
+    qtest_quit(ts);
 }
 
 static void test_key_toggle(void)
@@ -63,6 +65,8 @@ static void test_key_toggle(void)
     qtest_clock_step_next(ts);
 
     g_assert_false(qtest_get_irq(ts,0));
+
+    qtest_quit(ts);
 }
 
 static void test_scripting(void)
@@ -101,6 +105,8 @@ static void test_scripting(void)
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     g_assert_false(qtest_get_irq(ts,0));
+
+    qtest_quit(ts);
 }
 
 /* Define the main function */
@@ -118,7 +124,6 @@ int main(int argc, char **argv)
 
     /* Run the tests */
     ret = g_test_run();
-    qtest_end();
 
     return ret;
 }
