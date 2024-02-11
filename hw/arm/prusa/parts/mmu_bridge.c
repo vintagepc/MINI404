@@ -26,6 +26,7 @@
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
+#include "hw/qdev-properties.h"
 #include "hw/irq.h"
 #include "qom/object.h"
 #include "hw/sysbus.h"
@@ -47,7 +48,7 @@ struct MMUBridgeState {
     SysBusDevice parent_obj;
     /*< private >*/
     /*< public >*/
-
+    char* input_name;
 	// Output backend
 	CharBackend chr;
 	qemu_irq fs_out;
@@ -70,14 +71,14 @@ static void mmu_bridge_receive(void *opaque, const uint8_t *buf, int size)
     {
         case FS_AUTO_SET:
             qemu_set_irq(s->fs_out, 1);
-            printf("MMU FS set\n");
+            printf("# MMU FS set\n");
             break;
         case FS_AUTO_CLEAR:
             qemu_set_irq(s->fs_out, 0);
-            printf("MMU FS clear\n");
+            printf("# MMU FS clear\n");
             break;
         default:
-            printf("Unknown MMU control char: %c\n", buf[0]);
+            printf("# Unknown MMU control char: %c\n", buf[0]);
     }
 }
 
@@ -92,7 +93,7 @@ static void mmu_bridge_reset_in(void *opaque, int n, int level)
 {
     if (level)
     {
-        printf("Sent MMU reset\n");
+        printf("# Sent MMU reset\n");
         mmu_bridge_reset(DEVICE(opaque));
     }
 }
@@ -106,10 +107,10 @@ static void mmu_bridge_finalize(Object *obj)
 static void mmu_bridge_realize(DeviceState *dev, Error **errp)
 {
     MMUBridgeState *s = MMUBRIDGE(dev);
-    Chardev* d=qemu_chr_find(CHARDEV_NAME);
+    Chardev* d=qemu_chr_find(s->input_name ? s->input_name : CHARDEV_NAME);
     if (d)
     {
-        printf("Found ID MMU control chardev - assigned!");
+        printf("# Found ID MMU control chardev - assigned!");
     }
     else
     {
@@ -144,10 +145,18 @@ static const VMStateDescription vmstate_mmu_bridge = {
     }
 };
 
+static Property mmu_bridge_properties[] = {
+    DEFINE_PROP_STRING("input_id", MMUBridgeState, input_name),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+
 static void mmu_bridge_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     dc->reset = mmu_bridge_reset;
     dc->vmsd = &vmstate_mmu_bridge;
 	dc->realize = mmu_bridge_realize;
+
+    device_class_set_props(dc, mmu_bridge_properties);
 }

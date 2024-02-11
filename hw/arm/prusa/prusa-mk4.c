@@ -804,8 +804,8 @@ static void mk4_init(MachineState *machine)
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
     if (mc->has_mmu && kernel_len > 0)
     {
-        printf("Enabling MMU control channel\n");
         dev = qdev_new("mmu-bridge");
+        object_property_add_child(OBJECT(periphs), "mmu-bridge", OBJECT(dev));
     	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),8,qdev_get_gpio_in_named(dev, "reset-in", 0));
         if (hs != NULL) 
