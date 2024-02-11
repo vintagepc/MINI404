@@ -5,6 +5,7 @@ qtests_buddy = [
     'prusa/stm32_tests/mini404_mmu_bridge_test',
     'prusa/stm32_tests/mini404_pinda_test',
     'prusa/stm32_tests/mini404_sn74cbt_test',
+    'prusa/stm32_tests/mini404_sn74hc4052_test',
     'prusa/stm32_tests/stm32_adc-test',
     'prusa/stm32_tests/stm32_dbg-test',
     'prusa/stm32_tests/stm32_crc-test',
