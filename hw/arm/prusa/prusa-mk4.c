@@ -320,6 +320,7 @@ static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
@@ -626,15 +627,18 @@ static void mk4_init(MachineState *machine)
 
 	if (cfg.has_loadcell) {
 		DeviceState *lc = qdev_new("loadcell");
+        object_property_add_child(OBJECT(periphs), "loadcell", OBJECT(lc));
 		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
 		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
 		hs = qdev_new("hall-sensor");
+        object_property_add_child(OBJECT(periphs), "hall-sensor", OBJECT(hs));
         qdev_prop_set_bit(hs, "start-state", !mc->has_mmu); // MMU starts unloaded.
 		sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
 		qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
 
 		dev = qdev_new("hx717");
+        object_property_add_child(OBJECT(periphs), "hx717", OBJECT(dev));
 		sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
