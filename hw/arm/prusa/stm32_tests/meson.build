@@ -1,5 +1,6 @@
 qtests_buddy = [
     'prusa/stm32_tests/mini404_irsensor_test',
+    'prusa/stm32_tests/mini404_hx717_test',
     'prusa/stm32_tests/mini404_hallsensor_test',
     'prusa/stm32_tests/mini404_mmu_bridge_test',
     'prusa/stm32_tests/mini404_pinda_test',
