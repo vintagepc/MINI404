@@ -167,7 +167,7 @@ static void heater_soft_pwm_change(void* opaque, int n, int level)
         tOn = tNow - s->last_on;
         s->timeout_level = 0;
         DBG printf("Ontime: %u\n",tOn);
-        timer_mod(s->softpwm_timeout, tNow+3000);
+        timer_mod(s->softpwm_timeout, tNow+500);
         s->pwm = tOn & 0xFF;
     }
     // Tickle timer if turned off.

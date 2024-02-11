@@ -74,6 +74,7 @@ static void prusa_mini_100_init(MachineState *machine)
 static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 {
     DeviceState *dev;
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
 
     dev = qdev_new(TYPE_STM32F407xG_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
@@ -189,6 +190,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     }
 
     DeviceState* pinda = qdev_new("pinda");
+    object_property_add_child(OBJECT(periphs), "pinda", OBJECT(pinda));
     sysbus_realize(SYS_BUS_DEVICE(pinda), &error_fatal);
 
     // DeviceState *vis = qdev_new("mini-visuals");
@@ -327,7 +329,8 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
 
     dev = qdev_new("ir-sensor");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    object_property_add_child(OBJECT(periphs), "ir-sensor", OBJECT(dev));
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     qemu_irq split_fsensor = qemu_irq_split( qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB),4),qemu_irq_invert(qdev_get_gpio_in_named(db2,"led-digital",1)));
     qdev_connect_gpio_out(dev, 0, split_fsensor);
 

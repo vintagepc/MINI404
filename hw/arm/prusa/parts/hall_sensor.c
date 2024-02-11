@@ -44,6 +44,7 @@ struct HallState {
     uint8_t state;
 	uint32_t present_val;
 	uint32_t missing_val;
+    bool start_state;
     qemu_irq irq;
     qemu_irq status;
 	uint8_t index;
@@ -90,7 +91,7 @@ static void hall_sensor_toggle(HallState *s)
 static void hall_sensor_reset(DeviceState *dev)
 {
     HallState *s = HALL_SENSOR(dev);
-    s->state = STATE_PRESENT;
+    s->state = s->start_state? STATE_PRESENT : STATE_RUNOUT;
 	hall_sensor_update(s);
 }
 
@@ -131,9 +132,19 @@ static void hall_sensor_input_handle_key(P404KeyIF *opaque, Key keycode)
 	}
 }
 
+static void hall_sensor_ext_in(void *opaque, int n, int level)
+{
+    HallState *s = HALL_SENSOR(opaque);
+    s->state = level? STATE_PRESENT : STATE_RUNOUT;
+    hall_sensor_update(s);
+}
+
+
 static void hall_sensor_realize(DeviceState *dev, Error **errp)
 {
     HallState *s = HALL_SENSOR(dev);
+    s->state = s->start_state? STATE_PRESENT : STATE_RUNOUT;
+    hall_sensor_update(s);
 	if (s->index == 0)
 	{
     	p404_register_keyhandler(s->p_key, 'f',"Toggles filament sensor state");
@@ -149,6 +160,7 @@ static void hall_sensor_init(Object *obj)
     HallState *s = HALL_SENSOR(obj);
     qdev_init_gpio_out(DEVICE(obj), &s->irq, 1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->status, "status",1);
+    qdev_init_gpio_in_named(DEVICE(obj), hall_sensor_ext_in, "ext-in", 1);
 
 
     script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_HALL_SENSOR);
@@ -175,6 +187,7 @@ static Property hall_sensor_properties[] = {
     DEFINE_PROP_UINT8("index",HallState, index, 0),
     DEFINE_PROP_UINT32("present-value",HallState, present_val, 80000),
     DEFINE_PROP_UINT32("missing-value",HallState, missing_val, 250),
+    DEFINE_PROP_BOOL("start-state",HallState, start_state, true),
     DEFINE_PROP_END_OF_LIST(),
 };
 

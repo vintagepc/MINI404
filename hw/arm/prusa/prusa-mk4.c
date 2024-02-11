@@ -135,12 +135,14 @@ typedef struct mk4_cfg_t {
 typedef struct xBuddyMachineClass {
     MachineClass        parent;
     const mk4_cfg_t     *cfg;
+    bool                has_mmu;
 } xBuddyMachineClass;
 
 typedef struct xBuddyData {
 	const mk4_cfg_t* cfg;
 	const char* name;
 	const char* descr;
+    const bool has_mmu;
 } xBuddyData;
 
 #define XBUDDY_MACHINE_CLASS(klass)                                    \
@@ -173,6 +175,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
+
 	.e_t_mass = 35,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
@@ -317,6 +320,7 @@ static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
@@ -619,16 +623,22 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",1));
 #endif
 
+    DeviceState *hs = NULL;
+
 	if (cfg.has_loadcell) {
 		DeviceState *lc = qdev_new("loadcell");
+        object_property_add_child(OBJECT(periphs), "loadcell", OBJECT(lc));
 		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
 		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
-		DeviceState *hs = qdev_new("hall-sensor");
+		hs = qdev_new("hall-sensor");
+        object_property_add_child(OBJECT(periphs), "hall-sensor", OBJECT(hs));
+        qdev_prop_set_bit(hs, "start-state", !mc->has_mmu); // MMU starts unloaded.
 		sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
 		qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
 
 		dev = qdev_new("hx717");
+        object_property_add_child(OBJECT(periphs), "hx717", OBJECT(dev));
 		sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
@@ -791,6 +801,20 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "cursor_xy", 1, y_split);
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
+    // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
+    if (mc->has_mmu && kernel_len > 0)
+    {
+        dev = qdev_new("mmu-bridge");
+        object_property_add_child(OBJECT(periphs), "mmu-bridge", OBJECT(dev));
+    	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),8,qdev_get_gpio_in_named(dev, "reset-in", 0));
+        if (hs != NULL) 
+        {
+	        qdev_connect_gpio_out_named(dev, "fs-out",0, qdev_get_gpio_in_named(hs, "ext-in", 0));
+        }
+
+    }
+
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -818,6 +842,7 @@ static void xbuddy_class_init(ObjectClass *oc, void *data)
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
+        xmc->has_mmu = d->has_mmu;
 }
 
 static const xBuddyData mk4_027c = {
@@ -825,10 +850,23 @@ static const xBuddyData mk4_027c = {
 	.descr = "Prusa Mk4 0.2.7c",
 };
 
+static const xBuddyData mk4_027c_mmu = {
+	.cfg = &mk4_027c_cfg,
+	.descr = "Prusa Mk4 0.2.7c with MMU3",
+    .has_mmu = true,
+};
+
 static const xBuddyData mk4_034 = {
 	.cfg = &mk4_034_cfg,
 	.descr = "Prusa Mk4 0.3.4",
 };
+
+static const xBuddyData mk4_034_mmu = {
+	.cfg = &mk4_034_cfg,
+	.descr = "Prusa Mk4 0.3.4 with MMU3",
+    .has_mmu = true,
+};
+
 
 static const xBuddyData mk3v5 = {
 	.cfg = &mk3v5_cfg,
@@ -851,12 +889,21 @@ static const TypeInfo xbuddy_machine_types[] = {
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk4_027c
-    },
-	{
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-027c-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_027c_mmu,
+    }, {
         .name           = MACHINE_TYPE_NAME("prusa-mk4-034"),
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk4_034
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-034-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_034_mmu
     },{
         .name           = MACHINE_TYPE_NAME("prusa-mk3-35"),
         .parent         = TYPE_XBUDDY_MACHINE,

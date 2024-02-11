@@ -360,6 +360,7 @@ static void tmc2130_dir(void *opaque, int n, int level) {
     tmc2130_state *s = opaque;
     s->dir = (level^s->is_inverted)&0x1;
     s->vis.status.dir = s->dir;
+    s->vis.status.changed |= true;
 }
 
 static void tmc2130_create_reply(tmc2130_state *s) {
