@@ -783,8 +783,8 @@ static void mk4_init(MachineState *machine)
     DeviceState* encoder = qdev_new("encoder-input");
     sysbus_realize(SYS_BUS_DEVICE(encoder), &error_fatal);
     qdev_connect_gpio_out_named(encoder, "encoder-button",  0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_btn)), PIN(cfg.enc_btn)));
-    qdev_connect_gpio_out_named(encoder, "encoder-a",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
-    qdev_connect_gpio_out_named(encoder, "encoder-b",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
+    qdev_connect_gpio_out_named(encoder, "encoder-ab",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
+    qdev_connect_gpio_out_named(encoder, "encoder-ab",       1,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
 
 	bus = qdev_get_child_bus(
 		stm32_soc_get_periph(dev_soc, STM32_P_I2C3),
