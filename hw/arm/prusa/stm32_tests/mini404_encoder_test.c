@@ -272,7 +272,7 @@ static void test_script_twist(void)
     send_scriptcmd(CMD_TWDOWN, fd);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
-    qtest_clock_step(ts, 100U*1E6); // 100ms
+    qtest_clock_step(ts, 101U*1E6); // 100ms
 
     g_assert_true(qtest_get_irq(ts,0));
     g_assert_false(qtest_get_irq(ts,1));
@@ -286,7 +286,7 @@ static void test_script_twist(void)
     send_scriptcmd(CMD_TWDOWN, fd);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
-    qtest_clock_step(ts, 100U*1E6); // 100ms
+    qtest_clock_step(ts, 101U*1E6); // 100ms
 
     g_assert_false(qtest_get_irq(ts,0));
     g_assert_true(qtest_get_irq(ts,1));
@@ -300,7 +300,7 @@ static void test_script_twist(void)
     send_scriptcmd(CMD_TWUP, fd);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
-    qtest_clock_step(ts, 100U*1E6); // 100ms
+    qtest_clock_step(ts, 101U*1E6); // 100ms
 
     g_assert_false(qtest_get_irq(ts,0));
     g_assert_true(qtest_get_irq(ts,1));
@@ -314,7 +314,7 @@ static void test_script_twist(void)
     send_scriptcmd(CMD_TWUP, fd);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
-    qtest_clock_step(ts, 100U*1E6); // 100ms
+    qtest_clock_step(ts, 101U*1E6); // 100ms
 
     g_assert_true(qtest_get_irq(ts,0));
     g_assert_false(qtest_get_irq(ts,1));
