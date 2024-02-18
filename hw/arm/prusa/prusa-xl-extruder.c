@@ -189,6 +189,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),11,qdev_get_gpio_in_named(dashboard, "led-digital",1));
 	dev = qdev_new("dwarf-input");
+    object_property_add_child(periphs, "dwarf-input", OBJECT(dev));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 	qdev_connect_gpio_out(dev,0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),15));
 	qdev_connect_gpio_out(dev,1,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),10));

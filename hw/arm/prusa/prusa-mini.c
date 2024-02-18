@@ -8,7 +8,7 @@
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * furnished to do so, subject to the following conditions:d
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
@@ -343,6 +343,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     for (int i=0; i<2; i++)
     {
         dev = qdev_new("fan");
+        object_property_add_child(OBJECT(periphs), g_strdup_printf("fan-%c",fan_labels[i]), OBJECT(dev));
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
         qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
