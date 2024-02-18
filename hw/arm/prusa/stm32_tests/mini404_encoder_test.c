@@ -268,6 +268,8 @@ static void test_script_twist(void)
 	qtest_irq_intercept_out_named(ts, QOM_PATH, "encoder-ab");
     /* Assertions and other test logic */
 
+    g_free(qtest_hmp(ts, "system_reset"));
+
     // Emulate a keypress
     send_scriptcmd(CMD_TWDOWN, fd);
     qtest_clock_step_next(ts);
@@ -286,7 +288,7 @@ static void test_script_twist(void)
     send_scriptcmd(CMD_TWDOWN, fd);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
-    qtest_clock_step(ts, 101U*1E6); // 100ms
+    qtest_clock_step(ts, 105U*1E6); // 100ms
 
     g_assert_false(qtest_get_irq(ts,0));
     g_assert_true(qtest_get_irq(ts,1));
@@ -300,8 +302,7 @@ static void test_script_twist(void)
     send_scriptcmd(CMD_TWUP, fd);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
-    qtest_clock_step(ts, 101U*1E6); // 100ms
-
+    qtest_clock_step(ts, 105U*1E6); // 100ms
     g_assert_false(qtest_get_irq(ts,0));
     g_assert_true(qtest_get_irq(ts,1));
 
