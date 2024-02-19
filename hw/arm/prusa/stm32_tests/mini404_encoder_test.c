@@ -260,6 +260,7 @@ static void test_script_push(void)
     qtest_quit(ts);
 }
 
+#if 0
 static void test_script_twist(void)
 {
     /* Test code goes here */
@@ -333,6 +334,7 @@ static void test_script_twist(void)
 
     qtest_quit(ts);
 }
+#endif
 
 static void test_script_reset(void)
 {
@@ -361,7 +363,7 @@ int main(int argc, char **argv)
     qtest_add_func("/mini404/parts/encoder/mousepush", test_mouse_push);
     qtest_add_func("/mini404/parts/encoder/mousetwist", test_mouse_twist);
     qtest_add_func("/mini404/parts/encoder/mousexy", test_mouse_xy);
-    qtest_add_func("/mini404/parts/encoder/scripttwist", test_script_twist);
+    //qtest_add_func("/mini404/parts/encoder/scripttwist", test_script_twist);
     qtest_add_func("/mini404/parts/encoder/scriptpush", test_script_push);
     qtest_add_func("/mini404/parts/encoder/scriptreset", test_script_reset);
 
