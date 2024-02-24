@@ -1669,7 +1669,7 @@ babble:
     }
 
     if (p->packet.status == USB_RET_SUCCESS) {
-        if (actual > tlen) {
+        if (actual > tlen*hctsiz->PKTCNT) {
             p->packet.status = USB_RET_BABBLE;
             goto babble;
         }
