@@ -83,7 +83,7 @@ static void cbtl3257_select(void *opaque, int n, int level){
 	{
 		if (s->levels[old_sel][i] != s->levels[s->select][i])
 		{
-			qemu_set_irq(s->irq[n],s->levels[s->select][i]);
+			qemu_set_irq(s->irq[i],s->levels[s->select][i]);
 		}
 	}
 }
@@ -95,11 +95,11 @@ static void cbtl3257_nOE(void *opaque, int n, int level){
 	{
 		if (s->oe)
 		{
-			qemu_set_irq(s->irq[n],s->levels[s->select][i]);
+			qemu_set_irq(s->irq[i],s->levels[s->select][i]);
 		}
 		else
 		{
-			qemu_irq_lower(s->irq[n]);
+			qemu_irq_lower(s->irq[i]);
 		}
 	}
 }

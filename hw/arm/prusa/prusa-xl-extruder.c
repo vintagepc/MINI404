@@ -100,6 +100,8 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 {
     DeviceState *dev;
 
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+
 	const prusa_xl_e_cfg_t* cfg = extruder_cfg_map[type];
 
 	dev = qdev_new(TYPE_STM32G070xB_SOC);
@@ -187,11 +189,13 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),11,qdev_get_gpio_in_named(dashboard, "led-digital",1));
 	dev = qdev_new("dwarf-input");
+    object_property_add_child(periphs, "dwarf-input", OBJECT(dev));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 	qdev_connect_gpio_out(dev,0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),15));
 	qdev_connect_gpio_out(dev,1,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC),10));
 
 	dev = qdev_new("ws281x");
+    object_property_add_child(periphs, "ws281x", OBJECT(dev));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB),6,qdev_get_gpio_in(dev,0));
 	qdev_connect_gpio_out_named(dev,"colour",0,qdev_get_gpio_in_named(dashboard, "led-rgb",0));
@@ -274,6 +278,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
 
 	DeviceState* mux = qdev_new("cbtl3257");
+    object_property_add_child(periphs, "mux", OBJECT(mux));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(mux), &error_fatal);
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 4,qdev_get_gpio_in_named(mux,"select",0));
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 0,qdev_get_gpio_in_named(mux,"B1",0));

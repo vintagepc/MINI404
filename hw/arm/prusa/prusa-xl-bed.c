@@ -63,6 +63,8 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 {
     DeviceState *dev;
 
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+
     dev = qdev_new(TYPE_STM32G070xB_SOC);
 	hwaddr FLASH_SIZE = stm32_soc_get_flash_size(dev);
 
@@ -154,6 +156,7 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 			break;
 	}
 	DeviceState* mux = qdev_new("hc4052");
+    object_property_add_child(periphs, "mux", OBJECT(mux));
 	qdev_prop_set_uint8(mux, "start_channel",1);
 
     sysbus_realize(SYS_BUS_DEVICE(mux), &error_fatal);
