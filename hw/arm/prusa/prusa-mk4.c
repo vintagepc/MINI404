@@ -114,6 +114,7 @@ typedef struct mk4_cfg_t {
 	temp_cfg_t temps;
     uint8_t motor;
 	uint8_t e_t_mass;
+    bool e_loopback;
     char m_label[AXIS_MAX];
     stm_pin m_step[AXIS_MAX];
     stm_pin m_dir[AXIS_MAX];
@@ -258,6 +259,7 @@ static const mk4_cfg_t mk3v5_cfg = {
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
 	.e_t_mass = 30,
+    .e_loopback = true,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -341,6 +343,9 @@ static void mk4_init(MachineState *machine)
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
 	uint64_t flash_size = stm32_soc_get_flash_size(dev);
     arghelper_setargs(machine->kernel_cmdline);
+
+    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
+    // Parse those now.
 	bool args_continue_running = arghelper_parseargs();
 	if (arghelper_is_arg("4x_flash"))
     {
@@ -361,14 +366,21 @@ static void mk4_init(MachineState *machine)
 	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
 	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
 
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
-    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
-    // Parse those now.
-	// ugly hack... FIXME.
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
+    if (cfg.e_loopback) {
+		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),"idr-mask", 0x80);
+    }
+
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    
+    if(cfg.e_loopback)
+    {
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), 7));
+    }
+
 
     char* kfn = machine->kernel_filename;
     int kernel_len = kfn ? strlen(kfn) : 0;

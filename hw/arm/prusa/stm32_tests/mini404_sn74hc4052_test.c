@@ -56,9 +56,9 @@ static void test_sn74hc4052_reset(void)
         }
     }
 
-    // Reset should set the channel to start channel - for this machine, it's 1.
-    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 101);
-    g_assert_cmpint(qtest_get_irq_level(ts, 1), ==, 301);
+    // Reset should set the channel to start channel - for this machine, it's 1, but the GPIO reset returns it to 0...
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 100);
+    g_assert_cmpint(qtest_get_irq_level(ts, 1), ==, 300);
     qtest_quit(ts);
 
 }
