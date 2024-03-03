@@ -89,8 +89,8 @@ stm32_common_gpio_read(void *arg, hwaddr addr, unsigned int size)
     uint32_t r;
 
     addr >>= 2;
-    r = s->regs[addr];
 	CHECK_BOUNDS_R(addr, RI_END, s->reginfo[s->parent.periph - STM32_P_GPIOA], "STM32 GPIO");
+    r = s->regs[addr];
 //printf("GPIO unit %d reg %x return 0x%x\n", s->periph, (int)offset << 2, r);
     return r;
 }
@@ -221,6 +221,10 @@ stm32_common_gpio_reset(DeviceState *dev)
 	{
 		s->regs[i] = s->reginfo[s->parent.periph - STM32_P_GPIOA][i].reset_val;
 	}
+    for (int i=0; i<STM32_GPIO_PIN_COUNT; i++)
+    {
+        qemu_set_irq(s->pin[i], s->regs[RI_ODR] & (1<<i));
+    }
     /* Mask out the IDR bits as specified */
     s->regs[RI_IDR] = 0x0000ffff & ~(s->idr_mask);
 }
