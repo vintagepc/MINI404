@@ -79,6 +79,12 @@ enum {
 };
 
 enum {
+    FAN_PRINT,
+    FAN_HBR, 
+    FAN_MAX
+};
+
+enum {
 	T_NOZ,
 	T_BED,
 	T_BRK,
@@ -109,6 +115,9 @@ typedef struct mk4_cfg_t {
     stm_pin enc_b;
     stm_pin enc_btn;
     stm_pin z_min;
+    uint16_t f_rpms[FAN_MAX];
+    stm_pin f_tach[FAN_MAX];
+    bool f_inverted;
     bool has_at21;
 	bool has_loadcell;
 	temp_cfg_t temps;
@@ -167,6 +176,9 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
+    .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -209,6 +221,9 @@ static const mk4_cfg_t mk4_034_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
+    .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -250,6 +265,9 @@ static const mk4_cfg_t mk3v5_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 4500, 7500 },
+    .f_tach = {STM_PIN(GPIOA,10), STM_PIN(GPIOE,10)},
+    .f_inverted = false,
     .has_at21 = false,
 	.temps =
 	{
@@ -267,7 +285,7 @@ static const mk4_cfg_t mk3v5_cfg = {
     .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
-	.m_inverted = {0,1,0,1},
+	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = false,
 	.dm_ver = 34,
@@ -291,6 +309,9 @@ static const mk4_cfg_t mk3v9_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
+    .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -762,25 +783,23 @@ static void mk4_init(MachineState *machine)
 
     // hotend = fan1
     // print fan = fan0
-    uint16_t fan_max_rpms[] = { 6600, 7000 };
     uint8_t  fan_pwm_pins[] = { 11, 9};
-    uint8_t fan_tach_pins[] = { 10, 14};
     uint8_t fan_labels[] = {'P','E'};
 	DeviceState* fanpwm = qdev_new("software-pwm");
-    qdev_prop_set_bit(fanpwm, "is_inverted", true);
+    qdev_prop_set_bit(fanpwm, "is_inverted", cfg.f_inverted);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(fanpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM14), "timer", 0, qdev_get_gpio_in_named(fanpwm, "tick-in", 0));
-    for (int i=0; i<2; i++)
+    for (int i=0; i<FAN_MAX; i++)
     {
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), fan_pwm_pins[i],
 			qdev_get_gpio_in_named(fanpwm, "gpio-in",i)
 		);
         dev = qdev_new("fan");
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
-        qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
+        qdev_prop_set_uint32(dev, "max_rpm",cfg.f_rpms[i]);
         //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),fan_tach_pins[i]));
+        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.f_tach[i])), PIN(cfg.f_tach[i])));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
         qdev_connect_gpio_out_named(dev, "rpm-out", 0, qdev_get_gpio_in_named(db2,"fan-rpm",i));
 		qdev_connect_gpio_out(fanpwm,i,split_fan);
