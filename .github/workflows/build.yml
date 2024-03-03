@@ -199,7 +199,6 @@ jobs:
           ninja
         shell: msys2 {0}
       - name: Assemble artifacts and libraries
-        if: ${{ !github.event.pull_request }}
         run: |
           cd build
           mkdir Mini404-dev-w64
