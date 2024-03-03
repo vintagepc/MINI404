@@ -284,7 +284,7 @@ extern void stm32_soc_realize_peripheral(DeviceState* soc_state, stm32_periph_t 
 		 	sysbus_mmio_map(SYS_BUS_DEVICE(s->perhiperhals[id]), 0, cfg->base_addr);
 		}
 	}
-    if (id > STM32_P_RCC && stm32_rcc_if_has_clk(STM32_PERIPHERAL(s->perhiperhals[id])))
+    if ((cfg->flags & PERIPH_CFG_FLAG_NON_STM32P) == 0 && stm32_rcc_if_has_clk(STM32_PERIPHERAL(s->perhiperhals[id])))
     {
         stm32_rcc_if_set_periph_clk_irq(STM32_PERIPHERAL(s->perhiperhals[id]), qdev_get_gpio_in_named(s->perhiperhals[id],"clock-change",0));
     }
