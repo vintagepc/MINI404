@@ -1,5 +1,12 @@
+
+SDL2.dll
+SDL2_image.dll
 glew32.dll
+libLerc.dll
+libSvtAv1Enc.dll
+libaom.dll
 libatk-*.dll
+libavif-*.dll
 libbrotlicommon.dll
 libbrotlidec.dll
 libbrotlienc.dll
@@ -9,6 +16,7 @@ libcairo-gobject-2.dll
 libcrypto-*-x64.dll
 libcurl-*.dll
 libdatrie-1.dll
+libdav1d-*.dll
 libdeflate.dll
 libepoxy-*.dll
 libexpat-*.dll
@@ -37,7 +45,7 @@ libintl-*.dll
 libjbig-*.dll
 libjpeg-*.dll
 libjxl.dll
-libLerc.dll
+libjxl_cms.dll
 liblcms2*.dll
 liblzma-*.dll
 liblzo2-*.dll
@@ -61,8 +69,9 @@ libtiff-*.dll
 libunistring-*.dll
 libusb-1.*.dll
 libwebp-*.dll
+libwebpdemux-*.dll
 libwinpthread-1.dll
+libyuv.dll
 libzstd.dll
-SDL2.dll
-SDL2_image.dll
+rav1e.dll
 zlib1.dll
