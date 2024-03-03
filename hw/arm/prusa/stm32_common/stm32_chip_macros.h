@@ -5,17 +5,26 @@
 #include "stm32_shared.h"
 #include "hw/core/split-irq.h"
 
+enum {
+    PERIPH_CFG_FLAG_NONE = 0,
+    PERIPH_CFG_FLAG_NON_STM32P = 1,
+};
+
 // Add a single-line scalar entry with id and base address only.
-#define PER_LN(id, typename, addr) [STM32_##id] = {typename, addr, 0, {-1} }
-// Add a single-line scalar entry with  id, base address, and IRQ
-#define PER_LNI(id, typename, addr, ...) [STM32_##id] = {typename, addr, 0, {__VA_ARGS__, -1}}
+#define PER_LN(id, typename, addr) [STM32_##id] = {typename, addr, 0, PERIPH_CFG_FLAG_NONE, {-1} }
+// Add a single-line scalar entry with id, flags, and base address only.
+#define PER_LNF(id, typename, addr, flags) [STM32_##id] = {typename, addr, 0, flags, {-1} }
 // Add a single-line scalar entry with  id, base address, and IRQ vector
+#define PER_LNI(id, typename, addr, ...) [STM32_##id] = {typename, addr, 0, PERIPH_CFG_FLAG_NONE, {__VA_ARGS__, -1}}
+// Add a single-line scalar entry with  id, base address, flags, and IRQ vector
+#define PER_LNIF(id, typename, addr, flags, ...) [STM32_##id] = {typename, addr, 0, flags, {__VA_ARGS__, -1}}
 
 typedef struct stm32_periph_cfg_t
 {
 	const char* type;
 	const hwaddr base_addr;
 	const uint32_t size;
+    const uint8_t flags;
 	const int irq[17];
 } stm32_periph_cfg_t;
 
