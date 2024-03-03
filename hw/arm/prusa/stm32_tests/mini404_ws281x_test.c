@@ -44,6 +44,7 @@ static void test_reset(void)
 {
     QTestState *ts = qtest_init("-machine " MACHINE);
     qtest_irq_intercept_out_named(ts, QOM_PATH, "colour");
+    qtest_clock_step(ts, RESET_NS);
 
     // Toggle GPIO input to send color value
     uint32_t colour = 0xBEEF05;
@@ -72,6 +73,7 @@ static void test_ws281x_color(void)
 {
     QTestState *ts = qtest_init("-machine " MACHINE);
     qtest_irq_intercept_out_named(ts, QOM_PATH, "colour");
+    qtest_clock_step(ts, RESET_NS);
 
     // Toggle GPIO input to send color value
     uint32_t colour = 0xBEEF05;
@@ -93,6 +95,7 @@ static void test_ws281x_passthru(void)
 {
     QTestState *ts = qtest_init("-machine " MACHINE);
     qtest_irq_intercept_out(ts, QOM_PATH);
+    qtest_clock_step(ts, RESET_NS);
 
     // Toggle GPIO input to send color value
     uint32_t colour = 0xBEEF05;
