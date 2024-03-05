@@ -121,7 +121,11 @@ extern void stm32_soc_setup_flash(DeviceState* soc, MemoryRegion* flash, Error**
 extern BlockBackend* get_or_create_drive(BlockInterfaceType interface, int index, const char* default_name, const char* label, uint32_t file_size, Error** errp);
 
 // We re-add this because we use it in a lot of places and the recommended replacement leads to a lot of boilerplate copy-pasta...
-qemu_irq qemu_irq_split(qemu_irq irq1, qemu_irq irq2);
-qemu_irq qemu_irq_split3(qemu_irq irq1, qemu_irq irq2, qemu_irq irq3);
+// It's also extended with varargs capability...
+//qemu_irq qemu_irq_split(qemu_irq irq1, qemu_irq irq2);
+#define _TENTH(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,...) p10
+#define _NARGS(...) _TENTH(__VA_ARGS__,9,8,7,6,5,4,3,2,1,0)
+qemu_irq _qemu_irq_split(int n, ...);
+#define qemu_irq_split(...) _qemu_irq_split(_NARGS(__VA_ARGS__), __VA_ARGS__)
 
 #endif //STM32_COMMON_H

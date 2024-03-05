@@ -253,7 +253,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	DeviceState* heatpwm = qdev_new("software-pwm");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(heatpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM7), "timer", 0, qdev_get_gpio_in_named(heatpwm, "tick-in", 0));
-	qemu_irq split_heat = qemu_irq_split3(qdev_get_gpio_in_named(htr, "raw-pwm-in",0), qdev_get_gpio_in_named(dashboard, "therm-pwm",0), qdev_get_gpio_in_named(vdev, "pwm-in",0));
+	qemu_irq split_heat = qemu_irq_split(qdev_get_gpio_in_named(htr, "raw-pwm-in",0), qdev_get_gpio_in_named(dashboard, "therm-pwm",0), qdev_get_gpio_in_named(vdev, "pwm-in",0));
 	qdev_connect_gpio_out(heatpwm, 0, split_heat);
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 6,
 		qdev_get_gpio_in_named(heatpwm, "gpio-in",0)

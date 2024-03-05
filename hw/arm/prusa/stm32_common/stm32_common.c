@@ -395,23 +395,18 @@ extern void stm32_soc_machine_init(MachineState *machine)
 					flash_size);
 }
 
-qemu_irq qemu_irq_split(qemu_irq irq1, qemu_irq irq2)
+qemu_irq _qemu_irq_split(int count, ...)
 {
     DeviceState* splitter = qdev_new(TYPE_SPLIT_IRQ);
-    qdev_prop_set_uint32(splitter, "num-lines", 2);
+    qdev_prop_set_uint32(splitter, "num-lines", count);
     qdev_realize_and_unref(splitter, NULL, &error_fatal);
-    qdev_connect_gpio_out(splitter, 0, irq1);
-    qdev_connect_gpio_out(splitter, 1, irq2);
-    return qdev_get_gpio_in(splitter, 0);
-}
-
-qemu_irq qemu_irq_split3(qemu_irq irq1, qemu_irq irq2, qemu_irq irq3)
-{
-    DeviceState* splitter = qdev_new(TYPE_SPLIT_IRQ);
-    qdev_prop_set_uint32(splitter, "num-lines", 3);
-    qdev_realize_and_unref(splitter, NULL, &error_fatal);
-    qdev_connect_gpio_out(splitter, 0, irq1);
-    qdev_connect_gpio_out(splitter, 1, irq2);
-    qdev_connect_gpio_out(splitter, 2, irq3);
+    va_list ap;
+    va_start(ap, count);
+    for (int i=0; i<count; i++)
+    {
+        qemu_irq irq = va_arg(ap, qemu_irq);
+        qdev_connect_gpio_out(splitter, i, irq);
+    }
+    va_end(ap);
     return qdev_get_gpio_in(splitter, 0);
 }
