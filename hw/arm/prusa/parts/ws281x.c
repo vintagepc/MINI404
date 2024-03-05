@@ -128,14 +128,21 @@ static void ws281x_gpio(void* opaque, int n, int level)
 	else
 	{
 		s->last_lowc =  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL); // icount_get_raw();
-		if (s->last_lowc == 0)
+        float time_scale = 1;
+		if (icount_enabled())
 		{
-			// printf("ERR: WS281x detected '-icount ' is not set. LED will not function without accurate timing!\n");
-			//s->disabled = true;
+            // Based on casual testing icount 5 seems to get "closest" to the real timings as set in the FW (220, 580 uS)
+            // Scale any different values accordingly so the RGB keeps working regardless of icount. 
+            time_scale = (float)icount_to_ns(1) / 32.f;
 		}
+        else
+        {
+            // Note that for the unit tests, we do not have icount enabled, but the clock is stepped by the correct ns value.
+            printf("# -icount not specified. one-wire LED may not work properly!\n");
+        }
 		s->current_colour.raw <<= 1;
-		s->current_colour.raw |= abs((s->last_lowc - s->last_highc) - T1H_NS) <= THRESH_NS; // This value is highly dependent on the value of icount. Tested with -icount 2 gets ns values close to correct in real ns
-		// printf("last high: %ld\n",(s->last_lowc - s->last_highc));
+		s->current_colour.raw |= abs(((s->last_lowc - s->last_highc) / time_scale) - T0H_NS) > THRESH_NS; // This value is highly dependent on the value of icount. Tested with -icount 2 gets ns values close to correct in real ns
+		// printf("last high: %ld, ic: %f\n",(s->last_lowc - s->last_highc), time_scale);
 		s->bit_count++;
         if (s->bit_count == 24)
         {

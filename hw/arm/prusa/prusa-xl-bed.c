@@ -204,7 +204,7 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 		qdev_connect_gpio_out_named(dev, "temp_out_256x",0, qdev_get_gpio_in_named(visuals, "temp-in",index2vis[i]));
 
 		DeviceState* dev2 = qdev_new("heater");
-		qdev_prop_set_uint8(dev2, "thermal_mass_x10",10);
+		qdev_prop_set_uint8(dev2, "thermal_mass_x10", 5);
 		qdev_prop_set_uint8(dev2,"label", 'A'+i);
 		qdev_prop_set_uint16(dev2,"resistance_x100", 1400);
 		sysbus_realize(SYS_BUS_DEVICE(dev2), &error_fatal);

@@ -122,5 +122,6 @@ extern BlockBackend* get_or_create_drive(BlockInterfaceType interface, int index
 
 // We re-add this because we use it in a lot of places and the recommended replacement leads to a lot of boilerplate copy-pasta...
 qemu_irq qemu_irq_split(qemu_irq irq1, qemu_irq irq2);
+qemu_irq qemu_irq_split3(qemu_irq irq1, qemu_irq irq2, qemu_irq irq3);
 
 #endif //STM32_COMMON_H

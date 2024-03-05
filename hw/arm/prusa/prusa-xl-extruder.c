@@ -237,10 +237,23 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	qdev_prop_set_uint8(htr,"label", 'H');
 	sysbus_realize(SYS_BUS_DEVICE(htr), &error_fatal);
 
+    // Heater v - only on if heating. ADC CH11 (Pin B10). Current is In8 (Pin B0)
+    DeviceState* vdev = qdev_new("powersource");
+    object_property_add_child(periphs, "heater-vmon", OBJECT(vdev));
+    qdev_prop_set_uint32(vdev,"mV",23900);
+    sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
+    qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",11));
+
+    vdev = qdev_new("cs30bl");
+    object_property_add_child(periphs, "heater-imon", OBJECT(vdev));
+    qdev_prop_set_uint32(vdev,"mA", 10);
+    sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
+    qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",8));
+
 	DeviceState* heatpwm = qdev_new("software-pwm");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(heatpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM7), "timer", 0, qdev_get_gpio_in_named(heatpwm, "tick-in", 0));
-	qemu_irq split_heat = qemu_irq_split( qdev_get_gpio_in_named(htr, "raw-pwm-in",0), qdev_get_gpio_in_named(dashboard, "therm-pwm",0));
+	qemu_irq split_heat = qemu_irq_split3(qdev_get_gpio_in_named(htr, "raw-pwm-in",0), qdev_get_gpio_in_named(dashboard, "therm-pwm",0), qdev_get_gpio_in_named(vdev, "pwm-in",0));
 	qdev_connect_gpio_out(heatpwm, 0, split_heat);
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 6,
 		qdev_get_gpio_in_named(heatpwm, "gpio-in",0)
