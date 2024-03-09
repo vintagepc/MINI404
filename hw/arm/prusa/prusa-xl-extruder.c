@@ -207,9 +207,9 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	qdev_connect_gpio_out_named(hall,"status", 0, qdev_get_gpio_in_named(dashboard,"led-digital",2));
 	qdev_connect_gpio_out(hall, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", 4));
 
-	// hotend = fan1
-    // print fan = fan0
-    uint16_t fan_max_rpms[] = { 5000, 6000 };
+    //0 is HBR
+    //1 is Print fan
+    uint16_t fan_max_rpms[] = { 8000, 6000 };
     uint8_t  fan_pwm_pins[] = { 7, 6};
     uint8_t fan_tach_exti_lines[] = { 8, 9};
     uint8_t fan_labels[] = {'P','E'};
