@@ -180,7 +180,14 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     stm32_uart_tx_complete(s);
 #else
     /* Otherwise, start the transmit delay timer. */
-    timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
+    if (s->parent.periph == STM32_P_UART8)
+    {
+        timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char)/10);
+    }
+    else
+    {
+        timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
+    }
 #endif
 }
 
@@ -410,6 +417,9 @@ static void stm32_uart_reset(DeviceState *dev)
     s->idle_interrupt_blocked = false;
 
     s->curr_irq_level = 0;
+
+    // Empty the RX buffer...
+    s->rcv_char_bytes = 0;
 
     // Do not initialize USART_DR - it is documented as undefined at reset
     // and does not behave like normal registers.

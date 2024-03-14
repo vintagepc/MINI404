@@ -48,7 +48,8 @@ static const char* shm_names[XL_BRIDGE_COUNT] =
 	"PXL_E2",
 	"PXL_E3",
 	"PXL_E4",
-	"PXL_E5"
+	"PXL_E5",
+    "PXL_ESP32"
 };
 
 // Messages are composed of some GPIO status bits
@@ -82,7 +83,7 @@ struct XLBridgeState {
 	CharBackend chr[XL_BRIDGE_COUNT];
 	CharBackend gpio[XL_BRIDGE_COUNT];
 
-	qemu_irq byte_receive;
+	qemu_irq byte_receive[XLBRIDGE_UART_COUNT];
 
 	qemu_irq gpio_out[XLBRIDGE_PIN_COUNT];
 
@@ -160,8 +161,17 @@ static void xl_bridge_tx_assert(void *opaque, int n, int level)
 
 static void xl_bridge_byte_send(void *opaque, int n, int level)
 {
-	// TODO - construct the control byte.
 	XLBridgeState *s = XLBRIDGE(opaque);
+
+    // ESP uart isn't RS485, just forward on the data (this is from ESP to STM32)...
+    if (n == XLBRIDGE_UART_ESP32)
+    {
+        uint8_t data = level;
+        //printf("ESP32: %02x (%c)\n", data, data);
+        qemu_chr_fe_write_all(&s->chr[XL_DEV_ESP32], (uint8_t*)&data, 1);
+        return;
+    }
+
 	//uint16_t data = 0x00FF | (level & 0xFF)<<8; // swap the bytes here so they come in in the right order.
 	// Buffer up the data for a single-shot transmit.
 	s->buffer[s->buffer_level++] = level & 0xFF;
@@ -198,7 +208,7 @@ static int xl_bridge_gpio_can_receive(void *opaque)
     return 1; // Currently only 1 byte increments.
 }
 
-static void xl_bridge_receive(void *opaque, const uint8_t *buf, int size)
+static void _xl_bridge_receive(void *opaque, const uint8_t *buf, int size, int destination)
 {
    	XLBridgeState *s = XLBRIDGE(opaque);
 	//#define FILTER size < 20 && s->id == XL_DEV_XBUDDY
@@ -207,10 +217,26 @@ static void xl_bridge_receive(void *opaque, const uint8_t *buf, int size)
 	if (FILTER) printf(" %u Received: ", s->id);
 	for (const uint8_t* p = buf; p<buf+size; p++)
 	{
-		qemu_set_irq(s->byte_receive, *p);
+		qemu_set_irq(s->byte_receive[destination], *p);
 		if (FILTER) printf("%02x ",*p);
 	}
 	if (FILTER) printf("\n");
+}
+
+static inline void xl_bridge_receive(void *opaque, const uint8_t *buf, int size)
+{
+    _xl_bridge_receive(opaque, buf, size, XLBRIDGE_UART_PUPPY);
+}
+
+static int xl_bridge_esp_can_receive(void *opaque)
+{
+    return 1; // Currently only 1 byte increments.
+}
+
+static inline void xl_bridge_esp_receive(void *opaque, const uint8_t *buf, int size)
+{
+    // printf("ESP32 said: %02x (%c)\n", buf[0], buf[0]);    
+    _xl_bridge_receive(opaque, buf, size, XLBRIDGE_UART_ESP32);
 }
 
 #define PROCESS_BIT(pin, field) \
@@ -340,7 +366,7 @@ static void xl_bridge_realize(DeviceState *dev, Error **errp)
     XLBridgeState *s = XLBRIDGE(dev);
 	if (s->id == XL_DEV_XBUDDY)
 	{
-		for (int i=XL_DEV_T4; i>=XL_DEV_BED; i--) // just two tools for now, because of the "server" wait.
+		for (int i=XL_DEV_ESP32; i>=XL_DEV_BED; i--) // just two tools for now, because of the "server" wait.
 		{
 			Chardev* d=qemu_chr_find(shm_names[i]);
 			gchar* io_name = g_strdup_printf("%s-io",shm_names[i]);
@@ -356,18 +382,19 @@ static void xl_bridge_realize(DeviceState *dev, Error **errp)
 				printf("Socket ID %s - not found, creating it instead.\n", shm_names[i]);
 				QemuOpts *opts;
 				// Now create the IO (GPIO) channel.
-				opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup_printf("%s-io",shm_names[i]), 1, NULL);
-					qemu_opt_set(opts, "backend","socket", errp);
-					qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s-io", shm_names[i]), errp);
-					qemu_opt_set(opts, "server", "on", errp);
-					qemu_opt_set_bool(opts, "wait", false, errp);
-					d2 = qemu_chr_new_from_opts(opts, NULL, errp);
-				qemu_opts_del(opts);
+                opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup_printf("%s-io",shm_names[i]), 1, NULL);
+                    qemu_opt_set(opts, "backend","socket", errp);
+                    qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s-io", shm_names[i]), errp);
+                    qemu_opt_set(opts, "server", "on", errp);
+                    qemu_opt_set_bool(opts, "wait", false, errp);
+                    d2 = qemu_chr_new_from_opts(opts, NULL, errp);
+                qemu_opts_del(opts);
+
 				opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(shm_names[i]), 1, NULL);
 					qemu_opt_set(opts, "backend","socket", errp);
 					qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s", shm_names[i]), errp);
 					qemu_opt_set(opts, "server", "on", errp);
-					if (i > XL_DEV_T0) // Only force wait for required items, namely tool 0 and the bed.
+					if (i > XL_DEV_T0 && i != XL_DEV_ESP32) // Only force wait for required items, namely tool 0 and the bed.
 					{
 						qemu_opt_set_bool(opts, "wait", false, errp);
 					}
@@ -376,8 +403,16 @@ static void xl_bridge_realize(DeviceState *dev, Error **errp)
 
 			}
 			qemu_chr_fe_init(&s->chr[i],d, errp);
-			qemu_chr_fe_set_handlers(&s->chr[i], xl_bridge_can_receive, xl_bridge_receive, NULL,
-					NULL,s,NULL,true);
+            if (i != XL_DEV_ESP32)
+            {
+			    qemu_chr_fe_set_handlers(&s->chr[i], xl_bridge_can_receive, xl_bridge_receive, NULL,
+				    	NULL,s,NULL,true);
+            }
+            else
+            {
+                qemu_chr_fe_set_handlers(&s->chr[i], xl_bridge_esp_can_receive, xl_bridge_esp_receive, NULL,
+				    	NULL,s,NULL,true);
+            }
 			qemu_chr_fe_accept_input(&s->chr[i]);
 
 			qemu_chr_fe_init(&s->gpio[i],d2, errp);
@@ -406,15 +441,28 @@ static void xl_bridge_realize(DeviceState *dev, Error **errp)
 				qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s-io", shm_names[s->id]), errp);
 				d2 = qemu_chr_new_from_opts(opts, NULL, errp);
 			qemu_opts_del(opts);
-			opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(shm_names[s->id]), 1, NULL);
-				qemu_opt_set(opts, "backend","socket", errp);
-				qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s", shm_names[s->id]), errp);
-				d = qemu_chr_new_from_opts(opts, NULL, errp);
-			qemu_opts_del(opts);
+            // ESP can't really use this mecahnism right now. Maybe in the future if it's cleaned up...
+            if (s->id != XL_DEV_ESP32)
+            {
+                opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(shm_names[s->id]), 1, NULL);
+                    qemu_opt_set(opts, "backend","socket", errp);
+                    qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s", shm_names[s->id]), errp);
+                    d = qemu_chr_new_from_opts(opts, NULL, errp);
+                qemu_opts_del(opts);
+            }
 		}
 		qemu_chr_fe_init(&s->chr[s->id],d, errp);
-		qemu_chr_fe_set_handlers(&s->chr[s->id], xl_bridge_can_receive, xl_bridge_receive, NULL,
-			NULL,s,NULL,true);
+        if (s->id != XL_DEV_ESP32)
+        {
+            qemu_chr_fe_set_handlers(&s->chr[s->id], xl_bridge_can_receive, xl_bridge_receive, NULL,
+                NULL,s,NULL,true);
+        }
+        else
+        {
+            qemu_chr_fe_set_handlers(&s->chr[s->id], xl_bridge_esp_can_receive, xl_bridge_esp_receive, NULL,
+                NULL,s,NULL,true);
+        }
+
 		qemu_chr_fe_accept_input(&s->chr[s->id]);
 
 		qemu_chr_fe_init(&s->gpio[s->id],d2, errp);
@@ -449,9 +497,9 @@ static void xl_bridge_init(Object *obj)
     XLBridgeState *s = XLBRIDGE(obj);
 	// Serial I/O IRQs
 	DeviceState* dev = DEVICE(obj);
-	qdev_init_gpio_in_named(dev, xl_bridge_byte_send, "byte-send", 1);
+	qdev_init_gpio_in_named(dev, xl_bridge_byte_send, "byte-send", XLBRIDGE_UART_COUNT);
 	qdev_init_gpio_in_named(dev, xl_bridge_tx_assert, "tx-assert", 1);
-	qdev_init_gpio_out_named(dev, &s->byte_receive, "byte-receive", 1);
+	qdev_init_gpio_out_named(dev, s->byte_receive, "byte-receive", XLBRIDGE_UART_COUNT);
 
 	qdev_init_gpio_in_named(dev, xl_bridge_gpio_in, "gpio-in",XLBRIDGE_PIN_COUNT);
 	qdev_init_gpio_in_named(dev, xl_bridge_reset_in, "reset-in", XL_BRIDGE_COUNT);

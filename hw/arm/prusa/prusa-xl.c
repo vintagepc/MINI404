@@ -680,8 +680,11 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 		qdev_prop_set_uint8(dev, "device", XL_DEV_XBUDDY);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in_named(dev,"tx-assert",0));
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
-		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-in", 0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_PUPPY));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-in", XLBRIDGE_UART_PUPPY));
+
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART8),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_ESP32));
+		qdev_connect_gpio_out_named(dev, "byte-receive", XLBRIDGE_UART_ESP32, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART8),"uart-byte-in", 0));
 
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_step[AXIS_E])), PIN(cfg.m_step[AXIS_E]), qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_STEP));
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[AXIS_E])),  PIN(cfg.m_dir[AXIS_E]),  qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_DIR));
@@ -694,6 +697,7 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 		qdev_connect_gpio_out(expander, 3, qdev_get_gpio_in_named(dev,"reset-in",XL_DEV_T2));
 		qdev_connect_gpio_out(expander, 4, qdev_get_gpio_in_named(dev,"reset-in",XL_DEV_T3));
 		qdev_connect_gpio_out(expander, 5, qdev_get_gpio_in_named(dev,"reset-in",XL_DEV_T4));
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 4,  qdev_get_gpio_in_named(dev,"reset-in",XL_DEV_ESP32));
 	}
 	//qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[AXIS_E])),  PIN(cfg.m_dir[AXIS_E]),  qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_nAC_FAULT));
 

@@ -133,7 +133,10 @@ static void f2xx_tim_update_irqs(f2xx_tim *s)
     flags |= (s->regs[R_TIM_SR] & INT_CCOF_MASK) >> 8;
     flags &= s->regs[R_TIM_DIER];
     qemu_set_irq(s->irq[IRQ_GLOBAL], flags > 0);
-    qemu_set_irq(s->public_irq, flags > 0);
+    if (flags & INT_UIF)
+    {
+        qemu_irq_raise(s->public_irq);
+    }
     if (!qemu_irq_is_connected(s->irq[IRQ_GLOBAL]))
     {
         qemu_set_irq(s->irq[IRQ_CC], (flags & INT_CC_MSK) > 0);

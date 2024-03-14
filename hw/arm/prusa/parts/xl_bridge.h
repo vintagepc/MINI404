@@ -1,7 +1,7 @@
 /*
     xl_bridge.h - include with defines for bridge properties.
 
-	Copyright 2022-3 VintagePC <https://github.com/vintagepc/>
+	Copyright 2022-4 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -30,6 +30,7 @@ enum {
 	XL_DEV_T3,
 	XL_DEV_T4,
 	XL_DEV_T5,
+    XL_DEV_ESP32,
 	XL_BRIDGE_COUNT
 };
 
@@ -47,5 +48,12 @@ enum {
 	XLBRIDGE_PIN_nAC_FAULT,
 	XLBRIDGE_PIN_RESET,
 	XLBRIDGE_PIN_Z_UM,
+    XLBRIDGE_PIN_ESP_GPIO0,
 	XLBRIDGE_PIN_COUNT
+};
+
+enum {
+    XLBRIDGE_UART_PUPPY = 0,
+    XLBRIDGE_UART_ESP32,
+    XLBRIDGE_UART_COUNT
 };
