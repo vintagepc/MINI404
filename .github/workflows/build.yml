@@ -53,13 +53,13 @@ jobs:
     - name: Install packages
       run: |
           sudo apt-get update
-          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev
+          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libslirp-dev libusb-1.0.0-dev libgtk-3-dev
 
     - name: Cache permissions
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-slirp=git --enable-gtk
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-slir --enable-gtk
 
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404/build && ninja
