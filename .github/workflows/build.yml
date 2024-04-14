@@ -59,7 +59,7 @@ jobs:
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-slirp --enable-gtk
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-slirp=git --enable-gtk
 
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404/build && ninja
@@ -158,12 +158,12 @@ jobs:
           msystem: MINGW64
           install: make git zip wget mingw-w64-x86_64-diffutils diffutils mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-freeglut mingw-w64-x86_64-glew mingw-w64-x86_64-libusb mingw-w64-x86_64-SDL2  mingw-w64-x86_64-pixman  mingw-w64-x86_64-glib2 python-setuptools mingw-w64-x86_64-make mingw-w64-x86_64-curl mingw-w64-x86_64-libjxl mingw-w64-x86_64-SDL2_image mingw-w64-x86_64-pcre
       
-      - name: Install old Python
-        run: |
-          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
-          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst.sig
-          pacman --noconfirm -U mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
-        shell: msys2 {0}
+      # - name: Install old Python
+      #   run: |
+      #     wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
+      #     wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst.sig
+      #     pacman --noconfirm -U mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
+      #   shell: msys2 {0}
         
       - name: Fix CRLF Checkout
         run: git config --global core.autocrlf false
