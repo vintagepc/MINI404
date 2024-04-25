@@ -118,6 +118,20 @@ static void test_key_push(void)
     qtest_clock_step(ts, 100U*1E6); // 100ms
     g_assert_true(qtest_get_irq(ts,0));
 
+	// Emulate a keypress
+    g_free(qtest_hmp(ts, "sendkey l"));
+
+    g_assert_false(qtest_get_irq(ts,0));
+
+    qtest_clock_step(ts, 2000U*1E6); // 100ms
+
+    g_assert_true(qtest_get_irq(ts,0));
+
+    // no further changes.
+    qtest_clock_step(ts, 100U*1E6); // 100ms
+    g_assert_true(qtest_get_irq(ts,0));
+
+
     qtest_quit(ts);
 }
 
