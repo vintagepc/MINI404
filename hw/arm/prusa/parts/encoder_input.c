@@ -82,7 +82,10 @@ static void encoder_input_handle_key(P404KeyIF *opaque, Key keycode)
         case 13: // enter
             qemu_set_irq(s->irq_enc_button,0);
             timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
-            // printf("return\n");
+			break;
+		case 'l':
+			qemu_set_irq(s->irq_enc_button,0);
+            timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 2000);
             break;
 
     }
@@ -228,6 +231,7 @@ static void encoder_input_init(Object *obj)
     p404_register_keyhandler(pKey, 'w',"Twists encoder up");
     p404_register_keyhandler(pKey, 's',"Twists encoder down");
     p404_register_keyhandler(pKey, 0xd,"Presses encoder button");
+	p404_register_keyhandler(pKey, 'l',"Holds encoder for 2s");
 
 }
 

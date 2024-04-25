@@ -85,7 +85,8 @@ class KeyController: private Scriptable
 			{ {0x06, false}, '5'},
 			{ {0x07, false}, '6'},
 			{ {0x19	  ,false} , 'p'},
-			{ {0x14	  ,false} , 't'}
+			{ {0x14	  ,false} , 't'},
+			{ {0x26	  ,false} , 'l'},
         };
 		std::atomic_uchar m_key {0};
         bool m_bShift = false;
