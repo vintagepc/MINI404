@@ -762,7 +762,7 @@ static void mk4_init(MachineState *machine)
 		DeviceState *lc = qdev_new("loadcell");
         object_property_add_child(OBJECT(periphs), "loadcell", OBJECT(lc));
 		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
-		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
+		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,2));
 
 		hs = qdev_new("hall-sensor");
         object_property_add_child(OBJECT(periphs), "hall-sensor", OBJECT(hs));

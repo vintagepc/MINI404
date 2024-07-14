@@ -92,6 +92,7 @@ class KeyController: private Scriptable
             { {0x2E	  ,false} , 'c'},
             { {0x2F	  ,false} , 'v'},
             { {0x30	  ,false} , 'b'},
+            { {0x32	  ,false} , 'm'},
         };
 		std::atomic_uchar m_key {0};
         bool m_bShift = false;

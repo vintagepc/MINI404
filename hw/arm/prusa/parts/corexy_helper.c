@@ -70,11 +70,16 @@ struct CoreXYState {
 	bool irq_state;
     qemu_irq endstop[2];
     qemu_irq pos_change[2];
+    qemu_irq um_out[2];
     qemu_irq tool_pick_ctl[ARRAY_SIZE(dock_positions)];
-
+    qemu_irq cal_pin;
 	p404_motorif_status_t vis_x;
 	p404_motorif_status_t vis_y;
 	p404_motorif_status_t* vis;
+
+    bool cal_pin_present;
+
+    bool pos_set;
 
     uint8_t tool_states[ARRAY_SIZE(dock_positions)];
 
@@ -102,6 +107,18 @@ static void corexy_reset(DeviceState *dev)
     CoreXYState *s = COREXY(dev);
     qemu_set_irq(s->endstop[0],0);
     qemu_set_irq(s->endstop[1],0);
+    s->cal_pin_present = false;
+    if (!s->pos_set)
+    {
+        // Start with the head in the middle of the print area.
+        s->vis_x.current_pos = s->vis_x.max_pos/2;
+        s->vis_y.current_pos = s->vis_y.max_pos/2;
+        float pos_a = (s->vis_x.current_pos + s->vis_y.current_pos);
+        float pos_b = (s->vis_x.current_pos - s->vis_y.current_pos);
+        qemu_set_irq(s->pos_change[0], pos_a*1000);
+        qemu_set_irq(s->pos_change[1], pos_b*1000);
+        s->pos_set = true;
+    }
 }
 
 static void update_tool_states(CoreXYState *s)
@@ -175,6 +192,10 @@ static void corexy_move(void *opaque, int n, int level)
         xpos = ypos;
         ypos = tmp;
     }
+
+    qemu_set_irq(s->um_out[0], xpos);
+    qemu_set_irq(s->um_out[1], ypos);
+
     float newx = ((float)xpos/1000.f);    
     float newy = ((float)ypos/1000.f);
 
@@ -207,6 +228,15 @@ static void corexy_move(void *opaque, int n, int level)
 static void corexy_handle_key(P404KeyIF *opaque, Key keycode)
 {
     CoreXYState *s = COREXY(opaque);
+
+    if (keycode == 'm')
+    {
+        s->cal_pin_present = !s->cal_pin_present;
+        qemu_set_irq(s->cal_pin, s->cal_pin_present);
+        printf("Cal pin %s\n", s->cal_pin_present? "Installed":"Removed");
+        return;
+    }
+
     for (int i = 0; i < ARRAY_SIZE(dock_positions); i++)
     {
         if (dock_positions[i].key == keycode)
@@ -255,6 +285,7 @@ static void corexy_realize(DeviceState *dev, Error **errp)
 	s->vis_x.status.changed = true;
 	s->vis_y.max_pos = s->y_max_um/(1000U);
 	s->vis_y.status.changed = true;
+    s->pos_set = false;
 }
 
 static void corexy_init(Object *obj)
@@ -270,6 +301,8 @@ static void corexy_init(Object *obj)
 	s->vis_y.status.changed = true;
     qdev_init_gpio_out(DEVICE(obj), s->endstop, 2);
     qdev_init_gpio_out_named(DEVICE(obj), s->pos_change, "motor-move", 2);
+    qdev_init_gpio_out_named(DEVICE(obj), s->um_out, "um-out", 2);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->cal_pin, "cal-pin", 1);
     qdev_init_gpio_out_named(DEVICE(obj), s->tool_pick_ctl, "tool-pick", ARRAY_SIZE(dock_positions));
     qdev_init_gpio_in(DEVICE(obj),corexy_move,2);
 
@@ -279,6 +312,7 @@ static void corexy_init(Object *obj)
     p404_register_keyhandler(pKey, 'c',"Places head at dock 3");
     p404_register_keyhandler(pKey, 'v',"Places head at dock 4");
     p404_register_keyhandler(pKey, 'b',"Places head at dock 5");
+    p404_register_keyhandler(pKey, 'm',"Installs/removes the calibration pin");
 
 }
 
@@ -295,7 +329,7 @@ static const VMStateDescription vmstate_corexy = {
 };
 
 static Property corexy_properties[] = {
-    DEFINE_PROP_UINT32("x-max-um", CoreXYState, x_max_um, 365*1000),
+    DEFINE_PROP_UINT32("x-max-um", CoreXYState, x_max_um, 375*1000),
     DEFINE_PROP_UINT32("y-max-um", CoreXYState, y_max_um, 466*1000),
     DEFINE_PROP_BOOL("swap-calc", CoreXYState, swap_calc, false),
     DEFINE_PROP_END_OF_LIST(),

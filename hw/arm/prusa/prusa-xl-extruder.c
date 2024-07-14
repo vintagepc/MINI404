@@ -265,7 +265,7 @@ static void prusa_xl_extruder_init(MachineState *machine)
     }
 
 	DeviceState* htr = qdev_new("heater");
-	qdev_prop_set_uint8(htr, "thermal_mass_x10",30);
+	qdev_prop_set_uint8(htr, "thermal_mass_x10",35);
 	qdev_prop_set_uint8(htr,"label", 'H');
 	sysbus_realize(SYS_BUS_DEVICE(htr), &error_fatal);
 
@@ -346,7 +346,10 @@ static void prusa_xl_extruder_init(MachineState *machine)
 
 		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_DIR,qdev_get_gpio_in_named(mux,"B2",0));
 		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_STEP,qdev_get_gpio_in_named(mux,"B2",1));
-		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Z_UM, qdev_get_gpio_in(lc,0));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_X_UM, qdev_get_gpio_in(lc,0));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Y_UM, qdev_get_gpio_in(lc,1));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Z_UM, qdev_get_gpio_in(lc,2));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_CAL_PIN, qdev_get_gpio_in_named(lc, "cal-pin-state", 0));
         qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_P0_PARKED, qdev_get_gpio_in_named(park_sense,"ext-in",0));
         qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_P1_PICKED, qdev_get_gpio_in_named(pick_sense,"ext-in",0));
 

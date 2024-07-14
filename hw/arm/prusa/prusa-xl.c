@@ -475,74 +475,26 @@ static void xl_init(MachineState *machine)
 #endif // CONFIG_OPENGL
 
         qdev_realize_and_unref(DEVICE(split_en_out),NULL,  &error_fatal);
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_en[0])), PIN(cfg.m_en[0]),qdev_get_gpio_in(split_en_out,0));
-        DeviceState *motor_uart = NULL;
-        BusState *motor_spi = NULL;
-        switch (cfg.motor) {
-            case TMC2130:
-            {
-                 motor_spi = qdev_get_child_bus(
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_en[0])), PIN(cfg.m_en[0]), qdev_get_gpio_in(split_en_out,0));
+        BusState *motor_spi = qdev_get_child_bus(
 						stm32_soc_get_periph(dev_soc, cfg.m_spi),
 					"ssi");
-            }
-            break;
-            case TMC2209:
-            {
-                motor_uart = qdev_new(TYPE_SPLIT_IRQ);
-                qdev_prop_set_uint16(motor_uart, "num-lines", 4);
-                qdev_realize_and_unref(DEVICE(motor_uart),NULL,  &error_fatal);
- 				qdev_connect_gpio_out_named(
-						stm32_soc_get_periph(dev_soc, cfg.m_uart),
-					"uart-byte-out", 0, qdev_get_gpio_in(motor_uart,0));
-            }
-            break;
-            default:
-            {
-                error_setg(&error_fatal, "Unhandled motor type in cfg_t!");
-                return;
-            }
-        }
+
 
         for (int i=0; i<AXIS_E; i++){
             if (cfg.m_label[i] == '\0' ) {
                 continue;
             }
-            switch (cfg.motor) {
-                case TMC2130:
-                {
-                    dev = qdev_new("tmc2130");
-                }
-                break;
-                case TMC2209:
-                {
-                    dev = qdev_new("tmc2209");
-                    qdev_prop_set_uint8(dev, "address", (cfg.m_select[i]));
-                }
-                break;
-            }
+            dev = qdev_new("tmc2130");
             // Common setup code:
             motors[i] = dev;
             qdev_prop_set_uint8(dev, "axis",cfg.m_label[i]);
             qdev_prop_set_uint8(dev, "inverted",cfg.m_inversion[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
-
-            switch (cfg.motor) {
-                case TMC2130:
-                {
-                    qdev_realize(dev, motor_spi, &error_fatal);
-                    qemu_irq driver_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
-                    qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_select[i])),  PIN(cfg.m_select[i]), driver_cs);
-                }
-                break;
-                case TMC2209:
-                {
-                    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-                    qdev_connect_gpio_out_named(dev,"byte-out", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.m_uart),"uart-byte-in",0));
-                    qdev_connect_gpio_out(motor_uart,i, qdev_get_gpio_in_named(dev,"byte-in",0));
-                }
-                break;
-            }
+            qdev_realize(dev, motor_spi, &error_fatal);
+            qemu_irq driver_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
+            qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_select[i])),  PIN(cfg.m_select[i]), driver_cs);
 			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_step[i])), PIN(cfg.m_step[i]), qdev_get_gpio_in_named(dev,"step",0));
 			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[i])),  PIN(cfg.m_dir[i]),  qdev_get_gpio_in_named(dev,"dir",0));
             object_property_set_link(OBJECT(db2), links[i], OBJECT(dev), &error_fatal);
@@ -618,16 +570,16 @@ static void xl_init(MachineState *machine)
     qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB),4));
 #endif
 
-    DeviceState *lc = qdev_new("loadcell");
-    sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
-    qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
+    // DeviceState *lc = qdev_new("loadcell");
+    // sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
+    // qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
 
-    dev = qdev_new("hx717");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-  	qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
-    qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
+    // dev = qdev_new("hx717");
+    // sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+  	// qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
+    // qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
 
-    qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
+    // qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
 
 	// Hall sensor mux
 	dev = qdev_new("hc4052");
@@ -785,6 +737,9 @@ static void xl_init(MachineState *machine)
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_step[AXIS_E])), PIN(cfg.m_step[AXIS_E]), qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_STEP));
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[AXIS_E])),  PIN(cfg.m_dir[AXIS_E]),  qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_DIR));
 
+		qdev_connect_gpio_out_named(xy_helper,"cal-pin",0,qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_CAL_PIN));
+		qdev_connect_gpio_out_named(xy_helper,"um-out",0,qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_X_UM));
+		qdev_connect_gpio_out_named(xy_helper,"um-out",1,qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_Y_UM));
 		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_Z_UM));
 
         for (int i=0; i<5; i++)
