@@ -1148,6 +1148,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 		case DEV_ST_LINECODING_WAIT:
 			f4xx_usb_cdc_sendpkt(s, DEV_SETCODING2, sizeof(DEV_SETCODING2)/sizeof(uint32_t));
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_XFERCOMPLMSK);
+            timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 100);
 			s->device_state++;
 			break;
 		case DEV_ST_SETCTLLINE:
