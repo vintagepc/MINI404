@@ -3,7 +3,7 @@ SDL2.dll
 SDL2_image.dll
 glew32.dll
 libLerc.dll
-libSvtAv1Enc.dll
+libSvtAv1Enc*.dll
 libaom.dll
 libatk-*.dll
 libavif-*.dll
