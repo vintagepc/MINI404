@@ -93,7 +93,7 @@ jobs:
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v3.1.1
+      uses: actions/upload-artifact@v4
       with:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
@@ -142,7 +142,7 @@ jobs:
 
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v3.1.1
+      uses: actions/upload-artifact@v4
       with:
         name: Binaries
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload Cygwin artifact
         if: ${{ !github.event.pull_request }}
-        uses: actions/upload-artifact@v3.1.1
+        uses: actions/upload-artifact@v4
         with:
           name: Binaries
           path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-w64.zip
