@@ -36,7 +36,6 @@ libgraphite2.dll
 libgtk-3-*.dll
 libharfbuzz-*.dll
 libharfbuzz-gobject-*.dll
-libharfbuzz-icu-*.dll
 libharfbuzz-subset-*.dll
 libhwy*.dll
 libiconv-*.dll
