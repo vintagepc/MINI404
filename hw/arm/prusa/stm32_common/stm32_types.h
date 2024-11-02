@@ -6,6 +6,7 @@
 #define _STM_COM_PART(x) _STM_VAR_PART(com,x)
 #define _STM_F030_PART(x) _STM_VAR_PART(f030,x)
 #define _STM_G070_PART(x) _STM_VAR_PART(g070,x)
+#define _STM_H503_PART(x) _STM_VAR_PART(h503,x)
 #define _STM_F2xx_PART(x) _STM_VAR_PART(f2xx,x)
 #define _STM_F4xx_PART(x) _STM_VAR_PART(f4xx,x)
 
@@ -31,6 +32,8 @@
 #define TYPE_STM32F427xG "stm32f427xG"
 #define TYPE_STM32F427xI "stm32f427xI"
 
+#define TYPE_STM32H503xx "stm32h503xx"
+
 // Chip types:
 
 #define TYPE_STM32F030x4_SOC _STM32_SOC(TYPE_STM32F030x4)
@@ -47,10 +50,13 @@
 #define TYPE_STM32F427xG_SOC _STM32_SOC(TYPE_STM32F427xG)
 #define TYPE_STM32F427xI_SOC _STM32_SOC(TYPE_STM32F427xI)
 
+#define TYPE_STM32H503xx_SOC _STM32_SOC(TYPE_STM32H503xx)
+
 
 // Conveniences for naming consistency
 #define STM32F030_STRUCT_NAME(part) _JOIN3R(STM32F030,part,State)
 #define STM32G070_STRUCT_NAME(part) _JOIN3R(STM32G070,part,State)
+#define STM32H503_STRUCT_NAME(part) _JOIN3R(STM32H503,part,State)
 #define STM32F2XX_STRUCT_NAME(part) _JOIN3R(STM32F2xx,part,State)
 #define STM32F4XX_STRUCT_NAME(part) _JOIN3R(STM32F4xx,part,State)
 #define COM_STRUCT_NAME(part) _JOIN3R(STM32COM,part,State)
@@ -74,6 +80,7 @@
 #define TYPE_STM32_SOC _STM_COM_PART(soc)
 #define TYPE_STM32F030XX_BASE _STM_F030_PART(base)
 #define TYPE_STM32G070XX_BASE _STM_G070_PART(base)
+#define TYPE_STM32H503XX_BASE _STM_H503_PART(base)
 #define TYPE_STM32F4XX_BASE _STM_F4xx_PART(base)
 #define TYPE_STM32COM_OTP _STM_COM_PART(otp)
 
@@ -82,6 +89,7 @@
 // so it's clearer what might be impacted by changes.
 #define TYPE_STM32F030_RCC _STM_F030_PART(rcc)
 #define TYPE_STM32G070_RCC _STM_G070_PART(rcc)
+#define TYPE_STM32H503_RCC _STM_H503_PART(rcc)
 #define TYPE_STM32F2xx_RCC _STM_F2xx_PART(rcc)
 #define TYPE_STM32F4xx_RCC _STM_F4xx_PART(rcc)
 #define TYPE_STM32F407_RCC _STM_VAR_PART(f407,rcc)
@@ -143,6 +151,7 @@
 
 #define TYPE_STM32F030_USART _STM_F030_PART(usart)
 #define TYPE_STM32G070_USART _STM_G070_PART(usart)
+#define TYPE_STM32H503_USART _STM_H503_PART(usart)
 
 #define TYPE_STM32G070_OTP _STM_G070_PART(otp)
 #define TYPE_STM32F4xx_OTP _STM_F4xx_PART(otp)

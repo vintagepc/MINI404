@@ -303,6 +303,7 @@ static const stm32_reginfo_t stm32g070_usart_reginfo[RI_END] =
 static const stm32_periph_variant_t stm32_usart_variants[] = {
 	{TYPE_STM32F030_USART, stm32f030_usart_reginfo},
 	{TYPE_STM32G070_USART, stm32g070_usart_reginfo},
+	{TYPE_STM32H503_USART, stm32g070_usart_reginfo},
 };
 
 static const uint8_t BITS_PER_CHAR = 10;
