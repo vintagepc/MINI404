@@ -14,10 +14,10 @@ typedef uint32_t stm32_periph_t;
 typedef struct stm32_reginfo_t
 {
 	const uint32_t mask; // Read/write mask to prevent modifying reserved bits.
+	const bool not_reserved; // Is this register reserved? (negative so zero-initialized is treated as reserved)
 	const bool is_reserved; // Is this register usable in this flavour?
 	const uint32_t reset_val; // Reset value of register.
 	const uint32_t unimp_mask; // Mask for unimplemented bits (convenience func on register write)
-
 } stm32_reginfo_t;
 
 // NOTE: it's an implicit thing that RCC comes first so that when iterating
@@ -77,6 +77,8 @@ typedef struct stm32_reginfo_t
     _P(I2S1), \
     _P(I2S2), \
     _P(I2S3), \
+	_P(I3C1), \
+	_P(I3C2), \
     _P(IWDG), \
     _P(WWDG), \
     _P(CAN1), \
@@ -167,6 +169,70 @@ QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant t
 	 	return 0; \
 	}
 
+#define _CHECK_BOUNDS_V2(index, val, max, type) \
+    if (index >= max) { \
+        qemu_log_mask(LOG_GUEST_ERROR, "Register "type" 0x%x (val 0x%x) invalid on %s:%s\n", \
+          (unsigned int)index << 2, (unsigned int)val, __FILE__, __func__);
+
+// Checks whether a register access is in-bounds and the register is not fully reserved.
+// Issues a GUEST_ERROR if it is.
+#define CHECK_BOUNDS_W_V2(index, val, max) \
+    _CHECK_BOUNDS_V2(index, val, max, "write") \
+		return; \
+	}
+
+// Checks whether a register access is in-bounds and the register is not fully reserved.
+// Issues a GUEST_ERROR if it is.
+#define CHECK_BOUNDS_R_V2(index, max) \
+ 	_CHECK_BOUNDS_V2(index, 0xBADUL, max, "read") \
+	 	return 0; \
+	}
+
+
+// Enforces reserved bits in a register, new version. Meant to be used with the generated structs that set not_reserved too.
+#define ENFORCE_RESERVED_V2(val, curval, reginfo, index) \
+	stm32_enforce_reserved_v2(&val, curval, reginfo, index, __func__, #index)
+
+G_GNUC_UNUSED static void stm32_enforce_reserved_v2(uint64_t* val, uint64_t curval, const stm32_reginfo_t* reginfo, int index, const char* name, const char* regname)
+{
+	// There are two tiers of checking, the register may be entirely unspecified (entry uninitialized) or it may have reserved bits.
+	if (reginfo[index].not_reserved==false) {
+		qemu_log_mask(LOG_GUEST_ERROR, "%s: Attempted write reserved register '%s'@%03x!\n", name, regname, index*4U);
+		*val = 0;
+	}
+	else
+	{
+		uint32_t old_reserved = curval & ~reginfo[index].mask;
+		uint32_t new_reserved = *val & ~reginfo[index].mask;
+		if (old_reserved != new_reserved) {
+			qemu_log_mask(LOG_GUEST_ERROR, "%s: Attempted to alter a reserved bit in '%s'@0x%03x!\n", name, regname, index*4U);
+			*val = *val & reginfo[index].mask;
+		}
+	}
+}
+
+#define WARN_UNIMPLEMENTED_REG(offset, type) \
+        stm32_unimp("%s: unimplemented register "#type": 0x%x", __func__, (int)offset)
+
+// Checks if a write attempts to set any unimplemented bits and issues a LOG_UNIMP.
+// Does NOT check against already set bits, so may give false positives. Use CHECK_UNIMP_V2 for that.
+#define CHECK_UNIMP(val, reginfo, index) \
+	stm32_check_unimp(val, 0, reginfo, index, __func__, #index)
+
+// Checks if a write attempts to set any unimplemented bits and issues a LOG_UNIMP.
+// V2 actually checks for changes before printing the warning.
+#define CHECK_UNIMP_V2(val, curval, reginfo, index) \
+	stm32_check_unimp(val, curval, reginfo, index, __func__, #index)
+
+G_GNUC_UNUSED static void stm32_check_unimp(uint64_t val, uint64_t curval, const stm32_reginfo_t *reginfo, int index, const char* name, const char* regname)
+{
+	uint32_t old_unimp = curval & reginfo[index].unimp_mask;
+	uint32_t new_unimp = val & reginfo[index].unimp_mask;
+	if (old_unimp != new_unimp) {
+		qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64" => 0x%"PRIx64") '%s'!\n", name, reginfo[index].unimp_mask, curval, val, regname);
+	}
+}
+
 // Enforces the reserved mask for a register
 #define ENFORCE_RESERVED(val, reginfo, index) \
 	stm32_enforce_reserved(&val, reginfo, index, __func__, #index)
@@ -179,21 +245,15 @@ G_GNUC_UNUSED static void stm32_enforce_reserved(uint64_t* val, const stm32_regi
 	}
 }
 
-// Checks if a write attempts to set any unimplemented bits and issues a LOG_UNIMP.
-#define CHECK_UNIMP(val, reginfo, index) \
-	stm32_check_unimp(val, reginfo, index, __func__, #index)
-
-G_GNUC_UNUSED static void stm32_check_unimp(uint64_t val, const stm32_reginfo_t *reginfo, int index, const char* name, const char* regname)
-{
-	if (val & (reginfo[index].unimp_mask)) {
-		qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64") '%s'!\n", name, reginfo[index].unimp_mask, val, regname);
-	}
-}
-
 // Enforces reserved bits and then checks for unimplemented ones
 #define CHECK_UNIMP_RESVD(val, reginfo, index) \
 	ENFORCE_RESERVED(val, reginfo, index); \
 	CHECK_UNIMP(val, reginfo, index);
+
+#define CHECK_UNIMP_RESVD_V2(val, curval, reginfo, index) \
+	ENFORCE_RESERVED_V2(val, curval, reginfo, index); \
+	CHECK_UNIMP_V2(val, curval, reginfo, index);
+
 
 // Adjusts for read offsets and sizes given old and new register values.
 // Allowed is a bitmask of sizes, e.g:

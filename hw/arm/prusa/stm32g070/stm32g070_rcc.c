@@ -57,14 +57,6 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 
 #define IS_RESET_VALUE(new_value, mask, reset_value) ((new_value & mask) == (mask & reset_value))
 
-#define WARN_UNIMPLEMENTED(new_value, mask, reset_value) \
-    if (!IS_RESET_VALUE(new_value, mask, reset_value)) { \
-        stm32_unimp("Not implemented: RCC " #mask ". Masked value: 0x%08x\n", (new_value & mask)); \
-    }
-
-#define WARN_UNIMPLEMENTED_REG(offset) \
-        stm32_unimp("STM32f2xx_rcc: unimplemented register: 0x%x", (int)offset)
-
 QEMU_BUILD_BUG_MSG(STM32_P_COUNT>255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 
 static const uint8_t AHB_PERIPHS[32] = {
@@ -640,7 +632,7 @@ static void stm32_rcc_writew(void *opaque, hwaddr offset,
             break;
 			break;
         default:
-            WARN_UNIMPLEMENTED_REG(offset);
+            WARN_UNIMPLEMENTED_REG(offset, write);
             break;
     }
 }
@@ -668,7 +660,7 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
             stm32_rcc_writeb(opaque, offset, value);
             break;
         default:
-            WARN_UNIMPLEMENTED_REG(offset);
+            WARN_UNIMPLEMENTED_REG(offset, write);
             break;
     }
 }

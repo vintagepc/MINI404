@@ -311,7 +311,10 @@ extern void stm32_soc_realize_all_peripherals(DeviceState *soc_state,Error **err
 	{
 		stm32_soc_realize_peripheral(soc_state, i, errp);
 		// Auto wire the DMAR.
-		stm32_soc_connect_periph_dmar(soc_state, i, n_dmas,errp);
+		if (n_dmas > 0)
+		{
+			stm32_soc_connect_periph_dmar(soc_state, i, n_dmas,errp);
+		}
 	}
 }
 

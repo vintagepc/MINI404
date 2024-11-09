@@ -42,6 +42,8 @@
 #include "../stm32f407/stm32_clktree.h"
 #include "../stm32f407/stm32.h"
 #include "../stm32_common/stm32_clk.h"
+#include "../stm32_registers/generated/stm32h503_RCC_index.h"
+#include "../stm32_registers/generated/stm32h503_RCC_registers.h"
 
 /* DEFINITIONS*/
 
@@ -55,30 +57,36 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define DPRINTF(fmt, ...)
 #endif
 
-#define IS_RESET_VALUE(new_value, mask, reset_value) ((new_value & mask) == (mask & reset_value))
-
-#define WARN_UNIMPLEMENTED(new_value, mask, reset_value) \
-    if (!IS_RESET_VALUE(new_value, mask, reset_value)) { \
-        stm32_unimp("Not implemented: RCC " #mask ". Masked value: 0x%08x\n", (new_value & mask)); \
-    }
-
-#define WARN_UNIMPLEMENTED_REG(offset) \
-        stm32_unimp("STM32f2xx_rcc: unimplemented register: 0x%x", (int)offset)
 
 QEMU_BUILD_BUG_MSG(STM32_P_COUNT>255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
 
-static const uint8_t AHB_PERIPHS[32] = {
+static const uint8_t AHB1_PERIPHS[32] = {
     STM32_P_DMA1, STM32_P_DMA2, 0, 0, 0, 0, 0, 0,
     STM32_P_FSMC, 0, 0, 0, STM32_P_CRC, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static const uint8_t APB1_PERIPHS[32] = {
-    0, STM32_P_TIM3, STM32_P_TIM4, 0, STM32_P_TIM6, STM32_P_TIM7, 0, 0,
-    STM32_P_UART5, STM32_P_UART6, 0, 0, 0, STM32_P_USBHS, STM32_P_SPI2, STM32_P_SPI3,
-    0, STM32_P_UART2, STM32_P_UART3, STM32_P_UART4, 0, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I2C3,
-    0, 0, 0, 0, STM32_P_PWR, 0, 0, 0
+static const uint8_t AHB2_PERIPHS[32] = {
+    STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, 0, 0, 0, STM32_P_GPIOH,
+    0, 0, STM32_P_ADC1, STM32_P_DAC, 0, 0, 0, 0,
+    0, STM32_P_HASH, STM32_P_RNG, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0 /*STM32_P_SRAM2*/, 0
+};
+
+
+static const uint8_t APB1L_PERIPHS[32] = {
+    STM32_P_TIM2, STM32_P_TIM3, 0, 0, STM32_P_TIM6, STM32_P_TIM7, 0, 0,
+    0, 0, 0, STM32_P_WWDG, 0, 0/*opamp*/, STM32_P_SPI2, STM32_P_SPI3,
+    0 /*COMP*/, STM32_P_UART2, STM32_P_UART3, 0, 0, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I3C1,
+    0 /*CRS*/, 0, 0, 0, 0, 0, 0, 0
+};
+
+static const uint8_t APB1H_PERIPHS[32] = {
+    0, 0, 0, 0/*DTSEN*/, 0, 0/*LP2TIM*/, 0, 0,
+    0, 0/*FDCAN*/, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
 };
 
 static const uint8_t APB2_PERIPHS[32] = {
@@ -88,18 +96,130 @@ static const uint8_t APB2_PERIPHS[32] = {
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static const uint8_t GPIO_PERIPHS[32] = {
-    STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, STM32_P_GPIOE, STM32_P_GPIOF, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
+static const uint8_t APB3_PERIPHS[32] = {
+    0, 0/*SBS*/, 0, 0, 0, 0, 0/*LPUART1*/, 0,
+    0, STM32_P_I3C2, 0, STM32_P_LPTIM1, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static const uint8_t (*PERIPH_BLOCKS[4])[32] = {
-	&GPIO_PERIPHS, &AHB_PERIPHS, &APB1_PERIPHS, &APB2_PERIPHS
+static const uint8_t (*PERIPH_BLOCKS[])[32] = {
+	[RI_AHB1ENR - RI_AHB1ENR] = &AHB1_PERIPHS,
+	[RI_AHB2ENR - RI_AHB1ENR] = &AHB2_PERIPHS,
+	[RI_APB1LENR - RI_AHB1ENR] = &APB1L_PERIPHS,
+	[RI_APB1HENR - RI_AHB1ENR] = &APB1H_PERIPHS,
+	[RI_APB2ENR - RI_AHB1ENR] = &APB2_PERIPHS,
+	[RI_APB3ENR - RI_AHB1ENR] = &APB3_PERIPHS,
 };
 
-static const uint16_t AHBPRE_OPTS[16] = {
+// static const uint16_t AHBPRE_OPTS[16] = {
+// 	[0b0000 ... 0b0111] = 1,
+// 	[0b1000] = 2,
+// 	[0b1001] = 4,
+// 	[0b1010] = 8,
+// 	[0b1011] = 16,
+// 	[0b1100] = 64,
+// 	[0b1101] = 128,
+// 	[0b1110] = 256,
+// 	[0b1111] = 512
+// };
+
+// static const uint8_t APBPRE_OPTS[8] = {
+// 	[0b000 ... 0b011] = 1,
+// 	[0b100] = 2,
+// 	[0b101] = 4,
+// 	[0b110] = 8,
+// 	[0b111] = 16
+// };
+
+OBJECT_DECLARE_SIMPLE_TYPE(STM32H503_STRUCT_NAME(Rcc), STM32H503_RCC);
+
+  	// RI_CFGR1         = 0x1C/4, /*!< RCC clock configuration register 1                   */
+  	// RI_CFGR2         = 0x20/4, /*!< RCC clock configuration register 2                   */
+  	// RI_PLL1CFGR      = 0x28/4, /*!< RCC PLL1 Configuration Register                      */
+  	// RI_PLL2CFGR      = 0x2C/4, /*!< RCC PLL2 Configuration Register                      */
+  	// RI_PLL1DIVR      = 0x34/4, /*!< RCC PLL1 Dividers Configuration Register             */
+  	// RI_PLL1FRACR     = 0x38/4, /*!< RCC PLL1 Fractional Divider Configuration Register   */
+  	// RI_PLL2DIVR      = 0x3C/4, /*!< RCC PLL2 Dividers Configuration Register             */
+  	// RI_PLL2FRACR     = 0x40/4, /*!< RCC PLL2 Fractional Divider Configuration Register   */
+  	// RI_CIER          = 0x50/4, /*!< RCC Clock Interrupt Enable Register                  */
+  	// RI_CIFR          = 0x54/4, /*!< RCC Clock Interrupt Flag Register                    */
+  	// RI_CICR          = 0x58/4, /*!< RCC Clock Interrupt Clear Register                   */
+  	// RI_AHB1RSTR      = 0x60/4, /*!< RCC AHB1 Peripherals Reset Register                  */
+  	// RI_AHB2RSTR      = 0x64/4, /*!< RCC AHB2 Peripherals Reset Register                  */
+  	// RI_APB1LRSTR     = 0x74/4, /*!< RCC APB1 Peripherals reset Low Word register         */
+  	// RI_APB1HRSTR     = 0x78/4, /*!< RCC APB1 Peripherals reset High Word register        */
+  	// RI_APB2RSTR      = 0x7C/4, /*!< RCC APB2 Peripherals Reset Register                  */
+  	// RI_APB3RSTR      = 0x80/4, /*!< RCC APB3 Peripherals Reset Register                  */
+  	// RI_AHB1ENR       = 0x88/4, /*!< RCC AHB1 Peripherals Clock Enable Register           */
+  	// RI_AHB2ENR       = 0x8C/4, /*!< RCC AHB2 Peripherals Clock Enable Register           */
+  	// RI_APB1LENR      = 0x9C/4, /*!< RCC APB1 Peripherals clock Enable Low Word register  */
+  	// RI_APB1HENR      = 0xA0/4, /*!< RCC APB1 Peripherals clock Enable High Word register */
+  	// RI_APB2ENR       = 0xA4/4, /*!< RCC APB2 Peripherals Clock Enable Register           */
+  	// RI_APB3ENR       = 0xA8/4, /*!< RCC APB3 Peripherals Clock Enable Register           */
+  	// RI_AHB1LPENR     = 0xB0/4, /*!< RCC AHB1 Peripheral sleep clock Register             */
+  	// RI_AHB2LPENR     = 0xB4/4, /*!< RCC AHB2 Peripheral sleep clock Register             */
+  	// RI_APB1LLPENR    = 0xC4/4, /*!< RCC APB1 Peripherals sleep clock Low Word Register   */
+  	// RI_APB1HLPENR    = 0xC8/4, /*!< RCC APB1 Peripherals sleep clock High Word Register  */
+  	// RI_APB2LPENR     = 0xCC/4, /*!< RCC APB2 Peripherals sleep clock Register            */
+  	// RI_APB3LPENR     = 0xD0/4, /*!< RCC APB3 Peripherals Clock Low Power Enable Register */
+  	// RI_CCIPR1        = 0xD8/4, /*!< RCC IPs Clocks Configuration Register 1              */
+  	// RI_CCIPR2        = 0xDC/4, /*!< RCC IPs Clocks Configuration Register 2              */
+  	// RI_CCIPR3        = 0xE0/4, /*!< RCC IPs Clocks Configuration Register 3              */
+  	// RI_CCIPR4        = 0xE4/4, /*!< RCC IPs Clocks Configuration Register 4              */
+  	// RI_CCIPR5        = 0xE8/4, /*!< RCC IPs Clocks Configuration Register 5              */
+  	// RI_BDCR          = 0xF0/4, /*!< RCC VSW Backup Domain & V33 Domain Control Register  */
+  	// RI_RSR           = 0xF4/4, /*!< RCC Reset status Register                            */
+  	// RI_PRIVCFGR      = 0x114/4,/*!< RCC Privilege configuration register                 */
+
+typedef struct STM32H503_STRUCT_NAME(Rcc) {
+    /* Inherited -- MUST MATCH stm32_rcc.h. NO EXCEPTIONS. */
+    STM32COMRccState parent;
+
+    /* Additional clocks */
+	Clk_t
+	DUMMY, /* Dummy clock that's off as a placeholder for "no clock"*/
+    SYS_CK,
+	SYSTICK, /* SysTick clock */
+	HSI_KER_CK, /* Output from HSI DIV */
+    HCLK, /* Output from AHB Prescaler */
+	HCLK8, /* Output from AHB Prescaler/8 (for systick) */
+	HCLK1, // AHB1 and 2 clock en/dis
+	HCLK2,
+	PCLK1, /* Output from APB1 Prescaler */
+	PCLK2, /* Output from APB2 Prescaler */
+	PCLK3, /* Output from APB3 Prescaler */
+	PLL1CLK, /* Output from PLL1 */
+	PLL1PCLK, /* Output from PLL1 PCLK */
+	PLL1QCLK, /* Output from PLL1 QCLK */
+	PLL1RCLK, /* Output from PLL1 RCLK */
+	PLL2CLK, /* Output from PLL2 */
+	PLL2PCLK, /* Output from PLL2 PCLK */
+	PLL2QCLK, /* Output from PLL2 QCLK */
+	PLL2RCLK, /* Output from PLL2 RCLK */
+	RTCHSEPRE, /* Output from RTC HSE prescaler */
+	TIM1PRE, /* Output from TIM1 doubler */
+	TIM23PRE, /* Output from TIM23 doubler */
+	AUDIOCLK,
+	PER_CK,
+	CSI_CK,
+	HSI48_KER_CK; // For USB
+
+// aliases for names per the clktree
+#define LSE_CK parent.LSECLK
+#define LSI_KER_CK parent.LSICLK
+#define HSE_CK parent.HSECLK
+#define HSI_CK parent.HSICLK
+
+	/* Additional registers */
+
+	stm32reg_h503_rcc_t regs;
+
+	qemu_irq* hclk_upd_irq;
+
+} STM32H503_STRUCT_NAME(Rcc);
+
+static uint16_t h503_hclk_div_lut[0x10] = {
 	[0b0000 ... 0b0111] = 1,
 	[0b1000] = 2,
 	[0b1001] = 4,
@@ -108,444 +228,206 @@ static const uint16_t AHBPRE_OPTS[16] = {
 	[0b1100] = 64,
 	[0b1101] = 128,
 	[0b1110] = 256,
-	[0b1111] = 512
+	[0b1111] = 512,
 };
 
-static const uint8_t APBPRE_OPTS[8] = {
+static uint8_t h503_pclk_div_lut[0x8] = {
 	[0b000 ... 0b011] = 1,
 	[0b100] = 2,
 	[0b101] = 4,
 	[0b110] = 8,
-	[0b111] = 16
+	[0b111] = 16,
 };
-
-enum reg_index {
-	RI_CR,
-	RI_ICSCR,
-	RI_CFGR,
-	RI_PLLCFGR,
-	RI_RES1,
-	RI_RES2,
-	RI_CIER,
-	RI_CIFR,
-	RI_CICR,
-	RI_IOPRSTR,
-	RI_AHBRSTR,
-	RI_APB1RSTR,
-	RI_APB2RSTR,
-	RI_IOPENR,
-	RI_AHBENR,
-	RI_ABP1ENR,
-	RI_APB2ENR,
-	RI_IOPSMENR,
-	RI_AHBSMENR,
-	RI_ABP1SMENR,
-	RI_APB2SMENR,
-	RI_CCIPR,
-	RI_CCIPR2,
-	RI_BDCR,
-	RI_CSR,
-	RI_END
-};
-
-OBJECT_DECLARE_SIMPLE_TYPE(STM32H503_STRUCT_NAME(Rcc), STM32H503_RCC);
-
-REGDEF_BLOCK_BEGIN()
-		REG_R(8);
-		REG_B32(HSION);
-		REG_B32(HSIKERON);
-		REG_B32(HSIRDY);
-		REG_K32(HSIDIV,3);
-		REG_R(2);
-		REG_B32(HSEON);
-		REG_B32(HSERDY);
-		REG_B32(HSEBYP);
-		REG_B32(CSSON);
-		REG_R(4);
-		REG_B32(PLLON);
-		REG_B32(PLLRDY);
-		REG_R(6);
-REGDEF_BLOCK_END(rcc,cr);
-
-REGDEF_BLOCK_BEGIN()
-	REG_K32(HSICAL,8);
-	REG_K32(HSITRIM,7);
-	REG_R(17);
-REGDEF_BLOCK_END(rcc,icscr);
-
-REGDEF_BLOCK_BEGIN()
-		REG_K32(SW,3);
-		REG_K32(SWS,3);
-		REG_R(2);
-		REG_K32(HPRE,4);
-		REG_K32(PPRE,3);
-		REG_RB();
-		REG_K32(MCO2SEL,4);
-		REG_K32(MCO2PRE,4);
-		REG_K32(MCOSEL,4);
-		REG_K32(MCOPRE,4);
-REGDEF_BLOCK_END(rcc, cfgr);
-
-REGDEF_BLOCK_BEGIN()
-		REG_K32(PLLSRC,2);
-		REG_R(2);
-		REG_K32(PLLM,3);
-		REG_RB();
-		REG_K32(PLLN,7);
-		REG_RB();
-		REG_B32(PLLPEN);
-		REG_K32(PLLP,5);
-		REG_R(2);
-		REG_B32(PLLQEN);
-		REG_K32(PLLQ,3);
-		REG_B32(PLLREN);
-		REG_K32(PLLR,3);
-REGDEF_BLOCK_END(rcc, pllcfgr);
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(LSIRDY);
-	REG_B32(LSERDY);
-	REG_RB();
-	REG_B32(HSIRDY);
-	REG_B32(HSERDY);
-	REG_B32(PLLRDY);
-	REG_R(2);
-	REG_B32(CSS);
-	REG_B32(LSECSS);
-	REG_R(22);
-REGDEF_BLOCK_END(rcc, inter);
-
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(GPIOA);
-	REG_B32(GPIOB);
-	REG_B32(GPIOC);
-	REG_B32(GPIOD);
-	REG_B32(GPIOE);
-	REG_B32(GPIOF);
-	REG_R(26);
-REGDEF_BLOCK_END(rcc, ioport);
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(DMA1);
-	REG_B32(DMA2);
-	REG_R(6);
-	REG_B32(FLASH);
-	REG_R(3);
-	REG_B32(CRC);
-	REG_R(19);
-REGDEF_BLOCK_END(rcc, ahb);
-
-REGDEF_BLOCK_BEGIN()
-	REG_RB();
-	REG_B32(TIM3);
-	REG_B32(TIM4);
-	REG_RB();
-	REG_B32(TIM6);
-	REG_B32(TIM7);
-	REG_R(2);
-	REG_B32(UART5);
-	REG_B32(UART6);
-	REG_R(3);
-	REG_B32(USB);
-	REG_B32(SPI2);
-	REG_B32(SPI3);
-	REG_RB();
-	REG_B32(USART2);
-	REG_B32(USART3);
-	REG_B32(USART4);
-	REG_RB();
-	REG_B32(I2C1);
-	REG_B32(I2C2);
-	REG_B32(I2C3);
-	REG_R(3);
-	REG_B32(DBG);
-	REG_B32(PWREN);
-	REG_R(3);
-REGDEF_BLOCK_END(rcc, apb1);
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(SYSCFGEN);
-	REG_R(10);
-	REG_B32(TIM1);
-	REG_B32(SPI1);
-	REG_RB();
-	REG_B32(USART1);
-	REG_B32(TIM14);
-	REG_B32(TIM15);
-	REG_B32(TIM16);
-	REG_B32(TIM17);
-	REG_RB();
-	REG_B32(ADC);
-	REG_R(11);
-REGDEF_BLOCK_END(rcc, apb2);
-
-REGDEF_BLOCK_BEGIN()
-	REG_K32(USART1SEL,2);
-	REG_K32(USART2SEL,2);
-	REG_K32(USART3SEL,2);
-	REG_R(6);
-	REG_K32(I2C1SEL,2);
-	REG_K32(I2C2I2S1SEL,2);
-	REG_R(6);
-	REG_B32(TIM1SEL);
-	REG_RB();
-	REG_B32(TIM15SEL);
-	REG_R(5);
-	REG_K32(ADCSEL,2);
-REGDEF_BLOCK_END(rcc, ccipr);
-
-REGDEF_BLOCK_BEGIN()
-	REG_K32(I2S1SEL,2);
-	REG_K32(I2S2SEL,2);
-	REG_R(8);
-	REG_K32(USBSEL,2);
-	REG_R(18);
-REGDEF_BLOCK_END(rcc, ccipr2);
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(LSION);
-	REG_B32(LSIRDY);
-	REG_R(21);
-	REG_B32(RMVF);
-	REG_RB();
-	REG_B32(OBLRSTF);
-	REG_B32(PINRSTF);
-	REG_B32(PORRSTF);
-	REG_B32(SFTRSTF);
-	REG_B32(IWDGRSTF);
-	REG_B32(WWDGRSTF);
-	REG_B32(LPWRSTF);
-REGDEF_BLOCK_END(rcc, csr)
-
-typedef struct STM32H503_STRUCT_NAME(Rcc) {
-    /* Inherited -- MUST MATCH stm32_rcc.h. NO EXCEPTIONS. */
-    STM32COMRccState parent;
-
-    /* Additional clocks */
-    Clk_t HSISYS,
-	PLLCLK, PLLPCLK, PLLQCLK, PLLRCLK,
-    SYSCLK,
-    HCLK, /* Output from AHB Prescaler */
-	HCLK8,
-	PCLK,
-
-    TIMPCLK; /* timer clock */
-
-	union {
-		struct {
-			REGDEF_NAME(rcc,cr) 		CR; 		//0x00
-			REGDEF_NAME(rcc,icscr) 		ICSCR;		//0x04
-			REGDEF_NAME(rcc,cfgr) 		CFGR; 		//0x08
-			REGDEF_NAME(rcc,pllcfgr) 	PLLCFGR; 	//0x0C
-			REGDEF_R(0x10);
-			REGDEF_R(0x14);
-			REGDEF_NAME(rcc, inter) 	CIER; 		//0x18
-			REGDEF_NAME(rcc, inter) 	CIFR; 		//0x1C
-			REGDEF_NAME(rcc, inter) 	CICR; 		//0x20
-			REGDEF_NAME(rcc, ioport) 	IOPRSTR;	//0x24
-			REGDEF_NAME(rcc, ahb) 		AHBRSTR;	//0x28
-			REGDEF_NAME(rcc, apb1) 		APBRSTR1;	//0x2C
-			REGDEF_NAME(rcc, apb2) 		APBRSTR2;	//0x30
-			REGDEF_NAME(rcc, ioport) 	IOPENR;		//0x34
-			REGDEF_NAME(rcc, ahb) 		AHBENR;		//0x38
-			REGDEF_NAME(rcc, apb1) 		APBENR1;	//0x3C
-			REGDEF_NAME(rcc, apb2) 		APBENR2;	//0x40
-			REGDEF_NAME(rcc, ioport) 	IOPSMENR;	//0x44
-			REGDEF_NAME(rcc, ahb) 		AHBSMENR;	//0x48
-			REGDEF_NAME(rcc, apb1) 		APBSMENR1;	//0x4C
-			REGDEF_NAME(rcc, apb2) 		APBSMENR2;	//0x50
-			REGDEF_NAME(rcc, ccipr)		CCIPR;		//0x54
-			REGDEF_NAME(rcc, ccipr2)	CCIPR2;		//0x58
-			REGDEF_NAME(rcc_com, bdcr)	BDCR; 		//0x5C
-			REGDEF_NAME(rcc, csr) 		CSR;		//0x60
-
-		} QEMU_PACKED;
-		uint32_t raw[RI_END];
-	} regs;
-
-	qemu_irq* hclk_upd_irq;
-
-} STM32H503_STRUCT_NAME(Rcc);
-
 
 enum sw_src
 {
 	SW_HSISYS,
+	SW_CSI,
 	SW_HSE,
-	SW_PLLRCLK,
-	SW_LSI,
-	SW_LSE,
+	SW_PLL1,
 };
 
-static const stm32_reginfo_t stm32h503_rcc_reginfo[RI_END] =
+enum rtc_src
 {
-	[RI_CR] = {.mask = 0x30F3F00, .reset_val = 0x500},
-	[RI_ICSCR] = {.mask = 0x7FFF, .reset_val = 0x4000, .unimp_mask = 0x7FFF},
-	[RI_CFGR] = {.mask = 0xFFFF7F3F, .unimp_mask = 0xFFFF0000},
-	[RI_PLLCFGR] = {.mask = 0xFF3F7F73, .reset_val =  0x1000},
-	[RI_RES1 ... RI_RES2] = {.is_reserved = true},
-	[RI_CIER] = {.mask = 0b111011},
-	[RI_CIFR] = {.mask = 0b1100111011},
-	[RI_CICR] = {.mask = 0b1100111011},
-	[RI_IOPRSTR] = {.mask = 0x3F},
-	[RI_IOPENR] = {.mask = 0x3F},
-	[RI_IOPSMENR] = {.mask = 0x3F, .reset_val = 0x3F, .unimp_mask = 0x3F},
-	[RI_AHBRSTR] = {.mask = 0x1103},
-	[RI_AHBENR] = {.mask = 0x1103},
-	[RI_AHBSMENR] = {.mask = 0x1103, .reset_val = 0x1103, .unimp_mask = 0x1103},
-	[RI_APB1RSTR] = { .mask = 0x18EEE336},
-	[RI_ABP1ENR] = { .mask = 0x18EEE336},
-	[RI_ABP1SMENR] = { .mask = 0x18EEE336, .reset_val = 0x18EEE336, .unimp_mask = 0x18EEE336},
-	[RI_APB2RSTR] = {.mask = 0x17D801},
-	[RI_APB2ENR] = {.mask = 0x17D801},
-	[RI_APB2SMENR] = {.mask = 0x17D801, .reset_val = 0x17D801, .unimp_mask = 0x17D801},
-	[RI_CCIPR] = { .mask = 0xC140F03F},
-	[RI_CCIPR2] = {.is_reserved = true, .mask = 0x300F},
-	[RI_BDCR] = {.mask = 0x301837F, .unimp_mask = ~0x8303},
-	[RI_CSR] = {.mask = 0xFE800003}
+	RTC_NONE,
+	RTC_LSE,
+	RTC_LSI,
+	RTC_HSE,
+};
+
+enum pll_src
+{
+	PLL_DISABLED,
+	PLL_HSI,
+	PLL_CSI,
+	PLL_HSE,
+};
+
+enum uart_src
+{
+	UART_PCLK,
+	UART_PLL2Q,
+	UART_HSI_KER,
+	UART_CSI_KER,
+	UART_LSE,
+};
+
+enum spi_src
+{
+	SPI_PLL1Q,
+	SPI_PLL2P,
+	SPI_AUDIO,
+	SPI_PCLK,
+};
+
+enum i3c_sel
+{
+	I3C_PCLK3,
+	I3C_PLL2R,
+	I3C_HSI_KER,
+	I3C_NONE,
+};
+
+enum i2s_sel
+{
+	I2S_PCLK1,
+	I2S_PLL2R,
+	I2S_HSI_KER,
+	I2S_CSI_KER,
+};
+
+enum usb_src
+{
+	USB_NONE,
+	USB_PLL1Q,
+	USB_PLL2Q,
+	USB_HSI48_KER,
+};
+
+enum systick_src
+{
+	SYSTICK_HCLK8,
+	SYSTICK_LSI_KER_CK,
+	SYSTICK_LSE_CK,
+	SYSTICK_END,
+};
+
+enum analog_src
+{
+	ANALOG_HCLK,
+	ANALOG_SYSCLK,
+	ANALOG_PLL2R,
+	ANALOG_HSE,
+	ANALOG_KSI_KER,
+	ANALOG_CSI_KER,
+	ANALOG_END
 };
 
 /* REGISTER IMPLEMENTATION */
+static void stm32h503_RCC_setup_pll(STM32H503_STRUCT_NAME(Rcc) *s, uint8_t pll_index)
+{
+	// Layout of the PLL registers is identical for both PLL1 and PLL2.
+	const REGDEF_NAME(h503_rcc,pll1cfgr) *pll = (pll_index == 1 ? &s->regs.PLL1CFGR : (void*)&s->regs.PLL2CFGR);
+	// const REGDEF_NAME(h503_rcc,pll1fracr) *pllfrac = (pll_index == 1 ? &s->regs.PLL1FRACR : &s->regs.PLL2FRACR);
+	const REGDEF_NAME(h503_rcc,pll1divr) *plldiv = (pll_index == 1 ? &s->regs.PLL1DIVR : (void*)&s->regs.PLL2DIVR);
+	Clk_t *pllclk = (pll_index == 1 ? &s->PLL1CLK : &s->PLL2CLK);
+	Clk_t *pllpclk = (pll_index == 1 ? &s->PLL1PCLK : &s->PLL2PCLK);
+	Clk_t *pllqclk = (pll_index == 1 ? &s->PLL1QCLK : &s->PLL2QCLK);
+	Clk_t *pllrclk = (pll_index == 1 ? &s->PLL1RCLK : &s->PLL2RCLK);
 
-/* Write the Configuration Register.
- * This updates the states of the corresponding clocks.  The bit values are not
- * saved - when the register is read, its value will be built using the clock
- * states.
- */
+	clktree_set_selected_input(pllclk, pll->bits.PLL1SRC);
+	clktree_set_scale(pllclk, pll->bits.PLL1M, plldiv->bits.PLL1N);
+	clktree_set_scale(pllpclk, 1, plldiv->bits.PLL1P);
+	clktree_set_scale(pllqclk, 1, plldiv->bits.PLL1Q);
+	clktree_set_scale(pllrclk, 1, plldiv->bits.PLL1R);
+	clktree_set_enabled(pllpclk, pll->bits.PLL1PEN);
+	clktree_set_enabled(pllqclk, pll->bits.PLL1QEN);
+	clktree_set_enabled(pllrclk, pll->bits.PLL1REN);
+
+
+}
+
 static void stm32_rcc_RCC_CR_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new_value, bool init)
 {
-	const REGDEF_NAME(rcc,cr) new = { .raw = new_value };
+	const REGDEF_NAME(h503_rcc,cr) new = { .raw = new_value };
 
-    if((clktree_is_enabled(&s->PLLCLK) && !new.PLLON && !init) &&
-       s->regs.CFGR.SW == SW_PLLRCLK) {
+    if((clktree_is_enabled(&s->PLL1CLK) && !new.bits.PLL1ON && !init) &&
+       s->regs.CFGR1.bits.SW == SW_PLL1) {
         printf("PLL cannot be disabled while it is selected as the system clock.");
     }
-    clktree_set_enabled(&s->PLLCLK, new.PLLON);
-	s->regs.CR.PLLRDY = s->regs.CR.PLLON = new.PLLON;
 
-    if((clktree_is_enabled(&s->parent.HSECLK) && !new.HSEON && !init) &&
-       (s->regs.CFGR.SW == SW_HSE || s->regs.CFGR.SW == SW_PLLRCLK)
+	if (new.bits.PLL1ON & !s->regs.CR.bits.PLL1ON)
+	{
+		stm32h503_RCC_setup_pll(s, 1);
+	}
+    clktree_set_enabled(&s->PLL1CLK, new.bits.PLL1ON);
+	s->regs.CR.bits.PLL1RDY = s->regs.CR.bits.PLL1ON = new.bits.PLL1ON;
+
+    if((clktree_is_enabled(&s->parent.HSECLK) && !new.bits.HSEON && !init) &&
+       (s->regs.CFGR1.bits.SW == SW_HSE || s->regs.CFGR1.bits.SW == SW_PLL1)
+	   // TODO - check if PLLSRC is HSE...
        ) {
         printf("HSE oscillator cannot be disabled while it is driving the system clock.");
     }
-    clktree_set_enabled(&s->parent.HSECLK, new.HSEON);
-	s->regs.CR.HSERDY = s->regs.CR.HSEON = new.HSEON;
+    clktree_set_enabled(&s->parent.HSECLK, new.bits.HSEON);
+	s->regs.CR.bits.HSERDY = s->regs.CR.bits.HSEON = new.bits.HSEON;
 
-	clktree_set_scale(&s->HSISYS, 1, 1U<<new.HSIDIV);
+	clktree_set_scale(&s->HSI_KER_CK, 1, 1U<<new.bits.HSIDIV);
 
-    if((clktree_is_enabled(&s->parent.HSECLK) && !new.HSEON && !init) &&
-       (s->regs.CFGR.SW == SW_HSISYS || s->regs.CFGR.SW == SW_PLLRCLK)
+    if((clktree_is_enabled(&s->parent.HSECLK) && !new.bits.HSEON && !init) &&
+       (s->regs.CFGR1.bits.SW == SW_HSISYS || s->regs.CFGR1.bits.SW == SW_PLL1)
        ) {
         printf("HSI oscillator cannot be disabled while it is driving the system clock.");
     }
-    clktree_set_enabled(&s->parent.HSICLK, new.HSION);
-	s->regs.CR.HSIRDY = s->regs.CR.HSION = new.HSION;
+    clktree_set_enabled(&s->parent.HSICLK, new.bits.HSION);
+	s->regs.CR.bits.HSIRDY = s->regs.CR.bits.HSION = new.bits.HSION;
+
+	if (new.bits.PLL2ON & !s->regs.CR.bits.PLL2ON)
+	{
+		stm32h503_RCC_setup_pll(s, 2);
+	}
+	clktree_set_enabled(&s->PLL2CLK, new.bits.PLL2ON);
+	s->regs.CR.bits.PLL2RDY = s->regs.CR.bits.PLL2ON = new.bits.PLL2ON;
+
+	clktree_set_enabled(&s->CSI_CK, new.bits.CSION);
+	s->regs.CR.bits.CSIRDY = s->regs.CR.bits.CSION = new.bits.CSION;
+
+	clktree_set_enabled(&s->HSI48_KER_CK, new.bits.HSI48ON);
+	s->regs.CR.bits.HSI48RDY = s->regs.CR.bits.HSI48ON = new.bits.HSI48ON;
 }
 
-static void stm32_rcc_RCC_CFGR_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new_value, bool init)
+static void stm32_rcc_RCC_CFGR1_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new_value, bool init)
 {
-	const REGDEF_NAME(rcc,cfgr) new = { .raw = new_value };
-	// SW
-	if (new.SW > 4)
-	{
-		qemu_log_mask(LOG_GUEST_ERROR, "Invalid clock source for SYSCLK selected!");
-	}
-	else
-	{
-		clktree_set_selected_input(&s->SYSCLK, new.SW);
-		s->regs.CFGR.SWS = s->regs.CFGR.SW = new.SW;
-	}
+	const REGDEF_NAME(h503_rcc,cfgr1) new = { .raw = new_value };
+
+	clktree_set_selected_input(&s->SYS_CK, new.bits.SW);
+	s->regs.CFGR1.bits.SWS = s->regs.CFGR1.bits.SW = new.bits.SW;
 
 	// HPRE:
-	clktree_set_scale(&s->HCLK, 1, AHBPRE_OPTS[new.HPRE]);
-	s->regs.CFGR.HPRE = new.HPRE;
+	clktree_set_enabled(&s->RTCHSEPRE, new.bits.RTCPRE < 2);
+	clktree_set_scale(&s->RTCHSEPRE, 1, MAX(1,new.bits.RTCPRE));
+	s->regs.CFGR1.bits.RTCPRE = new.bits.RTCPRE;
 
-    /* PPRE */
-    s->regs.CFGR.PPRE = new.PPRE;
-	clktree_set_scale(&s->PCLK, 1, APBPRE_OPTS[new.PPRE]);
-
-	clktree_set_scale(&s->TIMPCLK, (APBPRE_OPTS[new.PPRE] == 1U ? 1U : 2U), 1);
-}
-
-static void stm32_rcc_RCC_PLLCFGR_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new_value, bool init)
-{
-	const REGDEF_NAME(rcc,pllcfgr) new = { .raw = new_value };
-	const REGDEF_NAME(rcc,pllcfgr) changed = { .raw = new_value^s->regs.PLLCFGR.raw };
-	bool pll_on = s->regs.CR.PLLON;
-	clktree_set_selected_input(&s->PLLCLK, (new.PLLSRC - 2));
-	if (new.PLLN < 0b1000 || new.PLLN > 0b1010110 || pll_on )
+	if (new.bits.TIMPRE)
 	{
-		qemu_log_mask(LOG_GUEST_ERROR, "Invalid PLL multiplier (N) selected or tried to change it while PLL enabled!");
+		clktree_set_scale(&s->TIM23PRE, (s->regs.CFGR2.bits.PPRE1 > 0b101 ? 4 : 2), 1);
+		clktree_set_scale(&s->TIM1PRE, (s->regs.CFGR2.bits.PPRE2 > 0b101 ? 4 : 2), 1);
 	}
 	else
 	{
-		clktree_set_scale(&s->PLLCLK, new.PLLN, new.PLLM + 1U);
+		clktree_set_scale(&s->TIM23PRE, (s->regs.CFGR2.bits.PPRE1 > 0b100 ? 2 : 1), 1);
+		clktree_set_scale(&s->TIM1PRE, (s->regs.CFGR2.bits.PPRE2 > 0b100 ? 2 : 1), 1);
 	}
-
-	bool pll_changed = pll_on && (
-		changed.PLLSRC || changed.PLLQ || changed.PLLP || changed.PLLR
-	);
-
-	if (pll_changed)
-	{
-		qemu_log_mask(LOG_GUEST_ERROR, "Attempted to change PLL configuration while it is in use!");
-	}
-
-	clktree_set_enabled(&s->PLLPCLK, new.PLLPEN);
-	if (new.PLLQ == 0 && changed.PLLQ)
-	{
-		qemu_log_mask(LOG_GUEST_ERROR, "Invalid PLLQ divisor selected!");
-	}
-	else
-	{
-		clktree_set_enabled(&s->PLLQCLK, new.PLLQEN);
-		clktree_set_scale(&s->PLLQCLK, 1, new.PLLQ + 1U);
-	}
-	if (new.PLLR == 0 && changed.PLLR)
-	{
-		qemu_log_mask(LOG_GUEST_ERROR, "Invalid PLLR divisor selected!");
-	}
-	else
-	{
-		clktree_set_enabled(&s->PLLRCLK, new.PLLREN);
-		clktree_set_scale(&s->PLLRCLK, 1, new.PLLR + 1U);
-	}
-	if (new.PLLP == 0 && changed.PLLP)
-	{
-		qemu_log_mask(LOG_GUEST_ERROR, "Invalid PLLP divisor selected!");
-	}
-	else
-	{
-		clktree_set_enabled(&s->PLLPCLK, new.PLLPEN);
-		clktree_set_scale(&s->PLLPCLK, 1, new.PLLP + 1U);
-	}
-	s->regs.PLLCFGR.raw = new.raw;
-}
-
-static void stm32_rcc_RCC_CCIPR_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new_value, bool init)
-{
-	const REGDEF_NAME(rcc,ccipr) new = { .raw = new_value };
-
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART1], new.USART1SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART2], new.USART2SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART3], new.USART3SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_I2C1], new.I2C1SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_I2C2], new.I2C2I2S1SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_TIM1], new.TIM1SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_TIM15], new.TIM15SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_ADC1], new.ADCSEL);
-	s->regs.CCIPR.raw = new.raw;
 }
 
 static void stm32_rcc_RCC_BDCR_writeb0(STM32H503_STRUCT_NAME(Rcc) *s, uint8_t new_value, bool init)
 {
 	REGDEF_NAME(rcc_com,bdcr) val = {.raw = new_value};
     clktree_set_enabled(&s->parent.LSECLK, val.LSEON);
-	s->regs.BDCR.LSCOEN = s->regs.BDCR.LSERDY = val.LSEON;
+	s->regs.BDCR.bits.LSCOEN = s->regs.BDCR.bits.LSERDY = val.LSEON;
 
 
-	if (s->regs.BDCR.RTC_SEL)
+	if (s->regs.BDCR.bits.RTCSEL)
 	{
 		qemu_log_mask(LOG_GUEST_ERROR, "Cannot change RTC clock source after it has been set!");
 	}
@@ -566,22 +448,11 @@ static void stm32_rcc_RCC_BDCR_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new
     stm32_rcc_RCC_BDCR_writeb0(s, new_value & 0xff, init);
 }
 
-/* Works the same way as stm32_rcc_RCC_CR_write */
-static void stm32_rcc_RCC_CSR_write(STM32H503_STRUCT_NAME(Rcc) *s, uint32_t new_value, bool init)
-{
-	REGDEF_NAME(rcc,csr) val = { .raw = new_value };
-    clktree_set_enabled(&s->parent.LSICLK, val.LSION);
-	val.LSIRDY = val.LSION;
-	s->regs.raw[RI_CSR] = val.raw;
-}
-
-
-
 static uint64_t stm32_rcc_readw(void *opaque, hwaddr offset)
 {
     STM32H503_STRUCT_NAME(Rcc) *s = STM32H503_RCC(opaque);
 	uint32_t index = offset >> 2U;
-	CHECK_BOUNDS_R(index, RI_END, stm32h503_rcc_reginfo, "RCC");
+	CHECK_BOUNDS_R(index, RI_END, stm32_h503_rcc_reginfo, "RCC");
 	//rather than reconstruct the register each read, I ensure the stored value is current when changes happen.
 	return s->regs.raw[index];
 }
@@ -607,40 +478,121 @@ static void stm32_rcc_writew(void *opaque, hwaddr offset,
 
 	uint8_t index = offset>>2U;
 
+	CHECK_UNIMP_RESVD_V2(value, s->regs.raw[index], stm32_h503_rcc_reginfo, index);
+
     switch(index) {
         case RI_CR:
             stm32_rcc_RCC_CR_write(s, value, is_reset);
             break;
-        case RI_CFGR:
-            stm32_rcc_RCC_CFGR_write(s, value, is_reset);
+        case RI_CFGR1:
+            stm32_rcc_RCC_CFGR1_write(s, value, is_reset);
             break;
-        case RI_PLLCFGR:
-            stm32_rcc_RCC_PLLCFGR_write(s, value, is_reset);
+		case RI_CFGR2:
+			{
+				const REGDEF_NAME(h503_rcc,cfgr2) new = { .raw = value };
+				clktree_set_scale(&s->HCLK, 1, h503_hclk_div_lut[new.bits.HPRE]);
+				clktree_set_scale(&s->PCLK1, 1, h503_pclk_div_lut[new.bits.PPRE1]);
+				clktree_set_scale(&s->PCLK2, 1, h503_pclk_div_lut[new.bits.PPRE2]);
+				clktree_set_scale(&s->PCLK3, 1, h503_pclk_div_lut[new.bits.PPRE3]);
+				clktree_set_enabled(&s->PCLK1, !new.bits.APB1DIS);
+				clktree_set_enabled(&s->PCLK2, !new.bits.APB2DIS);
+				clktree_set_enabled(&s->PCLK3, !new.bits.APB3DIS);
+				clktree_set_enabled(&s->HCLK1, !new.bits.AHB1DIS);
+				clktree_set_enabled(&s->HCLK2, !new.bits.AHB2DIS);
+				s->regs.CFGR2.raw = new.raw;
+			}
+			break;
+        case RI_PLL1CFGR:
+		case RI_PLL1DIVR:
+		case RI_PLL1FRACR:
+			if (s->regs.CR.bits.PLL1ON)
+			{
+				qemu_log_mask(LOG_GUEST_ERROR, "Cannot change PLL1 configuration while it is enabled!");
+			}
+			else
+			{
+				s->regs.raw[index] = value;
+			}
+			break;
+        case RI_PLL2CFGR:
+		case RI_PLL2DIVR:
+		case RI_PLL2FRACR:
+			if (s->regs.CR.bits.PLL2ON)
+			{
+				qemu_log_mask(LOG_GUEST_ERROR, "Cannot change PLL2 configuration while it is enabled!");
+			}
+			else
+			{
+				s->regs.raw[index] = value;
+			}
+			break;
             break;
-        case RI_CCIPR:
-            stm32_rcc_RCC_CCIPR_write(s, value, is_reset);
+		// case RI_CIER ... RI_CICR:
+        case RI_CCIPR1:
+			{
+            	const REGDEF_NAME(h503_rcc,ccipr1) new = { .raw = value };
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART1], new.bits.USART1SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART2], new.bits.USART2SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART3], new.bits.USART3SEL);
+				s->regs.CCIPR1.raw = new.raw;
+			}
             break;
-		case RI_IOPRSTR ... RI_APB2RSTR:
-			stm32_common_rcc_reset_write(&s->parent,value, PERIPH_BLOCKS[index - RI_IOPRSTR]);
+		case RI_CCIPR3:
+			{
+				const REGDEF_NAME(h503_rcc,ccipr3) new = { .raw = value };
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_SPI1], new.bits.SPI1SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_SPI2], new.bits.SPI2SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_SPI3], new.bits.SPI3SEL);
+				s->regs.CCIPR3.raw = new.raw;
+			}
+			break;
+		case RI_CCIPR4:
+			{
+				const REGDEF_NAME(h503_rcc,ccipr4) new = { .raw = value };
+				clktree_set_selected_input(&s->SYSTICK, new.bits.SYSTICKSEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_USBHS], new.bits.USBSEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_I2C1], new.bits.I2C1SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_I2C2], new.bits.I2C2SEL);
+				// clktree_set_selected_input(&s->parent.pclocks[STM32_P_I3C1], new.bits.I3C1SEL);
+				// clktree_set_selected_input(&s->parent.pclocks[STM32_P_I3C2], new.bits.I3C2SEL);
+				s->regs.CCIPR4.raw = new.raw;
+			}
+			break;
+		case RI_CCIPR5:
+			{
+				const REGDEF_NAME(h503_rcc,ccipr5) new = { .raw = value };
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_ADC1], new.bits.ADCDACSEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_DAC], new.bits.ADCDACSEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_RNG], new.bits.RNGSEL);
+				clktree_set_selected_input(&s->PER_CK, new.bits.CKERPSEL);
+				s->regs.CCIPR5.raw = new.raw;
+			}
+			break;
+		case RI_AHB1RSTR ... RI_APB3RSTR:
+			stm32_common_rcc_reset_write(&s->parent,value, PERIPH_BLOCKS[index - RI_AHB1RSTR]);
 			s->regs.raw[index] = value;
 			break;
-		case RI_IOPENR ... RI_APB2ENR:
-            stm32_common_rcc_enable_write(&s->parent, value, PERIPH_BLOCKS[index - RI_IOPENR]);
+		case RI_AHB1ENR ... RI_APB2ENR:
+            stm32_common_rcc_enable_write(&s->parent, value, PERIPH_BLOCKS[index - RI_AHB1ENR]);
 			s->regs.raw[index] = value;
             break;
-		case RI_IOPSMENR ... RI_APB2SMENR:
-			//printf("STOP MODE rcc write not implemetned!\n");
-			s->regs.raw[index] = value;
-			break;
+		//case RI_AHB1LPENR ... RI_APB3LPENR:
+		//	s->regs.raw[index] = value;
+			// break;
         case RI_BDCR:
             stm32_rcc_RCC_BDCR_write(s, value, is_reset);
             break;
-        case RI_CSR:
-            stm32_rcc_RCC_CSR_write(s, value, is_reset);
-            break;
+		case RI_RSR:
+			{
+				const REGDEF_NAME(h503_rcc,rsr) new = { .raw = value };
+				if (new.bits.RMVF)
+				{
+					s->regs.RSR.raw = 0;
+				}
+			}
 			break;
         default:
-            WARN_UNIMPLEMENTED_REG(offset);
+            WARN_UNIMPLEMENTED_REG(offset, write);
             break;
     }
 }
@@ -652,7 +604,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
         case 4:
             return stm32_rcc_readw(opaque, offset);
         default:
-            stm32_unimp("Unimplemented: RCC read from register at offset %08" HWADDR_PRIx, offset);
+            WARN_UNIMPLEMENTED_REG(offset, read);
             return 0;
     }
 }
@@ -668,7 +620,7 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
             stm32_rcc_writeb(opaque, offset, value);
             break;
         default:
-            WARN_UNIMPLEMENTED_REG(offset);
+            WARN_UNIMPLEMENTED_REG(offset,write);
             break;
     }
 }
@@ -688,7 +640,8 @@ static void stm32_rcc_reset(DeviceState *dev)
 
 	for (int i=0; i< RI_END; i++)
 	{
-		stm32_rcc_writew(dev, i<<2U, stm32h503_rcc_reginfo[i].reset_val, true);
+		if (stm32_h503_rcc_reginfo[i].not_reserved)
+			stm32_rcc_writew(dev, i<<2U, stm32_h503_rcc_reginfo[i].reset_val, true);
 	}
 }
 
@@ -743,73 +696,116 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
      * turning the clock on.
      */
 
-	clktree_create_clk(&s->HSISYS, "HSISYS", 1, 1, true, s->parent.hsi_freq, 0, &s->parent.HSICLK, NULL);
+	// Parent takes care of HSI (64MHz), HSE, LSI (32K), LSE(32.768KHz)
 
-	// TODO - determine max sysclk freq.
-    clktree_create_clk(&s->SYSCLK, "SYSCLK", 1, 1, true, 168000000, CLKTREE_NO_INPUT,
-                                   &s->HSISYS, &s->parent.HSECLK, &s->PLLRCLK, &s->parent.LSICLK, &s->parent.LSECLK, NULL);
+	// Primary clock sources:
+	clktree_create_src_clk(&s->DUMMY, "DUMMY", 0, false);
+	clktree_create_src_clk(&s->HSI48_KER_CK, "HSI48_RC", 48*MHz, false);
+	clktree_create_src_clk(&s->CSI_CK, "CSI_RC", 4*MHz, false);
 
-    clktree_create_clk(&s->HCLK, "HCLK", 1, 1, true, 64000000, 0, &s->SYSCLK, NULL);
+	clktree_create_clk(&s->SYS_CK, "SYSCLK", 1, 1, true, 250*MHz, SW_HSISYS,
+						&s->parent.HSICLK, &s->CSI_CK, &s->parent.HSECLK, &s->PLL1PCLK, NULL);
+
+	clktree_create_clk(&s->HSI_KER_CK, "HSI_KER_CK", 1, 1, true, 64*MHz, 0, &s->parent.HSICLK, NULL);
+
+    clktree_create_clk(&s->HCLK, "HCLK", 1, 1, true, 64*MHz, 0, &s->SYS_CK, NULL);
     clktree_adduser(&s->HCLK, s->hclk_upd_irq[0]);
-    clktree_create_clk(&s->HCLK8, "HCLK8", 1, 8, true, 8000000, 0, &s->HCLK, NULL);
+    clktree_create_clk(&s->HCLK8, "HCLK8", 1, 8, true, 8*MHz, 0, &s->HCLK, NULL);
 
-    clktree_create_clk(&s->PCLK, "PCLK", 1, 1, true, 64000000, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->HCLK1, "HCLK1", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->HCLK2, "HCLK2", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
 
-    clktree_create_clk(&s->PLLCLK, "PLLCLK", 1, 2, true, 48000000, 0, &s->parent.HSICLK, &s->parent.HSECLK,  NULL);
-	clktree_create_clk(&s->PLLPCLK, "PLLP", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLLCLK, NULL);
-	clktree_create_clk(&s->PLLQCLK, "PLLQ", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLLCLK, NULL);
-	clktree_create_clk(&s->PLLRCLK, "PLLR", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLLCLK, NULL);
+    clktree_create_clk(&s->PLL1CLK,  "PLL1CLK", 1, 2, true, 48*MHz, CLKTREE_NO_INPUT, &s->DUMMY, &s->parent.HSICLK, &s->CSI_CK, &s->parent.HSECLK,  NULL);
+	clktree_create_clk(&s->PLL1PCLK, "PLL1P", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLL1CLK, NULL);
+	clktree_create_clk(&s->PLL1QCLK, "PLL1Q", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLL1CLK, NULL);
+	clktree_create_clk(&s->PLL1RCLK, "PLL1R", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLL1CLK, NULL);
 
-	clktree_create_clk(&s->TIMPCLK, "TIMPCLK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
+	clktree_create_clk(&s->PLL2CLK,  "PLL2CLK", 1, 2, true, 48*MHz, CLKTREE_NO_INPUT, &s->DUMMY, &s->parent.HSICLK, &s->CSI_CK, &s->parent.HSECLK,  NULL);
+	clktree_create_clk(&s->PLL2PCLK, "PLL2P", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLL2CLK, NULL);
+	clktree_create_clk(&s->PLL2QCLK, "PLL2Q", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLL2CLK, NULL);
+	clktree_create_clk(&s->PLL2RCLK, "PLL2R", 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PLL2CLK, NULL);
+
+	// input order needs checking
+	clktree_create_clk(&s->SYSTICK, "SYSTICK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK8, &s->LSI_KER_CK, &s->LSE_CK, NULL);
+
+	clktree_create_clk(&s->PER_CK, "PER_CK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HSI_KER_CK, &s->CSI_CK, &s->HSE_CK, &s->DUMMY, NULL);
+
+	// APB clocks:
+	clktree_create_clk(&s->PCLK1, "PCLK1", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->PCLK2, "PCLK2", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->PCLK3, "PCLK3", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+
+	// Timer doublers:
+	clktree_create_clk(&s->TIM23PRE, "TIM23CLK", 2, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
+	clktree_create_clk(&s->TIM1PRE, "TIM1CLK", 2, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK2, NULL);
+
+
+	clktree_create_clk(&s->RTCHSEPRE, "RTCHSEPRE", 1, 1, true, 1U*MHz, 0, &s->HSE_CK, NULL);
+
+	// IWDG comes directly from LSI:
+	INIT_PCLK_NSM(IWDG, 0, &s->parent.LSICLK, NULL);
+
+	// RTC has choices:
+	INIT_PCLK_NSM(RTC, CLKTREE_NO_INPUT, &s->DUMMY, &s->LSE_CK, &s->LSI_KER_CK, &s->RTCHSEPRE, NULL);
+
+	// PWR is directly off of SYSCLK:
+	INIT_PCLK_NSM(PWR, 0, &s->SYS_CK, NULL);
+
 
     /* AHB Peripheral clocks */
-    INIT_PCLK(GPIOA, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(GPIOB, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(GPIOC, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(GPIOD, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(GPIOE, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(GPIOF, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+	// AHB1
+	INIT_PCLK_NSM(DMA1, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(DMA2, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(CRC, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(FSMC, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(BKP, 0, &s->HCLK, NULL);
 
+	// AHB2 - GPIOs, analog, RNG and HASH:
+	INIT_PCLK_NSM(GPIOA, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(GPIOB, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(GPIOC, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(GPIOD, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(GPIOH, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(ADC1, 0, &s->HCLK, &s->SYS_CK, &s->PLL2RCLK, &s->HSE_CK, &s->HSI_KER_CK, &s->CSI_CK, NULL);
+	INIT_PCLK_NSM(DAC,  0, &s->HCLK, &s->SYS_CK, &s->PLL2RCLK, &s->HSE_CK, &s->HSI_KER_CK, &s->CSI_CK, NULL);
+	INIT_PCLK_NSM(HASH, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(RNG, 0, &s->HSI48_KER_CK, &s->PLL1QCLK, &s->LSE_CK, &s->LSI_KER_CK, NULL);
 
-// verified
-    INIT_PCLK(CRC, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(FSMC, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(EXTI, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(RCC, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(DMAMUX, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(DMA1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-    INIT_PCLK(DMA2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-
-    INIT_PCLK(UART1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
-    INIT_PCLK(UART2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
-    INIT_PCLK(UART3, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
-
-    INIT_PCLK(I2C1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->parent.LSECLK, &s->parent.HSICLK, &s->SYSCLK, NULL);
-    INIT_PCLK(I2C2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->parent.LSECLK, &s->parent.HSICLK, &s->SYSCLK, NULL);
-
-    INIT_PCLK(TIM1,  1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, &s->PLLQCLK, NULL);
-    INIT_PCLK(TIM15,1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, &s->PLLQCLK, NULL);
-
-    INIT_PCLK(ADC1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->SYSCLK, &s->PLLPCLK, &s->parent.HSICLK, NULL);
+	// AHB3
+	INIT_PCLK_NSM(RCC, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(PWR, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(EXTI, 0, &s->HCLK, NULL);
+	INIT_PCLK_NSM(DBG, 0, &s->HCLK, NULL);
 
 	// Everything else is APB
 
-    INIT_PCLK(SYSCFG, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(UART4, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(UART5, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(UART6, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(TIM3,   1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
-    INIT_PCLK(TIM6,   1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
-    INIT_PCLK(TIM7,   1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);;
-    INIT_PCLK(TIM14, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
-    INIT_PCLK(TIM16, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
-    INIT_PCLK(TIM17, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
+	// APB1
+	INIT_PCLK_NSM(TIM2, 0, &s->TIM23PRE, NULL);
+	INIT_PCLK_NSM(TIM3, 0, &s->TIM23PRE, NULL);
+	INIT_PCLK_NSM(TIM6, 0, &s->PCLK1, NULL);
+	INIT_PCLK_NSM(TIM7, 0, &s->PCLK1, NULL);
+	INIT_PCLK_NSM(WWDG, 0, &s->PCLK1, NULL);
+	// opamp?
+	INIT_PCLK_NSM(SPI2, 0, &s->PLL1QCLK, &s->PLL2PCLK, &s->AUDIOCLK, &s->PCLK1, NULL);
+	INIT_PCLK_NSM(SPI3, 0, &s->PLL1QCLK, &s->PLL2PCLK, &s->AUDIOCLK, &s->PCLK1, NULL);
+	// Comp?
+	INIT_PCLK_NSM(UART2, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
+	INIT_PCLK_NSM(UART3, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
+	INIT_PCLK_NSM(I2C1, 0, &s->PCLK1, &s->PLL2RCLK, &s->HSI_KER_CK, &s->CSI_CK, NULL);
+	INIT_PCLK_NSM(I2C2, 0, &s->PCLK1, &s->PLL2RCLK, &s->HSI_KER_CK, &s->CSI_CK, NULL);
+	// I3C1, CRS, DTS, LPTIM2, FDCAN1
+
+	// APB2:
+	INIT_PCLK_NSM(TIM1, 0, &s->TIM1PRE, NULL);
+	INIT_PCLK_NSM(SPI1, 0, &s->PLL1QCLK, &s->PLL2PCLK, &s->AUDIOCLK, &s->PCLK2, NULL);
+	INIT_PCLK_NSM(UART1, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
+	INIT_PCLK_NSM(USBHS, 0, &s->DUMMY, &s->PLL1QCLK, &s->PLL2QCLK, &s->HSI48_KER_CK, NULL);
+
+	// APB3: SBS, LPUART1, I3C2, LPTIM1, RTC, TAMP
+	INIT_PCLK_NSM(LPTIM1, 0, &s->PCLK3, NULL);
+
+
 // vf'd end
-
-
-    INIT_PCLK(IWDG, 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->parent.LSICLK, NULL);
-    INIT_PCLK(PWR, 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->SYSCLK, NULL);
-    INIT_PCLK(RTC, 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->parent.LSICLK, &s->parent.LSECLK, &s->parent.HSECLK, NULL);
 
 }
 
@@ -831,13 +827,13 @@ static const VMStateDescription vmstate_stm32h503_rcc = {
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_STRUCT_ARRAY(parent.pclocks, STM32H503_STRUCT_NAME(Rcc), STM32_P_COUNT, 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(SYSCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(PLLPCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(PLLQCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(PLLRCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(PLLCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(HCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
-        VMSTATE_STRUCT(PCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        VMSTATE_STRUCT(SYS_CK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        // VMSTATE_STRUCT(PLLPCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        // VMSTATE_STRUCT(PLLQCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        // VMSTATE_STRUCT(PLLRCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        // VMSTATE_STRUCT(PLLCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        // VMSTATE_STRUCT(HCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
+        // VMSTATE_STRUCT(PCLK,STM32H503_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
 		VMSTATE_UINT32_ARRAY(regs.raw, STM32H503_STRUCT_NAME(Rcc), RI_END),
         VMSTATE_END_OF_LIST()
     }

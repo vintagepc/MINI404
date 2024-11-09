@@ -24,7 +24,7 @@
 #define TYPE_STM32G070xx "stm32g070xx"
 #define TYPE_STM32G070xB "stm32g070xB"
 
-#define TYPE_STM32F4xx "stm32f4xx"
+#define TYPE_STM32F4xx 	 "stm32f4xx"
 #define TYPE_STM32F407xE "stm32f407xE"
 #define TYPE_STM32F407xG "stm32f407xG"
 
@@ -136,6 +136,8 @@
 #define TYPE_STM32F2xx_GPIO _STM_F2xx_PART(gpio)
 #define TYPE_STM32F4xx_GPIO _STM_F4xx_PART(gpio)
 
+#define TYPE_STM32H503_PWR _STM_H503_PART(pwr)
+
 #define TYPE_STM32F4xx_SYSCFG _STM_COM_PART(f4xx-syscfg)
 #define TYPE_STM32F030_SYSCFG _STM_F030_PART(syscfg)
 #define TYPE_STM32G070_SYSCFG _STM_G070_PART(fsyscfg)
@@ -155,5 +157,9 @@
 
 #define TYPE_STM32G070_OTP _STM_G070_PART(otp)
 #define TYPE_STM32F4xx_OTP _STM_F4xx_PART(otp)
+
+// Some unit helpers...
+#define MHz (INT64_C(1000000))
+#define KHz (INT64_C(1000))
 
 #endif

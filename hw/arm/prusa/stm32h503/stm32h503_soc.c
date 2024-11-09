@@ -73,7 +73,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
     DeviceState *armv7m;
     Error *err = NULL;
 
-	//hwaddr flash_size = stm32_soc_get_flash_size(dev_soc);
+	hwaddr flash_size = stm32_soc_get_flash_size(dev_soc);
 	hwaddr sram_size = stm32_soc_get_sram_size(dev_soc);
 	//hwaddr ccmsram_size = stm32_soc_get_ccmsram_size(dev_soc);
 
@@ -85,9 +85,9 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
         error_propagate(errp, err); // LCOV_EXCL_LINE
         return; // LCOV_EXCL_LINE
     }
-    // memory_region_init_alias(&s->flash_alias, OBJECT(dev_soc),
-    //                          "STM32F030.flash.alias", &s->flash, 0,
-    //                          flash_size);
+    memory_region_init_alias(&s->flash_alias, OBJECT(dev_soc),
+                             "STM32H503.flash.alias", &s->flash, 0,
+                             flash_size);
 
     memory_region_add_subregion(system_memory, cfg->flash_base, &s->flash);
     memory_region_add_subregion(system_memory, 0, &s->flash_alias);
@@ -123,26 +123,19 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
         return; // LCOV_EXCL_BR_LINE
     }
     /* System configuration controller */
-	object_property_set_link(
-			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
-			"flash",
-			OBJECT(&s->flash_alias),
-		&error_fatal);
-	object_property_set_link(
-			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
-			"sram",
-			OBJECT(&s->sram_alias),
-		&error_fatal);
+	// object_property_set_link(
+	// 		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
+	// 		"flash",
+	// 		OBJECT(&s->flash_alias),
+	// 	&error_fatal);
+	// object_property_set_link(
+	// 		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
+	// 		"sram",
+	// 		OBJECT(&s->sram_alias),
+	// 	&error_fatal);
     // sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, SYSCFG_IRQ));
 
-    object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_FINT)), "flash", OBJECT(&s->flash), errp);
-
-	object_property_set_link(
-		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_ADC1)),
-		"adcc",
-		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_ADCC)),
-		&error_fatal
-		);
+    //object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_FINT)), "flash", OBJECT(&s->flash), errp);
 
     qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_RCC), "hsi_freq", cfg->rcc_hsi_freq);
     qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_RCC), "lsi_freq", cfg->rcc_lsi_freq);
@@ -151,7 +144,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 
     struct Chardev;
 
-    char name[]="g070uart0";
+    char name[]="h503uart0";
 
     for (int i = STM32_P_USART_BEGIN; i < STM32H503_USART_END; i++) {
         name[8] = '0' + (i - STM32_P_USART_BEGIN);
@@ -161,26 +154,25 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
         }
     }
 
-	for (int i = STM32_P_DMA_BEGIN; i <= STM32_P_DMA_END; i++)
-	{
-		object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, i)), "system-memory", OBJECT(system_memory), &error_fatal);
-	}
+	// for (int i = STM32_P_DMA_BEGIN; i <= STM32_P_DMA_END; i++)
+	// {
+	// 	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, i)), "system-memory", OBJECT(system_memory), &error_fatal);
+	// }
 
 	stm32_soc_realize_all_peripherals(dev_soc, &error_fatal);
 
-	for (int i=STM32_P_GPIO_BEGIN; i<STM32H503_GPIO_END; i++)
-	{
-		DeviceState* gpio = stm32_soc_get_periph(dev_soc, i);
-		if (gpio)
-		{
-			for (int j=0; j<16; j++)
-			{
-				qdev_connect_gpio_out_named(gpio, "exti", j, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_EXTI), (16*(i-STM32_P_GPIOA))+j));
-			}
-		}
-	}
+	// for (int i=STM32_P_GPIO_BEGIN; i<STM32H503_GPIO_END; i++)
+	// {
+	// 	DeviceState* gpio = stm32_soc_get_periph(dev_soc, i);
+	// 	if (gpio)
+	// 	{
+	// 		for (int j=0; j<16; j++)
+	// 		{
+	// 			qdev_connect_gpio_out_named(gpio, "exti", j, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_EXTI), (16*(i-STM32_P_GPIOA))+j));
+	// 		}
+	// 	}
+	// }
 
-    create_unimplemented_device("PWR",         0x40007000, 1U * KiB);
 
 }
 
