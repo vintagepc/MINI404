@@ -336,10 +336,10 @@ static void stm32h503_RCC_setup_pll(STM32H503_STRUCT_NAME(Rcc) *s, uint8_t pll_i
 	Clk_t *pllrclk = (pll_index == 1 ? &s->PLL1RCLK : &s->PLL2RCLK);
 
 	clktree_set_selected_input(pllclk, pll->bits.PLL1SRC);
-	clktree_set_scale(pllclk, pll->bits.PLL1M, plldiv->bits.PLL1N);
-	clktree_set_scale(pllpclk, 1, plldiv->bits.PLL1P);
-	clktree_set_scale(pllqclk, 1, plldiv->bits.PLL1Q);
-	clktree_set_scale(pllrclk, 1, plldiv->bits.PLL1R);
+	clktree_set_scale(pllclk, plldiv->bits.PLL1N + 1U, pll->bits.PLL1M);
+	clktree_set_scale(pllpclk, 1, plldiv->bits.PLL1P + 1U);
+	clktree_set_scale(pllqclk, 1, plldiv->bits.PLL1Q + 1U);
+	clktree_set_scale(pllrclk, 1, plldiv->bits.PLL1R + 1U);
 	clktree_set_enabled(pllpclk, pll->bits.PLL1PEN);
 	clktree_set_enabled(pllqclk, pll->bits.PLL1QEN);
 	clktree_set_enabled(pllrclk, pll->bits.PLL1REN);
@@ -708,7 +708,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
 	clktree_create_clk(&s->HSI_KER_CK, "HSI_KER_CK", 1, 1, true, 64*MHz, 0, &s->parent.HSICLK, NULL);
 
-    clktree_create_clk(&s->HCLK, "HCLK", 1, 1, true, 64*MHz, 0, &s->SYS_CK, NULL);
+    clktree_create_clk(&s->HCLK, "HCLK", 1, 1, true, 250*MHz, 0, &s->SYS_CK, NULL);
     clktree_adduser(&s->HCLK, s->hclk_upd_irq[0]);
     clktree_create_clk(&s->HCLK8, "HCLK8", 1, 8, true, 8*MHz, 0, &s->HCLK, NULL);
 
@@ -731,9 +731,9 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 	clktree_create_clk(&s->PER_CK, "PER_CK", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HSI_KER_CK, &s->CSI_CK, &s->HSE_CK, &s->DUMMY, NULL);
 
 	// APB clocks:
-	clktree_create_clk(&s->PCLK1, "PCLK1", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-	clktree_create_clk(&s->PCLK2, "PCLK2", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
-	clktree_create_clk(&s->PCLK3, "PCLK3", 1, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->PCLK1, "PCLK1", 1, 1, true, 250*MHz, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->PCLK2, "PCLK2", 1, 1, true, 250*MHz, 0, &s->HCLK, NULL);
+	clktree_create_clk(&s->PCLK3, "PCLK3", 1, 1, true, 250*MHz, 0, &s->HCLK, NULL);
 
 	// Timer doublers:
 	clktree_create_clk(&s->TIM23PRE, "TIM23CLK", 2, 1, true, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK1, NULL);
