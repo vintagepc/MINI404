@@ -74,9 +74,10 @@ typedef struct COM_CLASS_NAME(Gpio) {
 } COM_CLASS_NAME(Gpio);
 
 
-static const stm32_periph_banked_variant_t stm32_gpio_variants[4] = {
+static const stm32_periph_banked_variant_t stm32_gpio_variants[5] = {
 	{TYPE_STM32F030_GPIO, stm32f030_gpio_reginfo},
 	{TYPE_STM32G070_GPIO, stm32g070_gpio_reginfo},
+	{TYPE_STM32H503_GPIO, stm32h503_gpio_reginfo},
 	{TYPE_STM32F2xx_GPIO, stm32f2xx_gpio_reginfo},
 	{TYPE_STM32F4xx_GPIO, stm32f4xx_gpio_reginfo}
 };

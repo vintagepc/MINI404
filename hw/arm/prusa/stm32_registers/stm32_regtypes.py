@@ -94,7 +94,8 @@ class STM32Chip:
             # First, generate the enumeration of register indexes:
             f.write(f'enum {self.name}_{periph.lower()}_ri \n')
             f.write("{\n")
-            for key,reg in self.periph_map[periph].items():
+            addr_sorted = {k: v for k, v in sorted(self.periph_map[periph].items(), key=lambda item: item[1].int_addr)}
+            for key,reg in addr_sorted.items():
                 f.write(f"\tRI_{key:<20} = ({reg.hex_addr:<5}/4U), /* {reg.desc} */\n")
             f.write(f"\tRI_END\n")
             f.write("};\n\n")

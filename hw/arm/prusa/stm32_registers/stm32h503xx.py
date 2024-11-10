@@ -1,4 +1,4 @@
-from stm32_regtypes import STM32Chip, STM32Fixups
+from stm32_regtypes import STM32Chip, STM32Fixups, Register
 
 class stm32h503xx(STM32Fixups):
     @staticmethod
@@ -53,7 +53,8 @@ class stm32h503xx(STM32Fixups):
         
         usb = reg_map.pop("USB_DRD")
         reg_map["USB"] = usb
-        
+        reg_map["GPIO"]["AFRL"] = Register(name = "AFRL", desc="GPIO alternate function low register", hex_addr = "0x20", int_addr = 0x20, fields = {}, access = None, reset_value = 0)
+        reg_map["GPIO"]["AFRH"] = Register(name = "AFRH", desc="GPIO alternate function High register", hex_addr = "0x24", int_addr = 0x24, fields = {}, access = None, reset_value = 0)
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
         chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")

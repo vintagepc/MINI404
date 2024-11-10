@@ -44,7 +44,8 @@ OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Crc), COM_CLASS_NAME(Crc), STM32COM_CRC);
 
 REGDEF_BLOCK_BEGIN()
 	REG_B32(RESET);
-	REG_R(4);
+	REG_R(2);
+	REG_K32(POLYSIZE,2);
 	REG_K32(REV_IN,2);
 	REG_B32(REV_OUT);
 	REG_R(24);
@@ -146,9 +147,10 @@ typedef struct COM_CLASS_NAME(Crc) {
 
 
 
-static const stm32_periph_variant_t stm32_crc_variants[4] = {
+static const stm32_periph_variant_t stm32_crc_variants[5] = {
 	{TYPE_STM32F030_CRC, stm32f030_crc_reginfo},
 	{TYPE_STM32G070_CRC, stm32g070_crc_reginfo},
+	{TYPE_STM32H503_CRC, stm32h503_crc_reginfo},
 	{TYPE_STM32F2xx_CRC, stm32f2xx_crc_reginfo},
 	{TYPE_STM32F4xx_CRC, stm32f4xx_crc_reginfo}
 };

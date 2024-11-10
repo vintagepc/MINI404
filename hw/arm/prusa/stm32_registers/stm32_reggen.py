@@ -139,17 +139,9 @@ def parse_bitfield_info(line: str, info: STM32Chip):
 		if msk_match:
 			intval = int(msk_match.group(1), 16)
 			parse_bitfield_mask(intval, field, periph_map[periph][reg])
-			# if intval in mask2nbits:
-			# 	periph_map[periph][reg].fields[field].width = mask2nbits[intval]
-			# else:
-			# 	print("Mask not found: ", line)
 		elif msk2_match:
 			intval = int(msk2_match.group(1))
 			parse_bitfield_mask(intval, field, periph_map[periph][reg])
-			# if intval in mask2nbits:
-			# 	periph_map[periph][reg].fields[field].width = mask2nbits[intval]
-			# else:
-			# 	print("Mask not found: ", line)
 		else:
 			print("Mask not found: ", line)
 	elif suffix == None:
