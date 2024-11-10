@@ -4,7 +4,7 @@
  * override mechanism(s) defined to modify the parsed results 
  * and re-run the script to update the file. 
  *
- * This file contains the memory peripheral addresses for the stm32h503 series of chips. 
+ * This file contains the peripheral addresses for the stm32h503 series of chips. 
  */
 
 #pragma once

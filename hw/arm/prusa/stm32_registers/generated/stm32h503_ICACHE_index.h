@@ -4,7 +4,7 @@
  * override mechanism(s) defined to modify the parsed results 
  * and re-run the script to update the file. 
  *
- * This file contains the enumeration of register indexes for the stm32h503 ICACHE peripheral. 
+ * This file contains the ICACHE register indexes (offsets) for the stm32h503 series of chips. 
  */
 
 #pragma once
