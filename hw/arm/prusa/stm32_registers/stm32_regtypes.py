@@ -1,5 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 
 class RegisterPermission(Enum):
     READ_WRITE = 0
@@ -12,6 +13,24 @@ class RegisterAccess(Enum):
     HALF_WORD = 2
     WORD = 4
 
+class STM32Fixups(ABC):
+    @staticmethod
+    @abstractmethod
+    def post_register_fixups(chip):
+        """Method to perform fixups on the register map after it has been loaded but before bitfields are processed"""
+        pass
+    
+    @staticmethod
+    @abstractmethod
+    def post_bitfield_fixups(chip):
+        """Method to perform fixups on the register map after bitfields have been processed"""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def supplemental_data(chip):
+        """Method to add additional data to the register map that cannot be extracted from the header file alone"""
+        pass
 
 # A dataclass to store a chip name, and function pointers
 # to either imported data "fixups", or functions that supply
@@ -21,10 +40,19 @@ class RegisterAccess(Enum):
 class STM32Chip:
     name: str
     header: str
-    post_register_fixups: callable
-    post_bitfield_fixups: callable
-    supplemental_data: callable
-
+    fixups: STM32Fixups
+    periph_map: {}
+    periph_addrs: {}
+    periph_irqs: {}
+    not_found: {}
+    def __init__(self, name, header, fixups):
+        self.name = name
+        self.header = header
+        self.fixups = fixups
+        self.periph_map = {}
+        self.periph_addrs = {}
+        self.periph_irqs = {}
+        self.not_found = {}
 
 @dataclass
 class RegisterBitField:

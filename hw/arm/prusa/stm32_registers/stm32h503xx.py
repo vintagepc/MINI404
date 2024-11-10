@@ -1,6 +1,9 @@
-class stm32h503xx:
+from stm32_regtypes import STM32Chip, STM32Fixups
+
+class stm32h503xx(STM32Fixups):
     @staticmethod
-    def extra_data(reg_map: dict):
+    def extra_data(chip: STM32Chip):
+        reg_map = chip.periph_map
         # These are direct from the datasheet(s):
         reg_map["RCC"]["CR"].reset_value = 0x0000002B
         reg_map["RCC"]["HSICFGR"].reset_value = 0x00400000
@@ -48,8 +51,12 @@ class stm32h503xx:
         for k,v in reg_map["ICACHE"].items():
             v.unimplemented = True
         
-    def post_bitfield_fixups(reg_map:dict):
-        reg_map["PWR"]["WUSCR"].fields.pop("CWUF")
-        reg_map["PWR"]["WUCR"].fields.pop("WUPEN")
+        usb = reg_map.pop("USB_DRD")
+        reg_map["USB"] = usb
+        
+    @staticmethod
+    def post_bitfield_fixups(chip: STM32Chip):
+        chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")
+        chip.periph_map["PWR"]["WUCR"].fields.pop("WUPEN")
 
 
