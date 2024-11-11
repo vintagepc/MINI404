@@ -79,7 +79,3 @@ class stm32h503xx(STM32Fixups):
         chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")
         chip.periph_map["PWR"]["WUCR"].fields.pop("WUPEN")
 
-    @staticmethod
-    def do_custom_gen(chip: STM32Chip):
-        chip.generate_meta_only("CRC")
-        chip.generate_meta_only("RNG")

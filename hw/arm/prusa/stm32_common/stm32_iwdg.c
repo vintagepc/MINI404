@@ -37,6 +37,23 @@
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Iwdg), COM_CLASS_NAME(Iwdg), STM32COM_IWDG);
 
+typedef union {
+	struct {
+		uint32_t PVU           : 1; // /*!< Watchdog prescaler value update */
+		uint32_t RVU           : 1; // /*!< Watchdog counter reload value update */
+		uint32_t WVU           : 1; // /*!< Watchdog counter window value update */
+		uint32_t EWU           : 1; // /*!< Watchdog interrupt comparator value update */
+		uint32_t _reserved4    : 4;
+		uint32_t ONF           : 1; // /*!< Watchdog Enable status bit */
+		uint32_t _reserved9    : 5;
+		uint32_t EWIF          : 1; // /*!< Watchdog early interrupt flag */
+		uint32_t _reserved15   :17;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(iwdg,sr);
+CHECK_TYPEDEF_u32(REGDEF_NAME(iwdg,sr),bits);
+
+
 typedef struct COM_STRUCT_NAME(Iwdg) {
     STM32Peripheral  parent;
     MemoryRegion  iomem;
@@ -46,12 +63,7 @@ typedef struct COM_STRUCT_NAME(Iwdg) {
             REG_S32(KEY, 16) KR;
 			REG_S32(PR, 3) PR;
 			REG_S32(RL, 12) RLR;
-            struct {
-				REG_B32(PVU);
-                REG_B32(RVU);
-                REG_B32(WVU);
-                uint32_t :29;
-            } QEMU_PACKED SR;
+            REGDEF_NAME(iwdg,sr) SR;
 			REG_S32(WIN, 12);
         } QEMU_PACKED defs;
         uint32_t raw[RI_END];
@@ -70,37 +82,17 @@ typedef struct COM_CLASS_NAME(Iwdg) {
 } COM_CLASS_NAME(Iwdg);
 
 
-static const stm32_reginfo_t stm32f030_iwdg_reginfo[RI_END] =
-{
-	[RI_KR] = {.mask = UINT16_MAX },
-	[RI_PR] = {.mask = 0b111},
-	[RI_RLR] = {.mask = 0xFFFU, .reset_val = 0xFFFU },
-	[RI_SR] = {.mask = 0b111},
-	[RI_WINR] = { .mask = 0xFFFU, .reset_val = 0xFFFU, .unimp_mask = 0xFFFU},
-};
+#include "../stm32_registers/generated/stm32f030/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32g070/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32f427/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32h503/IWDG_reginfo.h"
 
-static const stm32_reginfo_t stm32g070_iwdg_reginfo[RI_END] =
-{
-	[RI_KR] = {.mask = UINT16_MAX },
-	[RI_PR] = {.mask = 0b111},
-	[RI_RLR] = {.mask = 0xFFFU, .reset_val = 0xFFFU },
-	[RI_SR] = {.mask = 0b111},
-	[RI_WINR] = { .mask = 0xFFFU, .reset_val = 0xFFFU, .unimp_mask = 0xFFFU},
-};
 
-static const stm32_reginfo_t stm32f4xx_iwdg_reginfo[RI_END] =
-{
-	[RI_KR] = {.mask = UINT16_MAX },
-	[RI_PR] = {.mask = 0b111},
-	[RI_RLR] = {.mask = 0xFFFU, .reset_val = 0xFFFU },
-	[RI_SR] = {.mask = 0b11},
-	[RI_WINR] = { .is_reserved = true},
-};
-
-static const stm32_periph_variant_t stm32_iwdg_variants[3] = {
-	{TYPE_STM32F030_IWDG, stm32f030_iwdg_reginfo},
-	{TYPE_STM32G070_IWDG, stm32g070_iwdg_reginfo},
-	{TYPE_STM32F4xx_IWDG, stm32f4xx_iwdg_reginfo}
+static const stm32_periph_variant_t stm32_iwdg_variants[4] = {
+	{TYPE_STM32F030_IWDG, stm32_f030_iwdg_reginfo},
+	{TYPE_STM32G070_IWDG, stm32_g070_iwdg_reginfo},
+	{TYPE_STM32F4xx_IWDG, stm32_f427_iwdg_reginfo},
+	{TYPE_STM32H503_IWDG, stm32_h503_iwdg_reginfo}
 };
 
 static uint64_t

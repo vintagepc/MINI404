@@ -13,7 +13,3 @@ class stm32f030xx(STM32Fixups):
         for field in chip.periph_map["CRC"]["CR"].fields.values():
             if field.name not in ["RESET"]:
                 field.unimplemented = True
-
-    @staticmethod
-    def do_custom_gen(chip: STM32Chip):
-        chip.generate_meta_only("CRC")

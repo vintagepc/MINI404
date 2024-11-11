@@ -16,8 +16,3 @@ class stm32f427xx(STM32Fixups):
                 v.unimplemented = True
         chip.periph_map["RNG"]["SR"].fields["SECS"].unimplemented = True
         chip.periph_map["RNG"]["SR"].fields["SEIS"].unimplemented = True
-
-    @staticmethod
-    def do_custom_gen(chip: STM32Chip):
-        chip.generate_meta_only("CRC")
-        chip.generate_meta_only("RNG")

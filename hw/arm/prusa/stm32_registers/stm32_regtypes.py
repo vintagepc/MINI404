@@ -50,6 +50,7 @@ class STM32Chip:
     header: str
     fixups: STM32Fixups
     gen_list: []
+    gen_list_meta_only = ["CRC", "RNG", "IWDG"]
     periph_map: {}
     periph_addrs: {}
     periph_irqs: {}
@@ -173,6 +174,9 @@ class STM32Chip:
         for periph in self.gen_list:
             self.generate_RegAddresses(periph)
             self.generate_RegDefs(periph)
+        for periph in self.gen_list_meta_only:
+            if periph in self.periph_map:
+                self.generate_meta_only(periph)
 
 @dataclass
 class RegisterBitField:

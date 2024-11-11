@@ -169,6 +169,18 @@ pos_pattern = re.compile(r'\((\d+)U\)')
 address_pattern = re.compile(r'#define (\w+_BASE(_NS)?)\s+\(?([^\/\)]+)\)?')
 irq_pattern = re.compile(r'\s+(\w+_IRQn)[\s=]+(\d+),')
 
+def global_supplemental_data(info: STM32Chip):
+	if "IWDG" in info.periph_map:
+		info.periph_map["IWDG"]["RLR"].reset_value = info.periph_map["IWDG"]["RLR"].get_valid_mask()
+		print("IWDG RLR: ", info.periph_map["IWDG"]["RLR"].reset_value,  info.periph_map["IWDG"]["RLR"].get_valid_mask())
+		if "WINR" in info.periph_map["IWDG"]:
+			info.periph_map["IWDG"]["WINR"].reset_value = info.periph_map["IWDG"]["WINR"].get_valid_mask()
+		if "EWCR" in info.periph_map["IWDG"]:
+			info.periph_map["IWDG"]["EWCR"].unimplemented = True
+		if "WINR" in info.periph_map["IWDG"]:
+			info.periph_map["IWDG"]["WINR"].unimplemented = True
+
+
 def process_chip(info: STM32Chip):
 	in_bitfield = False
 	counter = 0
@@ -213,6 +225,7 @@ def process_chip(info: STM32Chip):
 		info.fixups.post_bitfield_fixups(info)
 		info.fixups.supplemental_data(info)
 		
+	global_supplemental_data(info)
 	info.generate_all()
 	info.fixups.do_custom_gen(info)
 	
