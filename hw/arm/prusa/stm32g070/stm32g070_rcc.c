@@ -68,14 +68,14 @@ static const uint8_t AHB_PERIPHS[32] = {
 
 static const uint8_t APB1_PERIPHS[32] = {
     0, STM32_P_TIM3, STM32_P_TIM4, 0, STM32_P_TIM6, STM32_P_TIM7, 0, 0,
-    STM32_P_UART5, STM32_P_UART6, 0, 0, 0, STM32_P_USBHS, STM32_P_SPI2, STM32_P_SPI3,
-    0, STM32_P_UART2, STM32_P_UART3, STM32_P_UART4, 0, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I2C3,
+    STM32_P_USART5, STM32_P_USART6, 0, 0, 0, STM32_P_USBHS, STM32_P_SPI2, STM32_P_SPI3,
+    0, STM32_P_USART2, STM32_P_USART3, STM32_P_USART4, 0, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I2C3,
     0, 0, 0, 0, STM32_P_PWR, 0, 0, 0
 };
 
 static const uint8_t APB2_PERIPHS[32] = {
     STM32_P_SYSCFG, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, STM32_P_TIM1, STM32_P_SPI1, 0, STM32_P_UART1, STM32_P_TIM14,
+    0, 0, 0, STM32_P_TIM1, STM32_P_SPI1, 0, STM32_P_USART1, STM32_P_TIM14,
     STM32_P_TIM15, STM32_P_TIM16, STM32_P_TIM17, 0, STM32_P_ADC1, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
@@ -519,9 +519,9 @@ static void stm32_rcc_RCC_CCIPR_write(STM32G070_STRUCT_NAME(Rcc) *s, uint32_t ne
 {
 	const REGDEF_NAME(rcc,ccipr) new = { .raw = new_value };
 
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART1], new.USART1SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART2], new.USART2SEL);
-	clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART3], new.USART3SEL);
+	clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART1], new.USART1SEL);
+	clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART2], new.USART2SEL);
+	clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART3], new.USART3SEL);
 	clktree_set_selected_input(&s->parent.pclocks[STM32_P_I2C1], new.I2C1SEL);
 	clktree_set_selected_input(&s->parent.pclocks[STM32_P_I2C2], new.I2C2I2S1SEL);
 	clktree_set_selected_input(&s->parent.pclocks[STM32_P_TIM1], new.TIM1SEL);
@@ -772,9 +772,9 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
     INIT_PCLK(DMA1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
     INIT_PCLK(DMA2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->HCLK, NULL);
 
-    INIT_PCLK(UART1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
-    INIT_PCLK(UART2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
-    INIT_PCLK(UART3, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
+    INIT_PCLK(USART1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
+    INIT_PCLK(USART2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
+    INIT_PCLK(USART3, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
 
     INIT_PCLK(I2C1, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->parent.LSECLK, &s->parent.HSICLK, &s->SYSCLK, NULL);
     INIT_PCLK(I2C2, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, &s->parent.LSECLK, &s->parent.HSICLK, &s->SYSCLK, NULL);
@@ -787,9 +787,9 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 	// Everything else is APB
 
     INIT_PCLK(SYSCFG, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(UART4, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(UART5, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
-    INIT_PCLK(UART6, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
+    INIT_PCLK(USART4, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
+    INIT_PCLK(USART5, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
+    INIT_PCLK(USART6, 1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->PCLK, NULL);
     INIT_PCLK(TIM3,   1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
     INIT_PCLK(TIM6,   1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);
     INIT_PCLK(TIM7,   1, 1, false, CLKTREE_NO_MAX_FREQ, 0, &s->TIMPCLK, NULL);;

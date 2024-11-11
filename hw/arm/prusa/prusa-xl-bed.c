@@ -250,8 +250,8 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 		qdev_prop_set_uint8(dev, "device", XL_DEV_BED);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 6, qdev_get_gpio_in_named(dev,"tx-assert",0));
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART1),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
-		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART1),"byte-in", 0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-in", 0));
 		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_nAC_FAULT, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOC), 11));
 	}
 

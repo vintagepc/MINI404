@@ -751,7 +751,7 @@ static void stm32_common_usart_USART_DR_read(COM_STRUCT_NAME(Usart) *s, uint8_t 
         /* If the receive buffer is not empty, return the value. and mark the
          * buffer as empty.
          */
-        // if (s->parent.periph == STM32_P_UART1) printf("DR read: %02x\n", s->regs.defs.RDR);
+        // if (s->parent.periph == STM32_P_USART1) printf("DR read: %02x\n", s->regs.defs.RDR);
 
         s->regs.defs.ISR.RXNE = 0;
 
@@ -1016,7 +1016,7 @@ static void stm32_common_usart_realize(DeviceState *dev, Error **errp)
 #if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
     if (CHARDEV_IS_PTY(s->chr.chr)) {
         char link_path[] = "/tmp/stmf0-uart0";
-        link_path[15] += s->parent.periph - STM32_P_UART1;
+        link_path[15] += s->parent.periph - STM32_P_USART1;
 		if (s->shift)
 			link_path[15] += 5;
         unlink(link_path);

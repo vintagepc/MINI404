@@ -37,14 +37,14 @@ typedef struct stm32_reginfo_t
     _P(GPIOK), /* NOTE: update the convenience index below if you add more GPIOS */ \
     _P(SYSCFG), \
     _P(AFIO), \
-    _P(UART1), \
-    _P(UART2), \
-    _P(UART3), \
-    _P(UART4), \
-    _P(UART5), \
-    _P(UART6), \
-    _P(UART7), \
-    _P(UART8), /* NOTE: update the convenience index below if you add more UARTS */ \
+    _P(USART1), \
+    _P(USART2), \
+    _P(USART3), \
+    _P(USART4), \
+    _P(USART5), \
+    _P(USART6), \
+    _P(USART7), \
+    _P(USART8), /* NOTE: update the convenience index below if you add more UARTS */ \
     _P(ADC_ALL), /* special common ADC for shared reset.*/ \
     _P(ADCC), \
     _P(ADC1), \
@@ -129,11 +129,11 @@ enum STM32_PERIPHS {
 	STM32H503_GPIO_END = STM32_P_GPIOH + 1U,
 	STM32_P_ADC_BEGIN = STM32_P_ADC1,
 	STM32_P_ADC_END = STM32_P_ADC3 + 1U,
-    STM32_P_USART_BEGIN = STM32_P_UART1,
-	STM32F030_USART_END = STM32_P_UART2 + 1U,
-	STM32H503_USART_END = STM32_P_UART3 + 1U,
-	STM32G070_USART_END = STM32_P_UART6 + 1U,
-    STM32_P_USART_END = STM32_P_UART8 + 1U,
+    STM32_P_USART_BEGIN = STM32_P_USART1,
+	STM32F030_USART_END = STM32_P_USART2 + 1U,
+	STM32H503_USART_END = STM32_P_USART3 + 1U,
+	STM32G070_USART_END = STM32_P_USART6 + 1U,
+    STM32_P_USART_END = STM32_P_USART8 + 1U,
 };
 #undef _P
 

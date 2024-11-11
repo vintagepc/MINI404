@@ -78,7 +78,7 @@ static const uint8_t AHB2_PERIPHS[32] = {
 static const uint8_t APB1L_PERIPHS[32] = {
     STM32_P_TIM2, STM32_P_TIM3, 0, 0, STM32_P_TIM6, STM32_P_TIM7, 0, 0,
     0, 0, 0, STM32_P_WWDG, 0, 0/*opamp*/, STM32_P_SPI2, STM32_P_SPI3,
-    0 /*COMP*/, STM32_P_UART2, STM32_P_UART3, 0, 0, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I3C1,
+    0 /*COMP*/, STM32_P_USART2, STM32_P_USART3, 0, 0, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I3C1,
     0 /*CRS*/, 0, 0, 0, 0, 0, 0, 0
 };
 
@@ -91,7 +91,7 @@ static const uint8_t APB1H_PERIPHS[32] = {
 
 static const uint8_t APB2_PERIPHS[32] = {
     STM32_P_SYSCFG, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, STM32_P_TIM1, STM32_P_SPI1, 0, STM32_P_UART1, STM32_P_TIM14,
+    0, 0, 0, STM32_P_TIM1, STM32_P_SPI1, 0, STM32_P_USART1, STM32_P_TIM14,
     STM32_P_TIM15, STM32_P_TIM16, STM32_P_TIM17, 0, STM32_P_ADC1, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
@@ -531,9 +531,9 @@ static void stm32_rcc_writew(void *opaque, hwaddr offset,
         case RI_CCIPR1:
 			{
             	const REGDEF_NAME(h503_rcc,ccipr1) new = { .raw = value };
-				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART1], new.bits.USART1SEL);
-				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART2], new.bits.USART2SEL);
-				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART3], new.bits.USART3SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART1], new.bits.USART1SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART2], new.bits.USART2SEL);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART3], new.bits.USART3SEL);
 				s->regs.CCIPR1.raw = new.raw;
 			}
             break;
@@ -789,8 +789,8 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 	INIT_PCLK_NSM(SPI2, 0, &s->PLL1QCLK, &s->PLL2PCLK, &s->AUDIOCLK, &s->PCLK1, NULL);
 	INIT_PCLK_NSM(SPI3, 0, &s->PLL1QCLK, &s->PLL2PCLK, &s->AUDIOCLK, &s->PCLK1, NULL);
 	// Comp?
-	INIT_PCLK_NSM(UART2, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
-	INIT_PCLK_NSM(UART3, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
+	INIT_PCLK_NSM(USART2, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
+	INIT_PCLK_NSM(USART3, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
 	INIT_PCLK_NSM(I2C1, 0, &s->PCLK1, &s->PLL2RCLK, &s->HSI_KER_CK, &s->CSI_CK, NULL);
 	INIT_PCLK_NSM(I2C2, 0, &s->PCLK1, &s->PLL2RCLK, &s->HSI_KER_CK, &s->CSI_CK, NULL);
 	// I3C1, CRS, DTS, LPTIM2, FDCAN1
@@ -798,7 +798,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 	// APB2:
 	INIT_PCLK_NSM(TIM1, 0, &s->TIM1PRE, NULL);
 	INIT_PCLK_NSM(SPI1, 0, &s->PLL1QCLK, &s->PLL2PCLK, &s->AUDIOCLK, &s->PCLK2, NULL);
-	INIT_PCLK_NSM(UART1, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
+	INIT_PCLK_NSM(USART1, 0, &s->PCLK1, &s->PLL1QCLK, &s->HSI_KER_CK, &s->CSI_CK, &s->LSI_KER_CK, NULL);
 	INIT_PCLK_NSM(USBHS, 0, &s->DUMMY, &s->PLL1QCLK, &s->PLL2QCLK, &s->HSI48_KER_CK, NULL);
 
 	// APB3: SBS, LPUART1, I3C2, LPTIM1, RTC, TAMP

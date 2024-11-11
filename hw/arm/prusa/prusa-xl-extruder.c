@@ -295,8 +295,8 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 		qdev_prop_set_uint8(dev, "device", XL_DEV_T0 + index);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12, qdev_get_gpio_in_named(dev,"tx-assert",0));
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART1),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
-		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART1),"byte-in", 0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-in", 0));
 		//qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_nAC_FAULT, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12));
 
 		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_DIR,qdev_get_gpio_in_named(mux,"B2",0));

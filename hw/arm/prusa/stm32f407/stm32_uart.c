@@ -290,7 +290,7 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
     assert(size > 0);
 	timer_del(s->idle_timer);
     /* Copy the characters into our buffer first */
-    // if (s->periph==STM32_P_UART2) {
+    // if (s->periph==STM32_P_USART2) {
     //     printf("UART RX: ");
     //     for (int i=0; i<size;i++)
     //         printf("%02x ",buf[i]);
@@ -335,7 +335,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         /* If the receive buffer is not empty, return the value. and mark the
          * buffer as empty.
          */
-        // if (s->parent.periph == STM32_P_UART3) printf("DR read: %02x\n", s->defs.DR.DR);
+        // if (s->parent.periph == STM32_P_USART3) printf("DR read: %02x\n", s->defs.DR.DR);
 
         s->defs.SR.RXNE = 0;
 
@@ -358,7 +358,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
 static void stm32_uart_USART_DR_write(Stm32Uart *s, uint32_t new_value)
 {
     uint32_t write_value = new_value & 0x000001ff;
-    // if (s->parent.periph == STM32_P_UART3) printf ("uart wr: %02x\n", write_value);
+    // if (s->parent.periph == STM32_P_USART3) printf ("uart wr: %02x\n", write_value);
 
     if(!s->defs.CR1.UE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART was disabled.");
@@ -586,7 +586,7 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
 #if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
     if (CHARDEV_IS_PTY(s->chr.chr)) {
         char link_path[] = "/tmp/stm32-uart0";
-        link_path[15] += (1U + s->parent.periph - STM32_P_UART1);
+        link_path[15] += (1U + s->parent.periph - STM32_P_USART1);
         unlink(link_path);
         if (symlink(s->chr.chr->filename+4, link_path) != 0)
         {

@@ -130,7 +130,7 @@ static const xl_cfg_t xl_cfg = {
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOG,10), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
-	.m_uart = STM32_P_UART1,
+	.m_uart = STM32_P_USART1,
 	.is_400step = false,
 };
 
@@ -160,7 +160,7 @@ static const xl_cfg_t xl_cfg_050 = {
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOG,10), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
-	.m_uart = STM32_P_UART1,
+	.m_uart = STM32_P_USART1,
 	.is_400step = false,
 };
 #include "otp.h"
@@ -183,7 +183,7 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
     dev = qdev_new(TYPE_STM32F427xI_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-	
+
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
 	qdev_prop_set_uint32(otp,"len-otp-data", 9);
 	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
@@ -680,8 +680,8 @@ static void xl_init(MachineState *machine, xl_cfg_t cfg)
 		qdev_prop_set_uint8(dev, "device", XL_DEV_XBUDDY);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in_named(dev,"tx-assert",0));
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
-		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-in", 0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"uart-byte-in", 0));
 
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_step[AXIS_E])), PIN(cfg.m_step[AXIS_E]), qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_STEP));
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[AXIS_E])),  PIN(cfg.m_dir[AXIS_E]),  qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_DIR));

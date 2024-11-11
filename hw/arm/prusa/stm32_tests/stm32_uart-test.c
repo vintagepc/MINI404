@@ -25,7 +25,7 @@
 
 static void test_tx_disabled(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 
@@ -49,7 +49,7 @@ static void test_tx_disabled(void)
 
 static void test_tx_irqs(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "sysbus-irq");
 
@@ -83,7 +83,7 @@ static void test_tx_irqs(void)
 
 static void test_rx_disabled(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	// qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 
@@ -109,7 +109,7 @@ static void test_rx_disabled(void)
 
 static void test_dmar(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "dmar");
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CR1), BIT(0) | BIT(2) | BIT(3) );
@@ -164,7 +164,7 @@ static void test_dmar(void)
 
 static void test_idle_rto(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	// qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 
@@ -230,7 +230,7 @@ static void test_idle_rto(void)
 
 static void test_baud_rate(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 
@@ -286,7 +286,7 @@ static void test_baud_rate(void)
 
 static void test_prescale(void)
 {
-	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_UART1].base_addr;
+	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 

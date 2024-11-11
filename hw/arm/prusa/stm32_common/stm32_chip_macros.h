@@ -12,12 +12,19 @@ enum {
 
 // Add a single-line scalar entry with id and base address only.
 #define PER_LN(id, typename, addr) [STM32_##id] = {typename, addr, 0, PERIPH_CFG_FLAG_NONE, {-1} }
+
 // Add a single-line scalar entry with id, flags, and base address only.
 #define PER_LNF(id, typename, addr, flags) [STM32_##id] = {typename, addr, 0, flags, {-1} }
+
 // Add a single-line scalar entry with  id, base address, and IRQ vector
 #define PER_LNI(id, typename, addr, ...) [STM32_##id] = {typename, addr, 0, PERIPH_CFG_FLAG_NONE, {__VA_ARGS__, -1}}
+
 // Add a single-line scalar entry with  id, base address, flags, and IRQ vector
 #define PER_LNIF(id, typename, addr, flags, ...) [STM32_##id] = {typename, addr, 0, flags, {__VA_ARGS__, -1}}
+
+// Add a single-line scalar entry from fully auto-generated parameters with well-known names
+#define PER_LNA(id, suffix, chip)   PER_LN(P_##id##suffix, TYPE_STM32##chip##_##id, chip##_##id##suffix##_ADDR)
+#define PER_LNIA(id, suffix, chip) PER_LNI(P_##id##suffix, TYPE_STM32##chip##_##id, chip##_##id##suffix##_ADDR, chip##_##id##suffix##_IRQ)
 
 typedef struct stm32_periph_cfg_t
 {
