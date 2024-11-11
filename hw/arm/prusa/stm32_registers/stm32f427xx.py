@@ -1,4 +1,4 @@
-from stm32_regtypes import STM32Chip, STM32Fixups, Register
+from stm32_regtypes import *
 
 class stm32f427xx(STM32Fixups):
     @staticmethod
@@ -9,6 +9,13 @@ class stm32f427xx(STM32Fixups):
     @staticmethod
     def supplemental_data(chip: STM32Chip):
         chip.periph_map["CRC"]["DR"].reset_value = 0xFFFFFFFF
+
+        chip.periph_map["RNG"]["DR"].fields["DR"] = RegisterBitField(name="DR", desc="Data register", shift=0, width=32, permissions=None, unimplemented=False)
+        for k,v in chip.periph_map["RNG"]["CR"].fields.items():
+            if k != "RNGEN" and k != "IE":
+                v.unimplemented = True
+        chip.periph_map["RNG"]["SR"].fields["SECS"].unimplemented = True
+        chip.periph_map["RNG"]["SR"].fields["SEIS"].unimplemented = True
 
     @staticmethod
     def do_custom_gen(chip: STM32Chip):

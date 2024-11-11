@@ -11,9 +11,9 @@
 #include "../../stm32_gen_common.h"
 static const stm32_reginfo_t stm32_h503_rng_reginfo[RI_END] = 
 { 
-	[RI_CR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xC3FFFFAC }, /* mask = 0b11000011111111111111111110101100 */
-	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000067 }, /* mask = 0b00000000000000000000000001100111 */
-	[RI_DR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
-	[RI_HTCR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
+	[RI_CR             ] = { .reset_val = 0x00080D00, .not_reserved = true, .unimp_mask = 0xC3FFFFA0, .mask = 0xC3FFFFAC }, /* mask = 0b11000011111111111111111110101100 */
+	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000044, .mask = 0x00000067 }, /* mask = 0b00000000000000000000000001100111 */
+	[RI_DR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
+	[RI_HTCR           ] = { .reset_val = 0x000072AC, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
 }; 
 

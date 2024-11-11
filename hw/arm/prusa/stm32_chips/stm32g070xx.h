@@ -31,7 +31,6 @@
 #include "../stm32f407/stm32f2xx_pwr.h"
 #include "../stm32f407/stm32f2xx_rtc.h"
 #include "../stm32f407/stm32f2xx_tim.h"
-#include "../stm32f407/stm32f4xx_rng.h"
 #include "../utility/macros.h"
 #include "qemu/units.h"
 // IRQs:

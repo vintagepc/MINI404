@@ -1,4 +1,4 @@
-from stm32_regtypes import STM32Chip, STM32Fixups, Register
+from stm32_regtypes import *
 
 class stm32h503xx(STM32Fixups):
     @staticmethod
@@ -62,7 +62,18 @@ class stm32h503xx(STM32Fixups):
         reg_map["CRC"].pop("HWCFGR")        
         reg_map["CRC"].pop("VERR")
         reg_map["CRC"].pop("PIDR")
-        reg_map["CRC"].pop("SIDR")        
+        reg_map["CRC"].pop("SIDR")
+
+        reg_map["RNG"]["CR"].reset_value = 0x0080D00
+        reg_map["RNG"]["HTCR"].reset_value = 0x000072AC
+        reg_map["RNG"]["DR"].fields["DR"] = RegisterBitField(name="DR", desc="Data register", shift=0, width=32, permissions=None, unimplemented=False)
+        reg_map["RNG"]["HTCR"].unimplemented = True
+        for k,v in reg_map["RNG"]["CR"].fields.items():
+            if k != "RNGEN" and k != "IE":
+                v.unimplemented = True
+        reg_map["RNG"]["SR"].fields["SECS"].unimplemented = True
+        reg_map["RNG"]["SR"].fields["SEIS"].unimplemented = True
+
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
         chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")

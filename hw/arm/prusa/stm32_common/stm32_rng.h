@@ -1,8 +1,7 @@
 /*
-    stm32f4xx_rng_regdata.h - RNG register data for:
-	- STM32F4xx
+    stm32_rng.c - RNG block for STM32F4xx
 
-	Copyright 2022-3 VintagePC <https://github.com/vintagepc/>
+	Copyright 2021-4 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -20,14 +19,17 @@
 	along with Mini404.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef HW_ARM_STM32F4xx_RNG_REGDEF_H
-#define HW_ARM_STM32F4xx_RNG_REGDEF_H
+#ifndef STM32_RNG_H
+#define STM32_RNG_H
 
-enum RegIndex {
-	RI_CR,
-	RI_SR,
-	RI_DR,
-	RI_END,
+enum stm32_rng_ri
+{
+	RI_CR                   = (0x00 /4U), /* RNG control register, */
+	RI_SR                   = (0x04 /4U), /* RNG status register, */
+	RI_DR                   = (0x08 /4U), /* RNG data register, */
+	RI_HTCR                 = (0x10 /4U), /* RNG health test configuration register, */
+	RI_END
 };
 
-#endif
+
+#endif //STM32_RNG_H

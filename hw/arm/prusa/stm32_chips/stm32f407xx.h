@@ -33,7 +33,6 @@
 #include "../stm32f407/stm32f2xx_rcc.h"
 #include "../stm32f407/stm32f2xx_rtc.h"
 #include "../stm32f407/stm32f2xx_tim.h"
-#include "../stm32f407/stm32f4xx_rng.h"
 #include "../stm32f407/stm32f4xx_usb.h"
 #include "../stm32f407/stm32_uart.h"
 #include "stm32f4xx_irqs.h"
@@ -136,7 +135,7 @@ static const stm32_soc_cfg_t stm32f407xx_cfg =
 		PER_LNF(P_RTC, TYPE_STM32F2XX_RTC, 0x40002800, PERIPH_CFG_FLAG_NON_STM32P),
 		PER_LNF(P_ITM, TYPE_STM32F4xx_ITM, 0xE0000000, PERIPH_CFG_FLAG_NON_STM32P),
 		PER_LNF(P_PWR, TYPE_STM32F2XX_PWR, 0x40007000, PERIPH_CFG_FLAG_NON_STM32P),
-		PER_LNI(P_RNG, TYPE_STM32F4XX_RNG, 0x50060800, F4xx_HASH_RNG_IRQ),
+		PER_LNI(P_RNG, TYPE_STM32F4xx_RNG, 0x50060800, F4xx_HASH_RNG_IRQ),
 		PER_LN(P_OTP, TYPE_STM32F4xx_OTP, 0x1FFF7800),
 		PER_LNI(P_USBHS, TYPE_STM32F4xx_USB, 0x40040000, F4xx_OTG_HS_IRQ),
 		PER_LNI(P_USBFS, TYPE_STM32F4xx_USB, 0x50000000, F4xx_OTG_FS_IRQ),

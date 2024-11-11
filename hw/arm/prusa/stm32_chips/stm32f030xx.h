@@ -27,7 +27,6 @@
 #include "hw/misc/stm32f4xx_exti.h"
 #include "../stm32f407/stm32f2xx_rtc.h"
 #include "../stm32f407/stm32f2xx_tim.h"
-#include "../stm32f407/stm32f4xx_rng.h"
 #include "../stm32f407/stm32f2xx_pwr.h"
 #include "../utility/macros.h"
 #include "qemu/units.h"
