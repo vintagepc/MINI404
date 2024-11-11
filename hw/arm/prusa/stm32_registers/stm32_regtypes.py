@@ -89,7 +89,7 @@ class STM32Chip:
                 clean_addrs[key.replace('_NS','').replace('_BASE','_ADDR')] = addr
             addr_sorted = {k: v for k, v in sorted(clean_addrs.items(), key=lambda item: item[1])}
             for key,addr in addr_sorted.items():
-                f.write(f"\t{self.name_short}_{key.replace('_NS','_NS').replace('_BASE','_ADDR'):<20} = 0x{addr:08X}UL,\n")
+                f.write(f"\t{self.name_short}_{key.replace('_NS','_NS').replace('_BASE','_ADDR'):<20} = 0x{addr:08X}UL, /* 0x{addr:08X}UL */\n")
             f.write("};\n")
 
     def generate_IRQs(self):
