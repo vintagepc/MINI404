@@ -32,6 +32,12 @@ class STM32Fixups(ABC):
         """Method to add additional data to the register map that cannot be extracted from the header file alone"""
         pass
 
+    @staticmethod
+    @abstractmethod
+    def do_custom_gen(chip):
+        """Method to manually control the generation of the output files, for items not in the "global" generation list"""
+        pass
+
 # A dataclass to store a chip name, and function pointers
 # to either imported data "fixups", or functions that supply
 # additional data that cannot be extracted from the header file alone.
@@ -43,16 +49,18 @@ class STM32Chip:
     name_short_l: str
     header: str
     fixups: STM32Fixups
+    gen_list: []
     periph_map: {}
     periph_addrs: {}
     periph_irqs: {}
     not_found: {}
-    def __init__(self, name, header, fixups):
+    def __init__(self, name, header, fixups, gen_list):
         self.name = name
         self.name_short_l = name.replace('stm32','')
         self.name_short = self.name_short_l.upper()
         self.header = header
         self.fixups = fixups
+        self.gen_list = gen_list
         self.periph_map = {}
         self.periph_addrs = {}
         self.periph_irqs = {}
@@ -70,17 +78,21 @@ class STM32Chip:
         f.write("#pragma once\n")
 
     def generate_AddressTable(self):
-        with open(f"generated/{self.name}_Addresses.h", "w") as f:
+        with open(f"generated/{self.name}/Addresses.h", "w") as f:
             self.write_common_headertext(f, "peripheral addresses") 
             f.write(f"enum {self.name}_IO {{\n")
             # Sort the addresses by value:
-            addr_sorted = {k: v for k, v in sorted(self.periph_addrs.items(), key=lambda item: item[1])}
+            # First, deduplicate since some appear both as BASE_NS and BASE:
+            clean_addrs = {}
+            for key,addr in self.periph_addrs.items():
+                clean_addrs[key.replace('_NS','').replace('_BASE','_ADDR')] = addr
+            addr_sorted = {k: v for k, v in sorted(clean_addrs.items(), key=lambda item: item[1])}
             for key,addr in addr_sorted.items():
-                f.write(f"\t{self.name_short}_{key.replace('_NS','').replace('_BASE','_ADDR'):<20} = 0x{addr:08X}UL,\n")
+                f.write(f"\t{self.name_short}_{key.replace('_NS','_NS').replace('_BASE','_ADDR'):<20} = 0x{addr:08X}UL,\n")
             f.write("};\n")
 
     def generate_IRQs(self):
-    	with open(f"generated/{self.name}_IRQs.h", "w") as f:
+    	with open(f"generated/{self.name}/IRQs.h", "w") as f:
             self.write_common_headertext(f, "interrupt request IDs")
             f.write(f"enum {self.name}_IRQ {{\n")
             for key,irq in self.periph_irqs.items():
@@ -89,7 +101,7 @@ class STM32Chip:
             f.write("};\n")
 
     def generate_RegAddresses(self, periph: str):
-        with open(f"generated/{self.name}_{periph}_index.h", "w") as f:
+        with open(f"generated/{self.name}/{periph}_index.h", "w") as f:
             self.write_common_headertext(f, f"{periph} register indexes (offsets)")
             # First, generate the enumeration of register indexes:
             f.write(f'enum {self.name}_{periph.lower()}_ri \n')
@@ -100,52 +112,65 @@ class STM32Chip:
             f.write(f"\tRI_END\n")
             f.write("};\n\n")
 
-    def generate_RegDefs(self, periph: str):
-        # Now generate the actual register details:
-        with open(f"generated/{self.name}_{periph}_registers.h", "w") as f:
-            self.write_common_headertext(f, f"{periph} register type definitions")
-
-            f.write("#include \"../stm32_gen_common.h\"\n")
-            f.write(f"#include \"{self.name}_{periph}_index.h\"\n\n\n")
-            # First, generate the enumeration of register indexes:
-            for key,reg in self.periph_map[periph].items():
-                f.write("typedef union { \n")
-                f.write(f"\tstruct {{\n")
-                f.write(reg.print_fields_c())
-                f.write(f"\t}} QEMU_PACKED bits;\n")
-                f.write("\tuint32_t raw; \n")
-                f.write(f"}}  REGDEF_NAME({self.name_short_l}_{periph.lower()},{key.lower()}); \n")
-                f.write(f"CHECK_TYPEDEF_u32(REGDEF_NAME({self.name_short_l}_{periph.lower()},{key.lower()}),bits);\n\n")
-            
-            f.write(f"static const stm32_reginfo_t stm32_{self.name_short_l}_{periph.lower()}_reginfo[RI_END] = \n")
-            f.write("{ \n")
-            for key,reg in self.periph_map[periph].items():
-                f.write(reg.print_c())
-            f.write("}; \n\n\n")
-
-            # lastly, generate the structure datatype:
+    def write_bitfields(self, f:object, periph: str):
+        for key,reg in self.periph_map[periph].items():
             f.write("typedef union { \n")
             f.write(f"\tstruct {{\n")
-            expected_addr = 0
-            for key,reg in self.periph_map[periph].items():
-                if reg.int_addr != expected_addr:
-                    if reg.int_addr - expected_addr == 4:
-                        f.write(f"\t\tuint32_t _reserved0x{expected_addr:<X};\n")
-                    else:
-                        f.write(f"\t\tuint32_t _reserved0x{expected_addr:<X}[{int((reg.int_addr - expected_addr)/4):>2}]; \n")
-                f.write(f"\t\tREGDEF_NAME({self.name_short_l}_{periph.lower()},{key.lower()}) {key};\n")
-                expected_addr = reg.int_addr + 4
-            f.write(f"\t}} /*QEMU_PACKED*/;\n")
-            f.write("\tuint32_t raw[RI_END]; \n")
-            f.write(f"}}  REGDEF_NAME({self.name_short_l},{periph.lower()}); \n")
-            f.write(f"QEMU_BUILD_BUG_MSG(sizeof(REGDEF_NAME({self.name_short_l},{periph.lower()})) != sizeof(uint32_t)*RI_END , \"Structure Size mismatch - expected uint32[RI_END]\");\n")
-            for key,reg in self.periph_map[periph].items():
-                f.write(f"QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME({self.name_short_l},{periph.lower()}), {key}) != {reg.int_addr}, \"Offset mismatch for {key}\");\n")
+            f.write(reg.print_fields_c())
+            f.write(f"\t}} QEMU_PACKED bits;\n")
+            f.write("\tuint32_t raw; \n")
+            f.write(f"}}  REGDEF_NAME({self.name_short_l}_{periph.lower()},{key.lower()}); \n")
+            f.write(f"CHECK_TYPEDEF_u32(REGDEF_NAME({self.name_short_l}_{periph.lower()},{key.lower()}),bits);\n\n")
 
-    def generate_all(self, periph_list: []):
+    def write_metadata(self, f:object, periph: str):
+        f.write(f"static const stm32_reginfo_t stm32_{self.name_short_l}_{periph.lower()}_reginfo[RI_END] = \n")
+        f.write("{ \n")
+        for key,reg in self.periph_map[periph].items():
+            f.write(reg.print_c())
+        f.write("}; \n\n")
+
+    def write_mmap(self, f:object, periph: str):
+        f.write("typedef union { \n")
+        f.write(f"\tstruct {{\n")
+        expected_addr = 0
+        for key,reg in self.periph_map[periph].items():
+            if reg.int_addr != expected_addr:
+                if reg.int_addr - expected_addr == 4:
+                    f.write(f"\t\tuint32_t _reserved0x{expected_addr:<X};\n")
+                else:
+                    f.write(f"\t\tuint32_t _reserved0x{expected_addr:<X}[{int((reg.int_addr - expected_addr)/4):>2}]; \n")
+            f.write(f"\t\tREGDEF_NAME({self.name_short_l}_{periph.lower()},{key.lower()}) {key};\n")
+            expected_addr = reg.int_addr + 4
+        f.write(f"\t}} /*QEMU_PACKED*/;\n")
+        f.write("\tuint32_t raw[RI_END]; \n")
+        f.write(f"}}  REGDEF_NAME({self.name_short_l},{periph.lower()}); \n")
+        f.write(f"QEMU_BUILD_BUG_MSG(sizeof(REGDEF_NAME({self.name_short_l},{periph.lower()})) != sizeof(uint32_t)*RI_END , \"Structure Size mismatch - expected uint32[RI_END]\");\n")
+        for key,reg in self.periph_map[periph].items():
+            f.write(f"QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME({self.name_short_l},{periph.lower()}), {key}) != {reg.int_addr}, \"Offset mismatch for {key}\");\n")
+
+    def generate_RegDefs(self, periph: str):
+        # Now generate the actual register details:
+        with open(f"generated/{self.name}/{periph}_registers.h", "w") as f:
+            self.write_common_headertext(f, f"{periph} register type definitions")
+
+            f.write("#include \"../../stm32_gen_common.h\"\n")
+            f.write(f"#include \"{periph}_index.h\"\n\n\n")
+            self.write_bitfields(f, periph)
+            self.write_metadata(f, periph)
+            self.write_mmap(f, periph)
+
+    def generate_meta_only(self, periph: str):
+        # Now generate the actual register details:
+        with open(f"generated/{self.name}/{periph}_reginfo.h", "w") as f:
+            self.write_common_headertext(f, f"{periph} register metadata")
+            f.write("#include \"../../stm32_gen_common.h\"\n")
+            self.write_metadata(f, periph)
+
+
+    def generate_all(self):
         self.generate_AddressTable()
         self.generate_IRQs()
-        for periph in periph_list:
+        for periph in self.gen_list:
             self.generate_RegAddresses(periph)
             self.generate_RegDefs(periph)
 

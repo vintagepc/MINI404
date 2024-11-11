@@ -8,8 +8,8 @@
  */
 
 #pragma once
-#include "../stm32_gen_common.h"
-#include "stm32h503_PWR_index.h"
+#include "../../stm32_gen_common.h"
+#include "PWR_index.h"
 
 
 typedef union { 
@@ -23,7 +23,8 @@ typedef union {
 		uint32_t FLPS          : 1; 
 		uint32_t _reserved10   : 2; 
 		uint32_t BOOSTE        : 1; 
-		uint32_t _reserved13   :12; 
+		uint32_t AVD_READY     : 1; 
+		uint32_t _reserved14   :11; 
 		uint32_t SRAM2SO       : 1; 
 		uint32_t SRAM1SO       : 1; 
 		uint32_t _reserved27   : 5; 
@@ -214,7 +215,7 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_pwr,privcfgr),bits);
 
 static const stm32_reginfo_t stm32_h503_pwr_reginfo[RI_END] = 
 { 
-	[RI_PMCR           ] = { .reset_val = 0x0000000C, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0600128D }, /* mask = 0b00000110000000000001001010001101 */
+	[RI_PMCR           ] = { .reset_val = 0x0000000C, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0600328D }, /* mask = 0b00000110000000000011001010001101 */
 	[RI_PMSR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000060 }, /* mask = 0b00000000000000000000000001100000 */
 	[RI_VOSCR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000030 }, /* mask = 0b00000000000000000000000000110000 */
 	[RI_VOSSR          ] = { .reset_val = 0x00002008, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000E008 }, /* mask = 0b00000000000000001110000000001000 */
@@ -230,7 +231,6 @@ static const stm32_reginfo_t stm32_h503_pwr_reginfo[RI_END] =
 	[RI_IORETR         ] = { .reset_val = 0x00010001, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00010001 }, /* mask = 0b00000000000000010000000000000001 */
 	[RI_PRIVCFGR       ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000002 }, /* mask = 0b00000000000000000000000000000010 */
 }; 
-
 
 typedef union { 
 	struct {

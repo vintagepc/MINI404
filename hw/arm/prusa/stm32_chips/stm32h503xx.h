@@ -28,8 +28,8 @@
 #include "qemu/units.h"
 #include "../stm32f407/stm32f2xx_tim.h"
 
-#include "../stm32_registers/generated/stm32h503_Addresses.h"
-#include "../stm32_registers/generated/stm32h503_IRQs.h"
+#include "../stm32_registers/generated/stm32h503/Addresses.h"
+#include "../stm32_registers/generated/stm32h503/IRQs.h"
 
 static const stm32_soc_cfg_t stm32h503xx_cfg =
 {

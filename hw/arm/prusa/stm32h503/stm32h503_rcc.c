@@ -42,8 +42,8 @@
 #include "../stm32f407/stm32_clktree.h"
 #include "../stm32f407/stm32.h"
 #include "../stm32_common/stm32_clk.h"
-#include "../stm32_registers/generated/stm32h503_RCC_index.h"
-#include "../stm32_registers/generated/stm32h503_RCC_registers.h"
+#include "../stm32_registers/generated/stm32h503/RCC_index.h"
+#include "../stm32_registers/generated/stm32h503/RCC_registers.h"
 
 /* DEFINITIONS*/
 

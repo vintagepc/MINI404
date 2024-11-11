@@ -8,60 +8,17 @@ enum regIndex
 	RI_DR                   = (0x00 /4U), /* CRC Data register, */
 	RI_IDR                  = (0x04 /4U), /* CRC Independent data register, */
 	RI_CR                   = (0x08 /4U), /* CRC Control register, */
-	RI_RESERVED 		   	= (0x0C /4U), /* Reserved, */
 	RI_INIT                 = (0x10 /4U), /* Initial CRC value register, */
 	RI_POL                  = (0x14 /4U), /* CRC polynomial register, */
 	RI_END
 };
 
-static const stm32_reginfo_t stm32f030_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0xE1, .unimp_mask = 0xE0},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_POL] = { .is_reserved = true }
-};
+#include "../stm32_registers/generated/stm32f030/CRC_reginfo.h"
 
-static const stm32_reginfo_t stm32g070_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0xE1, .unimp_mask = 0xF8},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_POL] = { .mask = UINT32_MAX, .reset_val = 0x04C11DB7, .unimp_mask = UINT32_MAX }
-};
+#include "../stm32_registers/generated/stm32g070/CRC_reginfo.h"
 
-static const stm32_reginfo_t stm32h503_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = UINT32_MAX},
-	[RI_CR] = {.mask = 0xF9, .unimp_mask = 0xE0},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = { .mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_POL] = { .mask = UINT32_MAX, .reset_val = 0x04C11DB7, .unimp_mask = UINT32_MAX }
-};
+#include "../stm32_registers/generated/stm32h503/CRC_reginfo.h"
 
-static const stm32_reginfo_t stm32f2xx_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0x01},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = {.is_reserved = true, .reset_val = UINT32_MAX},
-	[RI_POL] = {.is_reserved = true}
-};
-
-static const stm32_reginfo_t stm32f4xx_crc_reginfo[RI_END] =
-{
-	[RI_DR] = {.mask = UINT32_MAX, .reset_val = UINT32_MAX},
-	[RI_IDR] = {.mask = 0xFF},
-	[RI_CR] = {.mask = 0x01},
-	[RI_RESERVED] = {.is_reserved = true},
-	[RI_INIT] = {.is_reserved = true, .reset_val = UINT32_MAX},
-	[RI_POL] = {.is_reserved = true}
-};
+#include "../stm32_registers/generated/stm32f427/CRC_reginfo.h"
 
 #endif

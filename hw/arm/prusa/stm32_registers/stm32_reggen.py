@@ -2,6 +2,9 @@ from stm32_regtypes import Register, RegisterAccess, RegisterBitField, RegisterP
 import re
 import dataclasses
 
+from stm32f030xx import *
+from stm32f427xx import *
+from stm32g070xx import *
 from stm32h503xx import *
 
 # Create a 2-level dictionary for the register map:
@@ -104,16 +107,25 @@ def parse_bitfield_info(line: str, info: STM32Chip):
 	def_parts = tokens[1].split("_")
 	if len(def_parts) < 3:
 		return
+
 	periph = def_parts[0]
 	reg = def_parts[1]
 	field = def_parts[2]
-	if len(def_parts) > 3:
-		suffix = def_parts[3]
-	elif field == "Msk" or field == "Pos": #Registers with no fields
-		suffix = field
-		field = reg
+
+	if tokens[1].endswith("Pos") or tokens[1].endswith("Msk"):
+		field = "_".join(def_parts[2:-1])
+		suffix = def_parts[-1]
 	else:
 		suffix = None
+
+
+	# if len(def_parts) > 3:
+	# 	suffix = def_parts[3]
+	# elif field == "Msk" or field == "Pos": #Registers with no fields
+	# 	suffix = field
+	# 	field = reg
+	# else:
+	# 	suffix = None
 
 	if periph not in periph_map:
 		not_found_regs[f'{periph}'] = True
@@ -125,11 +137,10 @@ def parse_bitfield_info(line: str, info: STM32Chip):
 	if suffix == "Pos":
 		shift_match = shift_pattern.match(tokens[2])
 		if not shift_match:
-			print("Shift not found: ", tokens[2])
-			exit()
-		else :
+			print("Shift not found: ", tokens)
+		else:
 			shift = int(shift_match.group(1))
-		periph_map[periph][reg].fields[field] = (RegisterBitField(name = field, desc = None, width = None, shift = shift, permissions = None, unimplemented = False))
+			periph_map[periph][reg].fields[field] = (RegisterBitField(name = field, desc = None, width = None, shift = shift, permissions = None, unimplemented = False))
 	elif suffix == "Msk":
 		# Bugfix, some includes have (x...UL) instead of (0x...UL)
 		if tokens[2].startswith('(x'):
@@ -144,17 +155,18 @@ def parse_bitfield_info(line: str, info: STM32Chip):
 			parse_bitfield_mask(intval, field, periph_map[periph][reg])
 		else:
 			print("Mask not found: ", line)
-	elif suffix == None:
+	elif suffix == None and "Msk" in tokens[2]:
 		desc = desc_pattern.match(line)
 		if desc:
+			field = "_".join(def_parts[2:])
 			try:
 				periph_map[periph][reg].fields[field].desc = desc.group(1)
 			except KeyError:
-				print("Field not found: ", line)
+				print(f"Field {field} not found: ", line)
 
 bitfield_pattern = re.compile(r'([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)')
 pos_pattern = re.compile(r'\((\d+)U\)')
-address_pattern = re.compile(r'#define (\w+_BASE(_NS))?\s+\(?([^\)]+)\)?')
+address_pattern = re.compile(r'#define (\w+_BASE(_NS)?)\s+\(?([^\/\)]+)\)?')
 irq_pattern = re.compile(r'\s+(\w+_IRQn)[\s=]+(\d+),')
 
 def process_chip(info: STM32Chip):
@@ -174,9 +186,11 @@ def process_chip(info: STM32Chip):
 						calc_bits[i] = f"{info.periph_addrs[calc_bits[i]]}"
 					elif "0x" in calc_bits[i]:
 						calc_bits[i] = f"{int(calc_bits[i].replace('UL',''), 16)}"
-				
-				info.periph_addrs[addr_match.group(1)] = eval("".join(calc_bits))
-				# print("Found Address: ", addr_match.group(1), calc_bits, f"0x{periph_addrs[addr_match.group(1)]:X}")
+				try:
+					info.periph_addrs[addr_match.group(1)] = eval("".join(calc_bits))
+				except Exception as e:
+					print("Address err:", addr_match.group(1), calc_bits)
+					exit()
 				
 			if not in_bitfield and "typedef struct" in line:
 				tmp_dict = {}
@@ -197,12 +211,18 @@ def process_chip(info: STM32Chip):
 				parse_bitfield_info(line, info)
 		print("Not found: ", info.not_found)
 		info.fixups.post_bitfield_fixups(info)
-		info.fixups.extra_data(info)
+		info.fixups.supplemental_data(info)
 		
-	info.generate_all(["RCC", "PWR", "CRC", "ICACHE"])
+	info.generate_all()
+	info.fixups.do_custom_gen(info)
 	
 	
-chip_data = [STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx)]
+chip_data = [
+	STM32Chip(name="stm32f030", header="stm32f030xc.h", fixups=stm32f030xx, gen_list=[]),
+	STM32Chip(name="stm32f427", header="stm32f427xx.h", fixups=stm32f427xx, gen_list=[]),
+	STM32Chip(name="stm32g070", header="stm32g070xx.h", fixups=stm32g070xx, gen_list=[]),
+	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE"]),
+	]
 
 
 for chip in chip_data:

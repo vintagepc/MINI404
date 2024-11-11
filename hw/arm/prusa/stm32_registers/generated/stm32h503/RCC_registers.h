@@ -8,8 +8,8 @@
  */
 
 #pragma once
-#include "../stm32_gen_common.h"
-#include "stm32h503_RCC_index.h"
+#include "../../stm32_gen_common.h"
+#include "RCC_index.h"
 
 
 typedef union { 
@@ -753,7 +753,6 @@ static const stm32_reginfo_t stm32_h503_rcc_reginfo[RI_END] =
 	[RI_RSR            ] = { .reset_val = 0x0C000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFC800000 }, /* mask = 0b11111100100000000000000000000000 */
 	[RI_PRIVCFGR       ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000002, .mask = 0x00000002 }, /* mask = 0b00000000000000000000000000000010 */
 }; 
-
 
 typedef union { 
 	struct {

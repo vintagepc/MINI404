@@ -2,7 +2,7 @@ from stm32_regtypes import STM32Chip, STM32Fixups, Register
 
 class stm32h503xx(STM32Fixups):
     @staticmethod
-    def extra_data(chip: STM32Chip):
+    def supplemental_data(chip: STM32Chip):
         reg_map = chip.periph_map
         # These are direct from the datasheet(s):
         reg_map["RCC"]["CR"].reset_value = 0x0000002B
@@ -55,9 +55,20 @@ class stm32h503xx(STM32Fixups):
         reg_map["USB"] = usb
         reg_map["GPIO"]["AFRL"] = Register(name = "AFRL", desc="GPIO alternate function low register", hex_addr = "0x20", int_addr = 0x20, fields = {}, access = None, reset_value = 0)
         reg_map["GPIO"]["AFRH"] = Register(name = "AFRH", desc="GPIO alternate function High register", hex_addr = "0x24", int_addr = 0x24, fields = {}, access = None, reset_value = 0)
+
+        reg_map["CRC"]["DR"].reset_value = 0xFFFFFFFF
+        reg_map["CRC"]["INIT"].reset_value = 0xFFFFFFFF
+        reg_map["CRC"]["POL"].reset_value = 0x04C11DB7
+        reg_map["CRC"].pop("HWCFGR")        
+        reg_map["CRC"].pop("VERR")
+        reg_map["CRC"].pop("PIDR")
+        reg_map["CRC"].pop("SIDR")        
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
         chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")
         chip.periph_map["PWR"]["WUCR"].fields.pop("WUPEN")
 
-
+    @staticmethod
+    def do_custom_gen(chip: STM32Chip):
+        chip.generate_meta_only("CRC")
+        chip.generate_meta_only("RNG")

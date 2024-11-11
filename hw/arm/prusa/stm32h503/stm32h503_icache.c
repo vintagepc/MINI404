@@ -37,8 +37,8 @@
 #include "../stm32_common/stm32_types.h"
 #include "../stm32_common/stm32_common.h"
 #include "../utility/macros.h"
-#include "../stm32_registers/generated/stm32h503_ICACHE_index.h"
-#include "../stm32_registers/generated/stm32h503_ICACHE_registers.h"
+#include "../stm32_registers/generated/stm32h503/ICACHE_index.h"
+#include "../stm32_registers/generated/stm32h503/ICACHE_registers.h"
 
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32H503_STRUCT_NAME(Icache), STM32H503_ICACHE);
@@ -62,7 +62,7 @@ static uint64_t stm32_h503_icache_read(void *opaque, hwaddr offset,
     STM32H503_STRUCT_NAME(Icache) *s = STM32H503_ICACHE(opaque);
   	int shift = offset & 0x3;
 	int index = offset >>2;
-	CHECK_BOUNDS_R_V2(index,RI_END); // LCOV_EXCL_LINE
+	CHECK_BOUNDS_R_V2(index,RI_END, stm32_h503_icache_reginfo); // LCOV_EXCL_LINE
 	uint32_t data = s->regs.raw[index];
 	ADJUST_FOR_OFFSET_AND_SIZE_R(data, size, shift, 0b111);
     return data;

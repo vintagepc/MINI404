@@ -184,8 +184,12 @@ QEMU_BUILD_BUG_MSG(STM32_P_COUNT>=256,"Err - peripheral reset arrays not meant t
 
 // Checks whether a register access is in-bounds and the register is not fully reserved.
 // Issues a GUEST_ERROR if it is.
-#define CHECK_BOUNDS_R_V2(index, max) \
- 	_CHECK_BOUNDS_V2(index, 0xBADUL, max, "read") \
+#define CHECK_BOUNDS_R_V2(index, max, reginfo) \
+    if (index >= max) { \
+        qemu_log_mask(LOG_GUEST_ERROR, "Register read 0x%x invalid on %s:%s\n", (unsigned int)index << 2, __FILE__, __func__); \
+	 	return 0; \
+	} else if (reginfo[index].not_reserved == false) { \
+		qemu_log_mask(LOG_GUEST_ERROR, "Attempted reserved register read 0x%x on %s:%s\n", (unsigned int)index << 2, __FILE__, __func__); \
 	 	return 0; \
 	}
 
