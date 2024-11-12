@@ -27,7 +27,7 @@ static void test_tx_disabled(void)
 {
 	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
-	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
+	qtest_irq_intercept_out_named(ts, "/machine/soc/USART1", "byte-out");
 
 	g_assert_cmphex(qtest_get_irq_level(ts, 0),==, 0);
 
@@ -51,7 +51,7 @@ static void test_tx_irqs(void)
 {
 	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
-	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "sysbus-irq");
+	qtest_irq_intercept_out_named(ts, "/machine/soc/USART1", "sysbus-irq");
 
 	g_assert_false(qtest_get_irq_level(ts, 0));
 
@@ -87,21 +87,21 @@ static void test_rx_disabled(void)
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	// qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xDE);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xDE);
 
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR)),==, 0);
 
 	// set UE, but not RE:
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CR1), BIT(0));
 
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xAD);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xAD);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR)),==, 0);
 
 
 	// set U RE:
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CR1), BIT(0) | BIT(2));
 
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xBE);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR)),==, 0xBE);
 
 	qtest_quit(ts);
@@ -111,11 +111,11 @@ static void test_dmar(void)
 {
 	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
-	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "dmar");
+	qtest_irq_intercept_out_named(ts, "/machine/soc/USART1", "dmar");
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CR1), BIT(0) | BIT(2) | BIT(3) );
 
 	// Input a byte without DMA.
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xAD);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xAD);
 	g_assert_false(qtest_get_irq_level(ts, DMAR_P2M));
 	g_assert_false(qtest_get_irq_level(ts, DMAR_M2P));
 	// Remove byte.
@@ -127,7 +127,7 @@ static void test_dmar(void)
 	g_assert_false(qtest_get_irq_level(ts, DMAR_M2P));
 
 	// Input a byte and check the DMA request fired.
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xAD);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xAD);
 
 	g_assert_cmphex(qtest_get_irq_level(ts, DMAR_P2M), ==, STM32_RI_ADDRESS(base, RI_RDR));
 	g_assert_true(qtest_get_irq_pulsed(ts, DMAR_P2M));
@@ -139,7 +139,7 @@ static void test_dmar(void)
 
 	// read and Input another byte and make sure it re-raised:
 	qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR));
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xF0);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xF0);
 
 	g_assert_cmphex(qtest_get_irq_level(ts, DMAR_P2M), ==, STM32_RI_ADDRESS(base, RI_RDR));
 	// g_assert_true(qtest_get_irq_pulsed(ts, DMAR_P2M));
@@ -168,7 +168,7 @@ static void test_idle_rto(void)
 	QTestState *ts = qtest_init("-machine stm32g070xB");
 	// qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
 
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xDE);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xDE);
 
 	// Enable UART clock:
 	qtest_writel(ts, stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(14));
@@ -185,7 +185,7 @@ static void test_idle_rto(void)
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_RTOR), 2);
 
 
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xBE);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR)),==, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & (BIT(4) | BIT(11)) ,==, 0);
 
@@ -211,7 +211,7 @@ static void test_idle_rto(void)
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_RTOR), 5);
 
 
-	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xBE);
+	qtest_set_irq_in(ts, "/machine/soc/USART1", "byte-in", 0, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR)),==, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & (BIT(4) | BIT(11)) ,==, 0);
 	ns = qtest_clock_step(ts, 0);
@@ -232,7 +232,7 @@ static void test_baud_rate(void)
 {
 	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
-	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
+	qtest_irq_intercept_out_named(ts, "/machine/soc/USART1", "byte-out");
 
 	// Enable UART clock:
 	qtest_writel(ts, stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(14));
@@ -288,7 +288,7 @@ static void test_prescale(void)
 {
 	uint32_t base = stm32g070xx_cfg.perhipherals[STM32_P_USART1].base_addr;
 	QTestState *ts = qtest_init("-machine stm32g070xB");
-	qtest_irq_intercept_out_named(ts, "/machine/soc/UART1", "byte-out");
+	qtest_irq_intercept_out_named(ts, "/machine/soc/USART1", "byte-out");
 
 	// Enable UART clock:
 	qtest_writel(ts, stm32g070xx_cfg.perhipherals[STM32_P_RCC].base_addr + 0x40, BIT(14));

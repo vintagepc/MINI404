@@ -194,6 +194,7 @@ int main(int argc, char **argv)
 	(void)stm32g070_gpio_reginfo;
 	(void)stm32f2xx_gpio_reginfo;
 	(void)stm32f4xx_gpio_reginfo;
+	(void)stm32h503_gpio_reginfo;
 
     qtest_add_func("/stm32_gpio/output_odr", test_output_odr);
     qtest_add_func("/stm32_gpio/output_bsrr", test_output_bsrr);

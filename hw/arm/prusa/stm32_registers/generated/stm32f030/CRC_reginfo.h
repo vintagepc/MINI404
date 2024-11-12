@@ -14,6 +14,6 @@ static const stm32_reginfo_t stm32_f030_crc_reginfo[RI_END] =
 	[RI_DR             ] = { .reset_val = 0xFFFFFFFF, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
 	[RI_CR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x000000E0, .mask = 0x000000E1 }, /* mask = 0b00000000000000000000000011100001 */
 	[RI_INIT           ] = { .reset_val = 0xFFFFFFFF, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
-	[RI_IDR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
+	[RI_IDR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x000000FF }, /* mask = 0b00000000000000000000000011111111 */
 }; 
 
