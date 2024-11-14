@@ -38,29 +38,33 @@ enum reg_index
 	RI_END,
 };
 
-REGDEF_BLOCK_BEGIN()
-	REG_R(18);
-	REG_K32(PRESC,4);
-	REG_B32(VFREFEN);
-	REG_B32(TSEN);
-	REG_B32(VBATEN);
-	REG_R(7);
-REGDEF_BLOCK_END(adcc, ccr);
+typedef union {
+	struct {
+		uint32_t DUAL          : 5; // /*!< ADC multimode mode selection */
+		uint32_t _reserved5    : 3;
+		uint32_t DELAY         : 4; // /*!< ADC multimode delay between 2 sampling phases */
+		uint32_t _reserved12   : 1;
+		uint32_t DMACFG        : 1; // /*!< ADC multimode DMA transfer configuration */
+		uint32_t MDMA          : 2; // /*!< ADC multimode DMA transfer enable */
+		uint32_t CKMODE        : 2; // /*!< ADC common clock source and prescaler (prescaler only for clock source synchronous) */
+		uint32_t PRESC         : 4; // /*!< ADC common clock prescaler, only for clock source asynchronous */
+		uint32_t VREFEN        : 1; // /*!< ADC internal path to VrefInt enable */
+		uint32_t TSEN          : 1; // /*!< ADC internal path to temperature sensor enable */
+		uint32_t VBATEN        : 1; // /*!< ADC internal path to battery voltage enable */
+		uint32_t _reserved25   : 7;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adcc,ccr);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adcc,ccr),bits);
 
-static const stm32_reginfo_t stm32f030_adcc_reginfo[RI_END] =
-{
-	[RI_CCR] = {.mask = 0x00C00000, .unimp_mask = 0x00C00000},
+#include "../stm32_registers/generated/stm32f030/ADCC_reginfo.h"
+#include "../stm32_registers/generated/stm32g070/ADCC_reginfo.h"
+#include "../stm32_registers/generated/stm32h503/ADCC_reginfo.h"
 
-};
-
-static const stm32_reginfo_t stm32g070_adcc_reginfo[RI_END] =
-{
-	[RI_CCR] = {.mask = 0x1FC0000, .unimp_mask = 0x1C00000 },
-};
-
- static const stm32_periph_variant_t stm32_adcc_variants[2] = {
- 	{TYPE_STM32F030_ADCC, stm32f030_adcc_reginfo},
- 	{TYPE_STM32G070_ADCC, stm32g070_adcc_reginfo},
+ static const stm32_periph_variant_t stm32_adcc_variants[3] = {
+ 	{TYPE_STM32F030_ADCC, stm32_f030_adcc_reginfo},
+ 	{TYPE_STM32G070_ADCC, stm32_g070_adcc_reginfo},
+ 	{TYPE_STM32H503_ADCC, stm32_h503_adcc_reginfo},
  };
 
 typedef struct COM_CLASS_NAME(Adcc) {
@@ -97,7 +101,7 @@ static void stm32_common_adcc_reset(DeviceState *dev)
 extern uint16_t stm32_common_adcc_get_adcpre(COM_STRUCT_NAME(Adcc) *s)
 {
 	static uint16_t divisors[] = {1, 2, 4, 6, 8, 10, 12, 16, 32, 64, 128, 256, 0, 0, 0, 0};
-    return divisors[s->regs.defs.CCR.PRESC];
+    return divisors[s->regs.defs.CCR.bits.PRESC];
 }
 
 static uint64_t stm32_common_adcc_read(void *opaque, hwaddr addr,
@@ -108,7 +112,7 @@ static uint64_t stm32_common_adcc_read(void *opaque, hwaddr addr,
 	uint32_t offset = addr&0x3;
     addr>>=2;
 
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32COMMON ADCC"); // LCOV_EXCL_LINE
+	CHECK_BOUNDS_R_V2(addr, RI_END, s->reginfo); // LCOV_EXCL_LINE
 
 	uint32_t data = s->regs.raw;
     switch (addr) {
@@ -130,7 +134,8 @@ static void stm32_common_adcc_write(void *opaque, hwaddr addr,
 	uint32_t offset = addr&0x3;
     addr>>=2; // Get index in array.
 
-	CHECK_BOUNDS_W(addr, value, RI_END, s->reginfo, "STM32Common ADCC"); // LCOV_EXCL_LINE
+	CHECK_BOUNDS_W_V2(addr, value, RI_END); // LCOV_EXCL_LINE
+	CHECK_UNIMP_RESVD_V2(value, s->regs.raw, s->reginfo, addr); // LCOV_EXCL_LINE
 
 
     switch (addr) {

@@ -50,7 +50,7 @@ class STM32Chip:
     header: str
     fixups: STM32Fixups
     gen_list: []
-    gen_list_meta_only = ["CRC", "RNG", "IWDG"]
+    gen_list_meta_only = ["CRC", "RNG", "IWDG", "ADCC"]
     periph_map: {}
     periph_addrs: {}
     periph_irqs: {}

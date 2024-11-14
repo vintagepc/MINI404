@@ -172,13 +172,16 @@ irq_pattern = re.compile(r'\s+(\w+_IRQn)[\s=]+(\d+),')
 def global_supplemental_data(info: STM32Chip):
 	if "IWDG" in info.periph_map:
 		info.periph_map["IWDG"]["RLR"].reset_value = info.periph_map["IWDG"]["RLR"].get_valid_mask()
-		print("IWDG RLR: ", info.periph_map["IWDG"]["RLR"].reset_value,  info.periph_map["IWDG"]["RLR"].get_valid_mask())
 		if "WINR" in info.periph_map["IWDG"]:
 			info.periph_map["IWDG"]["WINR"].reset_value = info.periph_map["IWDG"]["WINR"].get_valid_mask()
 		if "EWCR" in info.periph_map["IWDG"]:
 			info.periph_map["IWDG"]["EWCR"].unimplemented = True
 		if "WINR" in info.periph_map["IWDG"]:
 			info.periph_map["IWDG"]["WINR"].unimplemented = True
+	if "ADCC" in info.periph_map:
+		for field in info.periph_map["ADCC"]["CCR"].fields.values():
+			if field.name not in ["PRESC", "VREFEN"]:
+				field.unimplemented = True
 
 
 def process_chip(info: STM32Chip):

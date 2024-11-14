@@ -75,7 +75,15 @@ class stm32h503xx(STM32Fixups):
         reg_map["RNG"]["SR"].fields["SEIS"].unimplemented = True
 
     @staticmethod
+    def post_register_fixups(chip: STM32Chip):
+        chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
+
+
+    @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
         chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")
         chip.periph_map["PWR"]["WUCR"].fields.pop("WUPEN")
-
+        # Relocate the ADC CCR register to its own class for better overlap with how it's implemented in QEMU:
+        chip.periph_map["ADCC"] = {}
+        chip.periph_map["ADCC"]["CCR"] = chip.periph_map["ADC"]["CCR"]
+        chip.periph_map["ADC"].pop("CCR")

@@ -7,6 +7,16 @@ class stm32f030xx(STM32Fixups):
         field = {}
         field["IDR"]=RegisterBitField(name="IDR", desc="Independent data register", shift=0, width=8, permissions=None, unimplemented=False)
         chip.periph_map["CRC"]["IDR"] = Register(name="IDR", desc="CRC independent data register", hex_addr="0x04", int_addr=0x04, fields=field, access=None, reset_value=0)
+        # Insert the CCR register into the ADC peripheral. We'll remove it later, this is just so the bitfields get captured.
+        chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
+
+    @staticmethod
+    def post_bitfield_fixups(chip: STM32Chip):
+        # Relocate the ADC CCR register to its own class for better overlap with how it's implemented in QEMU:
+        chip.periph_map["ADCC"] = {}
+        chip.periph_map["ADCC"]["CCR"] = chip.periph_map["ADC"]["CCR"]
+        chip.periph_map["ADC"].pop("CCR")
+
 
     @staticmethod
     def supplemental_data(chip: STM32Chip):
