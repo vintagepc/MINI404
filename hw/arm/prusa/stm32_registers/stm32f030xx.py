@@ -9,6 +9,10 @@ class stm32f030xx(STM32Fixups):
         chip.periph_map["CRC"]["IDR"] = Register(name="IDR", desc="CRC independent data register", hex_addr="0x04", int_addr=0x04, fields=field, access=None, reset_value=0)
         # Insert the CCR register into the ADC peripheral. We'll remove it later, this is just so the bitfields get captured.
         chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
+        #Rename ADC TR to TR1 - per header.
+        chip.periph_map["ADC"]["TR1"] = chip.periph_map["ADC"]["TR"]
+        chip.periph_map["ADC"].pop("TR")
+        chip.periph_map["ADC"]["TR1"].name = "TR1"
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
@@ -17,7 +21,6 @@ class stm32f030xx(STM32Fixups):
         chip.periph_map["ADCC"]["CCR"] = chip.periph_map["ADC"]["CCR"]
         chip.periph_map["ADC"].pop("CCR")
 
-
     @staticmethod
     def supplemental_data(chip: STM32Chip):
         chip.periph_map["CRC"]["DR"].reset_value = 0xFFFFFFFF
@@ -25,3 +28,6 @@ class stm32f030xx(STM32Fixups):
         for field in chip.periph_map["CRC"]["CR"].fields.values():
             if field.name not in ["RESET"]:
                 field.unimplemented = True
+        chip.periph_map["ADC"]["TR1"].reset_value = 0x0FFF0000
+        chip.periph_map["ADC"]["TR1"].unimplemented = True
+        chip.periph_map["ADC"]["CFGR2"].unimplemented = True

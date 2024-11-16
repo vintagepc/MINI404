@@ -13,6 +13,10 @@ class stm32g070xx(STM32Fixups):
         chip.periph_map["ADCC"] = {}
         chip.periph_map["ADCC"]["CCR"] = chip.periph_map["ADC"]["CCR"]
         chip.periph_map["ADC"].pop("CCR")
+        #Rename ADW TR to TR1 - per header.
+        for old, new in [("AWD1TR", "TR1"), ("AWD2TR", "TR2"), ("AWD3TR", "TR3")]:
+            chip.periph_map["ADC"][old].name = new
+            chip.periph_map["ADC"][new] = chip.periph_map["ADC"].pop(old)
 
     @staticmethod
     def supplemental_data(chip: STM32Chip):
@@ -22,3 +26,13 @@ class stm32g070xx(STM32Fixups):
         for field in chip.periph_map["CRC"]["CR"].fields.values():
             if field.name not in ["RESET"]:
                 field.unimplemented = True
+        for i in ["TR1", "TR2", "TR3"]:
+            chip.periph_map["ADC"][i].reset_value = 0x0FFF0000
+            chip.periph_map["ADC"][i].unimplemented = True
+        for field in chip.periph_map["ADC"]["CFGR2"].fields.values():
+            if field.name not in ["OVSS", "OVSR", "OVSE"]:
+                field.unimplemented = True
+        # Clarify TR3, it's not consistent depending on whether CHSELR is used:
+        chip.periph_map["ADC"]["G070_TR3"] = chip.periph_map["ADC"]["TR3"]
+        chip.periph_map["ADC"]["G070_TR3"].name = "G070_TR3"
+        chip.periph_map["ADC"].pop("TR3")

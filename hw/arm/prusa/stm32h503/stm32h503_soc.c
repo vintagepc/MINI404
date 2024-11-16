@@ -154,6 +154,13 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
         }
     }
 
+	object_property_set_link(
+		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_ADC1)),
+		"adcc",
+		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_ADCC)),
+		&error_fatal
+	);
+
 	// for (int i = STM32_P_DMA_BEGIN; i <= STM32_P_DMA_END; i++)
 	// {
 	// 	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, i)), "system-memory", OBJECT(system_memory), &error_fatal);

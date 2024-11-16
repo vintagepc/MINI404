@@ -4,7 +4,7 @@
  * STM32F030x
  * STM32G070 (with extra registers)
  *
- * Copyright (c) 2021-3 VintagePC <http://github.com/vintagepc>
+ * Copyright (c) 2021-4 VintagePC <http://github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,79 +50,233 @@
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Adc), COM_CLASS_NAME(Adc), STM32COM_ADC);
 
-REGDEF_BLOCK_BEGIN()
-	REG_B32(ADRDY);
-	REG_B32(EOSMP);
-	REG_B32(EOC);
-	REG_B32(EOSEQ);
-	REG_B32(OVR);
-	REG_R(2);
-	REG_B32(AWD);
-	REG_R(24);
-REGDEF_BLOCK_END(adc, isr)
+typedef union {
+	struct {
+		uint32_t ADRDY         : 1; // /*!< ADC ready flag */
+		uint32_t EOSMP         : 1; // /*!< ADC group regular end of sampling flag */
+		uint32_t EOC           : 1; // /*!< ADC group regular end of unitary conversion flag */
+		uint32_t EOS           : 1; // /*!< ADC group regular end of sequence conversions flag */
+		uint32_t OVR           : 1; // /*!< ADC group regular overrun flag */
+		uint32_t JEOC          : 1; // /*!< ADC group injected end of unitary conversion flag */
+		uint32_t JEOS          : 1; // /*!< ADC group injected end of sequence conversions flag */
+		uint32_t AWD1          : 1; // /*!< ADC analog watchdog 1 flag */
+		uint32_t AWD2          : 1; // /*!< ADC analog watchdog 2 flag */
+		uint32_t AWD3          : 1; // /*!< ADC analog watchdog 3 flag */
+		uint32_t JQOVF         : 1; // /*!< ADC group injected contexts queue overflow flag */
+		uint32_t _reserved11   :21;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,int);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,int),bits);
 
-REGDEF_BLOCK_BEGIN()
-	REG_B32(ADRDYIE);
-	REG_B32(EOSMPIE);
-	REG_B32(EOCIE);
-	REG_B32(EOSEQIE);
-	REG_B32(OVRIE);
-	REG_R(2);
-	REG_B32(AWDIE);
-	REG_R(24);
-REGDEF_BLOCK_END(adc, ier)
+typedef union {
+	struct {
+		uint32_t ADEN          : 1; // /*!< ADC enable */
+		uint32_t ADDIS         : 1; // /*!< ADC disable */
+		uint32_t ADSTART       : 1; // /*!< ADC group regular conversion start */
+		uint32_t JADSTART      : 1; // /*!< ADC group injected conversion start */
+		uint32_t ADSTP         : 1; // /*!< ADC group regular conversion stop */
+		uint32_t JADSTP        : 1; // /*!< ADC group injected conversion stop */
+		uint32_t _reserved6    :22;
+		uint32_t ADVREGEN      : 1; // /*!< ADC voltage regulator enable */
+		uint32_t DEEPPWD       : 1; // /*!< ADC deep power down enable */
+		uint32_t ADCALDIF      : 1; // /*!< ADC differential mode for calibration */
+		uint32_t ADCAL         : 1; // /*!< ADC calibration */
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,cr);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,cr),bits);
 
-REGDEF_BLOCK_BEGIN()
-	REG_B32(ADEN);
-	REG_B32(ADDIS);
-	REG_B32(ADSTART);
-	REG_RB();
-	REG_B32(ADSTP);
-	REG_R(23);
-	REG_B32(ADVREGEN);
-	REG_R(2);
-	REG_B32(ADCAL);
-REGDEF_BLOCK_END(adc, cr)
+typedef union {
+	struct {
+		uint32_t DMAEN         : 1; // /*!< ADC DMA transfer enable */
+		uint32_t DMACFG        : 1; // /*!< ADC DMA transfer configuration */
+		uint32_t SCANDIR       : 1; // /*!< ADC group regular sequencer scan direction */
+		uint32_t RES           : 2; // /*!< ADC data resolution */
+		uint32_t _reserved6	   : 5; // variant-specific
+		uint32_t EXTEN         : 2; // /*!< ADC group regular external trigger polarity */
+		uint32_t OVRMOD        : 1; // /*!< ADC group regular overrun configuration */
+		uint32_t CONT          : 1; // /*!< ADC group regular continuous conversion mode */
+		uint32_t _reserved14   : 2; // WAIT/AUTOFF or AUTDLY/ALIGN
+		uint32_t DISCEN        : 1; // /*!< ADC group regular sequencer discontinuous mode */
+		uint32_t DISCNUM       : 3; // /*!< ADC group regular sequencer discontinuous number of ranks */
+		uint32_t JDISCEN       : 1; // /*!< ADC group injected sequencer discontinuous mode */
+		uint32_t _reserved17   : 1;
+		uint32_t AWD1SGL       : 1; // /*!< ADC analog watchdog 1 monitoring a single channel or all channels */
+		uint32_t AWD1EN        : 1; // /*!< ADC analog watchdog 1 enable on scope ADC group regular */
+		uint32_t JAWD1EN       : 1; // /*!< ADC analog watchdog 1 enable on scope ADC group injected */
+		uint32_t JAUTO         : 1; // /*!< ADC group injected automatic trigger mode */
+		uint32_t AWD1CH        : 5; // /*!< ADC analog watchdog 1 monitored channel selection */
+		uint32_t JQDIS         : 1; // /*!< ADC group injected contexts queue disable */
+	} QEMU_PACKED bits;
+	uint32_t raw;
+	}  REGDEF_NAME(adc,com_cfgr1);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,com_cfgr1),bits);
 
-REGDEF_BLOCK_BEGIN();
-	REG_B32(DMAEN);
-	REG_B32(DMACFG);
-	REG_B32(SCANDIR);
-	REG_K32(RES, 2);
-	REG_B32(ALIGN);
-	REG_K32(EXTSEL, 3);
-	REG_RB();
-	REG_K32(EXTEN,2);
-	REG_B32(OVRMOD);
-	REG_B32(CONT);
-	REG_B32(WAIT);
-	REG_B32(AUTOFF);
-	REG_B32(DISCEN);
-	REG_R(5);
-	REG_B32(AWDSGL);
-	REG_B32(AWDEN);
-	REG_R(2);
-	REG_K32(AWDCH, 5);
-	REG_RB();
-REGDEF_BLOCK_END(adc, cfgr1)
+typedef union {
+	struct {
+		uint32_t _common1      : 5; // See common def (shared bits)
+		uint32_t ALIGN         : 1; // /*!< ADC data alignment */
+		uint32_t EXTSEL        : 3; // /*!< ADC group regular external trigger source */
+		uint32_t _reserved9    : 1;
+		uint32_t _common10     : 4; //
+		uint32_t WAIT          : 1; // /*!< ADC low power auto wait */
+		uint32_t AUTOFF        : 1; // /*!< ADC low power auto power off */
+		uint32_t _common16     : 5;
+		uint32_t CHSELRMOD     : 1; // /*!< ADC group regular sequencer mode */
+		uint32_t _common22     :10;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(f_g_adc,cfgr1);
+CHECK_TYPEDEF_u32(REGDEF_NAME(f_g_adc,cfgr1),bits);
 
-REGDEF_BLOCK_BEGIN()
-	REG_B32(OVSE);
-	REG_RB();
-	REG_K32(OVSR, 3);
-	REG_K32(OVSS, 4);
-	REG_R(21);
-	REG_K32(CKMODE, 2);
-REGDEF_BLOCK_END(adc, cfgr2)
+typedef union {
+	struct {
+		uint32_t _common1      : 5; // See common def (shared bits)
+		uint32_t EXTSEL        : 5; // /*!< ADC group regular external trigger source */
+		uint32_t _common10     : 4; //
+		uint32_t AUTDLY        : 1; // /*!< ADC low power auto wait */
+		uint32_t ALIGN         : 1; // /*!< ADC data alignment */
+		uint32_t _common16     : 5;
+		uint32_t JQM           : 1; // /*!< ADC group injected contexts queue mode */
+		uint32_t _common22     :10;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(h_adc,cfgr1);
+CHECK_TYPEDEF_u32(REGDEF_NAME(h_adc,cfgr1),bits);
 
-REGDEF_BLOCK_BEGIN()
-	REG_K32(SMP1,3);
-	REG_RB();
-	REG_K32(SMP2, 3);
-	REG_RB();
-	REG_K32(SMPSEL,19);
-	REG_R(5);
-REGDEF_BLOCK_END(adc, smpr)
+typedef union {
+	struct {
+		uint32_t ROVSE         : 1; // /*!< ADC oversampler enable on scope ADC group regular */
+		uint32_t JOVSE         : 1; // /*!< ADC oversampler enable on scope ADC group injected */
+		uint32_t OVSR          : 3; // /*!< ADC oversampling ratio */
+		uint32_t OVSS          : 4; // /*!< ADC oversampling shift */
+		uint32_t TROVS         : 1; // /*!< ADC oversampling discontinuous mode (triggered mode) for ADC group regular */
+		uint32_t ROVSM         : 1; // /*!< ADC oversampling mode managing interlaced conversions of ADC group regular and group injected */
+		uint32_t _reserved11   : 5;
+		uint32_t GCOMP         : 1; // /*!< ADC Gain Compensation mode */
+		uint32_t _reserved17   : 8;
+		uint32_t SWTRIG        : 1; // /*!< ADC Software Trigger Bit for Sample time control trigger mode */
+		uint32_t BULB          : 1; // /*!< ADC Bulb sampling mode */
+		uint32_t SMPTRIG       : 1; // /*!< ADC Sample Time Control Trigger mode */
+		uint32_t _reserved28   : 1;
+		uint32_t LFTRIG        : 1; // /*!< ADC Low Frequency Trigger */
+		uint32_t CKMODE  	   : 2;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,cfgr2);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,cfgr2),bits);
+
+typedef union {
+	struct {
+		uint32_t SMP1          : 3; // /*!< ADC group of channels sampling time 1 */
+		uint32_t _reserved3    : 1;
+		uint32_t SMP2          : 3; // /*!< ADC group of channels sampling time 2 */
+		uint32_t _reserved7    : 1;
+		uint32_t SMPSEL        :19; // /*!< ADC channel 0 sampling time selection *//
+		uint32_t _reserved27   : 5;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(f_g_adc,smpr);
+CHECK_TYPEDEF_u32(REGDEF_NAME(f_g_adc,smpr),bits);
+
+typedef union {
+	struct {
+		uint32_t SMP0          : 3; // /*!< ADC channel 0 sampling time selection  */
+		uint32_t SMP1          : 3; // /*!< ADC channel 1 sampling time selection  */
+		uint32_t SMP2          : 3; // /*!< ADC channel 2 sampling time selection  */
+		uint32_t SMP3          : 3; // /*!< ADC channel 3 sampling time selection  */
+		uint32_t SMP4          : 3; // /*!< ADC channel 4 sampling time selection  */
+		uint32_t SMP5          : 3; // /*!< ADC channel 5 sampling time selection  */
+		uint32_t SMP6          : 3; // /*!< ADC channel 6 sampling time selection  */
+		uint32_t SMP7          : 3; // /*!< ADC channel 7 sampling time selection  */
+		uint32_t SMP8          : 3; // /*!< ADC channel 8 sampling time selection  */
+		uint32_t SMP9          : 3; // /*!< ADC channel 9 sampling time selection  */
+		uint32_t _reserved30   : 1;
+		uint32_t SMPPLUS       : 1; // /*!< ADC channels sampling time additional setting */
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(h_adc,smpr);
+CHECK_TYPEDEF_u32(REGDEF_NAME(h_adc,smpr),bits);
+
+typedef union {
+	struct {
+		uint32_t SMP10         : 3; // /*!< ADC channel 10 sampling time selection  */
+		uint32_t SMP11         : 3; // /*!< ADC channel 11 sampling time selection  */
+		uint32_t SMP12         : 3; // /*!< ADC channel 12 sampling time selection  */
+		uint32_t SMP13         : 3; // /*!< ADC channel 13 sampling time selection  */
+		uint32_t SMP14         : 3; // /*!< ADC channel 14 sampling time selection  */
+		uint32_t SMP15         : 3; // /*!< ADC channel 15 sampling time selection  */
+		uint32_t SMP16         : 3; // /*!< ADC channel 16 sampling time selection  */
+		uint32_t SMP17         : 3; // /*!< ADC channel 17 sampling time selection  */
+		uint32_t SMP18         : 3; // /*!< ADC channel 18 sampling time selection  */
+		uint32_t _reserved27   : 5;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,smpr2);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,smpr2),bits);
+
+typedef union {
+	struct {
+		uint32_t L             : 4; // /*!< ADC group regular sequencer scan length */
+		uint32_t _reserved4    : 2;
+		uint32_t SQ1           : 5; // /*!< ADC group regular sequencer rank 1 */
+		uint32_t _reserved11   : 1;
+		uint32_t SQ2           : 5; // /*!< ADC group regular sequencer rank 2 */
+		uint32_t _reserved17   : 1;
+		uint32_t SQ3           : 5; // /*!< ADC group regular sequencer rank 3 */
+		uint32_t _reserved23   : 1;
+		uint32_t SQ4           : 5; // /*!< ADC group regular sequencer rank 4 */
+		uint32_t _reserved29   : 3;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,sqr1);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,sqr1),bits);
+
+typedef union {
+	struct {
+		uint32_t SQ5           : 5; // /*!< ADC group regular sequencer rank 5 */
+		uint32_t _reserved5    : 1;
+		uint32_t SQ6           : 5; // /*!< ADC group regular sequencer rank 6 */
+		uint32_t _reserved11   : 1;
+		uint32_t SQ7           : 5; // /*!< ADC group regular sequencer rank 7 */
+		uint32_t _reserved17   : 1;
+		uint32_t SQ8           : 5; // /*!< ADC group regular sequencer rank 8 */
+		uint32_t _reserved23   : 1;
+		uint32_t SQ9           : 5; // /*!< ADC group regular sequencer rank 9 */
+		uint32_t _reserved29   : 3;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,sqr2);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,sqr2),bits);
+
+typedef union {
+	struct {
+		uint32_t SQ10          : 5; // /*!< ADC group regular sequencer rank 10 */
+		uint32_t _reserved5    : 1;
+		uint32_t SQ11          : 5; // /*!< ADC group regular sequencer rank 11 */
+		uint32_t _reserved11   : 1;
+		uint32_t SQ12          : 5; // /*!< ADC group regular sequencer rank 12 */
+		uint32_t _reserved17   : 1;
+		uint32_t SQ13          : 5; // /*!< ADC group regular sequencer rank 13 */
+		uint32_t _reserved23   : 1;
+		uint32_t SQ14          : 5; // /*!< ADC group regular sequencer rank 14 */
+		uint32_t _reserved29   : 3;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,sqr3);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,sqr3),bits);
+
+typedef union {
+	struct {
+		uint32_t SQ15          : 5; // /*!< ADC group regular sequencer rank 15 */
+		uint32_t _reserved5    : 1;
+		uint32_t SQ16          : 5; // /*!< ADC group regular sequencer rank 16 */
+		uint32_t _reserved11   :21;
+	} QEMU_PACKED bits;
+	uint32_t raw;
+}  REGDEF_NAME(adc,sqr4);
+CHECK_TYPEDEF_u32(REGDEF_NAME(adc,sqr4),bits);
 
 REGDEF_BLOCK_BEGIN()
 	REG_K32(LT, 12);
@@ -131,40 +285,12 @@ REGDEF_BLOCK_BEGIN()
 	REG_R(4);
 REGDEF_BLOCK_END(adc, tr)
 
-REGDEF_BLOCK_BEGIN()
-	REG_B32(CHSEL0);
-	REG_B32(CHSEL1);
-	REG_B32(CHSEL2);
-	REG_B32(CHSEL3);
-	REG_B32(CHSEL4);
-	REG_B32(CHSEL5);
-	REG_B32(CHSEL6);
-	REG_B32(CHSEL7);
-	REG_B32(CHSEL8);
-	REG_B32(CHSEL9);
-	REG_B32(CHSEL10);
-	REG_B32(CHSEL11);
-	REG_B32(CHSEL12);
-	REG_B32(CHSEL13);
-	REG_B32(CHSEL14);
-	REG_B32(CHSEL15);
-	REG_B32(CHSEL16);
-	REG_B32(CHSEL17);
-	REG_B32(CHSEL18);
-	REG_R(13);
-REGDEF_BLOCK_END(adc, chselr)
 
-REGDEF_BLOCK_BEGIN()
-	REG_R(22);
-	REG_B32(VREFEN);
-	REG_B32(TSEN);
-	REG_R(8);
-REGDEF_BLOCK_END(adc, ccr)
-
-enum smpr_table {
-	SMPR_UNKNOWN,
-	SMPR_F030,
-	SMPR_G070,
+enum type_table {
+	TYPE_UNKNOWN,
+	TYPE_F030,
+	TYPE_G070,
+	TYPE_H503,
 };
 
 typedef struct COM_STRUCT_NAME(Adc) {
@@ -176,24 +302,31 @@ typedef struct COM_STRUCT_NAME(Adc) {
 
 	union {
 		struct {
-			REGDEF_NAME(adc, isr) ISR;		//0x00
-			REGDEF_NAME(adc, ier) IER;		//0x04
+			REGDEF_NAME(adc, int) ISR;		//0x00
+			REGDEF_NAME(adc, int) IER;		//0x04
 			REGDEF_NAME(adc, cr) CR;		//0x08
-			REGDEF_NAME(adc, cfgr1) CFGR1;	//0x0C
+			union {
+				REGDEF_NAME(adc, com_cfgr1) CFGR1;	//0x0C
+				REGDEF_NAME(f_g_adc, cfgr1) F_G_CFGR1;	//0x0C
+				REGDEF_NAME(h_adc, cfgr1) H_CFGR1;	//0x0C
+			};
 			REGDEF_NAME(adc, cfgr2) CFGR2;	//0x10
-			REGDEF_NAME(adc, smpr)  SMPR;	//0x14
-			REGDEF_R(0x18);
+			union {
+				REGDEF_NAME(f_g_adc, smpr) F_G_SMPR1;					//0x14 // Layout depnds on the chip
+				REGDEF_NAME(h_adc, smpr) H_SMPR1;					//0x14 // Layout depnds on the chip
+			};
+			REGDEF_NAME(adc, smpr2) SMPR2;	//0x18 H503 only
 			REGDEF_R(0x1C);
 			REGDEF_NAME(adc, tr) AWD1TR;		//0x20
 			REGDEF_NAME(adc, tr) AWD2TR;		//0x24
-			REGDEF_NAME(adc, chselr) CHSELR;	//0x28
+			uint32_t CHSELR_OR_TR3;				//0x28
 			REGDEF_NAME(adc, tr) AWD3TR;		//0x2C
-			REGDEF_R(0x30);
-			REGDEF_R(0x34);
-			REGDEF_R(0x38);
-			REGDEF_R(0x3C);
+			REGDEF_NAME(adc, sqr1) SQR1;		//0x30
+			REGDEF_NAME(adc, sqr2) SQR2;		//0x34
+			REGDEF_NAME(adc, sqr3) SQR3;		//0x38
+			REGDEF_NAME(adc, sqr4) SQR4;		//0x3C
 			REG_S32(DR, 16);				//0x40
-		} QEMU_PACKED defs;
+		} QEMU_PACKED;
 		uint32_t raw[RI_END];
 	} regs;
 
@@ -205,7 +338,7 @@ typedef struct COM_STRUCT_NAME(Adc) {
 
 	uint8_t adc_sequence_position;
 
-	int smpr_table;
+	int adc_type;
 
 	COM_STRUCT_NAME(Adcc) *adcc;
 
@@ -213,49 +346,20 @@ typedef struct COM_STRUCT_NAME(Adc) {
 
 } COM_STRUCT_NAME(Adc);
 
+#include "../stm32_registers/generated/stm32f030/ADC_reginfo.h"
+#include "../stm32_registers/generated/stm32g070/ADC_reginfo.h"
+#include "../stm32_registers/generated/stm32h503/ADC_reginfo.h"
 
-static const stm32_reginfo_t stm32f030_adc_reginfo[RI_END] =
-{
-	[RI_ISR] = {.mask = 0b10011111 },
-	[RI_IER] = {.mask = 0b10011111 },
-	[RI_CR] = {.mask = 		0x80000017},
-	[RI_CFGR1] = {.mask = 	0x7CC1FDFF},
-	[RI_CFGR2] = {.mask = 	0xC0000000, .unimp_mask = 0xC0000000 },
-	[RI_SMPR] = {.mask = 0x7},
-	[(RI_SMPR +1U)... (RI_AWD1TR - 1U)] = {.is_reserved = true},
-	[RI_AWD1TR] = {.mask = 0x0FFF0FFF, .reset_val = 0x0FFF0000, .unimp_mask = UINT32_MAX},
-	[RI_AWD2TR] = {.is_reserved = true},
-	[RI_CHSELR] {.mask = 0x3FFFF},
-	[(RI_CHSELR + 1U) ... (RI_DR - 1U)] = {.is_reserved = true},
-	[RI_DR] = {.mask = UINT16_MAX}
-};
-
-static const stm32_reginfo_t stm32g070_adc_reginfo[RI_END] =
-{
-	[RI_ISR] = {.mask = 0b10011111 },
-	[RI_IER] = {.mask = 0b10011111 },
-	[RI_CR] = {.mask = 		0x80000017},
-	[RI_CFGR1] = {.mask = 	0x7CC1FDFF},
-	[RI_CFGR2] = {.mask = 	0xE00003FD, .unimp_mask = 0xC00001FD},
-	[RI_SMPR] = {.mask = 	0x07FFFF77},
-	[(RI_SMPR +1U)... (RI_AWD1TR - 1U)] = {.is_reserved = true},
-	[RI_AWD1TR] = {.mask = 0x0FFF0FFF, .reset_val = 0x0FFF0000, .unimp_mask = UINT32_MAX},
-	[RI_AWD2TR] = {.mask = 0x0FFF0FFF, .reset_val = 0x0FFF0000, .unimp_mask = UINT32_MAX},
-	[RI_CHSELR] {.mask = 0x7FFFF},
-	[RI_AWD3TR] = {.mask = 0x0FFF0FFF, .reset_val = 0x0FFF0000, .unimp_mask = UINT32_MAX},
-	[(RI_AWD3TR + 1U) ... (RI_DR - 1U)] = {.is_reserved = true},
-	[RI_DR] = {.mask = UINT16_MAX}
-};
-
- static const stm32_periph_variant_t stm32_adc_variants[2] = {
- 	{TYPE_STM32F030_ADC, stm32f030_adc_reginfo},
- 	{TYPE_STM32G070_ADC, stm32g070_adc_reginfo},
+static const stm32_periph_variant_t stm32_adc_variants[3] = {
+ 	{TYPE_STM32F030_ADC, stm32_f030_adc_reginfo},
+ 	{TYPE_STM32G070_ADC, stm32_g070_adc_reginfo},
+	{TYPE_STM32H503_ADC, stm32_h503_adc_reginfo},
 };
 
 typedef struct COM_CLASS_NAME(Adc) {
 	STM32PeripheralClass parent_class;
 	stm32_reginfo_t var_reginfo[RI_END];
-	int smpr_table;
+	int type_table;
 } COM_CLASS_NAME(Adc);
 
 #define DB_PRINT_L(lvl, fmt, args...) do { \
@@ -275,8 +379,8 @@ static void stm32_adc_reset(DeviceState *dev)
 		s->regs.raw[i] = s->reginfo[i].reset_val;
 	}
 	s->adc_sequence_position = 0;
-    // We can't reset the data here because it might 
-    // clear the initial stuff sent by other device resets. 
+    // We can't reset the data here because it might
+    // clear the initial stuff sent by other device resets.
 	// memset(&s->adc_data,0,STM32_COM_ADC_MAX_REG_CHANNELS*sizeof(int));
 	if (s->next_eoc)
 		timer_del(s->next_eoc);
@@ -286,50 +390,76 @@ static void stm32_adc_reset(DeviceState *dev)
 // to keep it as integer math we include the .5ns from the conversion time here.
 static uint16_t f030_2x_smpr[] = { 2, 8, 14, 29, 42, 56, 72, 240 };
 static uint16_t g070_2x_smpr[] = { 2, 4,  8, 13, 20, 40, 80, 161 };
-
+static uint16_t h503_2x_smpr[] = { 3, 7,  13, 25, 48, 93, 248, 641 };
 static uint8_t align_shifts[4] = { 4, 6, 8, 2};
 
 static uint16_t adc_lookup_smpr(COM_STRUCT_NAME(Adc) *s, uint8_t value) {
 	assert(value < 8);
-	switch(s->smpr_table)
+	switch(s->adc_type)
 	{
-		case SMPR_G070:
+		case TYPE_G070:
 			return g070_2x_smpr[value];
-		case SMPR_F030:
+		case TYPE_F030:
 			return f030_2x_smpr[value];
 		default: // LCOV_EXCL_LINE
 			g_assert_not_reached(); // LCOV_EXCL_LINE
 	}
 }
 
+static uint8_t adc_h503_lookup_channel(COM_STRUCT_NAME(Adc) *s)
+{
+	switch (s->adc_sequence_position)
+	{
+		case 0 ... 3:
+			return ((s->regs.SQR1.raw >> 6U) >> (s->adc_sequence_position * 6U)) & 0b11111U;
+		case 4 ... 8:
+			return (s->regs.SQR2.raw >> ((s->adc_sequence_position-4) * 6U)) & 0b11111U;
+		case 9 ... 13:
+			return (s->regs.SQR3.raw >> ((s->adc_sequence_position-9) * 6U)) & 0b11111U;
+		case 14 ... 15:
+			return (s->regs.SQR4.raw >> ((s->adc_sequence_position-14) * 6U)) & 0b11111U;
+		default:
+			g_assert_not_reached();
+	}
+}
+
 static uint32_t stm32_adc_get_value(COM_STRUCT_NAME(Adc) *s)
 {
-	uint32_t internal_value = s->adc_data[s->adc_sequence_position];
+	uint32_t internal_value = 0;
+	bool align = false;
+	switch (s->adc_type)
+	{
+		case TYPE_F030:
+		case TYPE_G070:
+			internal_value = s->adc_data[s->adc_sequence_position];
+			align = s->regs.F_G_CFGR1.bits.ALIGN;
+			break;
+		case TYPE_H503:
+			internal_value = s->adc_data[adc_h503_lookup_channel(s)];
+			align = s->regs.H_CFGR1.bits.ALIGN;
+			break;
+		default:
+			g_assert_not_reached();
+	}
 	// I'm not sure why this is yet - some sort of built in oversampling
 	// that is enabled in non-DMA mode?
 	// Mask: RES 0..3 == 12..6 bit mask, so shift right 2* RES
-	internal_value >>= (s->regs.defs.CFGR1.RES<<1); // Raw value is max 12 bits, with up to 20 bits internal OVS for a final 16 bit value.
+	internal_value >>= (s->regs.CFGR1.bits.RES<<1); // Raw value is max 12 bits, with up to 20 bits internal OVS for a final 16 bit value.
 
-	if (!s->regs.defs.CFGR1.DMAEN) {
-		if (s->regs.defs.CFGR2.OVSE)
+	if (!s->regs.CFGR1.bits.DMAEN) {
+		if (s->regs.CFGR2.bits.ROVSE)
 		{
-			internal_value*= (1U << (s->regs.defs.CFGR2.OVSR + 1));
-			internal_value >>= s->regs.defs.CFGR2.OVSS;
+			internal_value*= (1U << (s->regs.CFGR2.bits.OVSR + 1));
+			internal_value >>= s->regs.CFGR2.bits.OVSS;
 		}
-		else // Legacy code for the F0? leaving in place for now but it's probably wrong even though it sorta works...
-		{
-			bool rate_sel = (s->regs.defs.SMPR.SMPSEL >> s->adc_sequence_position) & 1U;
-			s->regs.defs.DR*=(adc_lookup_smpr(s,
-				rate_sel ? s->regs.defs.SMPR.SMP2 : s->regs.defs.SMPR.SMP1
-			));
-		}
+		// I'm pretty sure here we just want to return internal_value.
 	}
-	s->regs.defs.DR = internal_value & UINT16_MAX;
+	s->regs.DR = internal_value & UINT16_MAX;
 	//printf("ADC DR read for chan %u (%u)\n", s->adc_sequence_position, s->regs.defs.DR);
-	if (s->regs.defs.CFGR1.ALIGN && !s->regs.defs.CFGR2.OVSE) {
-		return (s->regs.defs.DR << align_shifts[s->regs.defs.CFGR1.RES]);
+	if (align && !s->regs.CFGR2.bits.ROVSE) {
+		return (s->regs.DR << align_shifts[s->regs.CFGR1.bits.RES]);
 	} else {
-		return s->regs.defs.DR;
+		return s->regs.DR;
 	}
 }
 
@@ -340,8 +470,8 @@ static void stm32_adc_data_in(void *opaque, int n, int level){
 	// printf("ADC: Ch %d new data: %d\n",n, level);
 }
 
-static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
-	if (!s->regs.defs.CR.ADEN || s->regs.defs.CHSELR.raw == 0 || !stm32_rcc_if_check_periph_clk(&s->parent))
+static void stm32_adc_f_g_schedule_next(COM_STRUCT_NAME(Adc) *s) {
+	if (!s->regs.CR.bits.ADEN || s->regs.CHSELR_OR_TR3 == 0 || !stm32_rcc_if_check_periph_clk(&s->parent))
 	{
 		return;
 	}
@@ -355,10 +485,10 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
 	}
 
 	// #bits:
-	uint32_t conv_cycles = (12U - (s->regs.defs.CFGR1.RES<<1U));
-	bool rate_sel = (s->regs.defs.SMPR.SMPSEL >> s->adc_sequence_position) & 1U;
+	uint32_t conv_cycles = (12U - (s->regs.CFGR1.bits.RES<<1U));
+	bool rate_sel = (s->regs.F_G_SMPR1.bits.SMPSEL >> s->adc_sequence_position) & 1U;
 	conv_cycles += (adc_lookup_smpr(s,
-			rate_sel? s->regs.defs.SMPR.SMP2 : s->regs.defs.SMPR.SMP1
+			rate_sel? s->regs.F_G_SMPR1.bits.SMP2 : s->regs.F_G_SMPR1.bits.SMP1
 		));
 
 	uint64_t delay_ns = (NANOSECONDS_PER_SECOND * conv_cycles) / clock;
@@ -367,6 +497,41 @@ static void stm32_adc_schedule_next(COM_STRUCT_NAME(Adc) *s) {
 
 }
 
+static void stm32_adc_h_schedule_next(COM_STRUCT_NAME(Adc) *s) {
+	if (!s->regs.CR.bits.ADEN || !stm32_rcc_if_check_periph_clk(&s->parent))
+	{
+		return;
+	}
+
+	// Calculate the clock rate
+	uint64_t clock = s->parent.clock_freq;
+
+	if (s->adcc)
+	{
+		clock /= stm32_common_adcc_get_adcpre(s->adcc);
+	}
+
+	// #bits:
+	uint32_t conv_cycles = (12U - (s->regs.CFGR1.bits.RES<<1U));
+	conv_cycles += s->regs.H_SMPR1.bits.SMPPLUS;
+	// Get conversion rate:
+	uint8_t data_channel = adc_h503_lookup_channel(s);
+	uint8_t smpr_index = 0;
+	switch (data_channel)
+	{
+		case 0 ... 9:
+			smpr_index = s->regs.H_SMPR1.raw >> (data_channel * 3U) & 0b111U;
+			break;
+		case 10 ... 18:
+			smpr_index = s->regs.SMPR2.raw >> ((data_channel-10) * 3U) & 0b111U;
+			break;
+	}
+
+	conv_cycles += h503_2x_smpr[smpr_index];
+	uint64_t delay_ns = (NANOSECONDS_PER_SECOND * conv_cycles) / clock;
+	// printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
+	timer_mod_ns(s->next_eoc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+delay_ns);
+}
 
 static uint64_t stm32_adc_read(void *opaque, hwaddr addr,
 									 unsigned int size)
@@ -385,8 +550,8 @@ static uint64_t stm32_adc_read(void *opaque, hwaddr addr,
 	case RI_ISR ... RI_CHSELR:
 		break;
 	case RI_DR:
-		if (s->regs.defs.CR.ADEN && s->regs.defs.ISR.EOC) {
-			s->regs.defs.ISR.EOC ^= s->regs.defs.ISR.EOC;
+		if (s->regs.CR.bits.ADEN && s->regs.ISR.bits.EOC) {
+			s->regs.ISR.bits.EOC ^= s->regs.ISR.bits.EOC;
 			data = stm32_adc_get_value(s);
 		} else {
 			qemu_log_mask(LOG_GUEST_ERROR, "Read ADC while conversion not ready!\n");
@@ -407,18 +572,18 @@ static void stm32_adc_convert(COM_STRUCT_NAME(Adc) *s)
 
 static void stm32_adc_update_irqs(COM_STRUCT_NAME(Adc) *s, int level) {
 
-	bool bChanged = level^s->regs.defs.ISR.EOC;
-	s->regs.defs.ISR.EOC = level;
+	bool bChanged = level^s->regs.ISR.bits.EOC;
+	s->regs.ISR.bits.EOC = level;
 
-	if (s->regs.defs.IER.EOCIE && level && bChanged)
+	if (s->regs.IER.bits.EOC && level && bChanged)
 	{
 		qemu_irq_raise(s->irq);
 	}
 }
 
-static void stm32_adc_set_next_channel(COM_STRUCT_NAME(Adc) *s)
+static inline void stm32_f_g_adc_set_next_channel(COM_STRUCT_NAME(Adc) *s)
 {
-	uint32_t chanmask = s->regs.defs.CHSELR.raw >> (s->adc_sequence_position + 1U);
+	uint32_t chanmask = s->regs.raw[RI_CHSELR] >> (s->adc_sequence_position + 1U);
 	s->adc_sequence_position++;
 	while (!(chanmask & 0x1))
 	{
@@ -427,49 +592,98 @@ static void stm32_adc_set_next_channel(COM_STRUCT_NAME(Adc) *s)
 		if (s->adc_sequence_position > STM32_COM_ADC_MAX_REG_CHANNELS) // Looped, we went off the end.
 		{
 			s->adc_sequence_position = 0;
-			chanmask = s->regs.defs.CHSELR.raw;
+			chanmask = s->regs.raw[RI_CHSELR];
 		}
 	}
 	// printf("Next ADC channel: %u\n", s->adc_sequence_position);
 }
 
+static inline void stm32_h_adc_set_next_channel(COM_STRUCT_NAME(Adc) *s)
+{
+	uint32_t len = s->regs.SQR1.bits.L;
+	// Len is 0...n for 1...n+1 items in the sequence.
+	s->adc_sequence_position++;
+	if (s->adc_sequence_position > len)
+	{
+		s->adc_sequence_position = 0;
+	}
+	// printf("Next ADC channel: %u\n", s->adc_sequence_position);
+}
+
+static void stm32_adc_set_next_channel(COM_STRUCT_NAME(Adc) *s)
+{
+	switch (s->adc_type)
+	{
+		case TYPE_F030:
+		case TYPE_G070:
+			stm32_f_g_adc_set_next_channel(s);
+			break;
+		case TYPE_H503:
+			stm32_h_adc_set_next_channel(s);
+			break;
+	}
+}
+
+static bool stm32_adc_channels_set(COM_STRUCT_NAME(Adc) *s)
+{
+	switch (s->adc_type)
+	{
+		case TYPE_F030:
+		case TYPE_G070:
+			return s->regs.CHSELR_OR_TR3 != 0;
+		case TYPE_H503:
+			return true; // H503 can't have zero items in the sequence.
+		default:
+			return false;
+	}
+}
+
 static void stm32_adc_eoc_deadline(void *opaque) {
 
 	COM_STRUCT_NAME(Adc) *s = STM32COM_ADC(opaque);
-	if (!s->regs.defs.CFGR1.DMAEN) // This is probably wrong, this should be called regardless, but the old version of doing it after the convert was working...
+	if (!s->regs.CFGR1.bits.DMAEN) // This is probably wrong, this should be called regardless, but the old version of doing it after the convert was working...
 	{
 		stm32_adc_set_next_channel(s);
 	}
 	stm32_adc_convert(s);
-	if (s->regs.defs.IER.EOCIE || s->adc_sequence_position == 0)
+	if (s->regs.IER.bits.EOC || s->adc_sequence_position == 0)
 	{
 		// Either end of cycle or end-of-sequence.
 		stm32_adc_update_irqs(s, 1);
 	}
 
-	if (s->regs.defs.CFGR1.DMAEN)
+	if (s->regs.CFGR1.bits.DMAEN)
 	{
-		s->regs.defs.ISR.EOC = 1;
+		s->regs.ISR.bits.EOC = 1;
 		qemu_set_irq(s->parent.dmar[DMAR_P2M], s->mmio.addr + (4U*RI_DR));
-		if (s->regs.defs.CFGR1.CONT && s->regs.defs.CHSELR.raw)
+		if (s->regs.CFGR1.bits.CONT && stm32_adc_channels_set(s))
 		{
 			stm32_adc_set_next_channel(s);
-			if (!s->regs.defs.CFGR1.WAIT) // don't schedule if in WAIT mode.
+			switch (s->adc_type)
 			{
-				stm32_adc_schedule_next(s);
+				case TYPE_F030:
+				case TYPE_G070:
+					if (!s->regs.F_G_CFGR1.bits.WAIT) // don't schedule if in WAIT mode.
+					{
+						stm32_adc_f_g_schedule_next(s);
+					}
+					break;
+				case TYPE_H503:
+					stm32_adc_h_schedule_next(s);
+					break;
 			}
 		}
 	}
-	else if (!s->regs.defs.CFGR1.CONT && s->regs.defs.CFGR1.EXTEN == 0)
+	else if (!s->regs.CFGR1.bits.CONT && s->regs.CFGR1.bits.EXTEN == 0)
 	{
-		if (s->regs.defs.CFGR1.DISCEN)
+		if (s->regs.CFGR1.bits.DISCEN)
 		{
 			printf("FIXME - unimplemented DISCEN EOC mode\n");
 		}
 		else
 		{
-			s->regs.defs.CR.ADSTART = 0; // Stop the ADC, single conversion.
-			s->regs.defs.ISR.EOC = 1;
+			s->regs.CR.bits.ADSTART = 0; // Stop the ADC, single conversion.
+			s->regs.ISR.bits.EOC = 1;
 		}
 	}
 }
@@ -496,11 +710,11 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 		case RI_CFGR1:
 		case RI_CFGR2:
 		case RI_IER:
-		case RI_AWD1TR:
-		case RI_AWD2TR:
-		case RI_AWD3TR:
+		case RI_TR1:
+		case RI_TR2:
+		case RI_G070_TR3:
 		case RI_SMPR:
-		case RI_CHSELR:
+		case RI_CHSELR: // NOTE: shares address with TR3
 			s->regs.raw[addr] = data;
 			break;
 		case RI_CR:
@@ -508,18 +722,30 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 			REGDEF_NAME(adc, cr) new = {.raw = data };
 			// Most new bits are RS, except VREGEN.
 			s->regs.raw[addr] |= data;
-			s->regs.defs.CR.ADVREGEN = new.ADVREGEN;
-			if (s->regs.defs.CR.ADEN && !s->regs.defs.CR.ADDIS)
+			s->regs.CR.bits.ADVREGEN = new.bits.ADVREGEN;
+			if (s->regs.CR.bits.ADEN && !s->regs.CR.bits.ADDIS)
 			{
-				s->regs.defs.ISR.ADRDY = 1;
+				s->regs.ISR.bits.ADRDY = 1;
 			}
-			if (s->regs.defs.CR.ADSTART)
+			if (s->regs.CR.bits.ADSTART)
 			{
-				stm32_adc_schedule_next(s);
+				switch (s->adc_type)
+				{
+					case TYPE_F030:
+					case TYPE_G070:
+						if (!s->regs.F_G_CFGR1.bits.WAIT) // don't schedule if in WAIT mode.
+						{
+							stm32_adc_f_g_schedule_next(s);
+						}
+						break;
+					case TYPE_H503:
+						stm32_adc_h_schedule_next(s);
+						break;
+				}
 			}
-			if (s->regs.defs.CR.ADCAL)
+			if (s->regs.CR.bits.ADCAL)
 			{
-				s->regs.defs.CR.ADCAL = 0; // No calibration required :)
+				s->regs.CR.bits.ADCAL = 0; // No calibration required :)
 			}
 		}
 			break;
@@ -561,20 +787,19 @@ static void stm32_adc_init(Object *obj)
 	// Check the register union definitions... This thows compile errors if they are misaligned, so it's ok in regards to not throwing exceptions
 	// during object init in QEMU.
 	CHECK_ALIGN(sizeof(s->regs.raw),sizeof(uint32_t)*RI_END, "defs union");
-	CHECK_ALIGN(sizeof(s->regs.defs),sizeof(s->regs.raw), "Raw array");
+	CHECK_ALIGN(sizeof(s->regs),sizeof(s->regs.raw), "Raw array");
 	// Check the bitfields. S32s should be fine because
 	// the macro handles the padding math and problems are detected by the overall size change above
-	CHECK_REG_u32(s->regs.defs.ISR);
-	CHECK_REG_u32(s->regs.defs.IER);
-	CHECK_REG_u32(s->regs.defs.CR);
-	CHECK_REG_u32(s->regs.defs.CFGR1);
-	CHECK_REG_u32(s->regs.defs.CFGR2);
-	CHECK_REG_u32(s->regs.defs.AWD1TR);
-	CHECK_REG_u32(s->regs.defs.AWD2TR);
-	CHECK_REG_u32(s->regs.defs.AWD3TR);
-	CHECK_REG_u32(s->regs.defs.CHSELR);
-	CHECK_UNION(COM_STRUCT_NAME(Adc), regs.defs.CHSELR, regs.raw[RI_CHSELR]);
-	QEMU_BUILD_BUG_MSG(RI_END != 17, "Size of register array has changed. You need to update VMState!");
+	CHECK_REG_u32(s->regs.ISR);
+	CHECK_REG_u32(s->regs.IER);
+	CHECK_REG_u32(s->regs.CR);
+	CHECK_REG_u32(s->regs.CFGR1);
+	CHECK_REG_u32(s->regs.CFGR2);
+	CHECK_REG_u32(s->regs.AWD1TR);
+	CHECK_REG_u32(s->regs.AWD2TR);
+	CHECK_REG_u32(s->regs.AWD3TR);
+	CHECK_REG_u32(s->regs.CHSELR_OR_TR3);
+	CHECK_UNION(COM_STRUCT_NAME(Adc), regs.CHSELR_OR_TR3, regs.raw[RI_CHSELR]);
 
 
 	s->next_eoc = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32_adc_eoc_deadline, s);
@@ -591,7 +816,7 @@ static void stm32_adc_init(Object *obj)
 	COM_CLASS_NAME(Adc) *k = STM32COM_ADC_GET_CLASS(obj);
 
 	s->reginfo = k->var_reginfo;
-	s->smpr_table = k->smpr_table;
+	s->adc_type = k->type_table;
 }
 
 static void stm32_adc_class_init(ObjectClass *klass, void *data)
@@ -604,13 +829,20 @@ static void stm32_adc_class_init(ObjectClass *klass, void *data)
 
 	COM_CLASS_NAME(Adc) *k = STM32COM_ADC_CLASS(klass);
 	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));
-	if (data == stm32f030_adc_reginfo)
+	if (data == stm32_f030_adc_reginfo)
 	{
-		k->smpr_table = SMPR_F030;
+		k->type_table = TYPE_F030;
 	}
-	else if (data == stm32g070_adc_reginfo)
+	else if (data == stm32_g070_adc_reginfo)
 	{
-		k->smpr_table = SMPR_G070;
+		k->type_table = TYPE_G070;
+	} else if (data == stm32_h503_adc_reginfo)
+	{
+		k->type_table = TYPE_H503;
+	}
+	else
+	{
+		k->type_table = TYPE_UNKNOWN;
 	}
 	QEMU_BUILD_BUG_MSG(sizeof(k->var_reginfo) != sizeof(stm32_reginfo_t[RI_END]), "Reginfo not sized correctly!");
 }

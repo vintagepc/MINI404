@@ -74,6 +74,19 @@ class stm32h503xx(STM32Fixups):
         reg_map["RNG"]["SR"].fields["SECS"].unimplemented = True
         reg_map["RNG"]["SR"].fields["SEIS"].unimplemented = True
 
+        reg_map["ADC"]["CR"].reset_value = 0x20000000
+        reg_map["ADC"]["CFGR"].reset_value = 0x80000000
+        for i in ["TR1", "TR2", "TR3"]:
+            chip.periph_map["ADC"][i].reset_value = 0x0FFF0000 if i == "TR1" else 0x00FF0000
+            chip.periph_map["ADC"][i].unimplemented = True
+        for i in ["JSQR", "JDR1", "JDR2", "JDR3", "JDR4", "OFR1", "OFR2", "OFR3", "OFR4", "AWD2CR","AWD3CR", "DIFSEL", "CALFACT", "OR"]:
+            chip.periph_map["ADC"][i].unimplemented = True
+        # Clarify TR3, it's not consistent depending on whether CHSELR is used:
+        # Do some more renames too:
+        for old,new in [["TR3", "H503_TR3"], ["CFGR", "CFGR1"], ["SMPR1", "SMPR"]]:
+            chip.periph_map["ADC"][old].name = new
+            chip.periph_map["ADC"][new] = chip.periph_map["ADC"].pop(old)
+
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
