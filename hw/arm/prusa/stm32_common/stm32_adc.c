@@ -542,7 +542,7 @@ static uint64_t stm32_adc_read(void *opaque, hwaddr addr,
 	int offset = addr&0x3;
 	addr>>=2;
 
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "Common ADC"); // LCOV_EXCL_LINE
+	CHECK_BOUNDS_R_V2(addr, RI_END, s->reginfo); // LCOV_EXCL_LINE
 
 	uint32_t data = s->regs.raw[addr];
 
@@ -698,13 +698,9 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 
 	uint8_t offset = addr&0x3;
 	addr>>=2; // Get index in array.
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "Common ADC"); // LCOV_EXCL_LINE
+	CHECK_BOUNDS_W_V2(addr, data, RI_END); // LCOV_EXCL_LINE
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b100);
-
-	if (addr >= 0x100) {
-		qemu_log_mask(LOG_UNIMP,
-					  "%s: ADC Common Register Unsupported\n", __func__);
-	}
+	CHECK_UNIMP_RESVD_V2(data, s->regs.raw[addr], s->reginfo, offset);
 
 	switch (addr) {
 		case RI_CFGR1:
@@ -714,7 +710,8 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 		case RI_TR2:
 		case RI_G070_TR3:
 		case RI_SMPR:
-		case RI_CHSELR: // NOTE: shares address with TR3
+		case RI_SQR1 ... RI_SQR4:
+		case RI_CHSELR: // NOTE: shares address with H503 TR3
 			s->regs.raw[addr] = data;
 			break;
 		case RI_CR:

@@ -86,11 +86,28 @@ class stm32h503xx(STM32Fixups):
         for old,new in [["TR3", "H503_TR3"], ["CFGR", "CFGR1"], ["SMPR1", "SMPR"]]:
             chip.periph_map["ADC"][old].name = new
             chip.periph_map["ADC"][new] = chip.periph_map["ADC"].pop(old)
+        # Set DMA defaults and extras:
+        chip.periph_map["DMA"]["CSR"].reset_value = 0x00000001
+        for i in ["CLLR", "CBR2", "CTR3", "CTR2", "CLBAR", "PRIVCFGR"]:
+            chip.periph_map["DMA"][i].unimplemented = True
+        for f in chip.periph_map["DMA"]["CBR1"].fields:
+            if f != "BNDT":
+                chip.periph_map["DMA"]["CBR1"].fields[f].unimplemented = True
+        for f in chip.periph_map["DMA"]["CTR1"].fields:
+            if f not in ["SDW_LOG2", "DDW_LOG2", "SINC", "DINC"]:
+                chip.periph_map["DMA"]["CTR1"].fields[f].unimplemented = True
+        for f in chip.periph_map["DMA"]["CCR"].fields:
+            if f not in ["EN", "TCIE", "HTIE"]:
+                chip.periph_map["DMA"]["CCR"].fields[f].unimplemented = True
+        
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
-
+        # Merge the DMA_Channel registers into the DMA periph:
+        for i in chip.periph_map["DMA_Channel"]:
+            chip.periph_map["DMA"][i] = chip.periph_map["DMA_Channel"][i]
+        chip.periph_map.pop("DMA_Channel")
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):

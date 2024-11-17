@@ -12,16 +12,20 @@ from stm32h503xx import *
 
 
 reg_pattern = re.compile(r'.+uint32_t (\w+);.+/\*!<\s+(.+)\s+Address offset: (0x\w+)\s+\*/')
-typedef_pattern = re.compile(r'}\s?(\w+)_TypeDef;')
+reg_pattern2 = re.compile(r'.+uint32_t (\w+);.+/\*!<\s+(.+)\s+Address offset: (0x\w+)\s+\+.+\*/')
+typedef_pattern = re.compile(r'}\s?([\w_]+)_TypeDef;')
 
 def parse_register(line: str) -> Register:
 	# Construct a regexp to find register name and address:
 	match = reg_pattern.match(line)
+	match2 = reg_pattern2.match(line)
 	if "RESERVED" in line:
 		return None
 	elif match:
 		#print(match.groups())
 		return Register(name = match.group(1), desc=match.group(2).strip(), hex_addr = match.group(3), int_addr = int(match.group(3), 16), fields = {}, access = None, reset_value = 0)
+	elif match2:
+		return Register(name = match2.group(1), desc=match2.group(2).strip(), hex_addr = match2.group(3), int_addr = int(match2.group(3), 16), fields = {}, access = None, reset_value = 0)
 	else:
 		return None
 
@@ -61,7 +65,7 @@ mask2nbits = {
 }
 
 shift_pattern = re.compile(r'\((\d+)U\)')
-msk_pattern = re.compile(r'\((0x[0-9A-F]+)UL')
+msk_pattern = re.compile(r'\((0x[0-9A-F]+)UL?')
 msk2_pattern = re.compile(r'\(([0-9]+)UL')
 desc_pattern = re.compile(r'^.*?(/\*.*\*/)$')
 
@@ -237,9 +241,10 @@ chip_data = [
 	STM32Chip(name="stm32f030", header="stm32f030xc.h", fixups=stm32f030xx, gen_list=[]),
 	STM32Chip(name="stm32f427", header="stm32f427xx.h", fixups=stm32f427xx, gen_list=[]),
 	STM32Chip(name="stm32g070", header="stm32g070xx.h", fixups=stm32g070xx, gen_list=[]),
-	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE"]),
+	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA"]),
 	]
 
 
 for chip in chip_data:
+	print(f"Processing {chip.name}...")
 	process_chip(chip)
