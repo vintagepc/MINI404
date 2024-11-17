@@ -80,12 +80,12 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_icache,mmonr),bits);
 
 static const stm32_reginfo_t stm32_h503_icache_reginfo[RI_END] = 
 { 
-	[RI_CR             ] = { .reset_val = 0x00000004, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x000F0007 }, /* mask = 0b00000000000011110000000000000111 */
-	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000007 }, /* mask = 0b00000000000000000000000000000111 */
-	[RI_IER            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000006 }, /* mask = 0b00000000000000000000000000000110 */
-	[RI_FCR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000006 }, /* mask = 0b00000000000000000000000000000110 */
+	[RI_CR             ] = { .reset_val = 0x00000004, .not_reserved = true, .unimp_mask = 0x000F0007, .mask = 0x000F0007 }, /* mask = 0b00000000000011110000000000000111 */
+	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000007, .mask = 0x00000007 }, /* mask = 0b00000000000000000000000000000111 */
+	[RI_IER            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000006, .mask = 0x00000006 }, /* mask = 0b00000000000000000000000000000110 */
+	[RI_FCR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000006, .mask = 0x00000006 }, /* mask = 0b00000000000000000000000000000110 */
 	[RI_HMONR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
-	[RI_MMONR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
+	[RI_MMONR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000FFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
 }; 
 
 typedef union { 

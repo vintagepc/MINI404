@@ -39,6 +39,14 @@
 #define DMA_STRIDE 0x80
 #define DMA_NUM_CHANS (8U)
 
+#define DEBUG 0
+
+#if DEBUG
+#define DBGPRINTF(...) printf(__VA_ARGS__)
+#else
+#define DBGPRINTF(...)
+#endif
+
 enum stm32h503_dma_blocks {
 	RI_CHAN_BASE = RI_CLBAR,
 	RI_CHAN0 = RI_CHAN_BASE,
@@ -162,13 +170,13 @@ static void stm32_common_update_irqs(STM32H503_STRUCT_NAME(Dma) *s, uint8_t chan
 	{
 		s->regs.MISR.raw |= BIT(channel);
 		qemu_irq_raise(s->irq[channel]);
-		printf("DMA IRQ %u raised\n", channel);
+		DBGPRINTF("DMA IRQ %u raised\n", channel);
 	}
 	else
 	{
 		s->regs.MISR.raw &= ~BIT(channel);
 		qemu_irq_lower(s->irq[channel]);
-		printf("DMA IRQ %u lowered\n", channel);
+		DBGPRINTF("DMA IRQ %u lowered\n", channel);
 	}
 }
 
@@ -205,7 +213,7 @@ static void stm32_h503_dma_do_xfer(STM32H503_STRUCT_NAME(Dma) *s, int channel)
 	uint8_t src_size = dma_xfer_size_b[block->CTR1.bits.SDW_LOG2];
 
 	uint32_t *ndtr = &block->CBR1.raw;
-	printf("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u\n",block->CSAR.bits.SA, block->CDAR.bits.DA, src_size, *ndtr);
+	DBGPRINTF("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u\n",block->CSAR.bits.SA, block->CDAR.bits.DA, src_size, *ndtr);
 	uint8_t buff[4] = {0,0,0,0};
 	dma_memory_read(
 		&s->cpu_as,
@@ -231,13 +239,13 @@ static void stm32_h503_dma_do_xfer(STM32H503_STRUCT_NAME(Dma) *s, int channel)
 	if (*ndtr == (s->original_ndtrs[channel]>>1))
 	{
 		stm32_common_set_int_flag(s, channel,INT_HT);
-		printf("Half transfer\n");
+		DBGPRINTF("Half transfer\n");
 	}
 	else if (*ndtr == 0 )
 	{
 		block->CCR.bits.EN = false; // Disable the channel, transmit is done.
 		stm32_common_set_int_flag(s, channel,INT_TC);
-		printf("Transfer complete\n");
+		DBGPRINTF("Transfer complete\n");
 	}
 
 	if (*ndtr > 0 && stm32_h503_dma_is_m2m(s, channel))
@@ -312,7 +320,7 @@ stm32_h503_dma_chan_write(STM32H503_STRUCT_NAME(Dma) *s, hwaddr addr, uint64_t d
 {
 	uint8_t chan =   (addr - RI_CHAN_BASE)/(DMA_STRIDE/sizeof(uint32_t));
 	uint8_t offset = (addr - RI_CHAN_BASE)%(DMA_STRIDE/sizeof(uint32_t));
-	printf("Wrote DMA channel %u/off %u with value %0"PRIx64"\n", chan, offset, data);
+	DBGPRINTF("Wrote DMA channel %u/off %u with value %0"PRIx64"\n", chan, offset, data);
 	switch (offset)
 	{
 		case CH_OFF_CCR:

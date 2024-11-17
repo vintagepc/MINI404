@@ -227,20 +227,20 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_dma,cllr),bits);
 
 static const stm32_reginfo_t stm32_h503_dma_reginfo[RI_END] = 
 { 
-	[RI_PRIVCFGR       ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x000000FF }, /* mask = 0b00000000000000000000000011111111 */
+	[RI_PRIVCFGR       ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x000000FF, .mask = 0x000000FF }, /* mask = 0b00000000000000000000000011111111 */
 	[RI_MISR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x000000FF }, /* mask = 0b00000000000000000000000011111111 */
-	[RI_CLBAR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFFFF0000 }, /* mask = 0b11111111111111110000000000000000 */
+	[RI_CLBAR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFF0000, .mask = 0xFFFF0000 }, /* mask = 0b11111111111111110000000000000000 */
 	[RI_CFCR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00007F00 }, /* mask = 0b00000000000000000111111100000000 */
 	[RI_CSR            ] = { .reset_val = 0x00000001, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00FF7F01 }, /* mask = 0b00000000111111110111111100000001 */
 	[RI_CCR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00C37C06, .mask = 0x00C37F07 }, /* mask = 0b00000000110000110111111100000111 */
 	[RI_CTR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x4FF07BF0, .mask = 0x4FFB7BFB }, /* mask = 0b01001111111110110111101111111011 */
-	[RI_CTR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xC33FDEFF }, /* mask = 0b11000011001111111101111011111111 */
+	[RI_CTR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xC33FDEFF, .mask = 0xC33FDEFF }, /* mask = 0b11000011001111111101111011111111 */
 	[RI_CBR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xF7FF0000, .mask = 0xF7FFFFFF }, /* mask = 0b11110111111111111111111111111111 */
 	[RI_CSAR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
 	[RI_CDAR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
-	[RI_CTR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x1FFF1FFF }, /* mask = 0b00011111111111110001111111111111 */
+	[RI_CTR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x1FFF1FFF, .mask = 0x1FFF1FFF }, /* mask = 0b00011111111111110001111111111111 */
 	[RI_CBR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
-	[RI_CLLR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFE01FFFC }, /* mask = 0b11111110000000011111111111111100 */
+	[RI_CLLR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFE01FFFC, .mask = 0xFE01FFFC }, /* mask = 0b11111110000000011111111111111100 */
 }; 
 
 typedef union { 

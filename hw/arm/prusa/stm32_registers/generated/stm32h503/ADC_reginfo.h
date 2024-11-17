@@ -16,28 +16,28 @@ static const stm32_reginfo_t stm32_h503_adc_reginfo[RI_END] =
 	[RI_CR             ] = { .reset_val = 0x20000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xF000003F }, /* mask = 0b11110000000000000000000000111111 */
 	[RI_CFGR2          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x2E0107FF }, /* mask = 0b00101110000000010000011111111111 */
 	[RI_SMPR2          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x07FFFFFF }, /* mask = 0b00000111111111111111111111111111 */
-	[RI_TR1            ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0FFF7FFF }, /* mask = 0b00001111111111110111111111111111 */
-	[RI_TR2            ] = { .reset_val = 0x00FF0000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00FF00FF }, /* mask = 0b00000000111111110000000011111111 */
+	[RI_TR1            ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0x0FFF7FFF, .mask = 0x0FFF7FFF }, /* mask = 0b00001111111111110111111111111111 */
+	[RI_TR2            ] = { .reset_val = 0x00FF0000, .not_reserved = true, .unimp_mask = 0x00FF00FF, .mask = 0x00FF00FF }, /* mask = 0b00000000111111110000000011111111 */
 	[RI_SQR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x1F7DF7CF }, /* mask = 0b00011111011111011111011111001111 */
 	[RI_SQR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x1F7DF7DF }, /* mask = 0b00011111011111011111011111011111 */
 	[RI_SQR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x1F7DF7DF }, /* mask = 0b00011111011111011111011111011111 */
 	[RI_SQR4           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x000007DF }, /* mask = 0b00000000000000000000011111011111 */
 	[RI_DR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
-	[RI_JSQR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFBEFBFFF }, /* mask = 0b11111011111011111011111111111111 */
-	[RI_OFR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
-	[RI_OFR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
-	[RI_OFR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
-	[RI_OFR4           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
-	[RI_JDR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
-	[RI_JDR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
-	[RI_JDR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
-	[RI_JDR4           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
-	[RI_AWD2CR         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x000FFFFF }, /* mask = 0b00000000000011111111111111111111 */
-	[RI_AWD3CR         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x000FFFFF }, /* mask = 0b00000000000011111111111111111111 */
-	[RI_DIFSEL         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x000FFFFF }, /* mask = 0b00000000000011111111111111111111 */
-	[RI_CALFACT        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x007F007F }, /* mask = 0b00000000011111110000000001111111 */
-	[RI_OR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000003 }, /* mask = 0b00000000000000000000000000000011 */
-	[RI_H503_TR3       ] = { .reset_val = 0x00FF0000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00FF00FF }, /* mask = 0b00000000111111110000000011111111 */
+	[RI_JSQR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFBEFBFFF, .mask = 0xFBEFBFFF }, /* mask = 0b11111011111011111011111111111111 */
+	[RI_OFR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFF000FFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
+	[RI_OFR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFF000FFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
+	[RI_OFR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFF000FFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
+	[RI_OFR4           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFF000FFF, .mask = 0xFF000FFF }, /* mask = 0b11111111000000000000111111111111 */
+	[RI_JDR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000FFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
+	[RI_JDR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000FFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
+	[RI_JDR3           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000FFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
+	[RI_JDR4           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000FFFF, .mask = 0x0000FFFF }, /* mask = 0b00000000000000001111111111111111 */
+	[RI_AWD2CR         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x000FFFFF, .mask = 0x000FFFFF }, /* mask = 0b00000000000011111111111111111111 */
+	[RI_AWD3CR         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x000FFFFF, .mask = 0x000FFFFF }, /* mask = 0b00000000000011111111111111111111 */
+	[RI_DIFSEL         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x000FFFFF, .mask = 0x000FFFFF }, /* mask = 0b00000000000011111111111111111111 */
+	[RI_CALFACT        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x007F007F, .mask = 0x007F007F }, /* mask = 0b00000000011111110000000001111111 */
+	[RI_OR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000003, .mask = 0x00000003 }, /* mask = 0b00000000000000000000000000000011 */
+	[RI_H503_TR3       ] = { .reset_val = 0x00FF0000, .not_reserved = true, .unimp_mask = 0x00FF00FF, .mask = 0x00FF00FF }, /* mask = 0b00000000111111110000000011111111 */
 	[RI_CFGR1          ] = { .reset_val = 0x80000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFB }, /* mask = 0b11111111111111111111111111111011 */
 	[RI_SMPR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xBFFFFFFF }, /* mask = 0b10111111111111111111111111111111 */
 }; 

@@ -15,7 +15,7 @@ static const stm32_reginfo_t stm32_h503_iwdg_reginfo[RI_END] =
 	[RI_PR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0000000F }, /* mask = 0b00000000000000000000000000001111 */
 	[RI_RLR            ] = { .reset_val = 0x00000FFF, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000FFF }, /* mask = 0b00000000000000000000111111111111 */
 	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0000410F }, /* mask = 0b00000000000000000100000100001111 */
-	[RI_WINR           ] = { .reset_val = 0x00000FFF, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000FFF }, /* mask = 0b00000000000000000000111111111111 */
-	[RI_EWCR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0000CFFF }, /* mask = 0b00000000000000001100111111111111 */
+	[RI_WINR           ] = { .reset_val = 0x00000FFF, .not_reserved = true, .unimp_mask = 0x00000FFF, .mask = 0x00000FFF }, /* mask = 0b00000000000000000000111111111111 */
+	[RI_EWCR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000CFFF, .mask = 0x0000CFFF }, /* mask = 0b00000000000000001100111111111111 */
 }; 
 

@@ -15,6 +15,6 @@ static const stm32_reginfo_t stm32_f030_iwdg_reginfo[RI_END] =
 	[RI_PR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000007 }, /* mask = 0b00000000000000000000000000000111 */
 	[RI_RLR            ] = { .reset_val = 0x00000FFF, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000FFF }, /* mask = 0b00000000000000000000111111111111 */
 	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000007 }, /* mask = 0b00000000000000000000000000000111 */
-	[RI_WINR           ] = { .reset_val = 0x00000FFF, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x00000FFF }, /* mask = 0b00000000000000000000111111111111 */
+	[RI_WINR           ] = { .reset_val = 0x00000FFF, .not_reserved = true, .unimp_mask = 0x00000FFF, .mask = 0x00000FFF }, /* mask = 0b00000000000000000000111111111111 */
 }; 
 

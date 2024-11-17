@@ -219,7 +219,7 @@ class Register:
 
     def get_unimp_mask(self):
         if (self.unimplemented):
-            return 0xFFFFFFFF
+            return 0xFFFFFFFF & self.get_valid_mask()
         mask = 0
         for c,field in self.fields.items():
             if field.unimplemented:

@@ -22,8 +22,8 @@ static const stm32_reginfo_t stm32_g070_adc_reginfo[RI_END] =
 	[RI_AWD2CR         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0007FFFF }, /* mask = 0b00000000000001111111111111111111 */
 	[RI_AWD3CR         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0007FFFF }, /* mask = 0b00000000000001111111111111111111 */
 	[RI_CALFACT        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0000007F }, /* mask = 0b00000000000000000000000001111111 */
-	[RI_TR1            ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0FFF0FFF }, /* mask = 0b00001111111111110000111111111111 */
-	[RI_TR2            ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0FFF0FFF }, /* mask = 0b00001111111111110000111111111111 */
-	[RI_G070_TR3       ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x0FFF0FFF }, /* mask = 0b00001111111111110000111111111111 */
+	[RI_TR1            ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0x0FFF0FFF, .mask = 0x0FFF0FFF }, /* mask = 0b00001111111111110000111111111111 */
+	[RI_TR2            ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0x0FFF0FFF, .mask = 0x0FFF0FFF }, /* mask = 0b00001111111111110000111111111111 */
+	[RI_G070_TR3       ] = { .reset_val = 0x0FFF0000, .not_reserved = true, .unimp_mask = 0x0FFF0FFF, .mask = 0x0FFF0FFF }, /* mask = 0b00001111111111110000111111111111 */
 }; 
 

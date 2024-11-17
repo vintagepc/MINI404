@@ -712,9 +712,9 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_rcc,privcfgr),bits);
 static const stm32_reginfo_t stm32_h503_rcc_reginfo[RI_END] = 
 { 
 	[RI_CR             ] = { .reset_val = 0x0000002B, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0F1F373F }, /* mask = 0b00001111000111110011011100111111 */
-	[RI_HSICFGR        ] = { .reset_val = 0x00400000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x007F0FFF }, /* mask = 0b00000000011111110000111111111111 */
-	[RI_CRRCR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x000003FF }, /* mask = 0b00000000000000000000001111111111 */
-	[RI_CSICFGR        ] = { .reset_val = 0x00200000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0x003F00FF }, /* mask = 0b00000000001111110000000011111111 */
+	[RI_HSICFGR        ] = { .reset_val = 0x00400000, .not_reserved = true, .unimp_mask = 0x007F0FFF, .mask = 0x007F0FFF }, /* mask = 0b00000000011111110000111111111111 */
+	[RI_CRRCR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x000003FF, .mask = 0x000003FF }, /* mask = 0b00000000000000000000001111111111 */
+	[RI_CSICFGR        ] = { .reset_val = 0x00200000, .not_reserved = true, .unimp_mask = 0x003F00FF, .mask = 0x003F00FF }, /* mask = 0b00000000001111110000000011111111 */
 	[RI_CFGR1          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFC00C0, .mask = 0xFFFCBFDB }, /* mask = 0b11111111111111001011111111011011 */
 	[RI_CFGR2          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0073777F }, /* mask = 0b00000000011100110111011101111111 */
 	[RI_PLL1CFGR       ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x0000002C, .mask = 0x00073F3F }, /* mask = 0b00000000000001110011111100111111 */
