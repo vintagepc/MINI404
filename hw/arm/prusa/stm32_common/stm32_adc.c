@@ -694,13 +694,13 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 	COM_STRUCT_NAME(Adc) *s = STM32COM_ADC(opaque);
 
 	// printf("ADC_write %d : 0x%" HWADDR_PRIx ", Value: 0x%x\n",
-//             s->id, addr, (uint32_t)value);
+    //         s->parent.periph, addr, (uint32_t)data);
 
 	uint8_t offset = addr&0x3;
 	addr>>=2; // Get index in array.
 	CHECK_BOUNDS_W_V2(addr, data, RI_END); // LCOV_EXCL_LINE
 	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b100);
-	CHECK_UNIMP_RESVD_V2(data, s->regs.raw[addr], s->reginfo, offset);
+	CHECK_UNIMP_RESVD_V2(data, s->regs.raw[addr], s->reginfo, addr);
 
 	switch (addr) {
 		case RI_CFGR1:

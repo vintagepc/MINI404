@@ -234,7 +234,7 @@ G_GNUC_UNUSED static void stm32_check_unimp(uint64_t val, uint64_t curval, const
 	uint32_t old_unimp = curval & reginfo[index].unimp_mask;
 	uint32_t new_unimp = val & reginfo[index].unimp_mask;
 	if (old_unimp != new_unimp) {
-		qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (mask: 0x%"PRIx32" value: 0x%"PRIx64" => 0x%"PRIx64") '%s'!\n", name, reginfo[index].unimp_mask, curval, val, regname);
+		qemu_log_mask(LOG_UNIMP, "%s: Modified unimplemented field (reg: 0x%04x mask: 0x%"PRIx32" value: 0x%"PRIx64" => 0x%"PRIx64", bits 0x%"PRIx32") '%s'!\n", name, index*4U, reginfo[index].unimp_mask, curval, val, new_unimp, regname);
 	}
 }
 
