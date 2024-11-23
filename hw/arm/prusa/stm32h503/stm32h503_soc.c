@@ -99,8 +99,8 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 	// 	sram_size);
 
 	// disabled unless otherwise set such by syscfg.
-	memory_region_set_enabled(&s->sram_alias, false);
-	memory_region_add_subregion(system_memory, 0, &s->sram_alias);
+	// memory_region_set_enabled(&s->sram_alias, false);
+	// memory_region_add_subregion(system_memory, 0, &s->sram_alias);
 
     if (err != NULL) {
         error_propagate(errp, err); // LCOV_EXCL_LINE
@@ -122,6 +122,8 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {
         return; // LCOV_EXCL_BR_LINE
     }
+	// HACK - Defaults to 16 in QEMU but the fw expects 8...
+	s->armv7m.cpu->pmsav7_dregion = 8;
     /* System configuration controller */
 	// object_property_set_link(
 	// 		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
@@ -180,6 +182,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 	// 	}
 	// }
 
+	create_unimplemented_device("I2C2", H503_I2C2_ADDR, 1U*KiB);
 
 }
 

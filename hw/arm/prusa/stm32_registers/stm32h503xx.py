@@ -99,6 +99,8 @@ class stm32h503xx(STM32Fixups):
         for f in chip.periph_map["DMA"]["CCR"].fields:
             if f not in ["EN", "TCIE", "HTIE"]:
                 chip.periph_map["DMA"]["CCR"].fields[f].unimplemented = True
+        for f in ["OAR1", "OAR2", "TIMINGR", "PECR", "TIMEOUTR" ]:
+            chip.periph_map["I2C"][f].unimplemented = True
         
 
     @staticmethod
@@ -108,6 +110,10 @@ class stm32h503xx(STM32Fixups):
         for i in chip.periph_map["DMA_Channel"]:
             chip.periph_map["DMA"][i] = chip.periph_map["DMA_Channel"][i]
         chip.periph_map.pop("DMA_Channel")
+        for i in range(1, 5):
+            chip.periph_map["EXTI"]["EXTICR"+str(i)] = Register(name="EXTICR"+str(i), desc="External interrupt configuration register "+str(i), hex_addr=f"0x{0x5C+(4*i):02X}", int_addr=0x5C+(4*i), fields={}, access=None, reset_value=0)
+        for old, new in [["PRIVCFGR1", "PRIVENR1"], ["PRIVCFGR2", "PRIVENR2"], ]:
+            chip.periph_map["EXTI"][new] = chip.periph_map["EXTI"].pop(old)
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
@@ -117,3 +123,11 @@ class stm32h503xx(STM32Fixups):
         chip.periph_map["ADCC"] = {}
         chip.periph_map["ADCC"]["CCR"] = chip.periph_map["ADC"]["CCR"]
         chip.periph_map["ADC"].pop("CCR")
+        for i in ["IM", "IM_2", "IM_3"]:
+            chip.periph_map["EXTI"]["IMR2"].fields.pop(i)
+        chip.periph_map["EXTI"]["EMR1"].fields.pop("EM")
+        chip.periph_map["EXTI"]["IMR1"].fields.pop("IM_2")
+        for i in ["EM", "EM_2", "EM_3"]:
+            chip.periph_map["EXTI"]["EMR2"].fields.pop(i)
+        for i in ["OA2MASK01", "OA2MASK02", "OA2MASK03", "OA2MASK04", "OA2MASK05", "OA2MASK06", "OA2MASK07", "OA2MASK05_1"]:
+            chip.periph_map["I2C"]["OAR2"].fields.pop(i)

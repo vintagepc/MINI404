@@ -134,7 +134,8 @@ class STM32Chip:
         f.write("typedef union { \n")
         f.write(f"\tstruct {{\n")
         expected_addr = 0
-        for key,reg in self.periph_map[periph].items():
+        addr_sorted = {k: v for k, v in sorted(self.periph_map[periph].items(), key=lambda item: item[1].int_addr)}
+        for key,reg in addr_sorted.items():
             if reg.int_addr != expected_addr:
                 if reg.int_addr - expected_addr == 4:
                     f.write(f"\t\tuint32_t _reserved0x{expected_addr:<X};\n")

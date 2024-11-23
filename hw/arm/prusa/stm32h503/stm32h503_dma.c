@@ -381,9 +381,6 @@ stm32_h503_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int size
 	case RI_CHAN_BASE ... RI_CHAN_END:
 		stm32_h503_dma_chan_write(s, addr, data, size);
         break;
-    default: // LCOV_EXCL_LINE
-        qemu_log_mask(LOG_UNIMP, "stm32common_dma unimplemented write 0x%x+%u size %u val 0x%x\n", // LCOV_EXCL_LINE
-        (unsigned int)addr << 2, offset, size, (unsigned int)data); // LCOV_EXCL_LINE
     }
 }
 

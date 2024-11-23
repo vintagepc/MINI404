@@ -45,6 +45,7 @@ subdir('parts')
 arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'prusa-mini.c',
         'prusa-mk4.c',
+        'prusa-xbuddy-extension.c',
         'prusa-xl-bed.c',
         'prusa-xl-extruder.c',
         'prusa-xl.c',
