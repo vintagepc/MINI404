@@ -284,10 +284,14 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     return r;
 }
 
-static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool active_low)
+static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, bool enabled, uint32_t CCR, uint8_t mode, bool active_low)
 {
     bool is_inverted = mode &0x1;
     uint32_t ratio = 0;
+    if (!enabled)
+    {
+        return ratio;
+    }
     switch (mode)
     {
         case 0x00: // frozen
@@ -341,22 +345,22 @@ static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
 	switch (n)
 	{
 		case 1:
-			if (s->defs.CCER.CC1E && s->defs.CCMR1.CC1S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
+			if (s->defs.CCMR1.CC1S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC1E, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
 			if (s->defs.CCMR1.OC1M == OCxM_Frozen && s->defs.DIER.CC1IE)
 				f2xx_tim_update_ccr_timer(s, 1, s->defs.CCR1);
 			break;
 		case 2:
-			if (s->defs.CCER.CC2E  && s->defs.CCMR1.CC2S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
+			if (s->defs.CCMR1.CC2S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC2E, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
 			break;
 		case 3:
-			if (s->defs.CCER.CC3E  && s->defs.CCMR2.CC3S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+			if (s->defs.CCMR2.CC3S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC3E, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
 			break;
 		case 4:
-			if (s->defs.CCER.CC4E && s->defs.CCMR2.CC4S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
+			if (s->defs.CCMR2.CC4S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC4E, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
 			break;
 	}
 	if (ratio>=0)
