@@ -37,7 +37,7 @@
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 #include "parts/dashboard_types.h"
-#include "parts/xl_bridge.h"
+#include "parts/c1_bridge.h"
 
 enum HW_VER
 {
@@ -117,28 +117,19 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 
 
 
-	// if (kernel_len==0 || arghelper_is_arg("no-bridge"))
-	// {
-	// 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 0, qdev_get_gpio_in_named(motor,"dir",0));
-	// 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), 1, qdev_get_gpio_in_named(motor,"step",0));
-	// }
-	// else
-	// {
-	// 	dev = qdev_new("xl-bridge");
-	// 	qdev_prop_set_uint8(dev, "device", XL_DEV_T0 + index);
-	// 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-	// 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12, qdev_get_gpio_in_named(dev,"tx-assert",0));
-	// 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
-	// 	qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-in", 0));
-	// 	//qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_nAC_FAULT, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12));
-
-	// 	qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_DIR,qdev_get_gpio_in_named(mux,"B2",0));
-	// 	qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_STEP,qdev_get_gpio_in_named(mux,"B2",1));
-	// 	qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Z_UM, qdev_get_gpio_in(lc,0));
-
-	// 	qdev_connect_gpio_out_named(dev, "gpio-out", 0, qdev_get_gpio_in_named(motor,"dir",0));
-	// 	qdev_connect_gpio_out_named(dev, "gpio-out", 1, qdev_get_gpio_in_named(motor,"step",0));
-	// }
+	if (kernel_len==0 || arghelper_is_arg("no-bridge"))
+	{
+	}
+	else
+	{
+		dev = qdev_new("c1-bridge");
+		qdev_prop_set_uint8(dev, "device", C1_DEV_EXT);
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB), 14, qdev_get_gpio_in_named(dev,"tx-assert",0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"byte-in", 0));
+		//qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_nAC_FAULT, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12));
+	}
 };
 
 #define ADD_MACHINE(enumentry, str_suffix, shortcode) \

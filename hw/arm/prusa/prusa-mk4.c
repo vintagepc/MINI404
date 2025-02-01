@@ -43,6 +43,7 @@
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
 #include "otp.h"
+#include "parts/c1_bridge.h"
 
 #define TYPE_XBUDDY_MACHINE "xbuddy-machine"
 
@@ -80,7 +81,7 @@ enum {
 
 enum {
     FAN_PRINT,
-    FAN_HBR, 
+    FAN_HBR,
     FAN_MAX
 };
 
@@ -146,6 +147,7 @@ typedef struct xBuddyMachineClass {
     MachineClass        parent;
     const mk4_cfg_t     *cfg;
     bool                has_mmu;
+	bool				has_extboard;
 } xBuddyMachineClass;
 
 typedef struct xBuddyData {
@@ -153,6 +155,7 @@ typedef struct xBuddyData {
 	const char* name;
 	const char* descr;
     const bool has_mmu;
+	const bool has_extboard;
 } xBuddyData;
 
 #define XBUDDY_MACHINE_CLASS(klass)                                    \
@@ -339,6 +342,50 @@ static const mk4_cfg_t mk3v9_cfg = {
 	.xflash_fn = XFLASH_FN(Mk3v9)
 };
 
+static const mk4_cfg_t core1_cfg = {
+    .lcd_spi = STM32_P_SPI6,
+    .lcd_cs = STM_PIN(GPIOD,11),
+    .lcd_cs_invert = false,
+    .lcd_cd = STM_PIN(GPIOD,15),
+    .w25_spi = STM32_P_SPI5,
+    .w25_cs = STM_PIN(GPIOF,2),
+    .at24_i2c = STM32_P_I2C2,
+    .hx717_data = STM_PIN(GPIOE,7),
+    .hx717_sck = STM_PIN(GPIOG,1),
+    .enc_a = STM_PIN(GPIOD,13),
+    .enc_b = STM_PIN(GPIOD,12),
+    .enc_btn = STM_PIN(GPIOG,3),
+    .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
+    .f_inverted = true,
+    .has_at21 = true,
+	.has_loadcell = true,
+	.temps =
+	{
+		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
+		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
+		.ambient = {18, 20, 21, 25, 19},
+		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
+	},
+	.e_t_mass = 45,
+    .motor = TMC2130,
+    .m_label = {'X','Y','Z','E'},
+    .m_step = { STM_PIN(GPIOA,3), STM_PIN(GPIOA,0), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
+    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
+    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
+    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
+    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
+	.m_inverted = {1,0,1,1},
+    .m_spi = STM32_P_SPI3,
+	.is_400step = true,
+	.dm_ver = 34,
+	.boot_fn = BOOTLOADER_IMAGE(COREONE),
+	.eeprom_fn = EEPROM_FN(COREONE),
+	.eeprom_sys_fn = EEPROM_SYS_FN(COREONE),
+	.xflash_fn = XFLASH_FN(COREONE)
+};
+
 static void mk4_init(MachineState *machine)
 {
 
@@ -396,7 +443,7 @@ static void mk4_init(MachineState *machine)
     }
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    
+
     if(cfg.e_loopback)
     {
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), 7));
@@ -833,18 +880,32 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
-    if (mc->has_mmu && kernel_len > 0)
-    {
-        dev = qdev_new("mmu-bridge");
-        object_property_add_child(OBJECT(periphs), "mmu-bridge", OBJECT(dev));
-    	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),8,qdev_get_gpio_in_named(dev, "reset-in", 0));
-        if (hs != NULL) 
-        {
-	        qdev_connect_gpio_out_named(dev, "fs-out",0, qdev_get_gpio_in_named(hs, "ext-in", 0));
-        }
+	if (kernel_len > 0)
+	{
+		if (mc->has_extboard)
+		{
+			dev = qdev_new("c1-bridge");
+			qdev_prop_set_uint8(dev, "device", C1_DEV_XBUDDY);
+			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB), 7, qdev_get_gpio_in_named(dev,"tx-assert",0));
+			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART6),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
+			qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART6),"uart-byte-in", 0));
 
-    }
+			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 2, qdev_get_gpio_in_named(dev,"reset-in",C1_DEV_EXT));
+		}
+		if (mc->has_mmu)
+		{
+			dev = qdev_new("mmu-bridge");
+			object_property_add_child(OBJECT(periphs), "mmu-bridge", OBJECT(dev));
+			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),8,qdev_get_gpio_in_named(dev, "reset-in", 0));
+			if (hs != NULL)
+			{
+				qdev_connect_gpio_out_named(dev, "fs-out",0, qdev_get_gpio_in_named(hs, "ext-in", 0));
+			}
+
+		}
+	}
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
@@ -874,6 +935,7 @@ static void xbuddy_class_init(ObjectClass *oc, void *data)
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
         xmc->has_mmu = d->has_mmu;
+		xmc->has_extboard = d->has_extboard;
 }
 
 static const xBuddyData mk4_027c = {
@@ -908,6 +970,20 @@ static const xBuddyData mk3v9 = {
 	.cfg = &mk3v9_cfg,
 	.descr = "Prusa Mk3.9",
 };
+
+static const xBuddyData core = {
+	.cfg = &core1_cfg,
+	.descr = "Prusa CORE ONE",
+	.has_extboard = true,
+};
+
+static const xBuddyData core_mmu = {
+	.cfg = &core1_cfg,
+	.descr = "Prusa CORE ONE with MMU3",
+    .has_mmu = true,
+	// extboard not yet supported.
+};
+
 
 static const TypeInfo xbuddy_machine_types[] = {
     {
@@ -945,6 +1021,16 @@ static const TypeInfo xbuddy_machine_types[] = {
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk3v9
-    },
+    },{
+        .name           = MACHINE_TYPE_NAME("prusa-core-one"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&core
+    },{
+        .name           = MACHINE_TYPE_NAME("prusa-core-one-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&core_mmu
+    }
 };
 DEFINE_TYPES(xbuddy_machine_types)

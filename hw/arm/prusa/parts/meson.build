@@ -4,6 +4,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         '74HC4052.c',
         'AT21CSxx.c',
         'CS30BL.c',
+        'c1_bridge.c',
         'corexy_helper.c',
         'current_sum.c',
         'dwarf_buttons.c',
