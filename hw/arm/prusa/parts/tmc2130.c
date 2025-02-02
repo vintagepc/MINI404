@@ -448,7 +448,7 @@ static void tmc2130_um_in(void *opaque, int n, int level)
 {
     tmc2130_state *s = TMC2130(opaque);
     float pos = ((float)level)/1000.f;
-    printf("Motor %c position change %f -> %f\n",s->id,s->current_position,pos);
+    //printf("Motor %c position change %f -> %f\n",s->id,s->current_position,pos);
     s->current_position = pos;
     s->current_step = pos*(float)(s->max_steps_per_mm);
     s->vis.current_pos = pos;
