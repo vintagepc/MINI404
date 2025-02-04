@@ -55,6 +55,8 @@ struct STM32H503_STRUCT_NAME() {
     MemoryRegion flash;
     MemoryRegion flash_alias;
     MemoryRegion ccmsram;
+
+	MemoryRegion engineering_bytes;
 };
 
 static void stm32h503_soc_initfn(Object *obj)
@@ -155,6 +157,13 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 			qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, i), "chardev", qemu_chr_find(name));
         }
     }
+
+	// UID[3], flashsize (in kB), and package as two u16s.:
+	uint32_t eng_data[4] = {0, 0, 0, 128U << 16};
+
+	memory_region_init_ram_ptr(&s->engineering_bytes, OBJECT(dev_soc), "stm32h503-eng-bytes", sizeof(eng_data), &eng_data);
+	memory_region_set_readonly(&s->engineering_bytes, true);
+	memory_region_add_subregion(system_memory, H503_UID_ADDR, &s->engineering_bytes);
 
 	object_property_set_link(
 		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_ADC1)),

@@ -169,8 +169,9 @@
 #define TYPE_STM32G070_USART _STM_G070_PART(usart)
 #define TYPE_STM32H503_USART _STM_H503_PART(usart)
 
-#define TYPE_STM32G070_OTP _STM_G070_PART(otp)
 #define TYPE_STM32F4xx_OTP _STM_F4xx_PART(otp)
+#define TYPE_STM32G070_OTP _STM_G070_PART(otp)
+#define TYPE_STM32H503_OTP _STM_H503_PART(otp)
 
 // Some unit helpers...
 #define MHz (INT64_C(1000000))

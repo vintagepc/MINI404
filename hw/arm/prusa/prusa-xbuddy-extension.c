@@ -38,6 +38,7 @@
 #include "sysemu/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/c1_bridge.h"
+#include "otp.h"
 
 enum HW_VER
 {
@@ -67,6 +68,12 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 
 	const prusa_ext_cfg_t* cfg ATTRIBUTE_UNUSED = ext_cfg_map[type];
 
+	OTP_v5 otp_data = { .version = 5, .size = sizeof(OTP_v5),
+		.datamatrix = {'4', '5', '5', '8', '-', '5', '0', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
+	};
+
+	uint32_t* otp_raw = (uint32_t*) &otp_data;
+
 	dev = qdev_new(TYPE_STM32H503xx_SOC);
 
 	// TODO.. can we somehow detect if an extruder is already running and auto-increment the index?
@@ -76,6 +83,19 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 	DeviceState* dev_soc = dev;
 	qdev_prop_set_string(dev, "flash-file", "pruxa-xbuddy-extension-flash.bin");
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m33"));
+
+	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+	qdev_prop_set_uint32(otp,"len-otp-data", 8);
+	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
+	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
+	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
+	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
+	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
+	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
+	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
+	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
+
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
