@@ -51,6 +51,8 @@ struct  fan_state
 
     qemu_irq tach_pulse, pwm_out, rpm_out;
 
+    bool tach_blocked;
+
 	QEMUTimer *tach;
 	QEMUTimer *softpwm;
     int64_t tOn, tOff, tLastOn;
@@ -75,13 +77,22 @@ OBJECT_DECLARE_SIMPLE_TYPE(fan_state, FAN)
 static void fan_tach_expire(void *opaque)
 {
     fan_state *s = opaque;
-    if (s->is_stalled) {
-        qemu_set_irq(s->tach_pulse, 0);
-    } else {
-        qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
+    if (!s->tach_blocked)
+    {
+        if (s->is_stalled) {
+            qemu_set_irq(s->tach_pulse, 0);
+        } else {
+            qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
+        }
     }
     timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
 }
+
+static void fan_tach_block(void *opaque, int n, int level) {
+    fan_state *s = opaque;
+    s->tach_blocked = level;
+}
+
 
 static void fan_pwm_change(void *opaque, int n, int level) {
     fan_state *s = opaque;
@@ -188,6 +199,7 @@ static void fan_init(Object *obj){
     qdev_init_gpio_out_named(DEVICE(obj), &s->tach_pulse, "tach-out",1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out",1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->rpm_out, "rpm-out",1);
+    qdev_init_gpio_in_named(DEVICE(obj), fan_tach_block, "tach-disable",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 

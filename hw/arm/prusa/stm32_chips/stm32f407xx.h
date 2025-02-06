@@ -44,6 +44,7 @@
 
 static const stm32_soc_cfg_t stm32f407xx_cfg =
 {
+    .name = "STM32F407xx",
 	.nvic_irqs = F4xx_F407_COUNT_IRQ,
 	.rcc_hsi_freq = 16000000,
 	.rcc_hse_freq = 12000000,
@@ -144,7 +145,20 @@ static const stm32_soc_cfg_t stm32f407xx_cfg =
 
 		PER_LN(P_SYSCFG, TYPE_STM32F40x_F41x_SYSCFG, 0x40013800),
 
-	}
+    },
+    .unimplemented = {
+        PER_UNIMP(P_WWDG, "WWDG", 0x40002C00, 1U*KiB),
+        PER_UNIMP(P_I2S2, "I2S2ext", 0x40003000, 1U*KiB),
+        PER_UNIMP(P_I2S3, "I2S3ext", 0x40004000, 1U*KiB),
+        PER_UNIMP(P_CAN1, "CAN1", 0x40006400, 1U*KiB),
+        PER_UNIMP(P_CAN2, "CAN2", 0x40006800, 1U*KiB),
+        PER_UNIMP(P_DAC, "DAC", 0x40007400, 1U*KiB),
+        PER_UNIMP(P_SDIO, "SDIO", 0x40012C00, 1U*KiB),
+        PER_UNIMP(P_BKP, "BKPSRAM", 0x40024000, 1U*KiB),
+        PER_UNIMP(P_DCMI, "DCMI", 0x50050000, 1U*KiB),
+        PER_UNIMP(P_SYSRAM, "SYSRAM/RSVD", 0x1FFF0000, 32U*KiB),
+        PER_UNIMP(P_ETM, "ETM/DBGMCU/TIPU", 0xE0001000, 254U*KiB),
+    },
 } ;
 
 #endif // HW_ARM_PRUSA_STM32F407XX_H

@@ -145,7 +145,10 @@ static const stm32_soc_cfg_t stm32g070xx_cfg =
 
 		PER_LNI(P_EXTI, TYPE_STM32G070_EXTI, 0x40021800, [0 ... 1] = G070_EXTI0_1_IRQ, [2 ... 3] = G070_EXTI2_3_IRQ, [4 ... 15] = G070_EXTI4_15_IRQ),
 		PER_LN(P_DBG, TYPE_STM32G070_DBG, 0x40015800),
-	}
+	}, 
+    .unimplemented = {
+        PER_UNIMP(P_PWR, "PWR", 0x40007000, 1U*KiB),
+    }
 } ;
 
 #endif // HW_ARM_PRUSA_STM32G070XX_H

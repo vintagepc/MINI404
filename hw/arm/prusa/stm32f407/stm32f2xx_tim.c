@@ -133,7 +133,10 @@ static void f2xx_tim_update_irqs(f2xx_tim *s)
     flags |= (s->regs[R_TIM_SR] & INT_CCOF_MASK) >> 8;
     flags &= s->regs[R_TIM_DIER];
     qemu_set_irq(s->irq[IRQ_GLOBAL], flags > 0);
-    qemu_set_irq(s->public_irq, flags > 0);
+    if (flags & INT_UIF)
+    {
+        qemu_irq_raise(s->public_irq);
+    }
     if (!qemu_irq_is_connected(s->irq[IRQ_GLOBAL]))
     {
         qemu_set_irq(s->irq[IRQ_CC], (flags & INT_CC_MSK) > 0);
@@ -166,7 +169,8 @@ f2xx_tim_period(f2xx_tim *s, uint64_t multiplier)
 {
     uint64_t clock_freq = s->parent.clock_freq;
     clock_freq/= (s->defs.PSC+1);
-    return muldiv64(1000000000ULL,multiplier,clock_freq);
+    //printf("Timer %s input: %lu freq: %lu per: %u\n", _PERIPHNAMES[s->parent.periph], clock_freq, muldiv64(1000000000ULL,multiplier,clock_freq), s->defs.ARR+1);
+    return muldiv64(NANOSECONDS_PER_SECOND, multiplier,clock_freq);
 }
 
 static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
@@ -175,7 +179,7 @@ static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
 	if (clock_freq == 0)
 		return 0;
 	else
-	    return muldiv64(t, clock_freq, 1000000000ULL) / (s->defs.PSC + 1);
+	    return muldiv64(t, clock_freq, NANOSECONDS_PER_SECOND) / (s->defs.PSC + 1);
 }
 
 
@@ -280,10 +284,14 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     return r;
 }
 
-static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool active_low)
+static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, bool enabled, uint32_t CCR, uint8_t mode, bool active_low)
 {
     bool is_inverted = mode &0x1;
     uint32_t ratio = 0;
+    if (!enabled)
+    {
+        return ratio;
+    }
     switch (mode)
     {
         case 0x00: // frozen
@@ -337,22 +345,22 @@ static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
 	switch (n)
 	{
 		case 1:
-			if (s->defs.CCER.CC1E && s->defs.CCMR1.CC1S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
+			if (s->defs.CCMR1.CC1S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC1E, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
 			if (s->defs.CCMR1.OC1M == OCxM_Frozen && s->defs.DIER.CC1IE)
 				f2xx_tim_update_ccr_timer(s, 1, s->defs.CCR1);
 			break;
 		case 2:
-			if (s->defs.CCER.CC2E  && s->defs.CCMR1.CC2S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
+			if (s->defs.CCMR1.CC2S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC2E, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
 			break;
 		case 3:
-			if (s->defs.CCER.CC3E  && s->defs.CCMR2.CC3S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+			if (s->defs.CCMR2.CC3S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC3E, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
 			break;
 		case 4:
-			if (s->defs.CCER.CC4E && s->defs.CCMR2.CC4S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
+			if (s->defs.CCMR2.CC4S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC4E, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
 			break;
 	}
 	if (ratio>=0)

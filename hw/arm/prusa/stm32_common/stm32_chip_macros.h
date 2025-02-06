@@ -18,6 +18,8 @@ enum {
 #define PER_LNI(id, typename, addr, ...) [STM32_##id] = {typename, addr, 0, PERIPH_CFG_FLAG_NONE, {__VA_ARGS__, -1}}
 // Add a single-line scalar entry with  id, base address, flags, and IRQ vector
 #define PER_LNIF(id, typename, addr, flags, ...) [STM32_##id] = {typename, addr, 0, flags, {__VA_ARGS__, -1}}
+// Add an entry for an unimplemented peripheral (ID, base, and size only)
+#define PER_UNIMP(id, name, addr, size) [STM32_##id] = {name " (Unimplemented)", addr, size, PERIPH_CFG_FLAG_NON_STM32P, {-1}}
 
 typedef struct stm32_periph_cfg_t
 {
@@ -53,6 +55,7 @@ typedef struct stm32_soc_cfg_t
 	const hwaddr ccmsram_base;
 	const stm32_mem_cfg_t ccmsram_variants[STM32_MAX_FLASH_OPTS +1];
 	const stm32_periph_cfg_t perhipherals[STM32_P_COUNT];
+	const stm32_periph_cfg_t unimplemented[STM32_P_COUNT];
 } stm32_soc_cfg_t;
 
 #endif

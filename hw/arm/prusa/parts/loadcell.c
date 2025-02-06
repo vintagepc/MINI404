@@ -32,7 +32,7 @@
 #include "hw/irq.h"
 #include "qom/object.h"
 #include "hw/sysbus.h"
-
+#include "math.h"
 #define TYPE_LOADCELL "loadcell"
 
 OBJECT_DECLARE_SIMPLE_TYPE(LoadcellState, LOADCELL)
@@ -44,11 +44,19 @@ struct LoadcellState {
     qemu_irq irq; //
     bool is_zero;
     int last_pos;
+    int32_t pos_um[3];
+
+    bool calpin_present;
 
 	uint8_t tap;
 	p404_key_handle key;
 	QEMUTimer* timer;
 };
+
+#define PIN_POSITION_X (180 + 8)
+#define PIN_POSITION_Y (180 + 10)
+#define PIN_POSITION_Z 4.5
+#define PIN_DIAMETER 6
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(LoadcellState, loadcell, LOADCELL, SYS_BUS_DEVICE, {TYPE_P404_SCRIPTABLE}, {TYPE_P404_KEYCLIENT}, {NULL})
 
@@ -61,17 +69,18 @@ static void loadcell_reset(DeviceState *dev)
     LoadcellState *s = LOADCELL(dev);
     qemu_set_irq(s->irq,10);
     s->is_zero = true;
+    s->calpin_present = false;
 }
 
-static void loadcell_zpos_in(void *opaque, int n, int level){
-    LoadcellState *s = LOADCELL(opaque);
+static void handle_zpos_buildplate(LoadcellState *s, int level)
+{
     // This is just a SWAG... loadcell will start at 0.75mm above "reference"
     // zero.
     bool dir = s->last_pos<level;
     #define START_HEIGHT 750
     if (dir) {
         if (level>START_HEIGHT && !s->is_zero) {
-			qemu_set_irq(s->irq,10);
+            qemu_set_irq(s->irq,10);
             s->is_zero = true;
         } else if (level <=START_HEIGHT) {
             s->is_zero = false;
@@ -91,6 +100,58 @@ static void loadcell_zpos_in(void *opaque, int n, int level){
         }
     }
     s->last_pos = level;
+
+}
+
+static void handle_pos_calpin(LoadcellState *s)
+{
+    // This is just a SWAG... loadcell will start at 0.75mm above "reference"
+    // zero.
+    double pinPosX = 1000.f * PIN_POSITION_X;
+    double pinPosY = 1000.f * PIN_POSITION_Y;
+    double pinPosZ = 1000.f * PIN_POSITION_Z;
+    double pinDiameter = 1000.f * PIN_DIAMETER;
+
+    double posX = s->pos_um[0];
+    double posY = s->pos_um[1];
+    double posZ = s->pos_um[2];
+
+    float xy_distance = sqrt(pow(posX - pinPosX, 2) + pow(posY - pinPosY, 2));
+    float z_distance = posZ - pinPosZ;
+    float final_distance = 0;
+    if (z_distance < 0)
+    {
+        final_distance = xy_distance - (pinDiameter / 2);
+    }
+    else
+    {
+        final_distance = z_distance;
+    }
+    printf("Cal pin distance: %f %f\n",z_distance, final_distance);
+    // Sort of a cheat, we re-use the Z-only logic but instead feed it a 
+    // distance based off of 3 dimensions rather than just Z.
+    handle_zpos_buildplate(s, final_distance);
+}
+
+static void loadcell_cal_pin_in(void *opaque, int n, int level){
+    LoadcellState *s = LOADCELL(opaque);
+    s->calpin_present = level;
+    printf("Cal pin %s\n", level? "Installed":"Removed");
+}
+
+static void loadcell_pos_in(void *opaque, int n, int level){
+    LoadcellState *s = LOADCELL(opaque);
+    s->pos_um[n] = level;
+
+    if (s->calpin_present)
+    {
+        handle_pos_calpin(s);
+    }
+    else if (n == 2) // Only do buildplate if we get a z update
+    {
+        // printf("Z pos: %d\n", level);
+        handle_zpos_buildplate(s, level);
+    }
 }
 
 static void loadcell_tap_timer(void *opaque)
@@ -146,7 +207,8 @@ static void loadcell_init(Object *obj)
 {
     LoadcellState *s = LOADCELL(obj);
     qdev_init_gpio_out(DEVICE(obj), &s->irq, 1);
-    qdev_init_gpio_in(DEVICE(obj),loadcell_zpos_in,1);
+    qdev_init_gpio_in(DEVICE(obj), loadcell_pos_in,3);
+    qdev_init_gpio_in_named(DEVICE(obj), loadcell_cal_pin_in,"cal-pin-state", 1);
 
     script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_LOADCELL);
     scripthost_register_scriptable(pScript);

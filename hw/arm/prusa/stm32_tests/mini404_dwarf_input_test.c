@@ -79,6 +79,7 @@ static void test_reset(void)
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     g_free(qtest_hmp(ts, "sendkey s"));
+    qtest_clock_step_next(ts);
 
     g_assert_false(qtest_get_irq(ts, 1));
 

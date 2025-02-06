@@ -60,6 +60,7 @@ static void software_pwm_reset(DeviceState *dev)
 		s->line_state = 0;
 	}
 	s->clock_count = 0;
+    qemu_set_irq(s->pwm[0], 0);
 }
 
 
@@ -99,11 +100,6 @@ static void software_pwm_line(void *opaque, int n, int level)
 	else
 	{
 		s->line_state &= ~(1U<<n);
-	}
-	if (s->last_pwm[n] == 0 && level)
-	{
-		qemu_set_irq(s->pwm[n], 255);
-		printf("SPWM: first-on\n");
 	}
 }
 

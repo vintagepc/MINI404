@@ -37,6 +37,7 @@ struct CS30BLState {
     uint32_t gain;
     float current;
     uint32_t current_x1000;
+    uint32_t fullscale_mA;
 
     qemu_irq irq;
 };
@@ -50,6 +51,15 @@ static void cs30bl_update_irqs(CS30BLState *s) {
     // ADC expects values directly in "ADC units"
     int ma_sense = (s->current*((float)s->rcsense/1000.f)*(float)s->gain)/3.35f*4096.f*1.95f/2.f;
     qemu_set_irq(s->irq,ma_sense);
+}
+
+static void cs30bl_set_pwm(void *opaque, int n, int level)
+{
+    CS30BLState *s = CS30BL(opaque);
+    // Calculate PWM-scaled current value and output it.
+    s->current = (((float)level/255.f) * s->fullscale_mA)/1000.f;
+    // printf("New current: %f\n",s->current);
+    cs30bl_update_irqs(s);
 }
 
 static void cs30bl_read_request(void *opaque, int n, int level)
@@ -94,6 +104,7 @@ static void cs30bl_init(Object *obj)
 
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq, "a_sense", 1);
     qdev_init_gpio_in_named(DEVICE(obj),cs30bl_read_request,"adc_read_request",1);
+    qdev_init_gpio_in_named(DEVICE(obj),cs30bl_set_pwm,"pwm-in",1);
 
     script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_CS30BL);
     script_register_action(pScript, "SetA","Sets the voltage readout to a given value.",ActSetA);
@@ -106,6 +117,7 @@ static Property cs30bl_properties[] = {
     DEFINE_PROP_UINT32("mA", CS30BLState, start_current,0),
     DEFINE_PROP_UINT32("mOhmR", CS30BLState, rcsense,22),
     DEFINE_PROP_UINT32("gain", CS30BLState, gain,50),
+    DEFINE_PROP_UINT32("fullscale-mA", CS30BLState, fullscale_mA,1700),
     DEFINE_PROP_END_OF_LIST(),
 };
 

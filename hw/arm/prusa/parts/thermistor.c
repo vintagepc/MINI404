@@ -89,6 +89,11 @@ static void thermistor_update_output(ThermistorState *s) {
 		qemu_set_irq(s->irq_value, value);
 		return;
 	}
+    else if (s->table_index == 65534) // ADC val = 10x C table
+    {
+        qemu_set_irq(s->irq_value, value* 10);
+        return;
+    }
 	for (uint16_t i= 0; i<s->table_length; i+=2) {
 		if (s->table[i+1] <= value) {
 			uint16_t tt = s->table[i];
@@ -198,6 +203,7 @@ static void thermistor_set_table(ThermistorState *s) {
         default:
 			printf("# %s WARNING: Unhandled thermistor table %u!\n",__FILE__,s->table_index);
 			/* FALLTHRU */
+		case UINT16_MAX-1:
 		case UINT16_MAX:
             s->table = NULL;
             s->table_length = 0;
