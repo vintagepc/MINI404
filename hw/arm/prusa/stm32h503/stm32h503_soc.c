@@ -139,7 +139,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 	// 	&error_fatal);
     // sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, SYSCFG_IRQ));
 
-    //object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_FINT)), "flash", OBJECT(&s->flash), errp);
+    object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_FINT)), "flash", OBJECT(&s->flash), errp);
 
     qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_RCC), "hsi_freq", cfg->rcc_hsi_freq);
     qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_RCC), "lsi_freq", cfg->rcc_lsi_freq);
@@ -190,8 +190,6 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 	// 		}
 	// 	}
 	// }
-
-	create_unimplemented_device("I2C2", H503_I2C2_ADDR, 1U*KiB);
 
 }
 

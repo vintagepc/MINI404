@@ -101,6 +101,14 @@ class stm32h503xx(STM32Fixups):
                 chip.periph_map["DMA"]["CCR"].fields[f].unimplemented = True
         for f in ["OAR1", "OAR2", "TIMINGR", "PECR", "TIMEOUTR" ]:
             chip.periph_map["I2C"][f].unimplemented = True
+        for f,v in chip.periph_map["FLASH"].items():
+            if f != "ACR":
+                v.unimplemented = True
+        chip.periph_map["FLASH"]["ACR"].fields["PRFTEN"].unimplemented = True
+        chip.periph_map["FLASH"]["ACR"].fields["WRHIGHFREQ"].unimplemented = True
+        chip.periph_map["FLASH"]["ACR"].reset_value = 0x00000013
+        chip.periph_map["FLASH"]["OPTCR"].reset_value = 0x00000001
+
         
 
     @staticmethod
@@ -114,6 +122,11 @@ class stm32h503xx(STM32Fixups):
             chip.periph_map["EXTI"]["EXTICR"+str(i)] = Register(name="EXTICR"+str(i), desc="External interrupt configuration register "+str(i), hex_addr=f"0x{0x5C+(4*i):02X}", int_addr=0x5C+(4*i), fields={}, access=None, reset_value=0)
         for old, new in [["PRIVCFGR1", "PRIVENR1"], ["PRIVCFGR2", "PRIVENR2"], ]:
             chip.periph_map["EXTI"][new] = chip.periph_map["EXTI"].pop(old)
+        for old, new in [["NSCR", "CR"], ["NSSR", "SR"], ["NSKEYR", "KEYR"] ,["NSCCR", "CCR"], ["OPTSR_CUR", "OPTSR"], ["OPTSR2_CUR", "OPTSR2"] ]:
+            chip.periph_map["FLASH"][new] = chip.periph_map["FLASH"].pop(old)
+        # for old in ["BOOTR", 'EPOCHR']:
+        #     chip.periph_map["FLASH"]["{old}_CUR"] = chip.periph_map["FLASH"][old]
+        #     chip.periph_map["FLASH"]["{old}_PRG"] = chip.periph_map["FLASH"].pop(old)
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):

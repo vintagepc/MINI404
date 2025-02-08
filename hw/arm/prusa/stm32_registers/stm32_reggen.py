@@ -11,7 +11,7 @@ from stm32h503xx import *
 # top level is peripheral name, second level is register name.
 
 
-reg_pattern = re.compile(r'.+uint32_t (\w+);.+/\*!<\s+(.+)\s+Address offset: (0x\w+)\s+\*/')
+reg_pattern = re.compile(r'.+uint32_t (\w+);.+/\*!<\s*(.+)\s+Address offset: +(0x\w+)\s+\*/')
 reg_pattern2 = re.compile(r'.+uint32_t (\w+);.+/\*!<\s+(.+)\s+Address offset: (0x\w+)\s+\+.+\*/')
 typedef_pattern = re.compile(r'}\s?([\w_]+)_TypeDef;')
 
@@ -65,7 +65,7 @@ mask2nbits = {
 }
 
 shift_pattern = re.compile(r'\((\d+)U\)')
-msk_pattern = re.compile(r'\((0x[0-9A-F]+)UL?')
+msk_pattern = re.compile(r'\((0x[0-9A-F]+)U?L?')
 msk2_pattern = re.compile(r'\(([0-9]+)UL')
 desc_pattern = re.compile(r'^.*?(/\*.*\*/)$')
 
@@ -238,10 +238,10 @@ def process_chip(info: STM32Chip):
 	
 	
 chip_data = [
-	STM32Chip(name="stm32f030", header="stm32f030xc.h", fixups=stm32f030xx, gen_list=[]),
-	STM32Chip(name="stm32f427", header="stm32f427xx.h", fixups=stm32f427xx, gen_list=[]),
-	STM32Chip(name="stm32g070", header="stm32g070xx.h", fixups=stm32g070xx, gen_list=[]),
-	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA"]),
+#	STM32Chip(name="stm32f030", header="stm32f030xc.h", fixups=stm32f030xx, gen_list=[]),
+#	STM32Chip(name="stm32f427", header="stm32f427xx.h", fixups=stm32f427xx, gen_list=[]),
+#	STM32Chip(name="stm32g070", header="stm32g070xx.h", fixups=stm32g070xx, gen_list=[]),
+	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA", "EXTI", "I2C", "FLASH"]),
 	]
 
 

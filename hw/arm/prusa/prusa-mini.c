@@ -231,7 +231,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         DeviceState* split_out = qdev_new("split-irq");
         qdev_prop_set_uint16(split_out, "num-lines", 4);
         qdev_realize_and_unref(DEVICE(split_out),NULL,  &error_fatal);
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART2),"uart-byte-out", 0, qdev_get_gpio_in(split_out,0));
+        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART2),"uart-byte-out", 0, qdev_get_gpio_in(split_out,0));
         DeviceState* split_zmin = qdev_new("split-irq");
         qdev_prop_set_uint16(split_zmin, "num-lines", 3);
         qdev_realize_and_unref(DEVICE(split_zmin),NULL,  &error_fatal);
@@ -250,7 +250,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
             sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-            qdev_connect_gpio_out_named(dev,"byte-out", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART2),"uart-byte-in",0));
+            qdev_connect_gpio_out_named(dev,"byte-out", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART2),"uart-byte-in",0));
             qdev_connect_gpio_out(split_out,i, qdev_get_gpio_in_named(dev,"byte-in",0));
             qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), step_pins[i], qdev_get_gpio_in_named(dev,"step",0));
             qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOD), dir_pins[i], qdev_get_gpio_in_named(dev,"dir",0));

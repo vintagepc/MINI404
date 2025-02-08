@@ -25,6 +25,16 @@ typedef struct {
     MAC_addr mac_address; // MAC address (6 bytes)
 	uint16_t _padding;
 } OTP_v4;
+
+// Puppies are using OTP_V5 format
+typedef struct {
+    uint8_t version; // Data structure version (1 bytes)
+    uint16_t size; // Data structure size (uint16_t little endian)
+    uint8_t bomID; // BOM ID (1 bytes)
+    uint32_t timestamp; // UNIX Timestamp from 1970 (uint32_t little endian)
+    uint8_t datamatrix[24]; // DataMatrix ID 1 (24 bytes)
+} OTP_v5;
+
 #pragma pack(pop)
 
 #endif

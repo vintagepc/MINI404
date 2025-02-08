@@ -38,6 +38,11 @@ class STM32Fixups(ABC):
         """Method to manually control the generation of the output files, for items not in the "global" generation list"""
         pass
 
+
+def clean_reg_name(name: str):
+    return name.replace('_NS','').replace('_BASE','_ADDR')
+
+
 # A dataclass to store a chip name, and function pointers
 # to either imported data "fixups", or functions that supply
 # additional data that cannot be extracted from the header file alone.
@@ -50,7 +55,7 @@ class STM32Chip:
     header: str
     fixups: STM32Fixups
     gen_list: []
-    gen_list_meta_only = ["CRC", "RNG", "IWDG", "ADCC", "ADC"]
+    gen_list_meta_only = ["CRC", "RNG", "IWDG", "ADCC", "ADC", "EXTI", "RTC"]
     periph_map: {}
     periph_addrs: {}
     periph_irqs: {}
@@ -86,7 +91,7 @@ class STM32Chip:
             # First, deduplicate since some appear both as BASE_NS and BASE:
             clean_addrs = {}
             for key,addr in self.periph_addrs.items():
-                clean_addrs[key.replace('_NS','').replace('_BASE','_ADDR')] = addr
+                clean_addrs[clean_reg_name(key)] = addr
             addr_sorted = {k: v for k, v in sorted(clean_addrs.items(), key=lambda item: item[1])}
             for key,addr in addr_sorted.items():
                 f.write(f"\t{self.name_short}_{key.replace('_NS','_NS').replace('_BASE','_ADDR'):<20} = 0x{addr:08X}UL, /* 0x{addr:08X}UL */\n")
@@ -126,7 +131,8 @@ class STM32Chip:
     def write_metadata(self, f:object, periph: str):
         f.write(f"static const stm32_reginfo_t stm32_{self.name_short_l}_{periph.lower()}_reginfo[RI_END] = \n")
         f.write("{ \n")
-        for key,reg in self.periph_map[periph].items():
+        addr_sorted = {k: v for k, v in sorted(self.periph_map[periph].items(), key=lambda item: item[1].int_addr)}
+        for key,reg in addr_sorted.items():
             f.write(reg.print_c())
         f.write("}; \n\n")
 
@@ -215,7 +221,12 @@ class Register:
     def get_valid_mask(self):
         mask = 0
         for c,field in self.fields.items():
-            mask |= (2**field.width - 1) << field.shift
+            try:
+                mask |= (2**field.width - 1) << field.shift
+            except:
+                print(f"Error in {self.name} field {field.name}")
+                field.print()
+            
         return mask
 
     def get_unimp_mask(self):
@@ -251,5 +262,8 @@ class Register:
 
     def print_c(self) -> str:
         valid_mask = self.get_valid_mask()
-        retval = f"\t[RI_{self.name:<15}] = {{ .reset_val = 0x{self.reset_value:08X}, .not_reserved = true, .unimp_mask = 0x{self.get_unimp_mask():08X}, .mask = 0x{valid_mask:08X} }}, /* mask = 0b{valid_mask:032b} */\n"
+        new_name = self.name
+        if new_name.startswith('NS'):
+            new_name = new_name[2:]
+        retval = f"\t[RI_{new_name:<15}] = {{ .reset_val = 0x{self.reset_value:08X}, .not_reserved = true, .unimp_mask = 0x{self.get_unimp_mask():08X}, .mask = 0x{valid_mask:08X} }}, /* mask = 0b{valid_mask:032b} */\n"
         return retval
