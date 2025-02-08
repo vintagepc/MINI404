@@ -744,6 +744,12 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 			{
 				s->regs.CR.bits.ADCAL = 0; // No calibration required :)
 			}
+			if (s->regs.CR.bits.ADDIS)
+			{
+				s->regs.CR.bits.ADEN = 0;
+				s->regs.ISR.bits.ADRDY = 0;
+				s->regs.CR.bits.ADDIS = 0;
+			}
 		}
 			break;
 		default:
