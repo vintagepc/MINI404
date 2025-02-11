@@ -759,7 +759,19 @@ static void esp32_machine_init(MachineState *machine)
     if (blk) {
         ss->dport.flash_blk = blk;
     }
-    qdev_prop_set_chr(DEVICE(ss), "serial0", serial_hd(0));
+    
+    // Probably an epic kludge, but I couldn't find a better way to do this by
+    // e.g. back-populating a -serial cmdline argument to get picked up by serial_hd()
+    // ~VintagePC
+    Chardev* cdev = qemu_chr_find("prusaxl-esp32");
+    if (cdev)
+    {
+        qdev_prop_set_chr(DEVICE(ss), "serial0", cdev);
+    }
+    else
+    {
+        qdev_prop_set_chr(DEVICE(ss), "serial0", serial_hd(0));
+    }
     qdev_prop_set_chr(DEVICE(ss), "serial1", serial_hd(1));
     qdev_prop_set_chr(DEVICE(ss), "serial2", serial_hd(2));
     if (machine->ram_size > 0) {

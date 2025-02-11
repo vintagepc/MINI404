@@ -44,6 +44,8 @@
 
 #include "qom/object.h"
 
+//#define NO_GLOBAL_SYSMEM 1
+
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F4XX_STRUCT_NAME(), STM32F4XX_BASE)
 
 struct STM32F4XX_STRUCT_NAME() {
@@ -86,7 +88,6 @@ static void stm32f4xx_soc_finalize(Object *obj)
 static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 {
     STM32F4XX_STRUCT_NAME() *s = STM32F4XX_BASE(dev_soc);
-    MemoryRegion *system_memory = get_system_memory();
     DeviceState *dev, *armv7m;
     Error *err = NULL;
     int i;
@@ -97,14 +98,24 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
 	const stm32_soc_cfg_t* cfg = (STM32_SOC_GET_CLASS(dev_soc))->cfg;
 
+#ifdef NO_GLOBAL_SYSMEM
+	memory_region_init(&s->parent.sys_memory, OBJECT(s), cfg->name ,UINT32_MAX);
+	MemoryRegion* system_memory = &s->parent.sys_memory;
+	s->parent.has_sys_memory = true;
+#else
+    MemoryRegion *system_memory = get_system_memory();
+#endif
+
     memory_region_init_rom(&s->flash, OBJECT(dev_soc), "STM32F407.flash",
                            flash_size, &err);
     if (err != NULL) {
         error_propagate(errp, err);
         return;
     }
-    memory_region_init_alias(&s->flash_alias, OBJECT(dev_soc),
-                             "STM32F407.flash.alias", &s->flash, 0,
+    memory_region_add_subregion(system_memory, cfg->flash_base, &s->flash);
+
+    memory_region_init_alias(&s->flash_alias, OBJECT(system_memory),
+                             "STM32F407.flash", &s->flash, 0,
                              flash_size);
 
     // Kinda sketchy but needed to bypass the FW check on the Mini...
@@ -113,10 +124,8 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 	    s->flash.ram_block->host[MiB  -1] = 0xFF;
 	}
 
-    memory_region_add_subregion(system_memory, cfg->flash_base, &s->flash);
-    memory_region_add_subregion(system_memory, 0, &s->flash_alias);
-
-    memory_region_init_ram(&s->sram, NULL, "STM32F407.sram", sram_size,
+    memory_region_add_subregion_overlap(system_memory, 0, &s->flash_alias, 10);
+    memory_region_init_ram(&s->sram, OBJECT(dev_soc), "STM32F407.sram", sram_size,
                            &err);
     if (err != NULL) {
         error_propagate(errp, err);
@@ -246,21 +255,6 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 	{
 		memory_region_add_subregion_overlap(&s->armv7m.container, cfg->perhipherals[STM32_P_DWT].base_addr, sysbus_mmio_get_region(SYS_BUS_DEVICE(stm32_soc_get_periph(dev_soc, STM32_P_DWT)),0) ,10);
 	}
-
-    create_unimplemented_device("WWDG",        0x40002C00, 0x400);
-    create_unimplemented_device("I2S2ext",     0x40003000, 0x400);
-    create_unimplemented_device("I2S3ext",     0x40004000, 0x400);
-    create_unimplemented_device("CAN1",        0x40006400, 0x400);
-    create_unimplemented_device("CAN2",        0x40006800, 0x400);
-    create_unimplemented_device("DAC",         0x40007400, 0x400);
-    create_unimplemented_device("SDIO",        0x40012C00, 0x400);
-    create_unimplemented_device("BKPSRAM",     0x40024000, 0x400);
-    create_unimplemented_device("DCMI",        0x50050000, 0x400);
-    create_unimplemented_device("SYSRAM/RSVD",         0x1FFF0000, 0x8000);
-    create_unimplemented_device("ETM/DBGMCU/TIPU", 0xE0001000, 0xFEFFF);
-
-  //  create_unimplemented_device("EXTERNAL",    0xA0000000, 0x3FFFFFFF)
-
 }
 
 static void stm32f4xx_soc_class_init(ObjectClass *klass, void *data)

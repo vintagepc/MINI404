@@ -7,6 +7,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'c1_bridge.c',
         'corexy_helper.c',
         'current_sum.c',
+        'demux.c',
         'dwarf_buttons.c',
         'encoder_input.c',
         'fan.c',

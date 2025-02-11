@@ -112,7 +112,10 @@ typedef struct stm32_reginfo_t
 	_P(DWT), \
 	_P(ITM), \
 	_P(DBG), \
-	_P(ICACHE),
+	_P(ICACHE), \
+    _P(ETM), \
+    _P(SYSRAM), \
+    _P(DYNMAP),
 
 #define _P(x) STM32_P_##x
 

@@ -38,7 +38,7 @@
 
 // 3 extra lines for fan, therm, indicators.
 #define DPY_MAX_ROWS (LINE_HEIGHT *(N_MOTORS + 4U))
-#define DPY_MAX_COLS 480
+#define DPY_MAX_COLS 550
 #define LED_HT LINE_HEIGHT
 
 #define LED_W DPY_MAX_COLS/N_LEDS
@@ -163,7 +163,7 @@ static void dashboard_2d_update_display(void *opaque)
             snprintf(pos, sizeof(pos),"%8.3f%c", m[i]->current_pos, m[i]->status.dir? '<' : '>');
             for (int j=0; j<9; j++)
             {
-                vga_putcharxy(s->con, (60-9)+j, i+1, pos[j], attr_norm);
+                vga_putcharxy(s->con, (68-9)+j, i+1, pos[j], attr_norm);
             }
         }
     }

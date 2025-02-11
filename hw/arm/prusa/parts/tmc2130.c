@@ -444,6 +444,19 @@ static const p404_motorif_status_t* tmc2130_get_status(P404MotorIF* p)
     return &s->vis;
 }
 
+static void tmc2130_um_in(void *opaque, int n, int level)
+{
+    tmc2130_state *s = TMC2130(opaque);
+    float pos = ((float)level)/1000.f;
+    //printf("Motor %c position change %f -> %f\n",s->id,s->current_position,pos);
+    s->current_position = pos;
+    s->current_step = pos*(float)(s->max_steps_per_mm);
+    s->vis.current_pos = pos;
+    s->vis.status.changed = true;
+    qemu_set_irq(s->position_out, s->current_step);
+    qemu_set_irq(s->um_out, s->current_position*1000.f);
+}
+
 static void tmc2130_finalize(Object *obj){
 }
 
@@ -484,6 +497,7 @@ static void tmc2130_init(Object *obj){
     qdev_init_gpio_in_named( DEVICE(obj),tmc2130_step, "step",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2130_enable, "enable",1);
     qdev_init_gpio_in_named( DEVICE(obj),tmc2130_ext_stall, "ext-stall",1);
+    qdev_init_gpio_in_named( DEVICE(obj),tmc2130_um_in, "um-in", 1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->irq_diag, "diag", 1);
 	qdev_init_gpio_out_named(DEVICE(obj),&s->stall_indicator, "stall-indicator", 1);
     qdev_init_gpio_out_named(DEVICE(obj),&s->hard_out, "hard", 1);

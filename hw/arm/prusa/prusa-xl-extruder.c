@@ -32,14 +32,13 @@
 #include "qemu/error-report.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
-#include "hw/arm/boot.h"
-#include "hw/loader.h"
 #include "utility/ArgHelper.h"
 #include "sysemu/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/xl_bridge.h"
 
 #define BOOTLOADER_IMAGE "bl_dwarf.elf.bin"
+#define TYPE_XLEXTRUDER_MACHINE "xlextruder-machine"
 
 enum HW_VER
 {
@@ -57,6 +56,44 @@ typedef struct prusa_xl_e_cfg_t
 	uint16_t therm_tables[NUM_THERM_MAX];
 	bool invert_e0_dir;
 } prusa_xl_e_cfg_t;
+
+typedef struct xlExtruderData {
+    uint8_t hw_type;
+    uint8_t tool_index;
+	const char* descr;
+    const char* flash_filename;
+    const char* tool_name;
+} xlExtruderData;
+
+typedef struct xlExtruderMachineClass {
+    MachineClass parent_class;
+    const char* flash_filename;
+    const char* tool_name;
+    uint8_t hw_type;
+    uint8_t tool_index;
+} xlExtruderMachineClass;
+
+#define ADD_CFG(hwtype, index) \
+    static const xlExtruderData xl_extruder_data_##hwtype##index = { \
+        .hw_type = hwtype, \
+        .tool_index = index, \
+        .descr = "Prusa XL Extruder Board Tool " #index, \
+        .flash_filename = "Prusa_XL_Dwarf_" #index "_flash.bin", \
+        .tool_name = "Dwarf " #index \
+    };
+
+#define ADD_VER_CFGS(hwtype) \
+    ADD_CFG(hwtype, 0); \
+    ADD_CFG(hwtype, 1); \
+    ADD_CFG(hwtype, 2); \
+    ADD_CFG(hwtype, 3); \
+    ADD_CFG(hwtype, 4);
+
+ADD_VER_CFGS(E_STM32G0);
+ADD_VER_CFGS(E_STM32G0_0_4_0);
+
+#undef ADD_CFG
+#undef ADD_VER_CFGS
 
 // F0 and first revision of G0
 static const prusa_xl_e_cfg_t extruder_g0 = {
@@ -78,48 +115,34 @@ static const prusa_xl_e_cfg_t* extruder_cfg_map[E_HW_VER_COUNT] =
 	[E_STM32G0_0_4_0] = &extruder_g0_v0_4_0
 };
 
-static const char* FLASH_NAMES[] = {
-	"Prusa_XL_Dwarf_0_flash.bin",
-	"Prusa_XL_Dwarf_1_flash.bin",
-	"Prusa_XL_Dwarf_2_flash.bin",
-	"Prusa_XL_Dwarf_3_flash.bin",
-	"Prusa_XL_Dwarf_4_flash.bin",
-	"Prusa_XL_Dwarf_5_flash.bin",
-};
+#define XLEXTRUDER_MACHINE_CLASS(klass)                                    \
+    OBJECT_CLASS_CHECK(xlExtruderMachineClass, (klass), TYPE_XLEXTRUDER_MACHINE)
+#define XLBUDDY_MACHINE_GET_CLASS(obj)                                  \
+    OBJECT_GET_CLASS(xlExtruderMachineClass, (obj), TYPE_XLEXTRUDER_MACHINE)
 
-static const char* TOOL_NAMES[] = {
-	"Dwarf 0",
-	"Dwarf 1",
-	"Dwarf 2",
-	"Dwarf 3",
-	"Dwarf 4",
-	"Dwarf 5",
-};
-
-static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
+static void prusa_xl_extruder_init(MachineState *machine)
 {
     DeviceState *dev;
-
+    const xlExtruderMachineClass *mc = XLBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
     Object* periphs = container_get(OBJECT(machine), "/peripheral");
 
-	const prusa_xl_e_cfg_t* cfg = extruder_cfg_map[type];
+	const prusa_xl_e_cfg_t* cfg = extruder_cfg_map[mc->hw_type];
 
 	dev = qdev_new(TYPE_STM32G070xB_SOC);
 
 	// TODO.. can we somehow detect if an extruder is already running and auto-increment the index?
 	// maybe with flock on the extuder flash filename?
 
-	hwaddr FLASH_SIZE = stm32_soc_get_flash_size(dev);
 	DeviceState* dev_soc = dev;
-	qdev_prop_set_string(dev, "flash-file", FLASH_NAMES[index]);
+	qdev_prop_set_string(dev, "flash-file", mc->flash_filename);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m0"));
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
-    arghelper_setargs(machine->kernel_cmdline);
 
     char* kfn = machine->kernel_filename;
     int kernel_len = kfn ? strlen(kfn) : 0;
+    if (kernel_len > 0) arghelper_setargs(machine->kernel_cmdline);
     if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
         // TODO... use initrd_image as a bootloader alternative?
@@ -127,23 +150,16 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
         if (stat(BOOTLOADER_IMAGE,&bootloader))
         {
             error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",BOOTLOADER_IMAGE);
-            return;
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
-        load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-            BOOTLOADER_IMAGE, 0,
-            FLASH_SIZE);
+        stm32_soc_load_targphys(OBJECT(dev_soc), machine->kernel_filename, 0x08000000);
+        stm32_soc_load_kernel(OBJECT(dev_soc), BOOTLOADER_IMAGE);
     }
-    else // Raw bin or ELF file, load directly.
+    else if (kernel_len > 0) // Raw bin or ELF file, load directly.
     {
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-                        machine->kernel_filename, 0,
-                        FLASH_SIZE);
+        stm32_soc_load_kernel(OBJECT(dev_soc), machine->kernel_filename);
     }
-
-
 
 	DeviceState* key_in = qdev_new("p404-key-input");
     sysbus_realize(SYS_BUS_DEVICE(key_in), &error_fatal);
@@ -151,8 +167,8 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	DeviceState* dashboard = qdev_new("2d-dashboard");
     qdev_prop_set_uint8(dashboard, "fans", 2);
     qdev_prop_set_uint8(dashboard, "thermistors", 3);
-    qdev_prop_set_string(dashboard, "indicators", "LPF");
-    qdev_prop_set_string(dashboard, "title", TOOL_NAMES[index]);
+    qdev_prop_set_string(dashboard, "indicators", "LPFDC");
+    qdev_prop_set_string(dashboard, "title", mc->tool_name);
 
 	DeviceState* motor = NULL;
 
@@ -207,9 +223,25 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	qdev_connect_gpio_out_named(hall,"status", 0, qdev_get_gpio_in_named(dashboard,"led-digital",2));
 	qdev_connect_gpio_out(hall, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", 4));
 
-	// hotend = fan1
-    // print fan = fan0
-    uint16_t fan_max_rpms[] = { 5000, 6000 };
+	DeviceState* park_sense = qdev_new("hall-sensor");
+	qdev_prop_set_uint32(park_sense,"present-value", 1400);
+	qdev_prop_set_uint32(park_sense,"missing-value", 770);
+	sysbus_realize(SYS_BUS_DEVICE(park_sense), &error_fatal);
+	qdev_connect_gpio_out_named(park_sense,"status", 0, qdev_get_gpio_in_named(dashboard,"led-digital",3));
+	qdev_connect_gpio_out(park_sense, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", 2));
+
+    DeviceState* pick_sense = qdev_new("hall-sensor");
+	qdev_prop_set_uint32(pick_sense,"present-value", 1400);
+	qdev_prop_set_uint32(pick_sense,"missing-value", 770);
+    qdev_prop_set_bit(pick_sense, "start-state", 0);
+	sysbus_realize(SYS_BUS_DEVICE(pick_sense), &error_fatal);
+	qdev_connect_gpio_out_named(pick_sense,"status", 0, qdev_get_gpio_in_named(dashboard,"led-digital",4));
+	qdev_connect_gpio_out(pick_sense, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", 1));
+
+
+    //0 is HBR
+    //1 is Print fan
+    uint16_t fan_max_rpms[] = { 8000, 6000 };
     uint8_t  fan_pwm_pins[] = { 7, 6};
     uint8_t fan_tach_exti_lines[] = { 8, 9};
     uint8_t fan_labels[] = {'P','E'};
@@ -233,14 +265,27 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
     }
 
 	DeviceState* htr = qdev_new("heater");
-	qdev_prop_set_uint8(htr, "thermal_mass_x10",30);
+	qdev_prop_set_uint8(htr, "thermal_mass_x10",35);
 	qdev_prop_set_uint8(htr,"label", 'H');
 	sysbus_realize(SYS_BUS_DEVICE(htr), &error_fatal);
+
+    // Heater v - only on if heating. ADC CH11 (Pin B10). Current is In8 (Pin B0)
+    DeviceState* vdev = qdev_new("powersource");
+    object_property_add_child(periphs, "heater-vmon", OBJECT(vdev));
+    qdev_prop_set_uint32(vdev,"mV",23900);
+    sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
+    qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",11));
+
+    vdev = qdev_new("cs30bl");
+    object_property_add_child(periphs, "heater-imon", OBJECT(vdev));
+    qdev_prop_set_uint32(vdev,"mA", 10);
+    sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
+    qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",8));
 
 	DeviceState* heatpwm = qdev_new("software-pwm");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(heatpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM7), "timer", 0, qdev_get_gpio_in_named(heatpwm, "tick-in", 0));
-	qemu_irq split_heat = qemu_irq_split( qdev_get_gpio_in_named(htr, "raw-pwm-in",0), qdev_get_gpio_in_named(dashboard, "therm-pwm",0));
+	qemu_irq split_heat = qemu_irq_split(qdev_get_gpio_in_named(htr, "raw-pwm-in",0), qdev_get_gpio_in_named(dashboard, "therm-pwm",0), qdev_get_gpio_in_named(vdev, "pwm-in",0));
 	qdev_connect_gpio_out(heatpwm, 0, split_heat);
 	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 6,
 		qdev_get_gpio_in_named(heatpwm, "gpio-in",0)
@@ -257,7 +302,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 			qdev_connect_gpio_out_named(htr, "temp_out",0, qdev_get_gpio_in_named(dev, "thermistor_set_temperature", 0) );
 		}
        	//qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", cfg->therm_channels[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
-        qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",cfg->therm_channels[i]));
+        qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", cfg->therm_channels[i]));
         qdev_connect_gpio_out_named(dev, "temp_out_256x",0, qdev_get_gpio_in_named(dashboard,"therm-temp",i));
 
     }
@@ -292,7 +337,7 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	else
 	{
 		dev = qdev_new("xl-bridge");
-		qdev_prop_set_uint8(dev, "device", XL_DEV_T0 + index);
+		qdev_prop_set_uint8(dev, "device", XL_DEV_T0 + mc->tool_index);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12, qdev_get_gpio_in_named(dev,"tx-assert",0));
 		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART1),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
@@ -301,33 +346,60 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 
 		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_DIR,qdev_get_gpio_in_named(mux,"B2",0));
 		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_STEP,qdev_get_gpio_in_named(mux,"B2",1));
-		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Z_UM, qdev_get_gpio_in(lc,0));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_X_UM, qdev_get_gpio_in(lc,0));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Y_UM, qdev_get_gpio_in(lc,1));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_Z_UM, qdev_get_gpio_in(lc,2));
+		qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_CAL_PIN, qdev_get_gpio_in_named(lc, "cal-pin-state", 0));
+        qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_P0_PARKED, qdev_get_gpio_in_named(park_sense,"ext-in",0));
+        qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_E_P1_PICKED, qdev_get_gpio_in_named(pick_sense,"ext-in",0));
 
 		qdev_connect_gpio_out_named(dev, "gpio-out", 0, qdev_get_gpio_in_named(motor,"dir",0));
 		qdev_connect_gpio_out_named(dev, "gpio-out", 1, qdev_get_gpio_in_named(motor,"step",0));
 	}
 };
 
-#define ADD_MACHINE(enumentry, index, str_suffix, shortcode) \
-	static void prusa_xl_extruder_init_##enumentry##index(MachineState *machine) \
-	{ \
-		_prusa_xl_extruder_init(machine, index, enumentry); \
-	} \
-	static void prusa_xl_extruder_machine_init_##enumentry##index(MachineClass *mc) \
-	{ \
-		mc->desc = "Prusa XL Extruder Board " str_suffix; \
-		mc->init = prusa_xl_extruder_init_##enumentry##index; \
-		mc->no_serial = 1; \
-		mc->no_parallel = 1; \
-	} \
-	DEFINE_MACHINE("prusa-xl-extruder-"#shortcode"-" #index, prusa_xl_extruder_machine_init_##enumentry##index)
+static void xl_extruder_class_init(ObjectClass *oc, void *data)
+{
+		const xlExtruderData* d = (xlExtruderData*)data;
+	    MachineClass *mc = MACHINE_CLASS(oc);
+	    mc->desc = d->descr;
+	    mc->family = TYPE_XLEXTRUDER_MACHINE,
+	    mc->init = prusa_xl_extruder_init;
+	    mc->default_ram_size = 0; // 0 = use default RAM from chip.
+	    mc->no_parallel = 1;
+		mc->no_serial = 1;
 
-#define ADD_E_HWVER(enumentry, vercode) \
-ADD_MACHINE(enumentry, 0, "(First Tool)", 	vercode); \
-ADD_MACHINE(enumentry, 1, "(Second Tool)",	vercode); \
-ADD_MACHINE(enumentry, 2, "(Third Tool)",	vercode); \
-ADD_MACHINE(enumentry, 3, "(Fourth Tool)",	vercode); \
-ADD_MACHINE(enumentry, 4, "(Fifth Tool)",	vercode);
+		xlExtruderMachineClass* xec = XLEXTRUDER_MACHINE_CLASS(oc);
+        xec->hw_type = d->hw_type;
+        xec->flash_filename = d->flash_filename;;
+        xec->tool_name = d->tool_name;
+        xec->tool_index = d->tool_index;
+}
 
-ADD_E_HWVER(E_STM32G0, 060);
-ADD_E_HWVER(E_STM32G0_0_4_0, 040);
+#define ADD_TYPEINFO(hwtype, index, vercode) \
+    { \
+        .name = MACHINE_TYPE_NAME("prusa-xl-extruder-" #vercode "-" #index), \
+        .parent = TYPE_XLEXTRUDER_MACHINE, \
+        .class_init = xl_extruder_class_init, \
+        .class_data = (void*)&xl_extruder_data_##hwtype##index, \
+    },
+
+#define ADD_VER_TYPEINFO(hwtype, vercode) \
+    ADD_TYPEINFO(hwtype, 4, vercode) \
+    ADD_TYPEINFO(hwtype, 3, vercode) \
+    ADD_TYPEINFO(hwtype, 2, vercode) \
+    ADD_TYPEINFO(hwtype, 1, vercode) \
+    ADD_TYPEINFO(hwtype, 0, vercode) 
+
+static const TypeInfo xl_extruder_machine_types[] = {
+    {
+        .name = TYPE_XLEXTRUDER_MACHINE,
+        .parent = TYPE_MACHINE,
+        .class_size = sizeof(xlExtruderMachineClass),
+        .abstract = true,
+    },
+    ADD_VER_TYPEINFO(E_STM32G0, 060)
+    ADD_VER_TYPEINFO(E_STM32G0_0_4_0, 040)
+};
+
+DEFINE_TYPES(xl_extruder_machine_types)
