@@ -1,0 +1,10 @@
+# stm32h503_i2c.c
+stm32h503_i2c_txis(const char* id) "I2C: %s TXIS"
+stm32h503_i2c_txdr(const char* id, uint8_t data, uint8_t nbytes) "I2C: %s TXDR 0x%02x // nbytes: %u"
+stm32h503_i2c_stop(const char* id) "I2C: %s STOP"
+
+#stm32h503_fint.c
+stm32h503_fint_erase(uint8_t sector, uint8_t bank, uint8_t erase_bits) "FLASH: Erase sector %u bank %u erase bits %u"
+stm32h503_fint_erase_range(uint32_t start, uint32_t end) "FLASH: Erase range 0x%08x - 0x%08x"
+stm32h503_fint_lock(void) "FLASH: Locked"
+stm32h503_fint_unlock(void) "FLASH: Unlocked"

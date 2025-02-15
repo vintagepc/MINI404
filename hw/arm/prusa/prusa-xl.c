@@ -213,7 +213,7 @@ static const xl_cfg_t xl_cfg_090 = {
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOG,10), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
-	.m_uart = STM32_P_UART1,
+	.m_uart = STM32_P_USART1,
 	.is_400step = false,
     .bom_id = 9,
 };

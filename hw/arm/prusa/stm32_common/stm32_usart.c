@@ -40,6 +40,7 @@
 #include "assert.h"
 #include "stm32_rcc_if.h"
 #include "stm32_usart_regdata.h"
+#include "trace.h"
 
 /* DEFINITIONS*/
 
@@ -238,6 +239,7 @@ typedef struct COM_STRUCT_NAME(Usart) {
     int curr_irq_level;
 
 	qemu_irq byte_out;
+	qemu_irq rts_de; // RTS or DE IRQ
 
 	bool do_rs485;
 	bool debug_rs485;
@@ -405,6 +407,11 @@ static void stm32_common_usart_tx_complete(COM_STRUCT_NAME(Usart) *s)
         s->regs.defs.ISR.TC = 1;
 		s->transmitting = false;
         stm32_common_usart_update_irq(s);
+		trace_stm32_usart_de_assert(_PERIPHNAMES[s->parent.periph], 0);
+		if (s->regs.defs.CR3.DEM)
+		{
+			qemu_irq_lower(s->rts_de);
+		}
     } else {
         /* Otherwise, mark the transmit buffer as empty and
          * start transmitting the value stored there.
@@ -420,6 +427,13 @@ static void stm32_common_usart_tx_complete(COM_STRUCT_NAME(Usart) *s)
 static void stm32_common_usart_start_tx(COM_STRUCT_NAME(Usart) *s, uint32_t value)
 {
     uint8_t ch = value; //This will truncate the ninth bit
+
+	// Fire the DE IRQ if we started transmitting.
+	if (!s->transmitting && s->regs.defs.CR3.DEM)
+	{
+		trace_stm32_usart_de_assert(_PERIPHNAMES[s->parent.periph], 1);
+		qemu_irq_raise(s->rts_de);
+	}
 
 	qemu_set_irq(s->byte_out, ch);
     /* Reset the Transmission Complete flag to indicate a transmit is in
@@ -492,10 +506,16 @@ static void stm32_common_usart_fill_receive_data_register(COM_STRUCT_NAME(Usart)
     uint8_t byte = s->rcv_char_buf[0];
     memmove(&s->rcv_char_buf[0], &s->rcv_char_buf[1], --(s->rcv_char_bytes));
 
-	if (s->regs.defs.CR2.RTOEN && s->rcv_char_bytes == 0) // If no more data, tickle the timeout timers.
+	if (s->rcv_char_bytes == 0) // If no more data, tickle the timeout timers.
 	{
-    	timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
-		timer_mod(s->rto_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char * (s->regs.defs.RTOR.RTO)));
+		if (s->regs.defs.CR2.RTOEN)
+		{
+			timer_mod(s->rto_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char * (s->regs.defs.RTOR.RTO)));
+		}
+		if (s->regs.defs.CR1.IDLEIE)
+		{
+    		timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
+		}
 	}
 
     /* Only handle the received character if the module is enabled, */
@@ -904,10 +924,18 @@ static void stm32_common_usart_write(void *opaque, hwaddr addr,
             stm32_common_usart_baud_update(s);
             break;
         case RI_CR1:
+		{
+			REGDEF_NAME(usart, cr1) changed = { .raw = value^s->regs.raw[addr] };
             s->regs.raw[addr] = value;
 			s->regs.defs.ISR.TEACK = s->regs.defs.CR1.TE;
-			s->regs.defs.ISR.REACK = s->regs.defs.CR1.RE;
+			s->regs.defs.ISR.REACK = s->regs.defs.CR1.RE;\
+			if (changed.TXEIE && s->regs.defs.CR1.UE)
+			{
+				// If transmit was just enabled, flag the TX DR as empty
+				s->regs.defs.ISR.TXE = 1;
+			}
             stm32_common_usart_update_irq(s);
+		}
             break;
 		case RI_ICR:
 			s->regs.raw[RI_ISR] &= ~value;
@@ -992,7 +1020,7 @@ static void stm32_common_usart_init(Object *obj)
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32_common_usart_byte_in,"byte-in",1);
 	qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out,"byte-out",1);
-
+	qdev_init_gpio_out_named(DEVICE(obj),&s->rts_de,"rts-de",1);
     stm32_common_usart_reset(DEVICE(obj));
 
 	// Throw compile errors if alignment is off

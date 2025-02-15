@@ -1,0 +1,10 @@
+# c1_bridge.c
+c1_bridge_msg_send(const char* src, uint8_t dest, uint8_t msglen) "%s tx to %u, len %u"
+c1_bridge_msg_recv(const char* src, uint8_t dest, uint8_t msglen) "%s rx from %u, len %u"
+c1_bridge_tx_assert(const char* src, int level) "%s TX assert: %d"
+c1_bridge_device_reset(const char* src) "%s reset"
+c1_bridge_create_socket(const char* name) "%s"
+c1_bridge_create_control_socket(const char* name) "%s-io"
+c1_bridge_open_socket(const char* name) "%s"
+c1_bridge_detected_boot(const char* src) "%s boot detected"
+c1_bridge_byte_input(const char* src, uint8_t byte) "%s tx byte 0x%02x"

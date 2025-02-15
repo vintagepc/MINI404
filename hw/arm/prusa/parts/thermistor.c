@@ -200,6 +200,10 @@ static void thermistor_set_table(ThermistorState *s) {
 			s->table_length = 2U*205;
 			s->table = &temptable_2008[0][0];
 			break;
+		case 2009:
+			s->table_length = 2U*13;
+			s->table = &temptable_2009[0][0];
+			break;
         default:
 			printf("# %s WARNING: Unhandled thermistor table %u!\n",__FILE__,s->table_index);
 			/* FALLTHRU */

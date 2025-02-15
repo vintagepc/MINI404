@@ -1,0 +1,2 @@
+# stm32_usart.c
+stm32_usart_de_assert(const char* id, int level) "%s DE assert: %d"

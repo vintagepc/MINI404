@@ -39,6 +39,7 @@
 #include "parts/dashboard_types.h"
 #include "parts/c1_bridge.h"
 #include "otp.h"
+#include "parts/fan.h"
 
 enum HW_VER
 {
@@ -136,6 +137,57 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 	i2c_slave_create_simple(bus, "pca9557", 0x40);
 
 
+	DeviceState* dashboard = qdev_new("2d-dashboard");
+    qdev_prop_set_uint8(dashboard, "fans", 3);
+    qdev_prop_set_uint8(dashboard, "thermistors", 1);
+    qdev_prop_set_string(dashboard, "indicators", "LWSFD");
+    qdev_prop_set_string(dashboard, "title", "xBuddy Extension");
+
+	sysbus_realize(SYS_BUS_DEVICE(dashboard), &error_fatal);
+
+	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM2),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dashboard, "led-r",0));
+	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM2),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dashboard, "led-g",0));
+	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM2),"pwm_ratio_changed",1,qdev_get_gpio_in_named(dashboard, "led-b",0));
+	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM2),"pwm_ratio_changed",0,qdev_get_gpio_in_named(dashboard, "led-w",1));
+	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",0,qdev_get_gpio_in_named(dashboard, "led-w",1));
+
+	// Fan 1 and 2 are T3 CCR2, fan 3 is T3 CCR3
+  	uint16_t fan_max_rpms[] = { 5000, 6000, 7000 };
+	uint8_t fan_tach_exti_lines[] = { 8, 9, 10};
+    uint8_t fan_labels[] = {'1','2', '3'};
+	DeviceState* fans[3] = {NULL};
+    for (int i=0; i<ARRAY_SIZE(fan_labels); i++)
+    {
+        fans[i] = dev = qdev_new("fan");
+        qdev_prop_set_uint8(dev,"label",fan_labels[i]);
+        qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
+        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),fan_tach_exti_lines[i]));
+		qdev_connect_gpio_out_named(dev, "rpm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-rpm", i));
+		if (i == 1)
+		{
+			qemu_irq split_pwm = qemu_irq_split(
+				qdev_get_gpio_in_named(fans[0], "pwm-in", FAN_PWM_INPUT_INVERTED),
+				qdev_get_gpio_in_named(fans[1], "pwm-in", FAN_PWM_INPUT_INVERTED)
+			);
+			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",2,split_pwm);
+			qdev_connect_gpio_out_named(fans[0], "pwm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-pwm",0));
+			qdev_connect_gpio_out_named(fans[1], "pwm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-pwm",1));
+		}
+		else
+		{
+			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",3,qdev_get_gpio_in_named(fans[i], "pwm-in", FAN_PWM_INPUT));
+			qdev_connect_gpio_out_named(fans[i], "pwm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-pwm",i));
+		}
+    }
+
+	dev = qdev_new("thermistor");
+	qdev_prop_set_uint16(dev, "temp", 40);
+	qdev_prop_set_uint16(dev, "table_no", 2009);
+	sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+	qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in", 5));
+	qdev_connect_gpio_out_named(dev, "temp_out_256x",0, qdev_get_gpio_in_named(dashboard, "therm-temp",0));
+
 
 	if (kernel_len==0 || arghelper_is_arg("no-bridge"))
 	{
@@ -145,7 +197,7 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 		dev = qdev_new("c1-bridge");
 		qdev_prop_set_uint8(dev, "device", C1_DEV_EXT);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB), 14, qdev_get_gpio_in_named(dev,"tx-assert",0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3), "rts-de", 0, qdev_get_gpio_in_named(dev,"tx-assert",0));
 		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send",0));
 		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"byte-in", 0));
 		//qdev_connect_gpio_out_named(dev, "gpio-out", XLBRIDGE_PIN_nAC_FAULT, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 12));

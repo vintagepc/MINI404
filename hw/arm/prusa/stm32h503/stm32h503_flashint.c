@@ -27,6 +27,7 @@
 #include "../stm32_common/stm32_common.h"
 #include "hw/irq.h"
 #include "../stm32_registers/generated/stm32h503/FLASH_registers.h"
+#include "trace.h"
 
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32H503_STRUCT_NAME(FlashIF), STM32H503_FINT);
@@ -122,7 +123,7 @@ static void stm32h503_flashif_erase(STM32H503_STRUCT_NAME(FlashIF) *s, int type)
         s->regs.SR.bits.WRPERR = 1;
         return;
     }
-    printf("# Erasing flash sector %u / bank %u / MER %u / SNB %u / BKSEL %u \n", s->regs.CR.bits.SER, s->regs.CR.bits.BER, s->regs.CR.bits.MER, s->regs.CR.bits.SNB, s->regs.CR.bits.BKSEL);
+	trace_stm32h503_fint_erase(s->regs.CR.bits.SNB, s->regs.CR.bits.BKSEL, s->regs.CR.bits.MER << 2U | s->regs.CR.bits.BER << 1U | s->regs.CR.bits.SER);
     const uint32_t buff = 0xFFFFFFFFU;
 	uint32_t start = 0;
 	uint32_t end = 0;
@@ -149,7 +150,7 @@ static void stm32h503_flashif_erase(STM32H503_STRUCT_NAME(FlashIF) *s, int type)
 		}
 		break;
 	}
-	printf("# (from 0x%x to 0x%x)\n", start, end);
+	trace_stm32h503_fint_erase_range(start, end);
     for (int i=start; i<=end; i+=4)
     {
         cpu_physical_memory_write(s->flash->addr +i, &buff, 4);
@@ -180,7 +181,7 @@ stm32h503_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             else if (data == KEY2 && s->flash_state == KEY1_OK)
             {
                 s->flash_state = UNLOCKED;
-                printf("# Flash unlocked!\n");
+                trace_stm32h503_fint_unlock();
                 memory_region_set_readonly(s->flash, false);
             }
         }
@@ -195,7 +196,7 @@ stm32h503_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     		}
             else if (s->flash_state == UNLOCKED && r.bits.LOCK)
             {
-                printf("# Flash LOCKED\n");
+                trace_stm32h503_fint_lock();
                 memory_region_set_readonly(s->flash, true);
                 s->flash_state = LOCKED;
             }

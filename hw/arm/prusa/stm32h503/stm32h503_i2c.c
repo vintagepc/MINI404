@@ -34,6 +34,7 @@
 #include "../stm32_common/stm32_common.h"
 #include "../stm32_registers/generated/stm32h503/I2C_index.h"
 #include "../stm32_registers/generated/stm32h503/I2C_registers.h"
+#include "trace.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32H503_STRUCT_NAME(I2c), STM32H503_I2C);
 
@@ -181,13 +182,13 @@ stm32_h503_i2c_write(void *dev, hwaddr offset, uint64_t data, unsigned size)
             if (s->regs.CR2.bits.START) {
                 s->regs.CR2.bits.START = false; // and clear START.
 				if (i2c_start_transfer(s->bus, s->regs.CR2.bits.SADD, is_read)){
-					// Falied.
+					// Failed.
 					s->regs.ISR.bits.NACKF = true;
 				}
 				else
 				{
 					s->regs.ISR.bits.NACKF = false;
-					printf("Set TXIS\n");
+					trace_stm32h503_i2c_txis(_PERIPHNAMES[s->parent.periph]);
 					s->regs.ISR.bits.TXIS = true;
 					s->regs.ISR.bits.TXE = true;
 
@@ -205,7 +206,7 @@ stm32_h503_i2c_write(void *dev, hwaddr offset, uint64_t data, unsigned size)
             if (s->regs.ISR.bits.TXE) { // Continuing to transmit.
                 i2c_send(s->bus, data& 0xFF); // Send the byte.
 				s->regs.CR2.bits.NBYTES--;
-				printf("TXDR: %02X, nbytes %u\n", s->regs.TXDR.bits.TXDATA, s->regs.CR2.bits.NBYTES);
+				trace_stm32h503_i2c_txdr(_PERIPHNAMES[s->parent.periph], s->regs.TXDR.bits.TXDATA, s->regs.CR2.bits.NBYTES);
 				if (s->regs.CR2.bits.NBYTES == 0) {
 					s->regs.ISR.bits.TCR = true;
 					s->regs.ISR.bits.TC = true;
@@ -213,7 +214,7 @@ stm32_h503_i2c_write(void *dev, hwaddr offset, uint64_t data, unsigned size)
 				}
             }
 			if (needs_stop)	{
-				printf("Stop\n");
+				trace_stm32h503_i2c_stop(_PERIPHNAMES[s->parent.periph]);
 				i2c_end_transfer(s->bus);
 				s->regs.CR2.bits.STOP = false;
 				s->regs.ISR.bits.STOPF = true;

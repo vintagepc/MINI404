@@ -31,6 +31,7 @@
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
 #include "qemu/module.h"
+#include "fan.h"
 
 struct  fan_state
 {
@@ -96,6 +97,12 @@ static void fan_tach_block(void *opaque, int n, int level) {
 
 static void fan_pwm_change(void *opaque, int n, int level) {
     fan_state *s = opaque;
+
+	if (n == FAN_PWM_INPUT_INVERTED)
+	{
+		level = 255 - level;
+	}
+
     qemu_set_irq(s->pwm_out, level);
     s->current_rpm = (((uint32_t)s->max_rpm)*level)/255;
     if (s->is_nonlinear)
@@ -200,7 +207,7 @@ static void fan_init(Object *obj){
     qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out",1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->rpm_out, "rpm-out",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_tach_block, "tach-disable",1);
-    qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
+    qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",FAN_PWM_INPUT_COUNT);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 
     s->handle = script_instance_new(P404_SCRIPTABLE(s), "fan");

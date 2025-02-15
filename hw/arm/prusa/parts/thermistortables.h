@@ -1737,6 +1737,23 @@ const short temptable_2008[][2] = {
 {OVERSAMPLENR*	720	,	0	},
 };
 
+// NTC on xBuddy extension:
+const short temptable_2009[][2] = {
+    { 4U*(347), 120 }, // Projected value just to trigger error on short circuit
+    { 4U*(591), 100 },
+    { 4U*(885), 85 },
+    { 4U*(1010), 80 },
+    { 4U*(1659), 60 },
+    { 4U*(2061), 50 },
+    { 4U*(2484), 40 },
+    { 4U*(3079), 25 },
+    { 4U*(3536), 10 },
+    { 4U*(3746), 0 },
+    { 4U*(3889), -10 },
+    { 4U*(4033), -30 },
+    { 4U*(4080), -50 },
+};
+
 #define _TT_NAME(_N) temptable_ ## _N
 #define TT_NAME(_N) _TT_NAME(_N)
 

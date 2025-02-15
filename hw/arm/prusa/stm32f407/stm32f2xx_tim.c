@@ -30,6 +30,7 @@
 #include "hw/qdev-properties.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_rcc_if.h"
+#include "trace.h"
 
 #define R_TIM_CR1    (0x00 / 4) //p
 #define R_TIM_CR2    (0x04 / 4)
@@ -366,6 +367,7 @@ static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
 	if (ratio>=0)
 	{
 		qemu_set_irq(s->pwm_ratio_changed[n-1], ratio);
+		trace_tim_update_ccr(_PERIPHNAMES[s->parent.periph], n, ratio);
 	}
 }
 

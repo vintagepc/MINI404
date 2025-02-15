@@ -38,6 +38,7 @@
 #include "sysemu/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-events-run-state.h"
+#include "trace.h"
 
 static const char* shm_names[C1_BRIDGE_COUNT] =
 {
@@ -100,6 +101,7 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(C1BridgeState, c1_bridge, C1BRIDGE,SYS
 static void c1_bridge_tx_assert(void *opaque, int n, int level)
 {
 	C1BridgeState *s = C1BRIDGE(opaque);
+	trace_c1_bridge_tx_assert(shm_names[s->id], level);
 	s->de_pin_asserted[s->id] = level;
 	if (level) // New transmission:
 	{
@@ -119,6 +121,9 @@ static void c1_bridge_tx_assert(void *opaque, int n, int level)
 				case 0x11:	// Tool. Route appropriately.
 					qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0x11)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 					break;
+				case 0x21:
+					qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0x21)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
+					break;
 				default: // catch-all.
 					printf("Unexpected message starting byte, %02x\n",s->buffer[0]);
 					/* FALLTHRU */
@@ -136,7 +141,7 @@ static void c1_bridge_tx_assert(void *opaque, int n, int level)
 			qemu_chr_fe_write_all(&s->chr[s->id],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 
 		}
-		//printf("%s: sent %u bytes to %d\n",shm_names[s->id], s->buffer_level, s->buffer[0]);
+		trace_c1_bridge_msg_send(shm_names[s->id], s->buffer[0], s->buffer_level);
 		// for (int i=0; i<s->buffer_level; i++)
 		// {
 		// 	printf("%02x ",s->buffer[i]);
@@ -152,6 +157,7 @@ static void c1_bridge_byte_send(void *opaque, int n, int level)
 	//uint16_t data = 0x00FF | (level & 0xFF)<<8; // swap the bytes here so they come in in the right order.
 	// Buffer up the data for a single-shot transmit.
 	s->buffer[s->buffer_level++] = level & 0xFF;
+	//trace_c1_bridge_byte_input(shm_names[s->id], level);
 
 	// Right now the bootloader doesn't support the TE pin for dwarf :(
 	if (!s->de_pin_used[s->id] && s->id >= C1_DEV_EXT)
@@ -188,9 +194,10 @@ static int c1_bridge_gpio_can_receive(void *opaque)
 static void c1_bridge_receive(void *opaque, const uint8_t *buf, int size)
 {
    	C1BridgeState *s = C1BRIDGE(opaque);
-	//#define FILTER size < 20 && s->id == C1_DEV_XBUDDY
+	//#define FILTER size < 20
 	#define FILTER false
     // assert(size % 2 == 0);
+	trace_c1_bridge_msg_recv(shm_names[s->id], buf[0], size);
 	if (FILTER) printf(" %u Received: ", s->id);
 	for (const uint8_t* p = buf; p<buf+size; p++)
 	{
@@ -219,7 +226,7 @@ static void c1_bridge_gpio_receive(void *opaque, const uint8_t *buf, int size)
 	{
 		if (state.bits.reset)
 		{
-			printf("Puppy %s reset pin asserted\n", shm_names[s->id]);
+			trace_c1_bridge_device_reset(shm_names[s->id]);
     		qemu_system_reset_request(SHUTDOWN_CAUSE_SUBSYSTEM_RESET);
 		}
 		s->gpio_states[s->id].byte = state.byte;
@@ -289,9 +296,9 @@ static void c1_bridge_realize(DeviceState *dev, Error **errp)
 			}
 			else
 			{
-				printf("Socket ID %s - not found, creating it instead.\n", shm_names[i]);
 				QemuOpts *opts;
 				// Now create the IO (GPIO) channel.
+				trace_c1_bridge_create_control_socket(shm_names[i]);
 				opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup_printf("%s-io",shm_names[i]), 1, NULL);
 					qemu_opt_set(opts, "backend","socket", errp);
 					qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s-io", shm_names[i]), errp);
@@ -299,6 +306,8 @@ static void c1_bridge_realize(DeviceState *dev, Error **errp)
 					qemu_opt_set_bool(opts, "wait", false, errp);
 					d2 = qemu_chr_new_from_opts(opts, NULL, errp);
 				qemu_opts_del(opts);
+
+				trace_c1_bridge_create_socket(shm_names[i]);
 				opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(shm_names[i]), 1, NULL);
 					qemu_opt_set(opts, "backend","socket", errp);
 					qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s", shm_names[i]), errp);
@@ -338,6 +347,7 @@ static void c1_bridge_realize(DeviceState *dev, Error **errp)
 				qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s-io", shm_names[s->id]), errp);
 				d2 = qemu_chr_new_from_opts(opts, NULL, errp);
 			qemu_opts_del(opts);
+			trace_c1_bridge_open_socket(shm_names[s->id]);
 			opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(shm_names[s->id]), 1, NULL);
 				qemu_opt_set(opts, "backend","socket", errp);
 				qemu_opt_set(opts, "path", g_strdup_printf("/tmp/%s", shm_names[s->id]), errp);

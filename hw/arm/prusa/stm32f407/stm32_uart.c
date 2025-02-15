@@ -180,7 +180,7 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     stm32_uart_tx_complete(s);
 #else
     /* Otherwise, start the transmit delay timer. */
-    if (s->parent.periph == STM32_P_UART8)
+    if (s->parent.periph == STM32_P_USART8)
     {
         timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char)/10);
     }
