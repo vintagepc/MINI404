@@ -47,6 +47,7 @@ typedef struct
 		bool stalled;
 		bool stealth;
 		bool changed; // Use this to notify this region should be redrawn. 
+        bool dir;
 	} status;
 	char label;
 } p404_motorif_status_t;

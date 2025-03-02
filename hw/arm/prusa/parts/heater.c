@@ -53,6 +53,8 @@ struct heater_state {
     uint8_t chrLabel;
     uint8_t mass10x;
 
+	uint16_t resistancex100, voltagex100;
+
     uint16_t pwm, lastpwm, timeout_level;
     uint16_t custom_pwm;
     int32_t current_x100, ambient_x100;
@@ -75,7 +77,20 @@ enum {
     ActOpen,
     ActSet,
 };
+extern float heater_calculate_current(heater_state *s);
 
+// Calculate current consumption based on given voltage/resistance, and scale by PWM.
+extern float heater_calculate_current(heater_state *s)
+{
+	float currentmA = 0.f;
+	if (s->resistancex100)
+	{
+		float resistance = (float)s->resistancex100*( 1 + (0.0042f * (s->currentTemp - 20.f)) );
+		currentmA = ((float)s->voltagex100/resistance)*((float)s->pwm/255.f)*1000.f; // 100x cancelled by division.
+		//printf("Current: %u %c %f\n",s->pwm, s->chrLabel, currentmA);
+	}
+	return currentmA;
+}
 
 static void heater_softpwm_timeout(void* opaque)
 {
@@ -152,7 +167,7 @@ static void heater_soft_pwm_change(void* opaque, int n, int level)
         tOn = tNow - s->last_on;
         s->timeout_level = 0;
         DBG printf("Ontime: %u\n",tOn);
-        timer_mod(s->softpwm_timeout, tNow+3000);
+        timer_mod(s->softpwm_timeout, tNow+500);
         s->pwm = tOn & 0xFF;
     }
     // Tickle timer if turned off.
@@ -170,6 +185,7 @@ static void heater_reset(DeviceState *dev)
     s->thermalMass = ((float)s->mass10x)/10.f;
     s->ambientTemp = 18.f;
     s->currentTemp = s->ambientTemp;
+    qemu_set_irq(s->temp_out, s->currentTemp*256.f);
 }
 
 static int heater_process_action(P404ScriptIF *obj, unsigned int action, script_args args) {
@@ -238,6 +254,8 @@ static void heater_init(Object *obj)
 static Property heater_properties[] = {
     DEFINE_PROP_UINT8("thermal_mass_x10",heater_state, mass10x, 25),
     DEFINE_PROP_UINT8("label",heater_state, chrLabel, (uint8_t)' '),
+	DEFINE_PROP_UINT16("voltage_x100", heater_state, voltagex100, 2400),
+	DEFINE_PROP_UINT16("resistance_x100", heater_state, resistancex100, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 

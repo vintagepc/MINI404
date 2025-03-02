@@ -30,6 +30,9 @@ extern uint32_t stm32_rcc_if_get_periph_freq(STM32Peripheral *p);
 // Checks if a clock is enabled and prints a guest error if not
 extern bool stm32_rcc_if_check_periph_clk(STM32Peripheral *p);
 
+// Checks if a clock is initialized and prints a guest error if not
+extern bool stm32_rcc_if_has_clk(STM32Peripheral *p);
+
 /* Sets the IRQ to be called when the specified peripheral clock changes
  * frequency. */
 extern void stm32_rcc_if_set_periph_clk_irq(

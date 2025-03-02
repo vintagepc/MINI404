@@ -61,14 +61,14 @@ void KeyController::AddNewClient_C(IKeyClient* src)
 void KeyController::OnKeyPressed_C(int keycode)
 {
 	// Maps qemu keys to standard character types:
-	if (keycode == 42) 
+	if (keycode == 42)
 	{
 		m_bShift = true;
 	}
 	else if (keycode == 170)
 	{
 		m_bShift = false;
-	}	
+	}
 	else if (!m_qemu2char.count({keycode, m_bShift}))
 	{
 		// std::cout << "KeyController: Unknown QEMU keycode " << std::to_string(keycode) << "\n";
@@ -114,6 +114,11 @@ void KeyController::AddKeyClient(IKeyClient *pClient, const unsigned char key, c
 
 void KeyController::PrintKeys(bool bMarkdown)
 {
+	if (m_mDescrs.empty())
+	{
+		return; // Early invocation before clients is needed for some printers.
+		// Print no headers if the list is empty.
+	}
 	std::cout << "Available Key Controls:\n";
 	for (auto it : m_mDescrs)
 	{
@@ -121,7 +126,7 @@ void KeyController::PrintKeys(bool bMarkdown)
 		PutNiceKeyName(it.first);
 		std::cout << (bMarkdown?"` - ":":\t") << it.second << '\n';
 	}
-
+	std::cout << "End Key Controls\n";
 }
 
 void KeyController::PutNiceKeyName(unsigned char key)

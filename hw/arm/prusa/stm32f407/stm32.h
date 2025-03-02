@@ -25,7 +25,6 @@
 
 #include "qemu/timer.h"
 #include "hw/arm/armv7m.h"
-#include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "qemu/log.h"
 #include "../stm32_common/stm32_shared.h"
@@ -149,7 +148,6 @@ uint8_t stm32_gpio_get_config_bits(Stm32Gpio *s, unsigned pin);
 
 #define TYPE_STM32_RCC "stm32-rcc"
 #define STM32_RCC(obj) OBJECT_CHECK(Stm32Rcc, (obj), TYPE_STM32_RCC)
-
 
 /* TIM */
 typedef struct Stm32Timer Stm32Timer;

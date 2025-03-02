@@ -79,6 +79,11 @@ extern "C"{
 
 void ScriptHost::PrintScriptHelp(bool bMarkdown)
 {
+	if (m_clients.empty())
+	{
+		return; // Early invocation before clients is needed for some printers.
+		// Print no headers if the list is empty.
+	}
 	if (bMarkdown)
 	{
 		std::cout << "# Scripting options for the selected printer:\n";
@@ -91,6 +96,7 @@ void ScriptHost::PrintScriptHelp(bool bMarkdown)
 	{
 		client.second->PrintRegisteredActions(bMarkdown);
 	}
+	std::cout << "End Scripting options\n";
 }
 
 ScriptHost::~ScriptHost() {
@@ -606,8 +612,8 @@ void ScriptHost::AddScriptable(const std::string &strName, IScriptable* src)
 	{
 		int i=0;
 		std::string strNew;
-		std::cout << "ScriptHost: NOTE: Duplicate context name (" << strName << ") with different pointer. Incrementing ID...\n";
-		while (i<10)
+		std::cout << "# ScriptHost: NOTE: Duplicate context name (" << strName << ") with different pointer. Incrementing ID...\n";
+		while (i<20)
 		{
 			i++;
 			strNew = strName + std::to_string(i);
@@ -623,7 +629,7 @@ void ScriptHost::AddScriptable(const std::string &strName, IScriptable* src)
 				return;
 			}
 		};
-		std::cerr << "ScriptHost: More than 10 duplicate identifiers. You should do something about that.\n";
+		std::cerr << "# ScriptHost: More than 20 duplicate identifiers. You should do something about that.\n";
 
 	}
 }
@@ -656,7 +662,7 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 	if (GetLineState().iLine != m_iLine || m_state == State::Idle)
 	{
 		m_state = State::Running;
-		std::cout << "ScriptHost: Executing line " << strLine << "\n";
+		std::cout << "# ScriptHost: Executing line " << strLine << "\n";
 		ParseLine(m_iLine);
 	}
 	if (GetLineState().isValid)
@@ -689,11 +695,11 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 				m_eCmdStatus = TermSuccess;
 				break;
 			case LS::Unhandled:
-				std::cout << "ScriptHost: Unhandled action, considering this an error.\n";
+				std::cout << "# ScriptHost: Unhandled action, considering this an error.\n";
 				/* FALLTHRU */
 			case LS::Error:
 			{
-				std::cout << "ScriptHost: Script FAILED on line " << m_iLine << '\n';
+				std::cout << "# ScriptHost: Script FAILED on line " << m_iLine << '\n';
 				m_state = State::Error;
 				m_iLine = scriptSize; // Error, end scripting.
 				m_eCmdStatus = TermFailed;
@@ -729,12 +735,12 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 				m_state = State::Timeout;
 				if (m_bQuitOnTimeout)
 				{
-					std::cout << "ScriptHost: Script TIMED OUT on " << strLine << ". Quitting...\n";
+					std::cout << "# ScriptHost: Script TIMED OUT on " << strLine << ". Quitting...\n";
 					m_iLine = scriptSize;
 					qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
 					return;
 				}
-				std::cout << "ScriptHost: Script TIMED OUT on #" << m_iLine << ": " << strLine << '\n';
+				std::cout << "# ScriptHost: Script TIMED OUT on #" << m_iLine << ": " << strLine << '\n';
 				m_iLine++;
 				m_iTimeoutCount = 0;
 				m_eCmdStatus = TermTimedOut;
@@ -746,14 +752,14 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 		}
 		if (m_iLine==scriptSize)
 		{
-			std::cout << "ScriptHost: Script FINISHED\n";
+			std::cout << "# ScriptHost: Script FINISHED\n";
 			m_bCanAcceptInput = true;
 			m_state = State::Finished;
 		}
 	}
 	else
 	{
-		std::cout << "ScriptHost: ERROR: Invalid line/unrecognized command: " << m_iLine << ":" << strLine << '\n';
+		std::cout << "# ScriptHost: ERROR: Invalid line/unrecognized command: " << m_iLine << ":" << strLine << '\n';
 		m_state = State::Error;
 		m_iLine = scriptSize;
 		m_eCmdStatus = TermSyntax;
@@ -762,7 +768,6 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 
 void ScriptHost::AddScriptable_C(IScriptable* src)
 {
-    std::cout << "Registering " << src->GetName() <<'\n';
 	ScriptHost::AddScriptable(src->GetName() ,src);
 	src->m_bRegistered = true;
 }

@@ -43,7 +43,8 @@
 #define R_SR2      (0x18 / 4)
 #define R_CCR      (0x1c / 4)
 #define R_TRISE    (0x20 / 4)
-#define R_MAX      (0x24 / 4)
+#define R_FLTR     (0x24 / 4)
+#define R_MAX      (0x28 / 4)
 
 //#define DEBUG_STM32STM32F2XXI2CState
 #ifdef DEBUG_STM32STM32F2XXI2CState
@@ -291,6 +292,7 @@ stm32f2xxi2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
                     s->shiftreg = i2c_recv(s->bus);
                     s->shift_full = true;
                     s->defs.SR1.RxNE = true;
+					s->defs.SR1.BTF = true;
                 } else {
                     s->is_read = false;
                     s->defs.SR1.TxE = true; // Ready for data
@@ -347,7 +349,7 @@ stm32f2xxi2c_init(Object *obj)
     // If you hit this it means you've messed up the register packing/bitfields!
     assert(sizeof(s->defs) == sizeof(s->regs));
 
-    memory_region_init_io(&s->mmio, obj, &stm32f2xxi2c_ops, s, TYPE_STM32F2XX_I2C, 0x3ff);
+    STM32_MR_IO_INIT(&s->mmio, obj, &stm32f2xxi2c_ops, s, 1U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->evt_irq);
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->err_irq);

@@ -25,7 +25,6 @@
  */
 #include "stm32f2xx_tim.h"
 #include "migration/vmstate.h"
-#include "qemu-common.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
 #include "hw/qdev-properties.h"
@@ -107,21 +106,80 @@ enum OCxM_val
 	OCxM_PWM2,
 };
 
+enum INT_FLAG 
+{
+    INT_UIF  = BIT(0), 
+    INT_CC1F = BIT(1),
+    INT_CC2F = BIT(2),
+    INT_CC3F = BIT(3),
+    INT_CC4F = BIT(4),
+    INT_COMF = BIT(5),
+    INT_TIF  = BIT(6),
+    INT_BIF  = BIT(7),
+    INT_CC1OF = BIT(9),    
+    INT_CC2OF = BIT(10),
+    INT_CC3OF = BIT(11),
+    INT_CC4OF = BIT(12),
+    INT_BLOCK_MASK = 0x7F,
+    INT_CCOF_MASK = 0x1E00,
+    INT_CC_MSK = 0x1E,
+};
+
+
+
+static void f2xx_tim_update_irqs(f2xx_tim *s)
+{
+    uint32_t flags = s->regs[R_TIM_SR] & INT_BLOCK_MASK;
+    flags |= (s->regs[R_TIM_SR] & INT_CCOF_MASK) >> 8;
+    flags &= s->regs[R_TIM_DIER];
+    qemu_set_irq(s->irq[IRQ_GLOBAL], flags > 0);
+    if (flags & INT_UIF)
+    {
+        qemu_irq_raise(s->public_irq);
+    }
+    if (!qemu_irq_is_connected(s->irq[IRQ_GLOBAL]))
+    {
+        qemu_set_irq(s->irq[IRQ_CC], (flags & INT_CC_MSK) > 0);
+        qemu_set_irq(s->irq[IRQ_UPDATE], (flags & INT_UIF) > 0);
+        qemu_set_irq(s->irq[IRQ_BREAK], (flags & INT_BIF) > 0);
+        qemu_set_irq(s->irq[IRQ_TRIG_COM], (flags & (INT_TIF | INT_COMF )) > 0);
+    }
+}
+
+static void f2xx_tim_modify_flag(f2xx_tim *s, int irq_flag, bool flag_value)
+{
+    bool old_value = (s->regs[R_TIM_SR] & irq_flag) > 0;
+    if (flag_value)
+    {
+        s->regs[R_TIM_SR] |= irq_flag;
+    }
+    else
+    {
+        s->regs[R_TIM_SR] &= ~irq_flag;
+    }
+    // Don't fire signals if no change resulted.
+    if (flag_value!=old_value)
+    {
+        f2xx_tim_update_irqs(s);
+    }
+}
+
 static uint32_t
 f2xx_tim_period(f2xx_tim *s, uint64_t multiplier)
 {
-    uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+    uint64_t clock_freq = s->parent.clock_freq;
     clock_freq/= (s->defs.PSC+1);
-    return muldiv64(1000000000ULL,multiplier,clock_freq);
+    //printf("Timer %s input: %lu freq: %lu per: %u\n", _PERIPHNAMES[s->parent.periph], clock_freq, muldiv64(1000000000ULL,multiplier,clock_freq), s->defs.ARR+1);
+    return muldiv64(NANOSECONDS_PER_SECOND, multiplier,clock_freq);
 }
 
 static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
 {
-    uint64_t clock_freq = stm32_rcc_if_get_periph_freq(&s->parent);
+    uint64_t clock_freq = s->parent.clock_freq;
 	if (clock_freq == 0)
 		return 0;
 	else
-	    return muldiv64(t, clock_freq, 1000000000ULL) / (s->defs.PSC + 1);
+	    return muldiv64(t, clock_freq, NANOSECONDS_PER_SECOND) / (s->defs.PSC + 1);
 }
 
 
@@ -129,7 +187,7 @@ static int64_t
 f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
 {
     if (s->defs.CR1.CMS || s->defs.CR1.DIR) {
-        qemu_log_mask(LOG_UNIMP, "f2xx tim, only upedge-aligned mode supported\n");
+        qemu_log_mask(LOG_UNIMP, "f2xx %s, only upedge-aligned mode supported\n", _PERIPHNAMES[s->parent.periph]);
        // return -1;
     }
     // We also need to update the timebase used for determining the count value each rollover.
@@ -146,15 +204,8 @@ f2xx_tim_timer(void *arg)
     if (s->defs.CR1.CEN) {
         timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
     }
-    if (!s->defs.SR.UIF && s->defs.DIER.UIE) {
-        //printf("f2xx tim timer expired, setting int\n");
-        s->defs.SR.UIF = 1;
-    }
-    // Set IRQ if UIE is enabled.
-   if (s->defs.DIER.UIE)
-   {
-        qemu_set_irq(s->irq, 1);
-   }
+
+    f2xx_tim_modify_flag(s, INT_UIF, true);
 }
 
 static void
@@ -163,11 +214,7 @@ f2xx_tim_ccmr1(void *arg)
     f2xx_tim *s = arg;
 	if (!s->defs.CR1.CEN)
 		return;
-	s->defs.SR.CC1IF |= 1;
-   if (s->defs.DIER.CC1IE)
-   {
-        qemu_set_irq(s->irq, 1);
-   }
+    f2xx_tim_modify_flag(s, INT_CC1F, true);
 }
 
 static void f2xx_tim_update_ccr_timer(f2xx_tim *s, int n, uint32_t when)
@@ -175,7 +222,12 @@ static void f2xx_tim_update_ccr_timer(f2xx_tim *s, int n, uint32_t when)
 	// Calculate timer tick for CCR event:
 	int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     // When will we match CCR?
-	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s,when));
+    int32_t curr_cnt = f2xx_tim_ns_to_ticks(s, current_time) - s->count_timebase;
+    if (curr_cnt>=when)
+    {
+        when += 0xFFFF;
+    }
+	timer_mod(s->ccrtimer[n-1],  current_time + f2xx_tim_period(s,when - curr_cnt));
 }
 
 // Called if there's an update to ARR without buffering (ARPE=0)
@@ -223,7 +275,7 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
         // printf("Attempted to read count on timer %u (val %u)\n", s->id,r);
         break;
     default:
-        qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented read 0x%x+%u size %u val 0x%x\n",
+        qemu_log_mask(LOG_UNIMP, "f2xx %s unimplemented read 0x%x+%u size %u val 0x%x\n", _PERIPHNAMES[s->parent.periph],
           (unsigned int)addr << 2, offset, size, (unsigned int)r);
     }
 
@@ -232,10 +284,14 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
     return r;
 }
 
-static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, uint32_t CCR, uint8_t mode, bool active_low)
+static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, bool enabled, uint32_t CCR, uint8_t mode, bool active_low)
 {
     bool is_inverted = mode &0x1;
     uint32_t ratio = 0;
+    if (!enabled)
+    {
+        return ratio;
+    }
     switch (mode)
     {
         case 0x00: // frozen
@@ -289,22 +345,22 @@ static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
 	switch (n)
 	{
 		case 1:
-			if (s->defs.CCER.CC1E && s->defs.CCMR1.CC1S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
+			if (s->defs.CCMR1.CC1S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC1E, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
 			if (s->defs.CCMR1.OC1M == OCxM_Frozen && s->defs.DIER.CC1IE)
 				f2xx_tim_update_ccr_timer(s, 1, s->defs.CCR1);
 			break;
 		case 2:
-			if (s->defs.CCER.CC2E  && s->defs.CCMR1.CC2S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
+			if (s->defs.CCMR1.CC2S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC2E, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
 			break;
 		case 3:
-			if (s->defs.CCER.CC3E  && s->defs.CCMR2.CC3S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+			if (s->defs.CCMR2.CC3S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC3E, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
 			break;
 		case 4:
-			if (s->defs.CCER.CC4E && s->defs.CCMR2.CC4S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
+			if (s->defs.CCMR2.CC4S == CCxS_OUTPUT)
+				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC4E, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
 			break;
 	}
 	if (ratio>=0)
@@ -349,7 +405,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     switch(addr) {
     case R_TIM_CR1:
         if (data & ~1) {
-            qemu_log_mask(LOG_UNIMP, "f2xx tim non-zero CR1 unimplemented\n");
+            qemu_log_mask(LOG_UNIMP, "f2xx %s non-zero CR1 unimplemented\n", _PERIPHNAMES[s->parent.periph]);
         }
         if ((s->regs[addr] & 1) == 0 && data & 1) {
             printf("f2xx tim started: %u\n", 1U + s->parent.periph - STM32_P_TIM1);
@@ -372,23 +428,42 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         s->regs[addr] = data;
         break;
     case R_TIM_SR:
-        if ((s->regs[addr] & data) == 0) {
-            //printf("f2xx tim clearing int\n");
-            qemu_set_irq(s->irq, 0);
-        }
         s->regs[addr] &= data;
+        f2xx_tim_update_irqs(s);
         break;
 	case R_TIM_DIER:
-    case R_TIM_EGR:
-        qemu_log_mask(LOG_UNIMP, "f2xx tim unimplemented write EGR+%u size %u val 0x%x\n",
-          offset, size, (unsigned int)data);
         s->regs[addr] = data;
+        f2xx_tim_update_irqs(s);
+        break;
+    case R_TIM_EGR:
+        s->regs[addr] = data;
+        if (s->defs.EGR.UG)
+        {
+            s->count_timebase = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+            update_required = true;
+            s->defs.EGR.UG = false;
+            f2xx_tim_modify_flag(s, INT_UIF, true);
+        }
+        if (s->defs.EGR.CC1G)
+        {
+            if (s->defs.CCMR1.CC1S != CCxS_OUTPUT)
+                qemu_log_mask(LOG_UNIMP, "F2xx timer CC1MR input mode not implemented\n");
+            else
+            {
+                f2xx_tim_modify_flag(s, INT_CC1OF, s->defs.SR.CC1IF);
+                f2xx_tim_modify_flag(s, INT_CC1F, true);
+                if (s->defs.DIER.CC1DE)
+                {
+                    printf("ERR - DMAR CC1DE not supported!\n");
+                }
+            }
+            s->defs.EGR.CC1G = false;
+
+        }
         break;
     case R_TIM_CCER:
         // Capture/Compare Enable register
-       // printf("CCER: %04x\n",data);
         s->regs[addr] = data;
-
         if (changed & 0x01) {
 			f2xx_tim_update_pwm(s, 1);
         }
@@ -480,7 +555,7 @@ f2xx_tim_init(Object *obj)
 
 
     // End size check.
-    memory_region_init_io(&s->iomem, obj, &f2xx_tim_ops, s, "tim", 0xa0);
+    STM32_MR_IO_INIT(&s->iomem, obj, &f2xx_tim_ops, s, 0xa0);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
     //s->regs[R_RTC_ISR] = R_RTC_ISR_RESET;
     ////s->regs[R_RTC_PRER] = R_RTC_PRER_RESET
@@ -491,7 +566,10 @@ f2xx_tim_init(Object *obj)
 	{
 		s->ccrtimer[i] = timer_new_ns(QEMU_CLOCK_VIRTUAL, f2xx_tim_ccmr1, s);
 	}
-    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
+//    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
+    qdev_init_gpio_out_named(DEVICE(obj), s->irq, SYSBUS_DEVICE_GPIO_IRQ, IRQ_COUNT);
+
+	qdev_init_gpio_out_named(DEVICE(dev), &s->public_irq, "timer", 1);
 
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);

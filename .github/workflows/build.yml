@@ -17,7 +17,7 @@ jobs:
   # This workflow contains a single job called "build"
   build_linux:
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     # if: "!contains(github.event.head_commit.message, 'NO_BUILD')"
   #   # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -53,13 +53,13 @@ jobs:
     - name: Install packages
       run: |
           sudo apt-get update
-          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libusb-1.0.0-dev libgtk-3-dev
+          sudo apt-get -o Dir::Cache::Archives=`pwd`/packages install libelf-dev libglew-dev freeglut3-dev ninja-build libslirp-dev libusb-1.0.0-dev libgtk-3-dev
 
     - name: Cache permissions
       run: sudo chmod -R 744 packages
 
     - name: Configure build
-      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-gtk
+      run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu" --enable-libusb --enable-slirp --enable-gtk
 
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404/build && ninja
@@ -93,9 +93,9 @@ jobs:
           tar -jhcvf Mini404-dev-linux.tar.bz2 Mini404-dev-linux
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v3.1.1
+      uses: actions/upload-artifact@v4
       with:
-        name: Binaries
+        name: Binaries-linux
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-linux.tar.bz2
 
   build_macos:
@@ -122,7 +122,8 @@ jobs:
         submodules: true
 
     - name: Install dependencies
-      run: brew install libffi gettext glib pkg-config autoconf automake pixman ninja make
+      run: |
+        brew install libffi gettext glib pkg-config autoconf automake pixman ninja make python-setuptools
 
     - name: Configure build
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu"
@@ -141,9 +142,9 @@ jobs:
 
     - name: Upload artifact
       if: ${{ !github.event.pull_request }}
-      uses: actions/upload-artifact@v3.1.1
+      uses: actions/upload-artifact@v4
       with:
-        name: Binaries
+        name: Binaries-macos
         path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-macos.tar.bz2
 
   build_msys:
@@ -158,9 +159,9 @@ jobs:
       
       - name: Install old Python
         run: |
-          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
-          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst.sig
-          pacman --noconfirm -U mingw-w64-x86_64-python-3.9.13-1-any.pkg.tar.zst
+          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.11.9-1-any.pkg.tar.zst
+          wget https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.11.9-1-any.pkg.tar.zst.sig
+          pacman --noconfirm -U mingw-w64-x86_64-python-3.11.9-1-any.pkg.tar.zst
         shell: msys2 {0}
         
       - name: Fix CRLF Checkout
@@ -186,10 +187,9 @@ jobs:
         # recognize the `--no-pie` argument... not that it matters because we don't need to build the ROMs here.
       - name: Configure build
         run: |
-          git submodule update --init capstone dtc meson slirp ui/keycodemapdb tests/fp/berkeley-softfloat-3 tests/fp/berkeley-testfloat-3
           mkdir build
           cd build
-          ../configure --with-git-submodules=ignore --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
+          ../configure --target-list=buddy-softmmu --enable-gtk --enable-libusb --disable-werror
         shell: msys2 {0}
 
       - name: Build
@@ -198,7 +198,6 @@ jobs:
           ninja
         shell: msys2 {0}
       - name: Assemble artifacts and libraries
-#        if: ${{ !github.event.pull_request }}
         run: |
           cd build
           mkdir Mini404-dev-w64
@@ -213,38 +212,39 @@ jobs:
 
       - name: Upload Cygwin artifact
         if: ${{ !github.event.pull_request }}
-        uses: actions/upload-artifact@v3.1.1
+        uses: actions/upload-artifact@v4
         with:
-          name: Binaries
+          name: Binaries-win
           path: ${{ runner.workspace }}/MINI404/build/Mini404-dev-w64.zip
 
   Publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: ${{ !github.event.pull_request }}
     needs: [build_linux, build_msys, build_macos]
     steps:
       - name: Retrieve platform binaries
-        uses: actions/download-artifact@v3.0.1
+        uses: actions/download-artifact@v4.1.7
         with:
-          name: Binaries
+          pattern: Binaries-*
+          merge-multiple: true
 
       - name: Check tag version
         id: get_version
         if: startsWith(github.ref, 'refs/tags/v')
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+        run: echo "VERSION=${GITHUB_REF/refs\/tags\//}" >> "$GITHUB_ENV"
 
-      - name: Build ${{ steps.get_version.outputs.VERSION }} archives
+      - name: Build ${{ env.VERSION }} archives
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tar -jxvf Mini404-dev-linux.tar.bz2
           tar -jxvf Mini404-dev-macos.tar.bz2
           unzip Mini404-dev-w64.zip
-          mv Mini404-dev-linux Mini404-${{ steps.get_version.outputs.VERSION }}-linux
-          mv Mini404-dev-macos Mini404-${{ steps.get_version.outputs.VERSION }}-macos
-          mv Mini404-dev-w64 Mini404-${{ steps.get_version.outputs.VERSION }}-w64
-          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-linux
-          tar -jcvf Mini404-${{ steps.get_version.outputs.VERSION }}-macos.tar.bz2 Mini404-${{ steps.get_version.outputs.VERSION }}-macos
-          zip -r Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip Mini404-${{ steps.get_version.outputs.VERSION }}-w64
+          mv Mini404-dev-linux Mini404-${{ env.VERSION }}-linux
+          mv Mini404-dev-macos Mini404-${{ env.VERSION }}-macos
+          mv Mini404-dev-w64 Mini404-${{ env.VERSION }}-w64
+          tar -jcvf Mini404-${{ env.VERSION }}-linux.tar.bz2 Mini404-${{ env.VERSION }}-linux
+          tar -jcvf Mini404-${{ env.VERSION }}-macos.tar.bz2 Mini404-${{ env.VERSION }}-macos
+          zip -r Mini404-${{ env.VERSION }}-w64.zip Mini404-${{ env.VERSION }}-w64
 
       - name: RELEASE THE KRAKEN
         if: startsWith(github.ref, 'refs/tags/v')
@@ -253,9 +253,9 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false
           files: |
-            Mini404-${{ steps.get_version.outputs.VERSION }}-linux.tar.bz2
-            Mini404-${{ steps.get_version.outputs.VERSION }}-macos.tar.bz2
-            Mini404-${{ steps.get_version.outputs.VERSION }}-w64.zip
+            Mini404-${{ env.VERSION }}-linux.tar.bz2
+            Mini404-${{ env.VERSION }}-macos.tar.bz2
+            Mini404-${{ env.VERSION }}-w64.zip
       
       - name: Publish prerelease
         if: steps.get_version.outcome == 'Skipped'

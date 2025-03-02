@@ -1,5 +1,5 @@
 /*
-    p404_keyclient.h  - Key handling interface/dispatch 
+    p404_keyclient.h  - Key handling interface/dispatch
 	to work with ScriptHost.cpp.
 
 	Copyright 2021 VintagePC <https://github.com/vintagepc/>
@@ -32,11 +32,13 @@ typedef void* p404_key_handle;
 
 #define TYPE_P404_KEYCLIENT "Prusa404-keyclient"
 
+#define P404_KEYCLIENT_RELEASE_MASK 0x80
+
 typedef struct P404KeyIFClass P404KeyIFClass;
 
 typedef unsigned char Key;
 
-DECLARE_CLASS_CHECKERS(P404KeyIFClass, P404_KEYCLIENT, 
+DECLARE_CLASS_CHECKERS(P404KeyIFClass, P404_KEYCLIENT,
         TYPE_P404_KEYCLIENT)
 #define P404_KEYCLIENT(obj) \
     INTERFACE_CHECK(P404KeyIF, (obj), TYPE_P404_KEYCLIENT)
@@ -49,12 +51,11 @@ struct P404KeyIFClass {
     // Called by the scripting engine when the target should perform the defined action.
     void (*KeyHandler)(P404KeyIF *obj, Key key);
 };
-    
+
     extern p404_key_handle p404_new_keyhandler(P404KeyIF* src);
 
     extern void p404_register_keyhandler(p404_key_handle src, const Key key, const char* description);
     extern void p404_call_keyfunc(P404KeyIF *dst, const Key key);
 #endif
 
- 
 #endif // P404_KEYCLIENT_H

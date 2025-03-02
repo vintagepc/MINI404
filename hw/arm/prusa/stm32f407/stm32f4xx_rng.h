@@ -22,10 +22,8 @@
 #ifndef STM32F4XX_RNG_H
 #define STM32F4XX_RNG_H
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "exec/memory.h"
-#include "stm32.h"
 #include "sysemu/block-backend.h"
 #include "../stm32_common/stm32_common.h"
 #include "../utility/macros.h"
@@ -65,7 +63,7 @@ typedef struct Stm32f4xxRNGState {
 
     qemu_irq irq;
 
-    int64_t next_drdy;
+    QEMUTimer* next_drdy;
 
 } Stm32f4xxRNGState;
 

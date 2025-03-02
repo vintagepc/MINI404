@@ -25,48 +25,12 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "qom/object.h"
-#include "qemu-common.h"
 #include "stm32_clktree.h"
+#include "../utility/macros.h"
 #include "../stm32_common/stm32_clk.h"
 #include "../stm32_common/stm32_rcc.h"
+#include "../stm32_common/stm32_rcc_regdefs.h"
 #include "../stm32_common/stm32_common.h"
-#include "stm32.h"
-
-REGDEF_BLOCK_BEGIN()
-		REG_B32(HSION);
-		REG_B32(HSIRDY);
-		REG_RB();
-		REG_K32(HSITRIM ,5);
-		REG_K32(HSICAL  ,8);
-		REG_B32(HSEON);
-		REG_B32(HSERDY);
-		REG_B32(HSEBYP);
-		REG_B32(CSSON);
-		REG_R(4);
-		REG_B32(PLLON);
-		REG_B32(PLLRDY);
-		REG_B32(PLLI2SON);
-		REG_B32(PLLI2SRDY);
-		REG_R(4);
-REGDEF_BLOCK_END(rcc,cr);
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(LSEON);
-	REG_B32(LSERDY);
-	REG_B32(LSEBYP);
-	REG_K32(LSEDRV,2);
-	REG_B32(LSECSSON);
-	REG_B32(LSECCSD);
-	REG_RB();
-	REG_K32(RTC_SEL,2);
-	REG_R(5);
-	REG_B32(RTCEN);
-	REG_B32(BDRST);
-	REG_R(7);
-	REG_B32(LSCOEN);
-	REG_B32(LSCOSEL);
-	REG_R(6);
-REGDEF_BLOCK_END(rcc, bdcr)
 
 REGDEF_BLOCK_BEGIN()
 	REG_B32(LSION);
@@ -146,7 +110,7 @@ typedef struct Stm32f2xxRcc {
 
 	union {
 		struct {
-			REGDEF_NAME(rcc,cr) CR;
+			REGDEF_NAME(rcc_com,cr) CR;
 			REGDEF_NAME(rcc,pllcfgr) PLLCFGR;
 			REGDEF_NAME(rcc,cfgr) CFGR;
 			uint32_t CIR;
@@ -174,7 +138,7 @@ typedef struct Stm32f2xxRcc {
 			uint32_t APB2LPENR;
 			REGDEF_R(0x68);
 			REGDEF_R(0x6C);
-			REGDEF_NAME(rcc,bdcr) BDCR;
+			REGDEF_NAME(rcc_com,bdcr) BDCR;
 			REGDEF_NAME(rcc, csr) CSR;
 			REGDEF_R(0x78);
 			REGDEF_R(0x7C);

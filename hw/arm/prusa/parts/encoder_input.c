@@ -2,7 +2,7 @@
     encoder_input.c - Knob and reset button input handler for
     Mini404.
 
-	Copyright 2021 VintagePC <https://github.com/vintagepc/>
+	Copyright 2021-3 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -46,9 +46,10 @@ struct InputState {
     /*< private >*/
     /*< public >*/
     qemu_irq irq_enc_button;
-    qemu_irq irq_enc_a;
-    qemu_irq irq_enc_b;
+    qemu_irq irq_enc[2];
     qemu_irq irq_rst;
+	qemu_irq cursor_xy[2];
+	qemu_irq tap;
     int last_state;
     uint8_t phase;
 
@@ -60,7 +61,7 @@ struct InputState {
 };
 
 enum {
-    ACT_TWIST, 
+    ACT_TWIST,
     ACT_PUSH,
     ACT_RESET
 };
@@ -81,7 +82,10 @@ static void encoder_input_handle_key(P404KeyIF *opaque, Key keycode)
         case 13: // enter
             qemu_set_irq(s->irq_enc_button,0);
             timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
-            // printf("return\n");
+			break;
+		case 'l':
+			qemu_set_irq(s->irq_enc_button,0);
+            timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 2000);
             break;
 
     }
@@ -112,8 +116,8 @@ static void encoder_input_timer_expire(void *opaque)
         s->phase+=3;
     }
     s->phase = s->phase%4;
-    qemu_set_irq(s->irq_enc_a, (encoder_input_phases[s->phase]&0xF0)>0);
-    qemu_set_irq(s->irq_enc_b, (encoder_input_phases[s->phase]&0x0F)>0);
+    qemu_set_irq(s->irq_enc[0], (encoder_input_phases[s->phase]&0xF0)>0);
+    qemu_set_irq(s->irq_enc[1], (encoder_input_phases[s->phase]&0x0F)>0);
     s->encoder_ticks--;
 
     if (s->encoder_ticks>0)
@@ -126,11 +130,19 @@ static void encoder_input_timer_expire(void *opaque)
 static void encoder_input_mouseevent(void *opaque, int dx, int dy, int dz, int buttons_state)
 {
     InputState *s = opaque;
+	if(dx)
+	{
+		qemu_set_irq(s->cursor_xy[0], dx);
+	}
+	if (dy)
+	{
+		qemu_set_irq(s->cursor_xy[1], dy);
+	}
     int changed = buttons_state^s->last_state;
     if (changed & MOUSE_EVENT_LBUTTON)
     {
         // printf("Button\n");
-        qemu_set_irq(s->irq_enc_button,(buttons_state & MOUSE_EVENT_LBUTTON)==0);
+        qemu_set_irq(s->tap,(buttons_state & MOUSE_EVENT_LBUTTON));
     }
     if (dz) // Mouse wheel motion.
     {
@@ -154,7 +166,6 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(InputState, encoder_input, ENCODER_INP
 
 static void encoder_input_finalize(Object *obj)
 {
-    printf("Input_finalize\n");
 }
 
 static void encoder_input_reset(DeviceState *dev)
@@ -162,8 +173,9 @@ static void encoder_input_reset(DeviceState *dev)
     InputState *s = ENCODER_INPUT(dev);
     s->last_state = 0;
     s->phase = 0;
-    qemu_irq_lower(s->irq_enc_a);
-    qemu_irq_lower(s->irq_enc_b);
+    qemu_irq_raise(s->irq_enc_button);
+    qemu_irq_raise(s->irq_enc[0]);
+    qemu_irq_raise(s->irq_enc[1]);
 }
 
 static int encoder_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -195,8 +207,9 @@ static void encoder_input_init(Object *obj)
 {
     InputState *s = ENCODER_INPUT(obj);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_button, "encoder-button", 1);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "encoder-a", 1);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "encoder-b", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), s->irq_enc, "encoder-ab", 2);
+    qdev_init_gpio_out_named(DEVICE(obj), s->cursor_xy, "cursor_xy", 2);
+	qdev_init_gpio_out_named(DEVICE(obj), &s->tap, "touch", 1);
     qemu_add_mouse_event_handler(&encoder_input_mouseevent,ENCODER_INPUT(obj),false, "encoder-mouse");
     // qemu_add_kbd_event_handler(&encoder_input_keyevent,s);
 
@@ -218,6 +231,7 @@ static void encoder_input_init(Object *obj)
     p404_register_keyhandler(pKey, 'w',"Twists encoder up");
     p404_register_keyhandler(pKey, 's',"Twists encoder down");
     p404_register_keyhandler(pKey, 0xd,"Presses encoder button");
+	p404_register_keyhandler(pKey, 'l',"Holds encoder for 2s");
 
 }
 

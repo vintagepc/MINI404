@@ -28,15 +28,13 @@
 #include "sysemu/dma.h"
 #include "qemu/log.h"
 #include "hw/sysbus.h"
+#include "hw/qdev-properties.h"
 #include "qemu/timer.h"
 #include "exec/memory.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
+#include "stm32_f2xx_f4xx_dma_regdata.h"
 
-#define STM32_F2xx_DMA_MAX_CHAN 8
-#define STM32_F2xx_DMA_CHAN_REGS 6
-
-#define R_DMA_MAX (4+(STM32_F2xx_DMA_MAX_CHAN*STM32_F2xx_DMA_CHAN_REGS))
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XX_STRUCT_NAME(Dma), STM32F4xx_DMA);
 
@@ -116,6 +114,9 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
     STM32Peripheral parent;
     MemoryRegion  iomem;
 
+	MemoryRegion* cpu_mr;
+	AddressSpace cpu_as;
+
     union {
         struct {
 			REGDEF_NAME(dma, low_int) LISR;			//0x00
@@ -131,40 +132,25 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
 			_STM32_DMA_CHAN_BLK(6)	 				//0xA0 - 0xB4
 			_STM32_DMA_CHAN_BLK(7)	 				//0xB8 - 0xCC
 		} defs;
-        uint32_t raw[R_DMA_MAX];
+        uint32_t raw[RI_MAX];
     } regs;
 
 	uint32_t original_ndtrs[STM32_F2xx_DMA_MAX_CHAN];
+	uint32_t original_cmars[STM32_F2xx_DMA_MAX_CHAN];
+	uint32_t original_cpars[STM32_F2xx_DMA_MAX_CHAN];
+	uint8_t dma_pending[STM32_F2xx_DMA_MAX_CHAN];
+
+	QEMUTimer* dma_timer;
 
 	qemu_irq irq[STM32_F2xx_DMA_MAX_CHAN];
 
 } STM32F2XX_STRUCT_NAME(Dma);
 
-enum reg_index {
-	RI_LISR,
-	RI_HISR,
-	RI_LIFCR,
-	RI_HIFCR,
-	RI_CHAN_BASE,
-	RI_CHAN_END = RI_CHAN_BASE + (STM32_F2xx_DMA_CHAN_REGS * STM32_F2xx_DMA_MAX_CHAN),
-	RI_MAX = RI_CHAN_END,
-};
-
-enum channel_offset
-{
-	CH_OFF_SxCR,
-	CH_OFF_SxNDTR,
-	CH_OFF_SxPAR,
-	CH_OFF_SxM0AR,
-	CH_OFF_SxM1AR,
-	CH_OFF_SxFCR,
-	CH_OFF_END,
-};
 
 enum dma_dir
 {
-	DIR_P2M,
-	DIR_M2P,
+	DIR_P2M, // NOTE - value must match DMAR_P2M
+	DIR_M2P, // and this must equal DMAR_M2P for proper IRQ handling.
 	DIR_M2M,
 };
 
@@ -176,13 +162,12 @@ enum interrupt_bits
 	INT_HTIF = 	0b010000,
 	INT_TCIF = 	0b100000,
 	INT_ALL = 	0b111101,
-	INT_SxCR_MASK = 0b111100,
+	INT_SxCR_MASK = 0b111110,
 	INT_BLKSIZE = 6,
 };
 
 static const uint8_t dma_xfer_size_b[4] = {1, 2, 4, 0};
 
-QEMU_BUILD_BUG_MSG(R_DMA_MAX != RI_MAX, "register definitions do not agree!");
 QEMU_BUILD_BUG_MSG(CH_OFF_END != STM32_F2xx_DMA_CHAN_REGS, "register definitions do not agree!");
 
 
@@ -215,12 +200,10 @@ static void stm32_f2xx_f4xx_update_irqs(STM32F2XX_STRUCT_NAME(Dma) *s, uint8_t c
 
 	sr &= INT_ALL;
 
-	if (sr != 0)
+	if (sr != 0 && (sr & int_en))
 	{
-		if (sr & int_en) {
-			qemu_irq_raise(s->irq[channel]);
-		}
-	}
+        qemu_irq_raise(s->irq[channel]);
+	}   
 	else
 	{
 		qemu_irq_lower(s->irq[channel]);
@@ -263,114 +246,98 @@ static void stm32_f2xx_f4xx_set_int_flag(STM32F2XX_STRUCT_NAME(Dma) *s, uint8_t 
 	}
 }
 
-static void stm32_f2xx_f4xx_dma_do_p2m(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr chan_base)
+static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr chan_base)
 {
 	uint8_t channel = (chan_base - RI_CHAN_BASE) / STM32_F2xx_DMA_CHAN_REGS;
 	REGDEF_NAME(dma,sxcr)* cr = (REGDEF_NAME(dma,sxcr)*)&s->regs.raw[chan_base+CH_OFF_SxCR];
-	uint8_t psize = dma_xfer_size_b[cr->PSIZE];
-	uint8_t msize = dma_xfer_size_b[cr->MSIZE];
-	uint8_t xfersize = MIN(psize, msize);
-	uint32_t *dest = &s->regs.raw[chan_base+CH_OFF_SxM0AR];
-	uint32_t *src = &s->regs.raw[chan_base+CH_OFF_SxPAR];
+    if (!cr->EN)
+    {
+        return;
+    }
+	uint8_t dir = cr->DIR;
 	uint32_t *ndtr = &s->regs.raw[chan_base+CH_OFF_SxNDTR];
+	uint32_t *dest = NULL;
+	uint32_t *src = NULL;
+	uint8_t src_size = 0, dest_size = 0;
+	uint8_t dest_inc = 0, src_inc = 0;
+	if (dir == DIR_P2M)
+	{
+		dest = &s->regs.raw[chan_base+CH_OFF_SxM0AR];
+		dest_size = dma_xfer_size_b[cr->MSIZE];
+		dest_inc = cr->MINC * dest_size;
+		src = &s->regs.raw[chan_base+CH_OFF_SxPAR];
+		src_size = dma_xfer_size_b[cr->PSIZE];
+		if (cr->PINCOS)
+		{
+			src_inc = cr->PINC * 4U;
+		}
+		else
+		{
+			src_inc = cr->PINC * src_size;
+		}
+	}
+	else if (dir == DIR_M2P)
+	{
+		src = &s->regs.raw[chan_base+CH_OFF_SxM0AR];
+		src_size = dma_xfer_size_b[cr->MSIZE];
+		src_inc = cr->MINC * src_size;
+		dest = &s->regs.raw[chan_base+CH_OFF_SxPAR];
+		dest_size = dma_xfer_size_b[cr->PSIZE];
+		if (cr->PINCOS)
+		{
+			dest_inc = cr->PINC * 4U;
+		}
+		else
+		{
+			dest_inc = cr->PINC * dest_size;
+		}
+	}
+	else
+	{
+		printf("FIXME: M2M transfer!");
+		abort();
+	}
 	// if (*src == 0x40004404)
 	// {
 	// 	printf("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u\n",*src, *dest, xfersize, *ndtr);
 	// }
-	uint8_t buff[4];
+	uint8_t buff[4] = {0,0,0,0};
 	dma_memory_read(
-		&address_space_memory,
+		&s->cpu_as,
 		*src,
 		buff,
-		xfersize,
+		src_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
 	dma_memory_write(
-		&address_space_memory,
+		&s->cpu_as,
 		*dest,
 		buff,
-		xfersize,
+		dest_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
-	if (cr->MINC)
-	{
-		*dest += xfersize;
-	}
-	if (cr->PINC)
-	{
-		*src += xfersize;
-	}
-	(*ndtr)--; // NDTR is in transfers, not bytes.
 
-	if (*ndtr == 0 )
-	{
-		// if (*src == 0x40004404)
-		// {
-		// 	printf("TCIF\n");
-		// }
-		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_TCIF);
-	}
+	(*ndtr)--; // NDTR is in transfers, not bytes.
+	*dest += dest_inc;
+	*src +=  src_inc;
 
 	if (*ndtr == (s->original_ndtrs[channel]>>1U) )
 	{
 		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_HTIF);
 	}
-	if (cr->CIRC && *ndtr == 0)
-	{
-		*ndtr = s->original_ndtrs[channel];
-		if (cr->MINC)
-		{
-			*dest -= (*ndtr*msize);
-		}
-	}
-}
-
-static void stm32_f2xx_f4xx_dma_do_m2p(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr chan_base)
-{
-	uint8_t channel = (chan_base - RI_CHAN_BASE) / STM32_F2xx_DMA_CHAN_REGS;
-	REGDEF_NAME(dma,sxcr)* cr = (REGDEF_NAME(dma,sxcr)*)&s->regs.raw[chan_base+CH_OFF_SxCR];
-	uint8_t psize = dma_xfer_size_b[cr->PSIZE];
-	uint8_t msize = dma_xfer_size_b[cr->MSIZE];
-	uint8_t xfersize = MIN(psize, msize);
-	uint32_t *dest = &s->regs.raw[chan_base+CH_OFF_SxPAR];
-	uint32_t *src = &s->regs.raw[chan_base+CH_OFF_SxM0AR];
-	uint32_t *ndtr = &s->regs.raw[chan_base+CH_OFF_SxNDTR];
-	// printf("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u\n",*src, *dest, xfersize, *ndtr);
-	uint8_t buff[4];
-	while (*ndtr)
-	{
-		dma_memory_read(
-			&address_space_memory,
-			*src,
-			buff,
-			xfersize,
-			MEMTXATTRS_UNSPECIFIED
-		);
-		dma_memory_write(
-			&address_space_memory,
-			*dest,
-			buff,
-			xfersize,
-			MEMTXATTRS_UNSPECIFIED
-		);
-		if (cr->MINC)
-		{
-			*src += xfersize;
-		}
-		if (cr->PINC)
-		{
-			*dest += xfersize;
-		}
-		(*ndtr)--; // NDTR is in transfers, not bytes.
-	}
-
-	if (*ndtr == 0 )
+	else if (*ndtr == 0 )
 	{
 		stm32_f2xx_f4xx_set_int_flag(s, channel, INT_TCIF);
-	}
-	if (cr->CIRC && *ndtr == 0)
-	{
-		printf("FIXME: CIRC MODE M2P\n");
+		if (cr->CIRC)
+		{
+			*ndtr = s->original_ndtrs[channel];
+			*dest -= (*ndtr*dest_inc);
+			*src -= (*ndtr*src_inc);
+		}
+		else
+		{
+			cr->EN = false; // Transfer done, disable channel.
+		}
 	}
 }
 
@@ -382,7 +349,8 @@ static void stm32_f2xx_f4xx_dma_dmar(void *opaque, int n, int level)
 	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(opaque);
 
 	REGDEF_NAME(dma,sxcr) *cr;
-	for (int i=RI_CHAN_BASE; i<RI_CHAN_END; i+= CH_OFF_END)
+	int idx = 0;
+	for (int i=RI_CHAN_BASE; i<RI_CHAN_END; i+= CH_OFF_END, idx++)
 	{
 		cr = (REGDEF_NAME(dma,sxcr)*)&s->regs.raw[i+CH_OFF_SxCR];
 		// Is this our peripheral?
@@ -390,18 +358,29 @@ static void stm32_f2xx_f4xx_dma_dmar(void *opaque, int n, int level)
 		{
 			continue;
 		}
-		if (cr->EN != true || s->regs.raw[i+CH_OFF_SxNDTR] == 0)
+		if (cr->DIR != n) // Does the direction of the request match?
+		{
 			continue;
-
-		if (cr->DIR==DIR_P2M)
-		{
-			stm32_f2xx_f4xx_dma_do_p2m(s, i);
 		}
-		else
+		if (cr->EN != true || s->regs.raw[i+CH_OFF_SxNDTR] == 0)
 		{
-			printf("FIXME: M2P/M2M DMA transfer!\n");
+			continue;
 		}
+		s->dma_pending[idx]++;
+		timer_mod_ns(s->dma_timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+	}
+}
 
+static void stm32_f2xx_f4xx_dma_timer(void *opaque)
+{
+	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(opaque);
+	for (int i=STM32_F2xx_DMA_MAX_CHAN - 1U; i>=0; i--)
+	{
+		if (s->dma_pending[i])
+		{
+			stm32_f2xx_f4xx_dma_do_xfer(s,RI_CHAN_BASE+(i*STM32_F2xx_DMA_CHAN_REGS));
+			s->dma_pending[i]--;
+		}
 	}
 }
 
@@ -409,21 +388,20 @@ static uint64_t
 stm32_f2xx_f4xx_dma_read(void *opaque, hwaddr addr, unsigned int size)
 {
 	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(opaque);
-    uint32_t r;
     int offset = addr & 0x3;
 
     addr >>= 2;
-    if (addr >= R_DMA_MAX) {
+    if (addr >= RI_MAX) { // LCOV_EXCL_START
         qemu_log_mask(LOG_GUEST_ERROR, "invalid read stm32_dma register 0x%x\n",
           (unsigned int)addr << 2);
         return 0;
-    }
+    } // LCOV_EXCL_STOP
 
 	// NOTE - IFCR is read-only, but we never change its contents in the write so it will always come back 0
     uint32_t value = s->regs.raw[addr];
 
-    r = (value >> offset * 8) & ((1ull << (8 * size)) - 1);
-    return r;
+    ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b110);
+	return value;
 }
 
 static void
@@ -442,25 +420,33 @@ stm32_f2xx_f4xx_dma_chan_write(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr addr, uint6
 			{
 				// printf("Enabled DMA channel %u\n", chan);
 				// Channel was enabled... if P2M we wait for P to signal DMAR anyway.
-				if (new.DIR == DIR_M2P)
-				{
-					// If M2P, start the transfer now and don't bother setting EN
-
-					stm32_f2xx_f4xx_dma_do_m2p(s, addr - offset);
-					new.EN = 0;
-				}
+			}
+			else if (!new.EN && old.EN)
+			{
+				// DMA was disabled. Reset CMAR.
+				s->regs.raw[addr+CH_OFF_SxM0AR] = s->original_cmars[chan];
+				s->regs.raw[addr+CH_OFF_SxPAR] = s->original_cpars[chan];
 			}
 			s->regs.raw[addr] = new.raw;
 		}
 		break;
 		case CH_OFF_SxNDTR:
 			s->original_ndtrs[chan] = data & UINT16_MAX;
-		/* FALLTHRU */
-		case CH_OFF_SxPAR ... CH_OFF_SxFCR:
 			s->regs.raw[addr] = data;
 			break;
-		default:
-			qemu_log_mask(LOG_GUEST_ERROR, "ERR: DMA write to reserved register!\n");
+		case CH_OFF_SxPAR:
+			s->original_cpars[chan] = data;
+			s->regs.raw[addr] = data;
+			break;
+		case CH_OFF_SxM0AR:
+			s->original_cmars[chan] = data;
+			s->regs.raw[addr] = data;
+			break;
+		case CH_OFF_SxM1AR ... CH_OFF_SxFCR:
+			s->regs.raw[addr] = data;
+			break;
+		default: //LCOV_EXCL_LINE
+			qemu_log_mask(LOG_GUEST_ERROR, "ERR: DMA write to reserved register!\n"); // LCOV_EXCL_LINE
 	}
 }
 
@@ -472,21 +458,14 @@ stm32_f2xx_f4xx_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int
     int offset = addr & 0x3;
 
     addr >>= 2;
-    if (addr >= RI_MAX) {
+
+    if (addr >= RI_MAX) { // LCOV_EXCL_START
         qemu_log_mask(LOG_GUEST_ERROR, __FILE__ "invalid write stm32_iwdg register 0x%x\n",
           (unsigned int)addr << 2);
         return;
-    }
+    } // LCOV_EXCL_STOP
 
-    switch(size) {
-    case 2:
-        data = (s->regs.raw[addr] & ~(0xffff << (offset * 8))) | data << (offset * 8);
-        break;
-    case 4:
-        break;
-    default:
-        abort();
-    }
+	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b110);
 
     switch(addr) {
     case RI_LISR:
@@ -501,10 +480,10 @@ stm32_f2xx_f4xx_dma_write(void *opaque, hwaddr addr, uint64_t data, unsigned int
 	case RI_CHAN_BASE ... RI_CHAN_END:
 		stm32_f2xx_f4xx_dma_chan_write(s, addr, data, size);
         break;
-    default:
+    default: // LCOV_EXCL_START
         qemu_log_mask(LOG_UNIMP, __FILE__ " unimplemented write 0x%x+%u size %u val 0x%x\n",
         (unsigned int)addr << 2, offset, size, (unsigned int)data);
-    }
+    }  // LCOV_EXCL_STOP
 }
 
 static const MemoryRegionOps stm32_common_dma_ops = {
@@ -522,6 +501,19 @@ static void stm32_f2xx_f4xx_dma_reset(DeviceState *dev)
 {
 	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(dev);
     memset(&s->regs, 0, sizeof(s->regs));
+}
+
+static void stm32_f2xx_f4xx_dma_realize(DeviceState *dev, Error **errp)
+{
+	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(dev);
+	if (s->cpu_mr == NULL)
+	{
+		printf("No CPU memory region specified for %s - using global system memory.\n", _PERIPHNAMES[s->parent.periph]); // LCOV_EXCL_LINE
+		s->cpu_mr = get_system_memory(); // LCOV_EXCL_LINE
+	}
+	gchar* name = g_strdup_printf("STM32COM_DMA_%d", s->parent.periph - STM32_P_DMA_BEGIN);
+	address_space_init(&s->cpu_as, s->cpu_mr, name);
+	g_free(name);
 }
 
 static void
@@ -542,12 +534,13 @@ stm32_f2xx_f4xx_dma_init(Object *obj)
     // CHECK_TYPEDEF_u32(REGDEF_NAME(dma, ccr), defs.CCR);
 
 
-    memory_region_init_io(&s->iomem, obj, &stm32_common_dma_ops, s, "dma", 1*KiB);
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32_common_dma_ops, s, 1*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
-    qdev_init_gpio_in_named(DEVICE(obj),stm32_f2xx_f4xx_dma_dmar,"dmar-in",1);
+    qdev_init_gpio_in_named(DEVICE(obj),stm32_f2xx_f4xx_dma_dmar,"dmar-in",2);
 	qdev_init_gpio_out_named(DEVICE(obj), s->irq, SYSBUS_DEVICE_GPIO_IRQ, STM32_F2xx_DMA_MAX_CHAN);
 
+	s->dma_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, stm32_f2xx_f4xx_dma_timer, obj);
 }
 
 static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
@@ -555,12 +548,18 @@ static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw,STM32F2XX_STRUCT_NAME(Dma), R_DMA_MAX),
+        VMSTATE_UINT32_ARRAY(regs.raw,STM32F2XX_STRUCT_NAME(Dma), RI_MAX),
         VMSTATE_UINT32_ARRAY(original_ndtrs,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
+        VMSTATE_UINT32_ARRAY(original_cmars,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
+        VMSTATE_UINT32_ARRAY(original_cpars,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
         VMSTATE_END_OF_LIST()
     }
 };
 
+static Property stm32_f2xx_f4xx_dma_properties[] = {
+    DEFINE_PROP_LINK("system-memory", STM32F2XX_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
+    DEFINE_PROP_END_OF_LIST()
+};
 
 static void
 stm32_f2xx_f4xx_dma_class_init(ObjectClass *klass, void *data)
@@ -568,6 +567,8 @@ stm32_f2xx_f4xx_dma_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_f2xx_f4xx_dma;
     dc->reset = stm32_f2xx_f4xx_dma_reset;
+	dc->realize = stm32_f2xx_f4xx_dma_realize;
+	device_class_set_props(dc, stm32_f2xx_f4xx_dma_properties);
 }
 
 static const TypeInfo

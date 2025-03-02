@@ -22,6 +22,7 @@
 #pragma once
 
 #include "PrintVisualType.h"
+#include <cstdint>
 
 class Config
 {

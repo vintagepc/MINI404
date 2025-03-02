@@ -64,7 +64,3 @@
 [submodule "subprojects/libvfio-user"]
 	path = subprojects/libvfio-user
 	url = https://gitlab.com/qemu-project/libvfio-user.git
-[submodule "hw/arm/prusa/3rdParty/shmemq404"]
-	path = hw/arm/prusa/3rdParty/shmemq404
-	url = https://github.com/vintagepc/shmemq404.git
-

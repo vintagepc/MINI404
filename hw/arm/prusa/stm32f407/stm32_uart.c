@@ -2,7 +2,7 @@
  * STM32 Microcontroller UART module
  *
  * Copyright (C) 2010 Andre Beckus
- * Adapted for QEMU 5.2 in 2020 by VintagePC <http://github.com/vintagepc>
+ * Adapted for QEMU 5.2+ in 2020-3 by VintagePC <http://github.com/vintagepc>
  *
  * Source code based on pl011.c
  * Implementation based on ST Microelectronics "RM0008 Reference Manual Rev 10"
@@ -22,7 +22,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/sysbus.h"
 #include "hw/irq.h"
 #include "exec/memory.h"
@@ -45,7 +44,7 @@
 
 /* See the README file for details on these settings. */
 //#define DEBUG_STM32_UART
-#define STM32_UART_NO_BAUD_DELAY 1
+//#define STM32_UART_NO_BAUD_DELAY 1
 //#define STM32_UART_ENABLE_OVERRUN
 
 #ifdef DEBUG_STM32_UART
@@ -64,24 +63,25 @@
 #define USART_GTPR_OFFSET   0x18/4
 #define USART_R_END         0x1c/4
 
+static const uint8_t BITS_PER_CHAR = 10;
+
 /* HELPER FUNCTIONS */
 
 /* Update the baud rate based on the USART's peripheral clock frequency. */
-static void stm32_uart_baud_update(Stm32Uart *s)
+static void stm32_uart_baud_update(STM32Peripheral *p)
 {
-    uint32_t clk_freq = stm32_rcc_if_get_periph_freq(&s->parent);
-
-    uint64_t ns_per_bit;
+    Stm32Uart *s = STM32_UART(p);
+    uint32_t clk_freq = s->parent.clock_freq;
 
     if((s->regs[USART_BRR_OFFSET] == 0) || (clk_freq == 0)) {
         s->bits_per_sec = 0;
     } else {
-        s->bits_per_sec = clk_freq / s->regs[USART_BRR_OFFSET];
-        ns_per_bit = 1000000000LL / s->bits_per_sec;
-
+		float scale = s->defs.CR1.OVER8 ? 8.f : 16.f;
+		float clk_div = scale * (s->defs.BRR.MANT + (float)s->defs.BRR.FRACT/scale);
+        s->ns_per_char = BITS_PER_CHAR * (int64_t)((NANOSECONDS_PER_SECOND * clk_div)/clk_freq);
         /* We assume 10 bits per character.  This may not be exactly
-         * accurate depending on settings, but it should be good enough. */
-        s->ns_per_char = ns_per_bit * 10;
+         * accurate depending on settings, but it should be good enough.
+		 as most cases are at least 10 - 8 data, 1 start, 1 stop. */
     }
 
 #ifdef DEBUG_STM32_UART
@@ -96,19 +96,6 @@ static void stm32_uart_baud_update(Stm32Uart *s)
                 periph_name,
                 (unsigned long)s->bits_per_sec);
 #endif
-}
-
-/* Handle a change in the peripheral clock. */
-static void stm32_uart_clk_irq_handler(void *opaque, int n, int level)
-{
-    Stm32Uart *s = STM32_UART(opaque);
-
-    assert(n == 0);
-
-    /* Only update the BAUD rate if the IRQ is being set. */
-    if(level) {
-        stm32_uart_baud_update(s);
-    }
 }
 
 /* Routine which updates the USART's IRQ.  This should be called whenever
@@ -130,10 +117,16 @@ static void stm32_uart_update_irq(Stm32Uart *s) {
         qemu_set_irq(s->irq, new_irq_level);
         s->curr_irq_level = new_irq_level;
     }
-    int new_dmar = s->defs.SR.RXNE && (s->defs.CR3.DMAR);
-    if (new_dmar==1)
+
+    if (s->defs.SR.RXNE && (s->defs.CR3.DMAR))
     {
-		qemu_set_irq(s->parent.dmar, s->iomem.addr + (4U*USART_DR_OFFSET));
+		// DR/TR are shared
+		qemu_set_irq(s->parent.dmar[DMAR_P2M], s->iomem.addr + (4U*USART_DR_OFFSET));
+    }
+    if (s->defs.SR.TXE && s->defs.CR3.DMAT)
+    {
+		// DR/TR are shared
+		qemu_set_irq(s->parent.dmar[DMAR_M2P], s->iomem.addr + (4U*USART_DR_OFFSET));
     }
 }
 
@@ -187,7 +180,14 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     stm32_uart_tx_complete(s);
 #else
     /* Otherwise, start the transmit delay timer. */
-    timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
+    if (s->parent.periph == STM32_P_UART8)
+    {
+        timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char)/10);
+    }
+    else
+    {
+        timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
+    }
 #endif
 }
 
@@ -201,6 +201,7 @@ static void stm32_uart_fill_receive_data_register(Stm32Uart *s)
     /* If we have no more data, or we are emulating baud delay and it's not
      * time yet for the next byte, return without filling the RDR */
     if (!s->rcv_char_bytes || s->receiving) {
+	    timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char*5);
         return;
     }
 
@@ -283,10 +284,10 @@ static int stm32_uart_can_receive(void *opaque)
     // reversed if the receiving end is configured with DMA (e.g ESP01).
     // For now, just have 1 char at a time and we'll deal with it
     // when it becomes a bottleneck.
-    // Stm32Uart *s = (Stm32Uart *)opaque;
-
     /* How much space do we have in our buffer? */
-    return 1;// (USART_RCV_BUF_LEN - s->rcv_char_bytes);
+
+    Stm32Uart *s = (Stm32Uart *)opaque;
+    return (USART_RCV_BUF_LEN - s->rcv_char_bytes);
 }
 
 static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
@@ -294,6 +295,7 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
     Stm32Uart *s = (Stm32Uart *)opaque;
 
     assert(size > 0);
+	timer_del(s->idle_timer);
     /* Copy the characters into our buffer first */
     // if (s->periph==STM32_P_UART2) {
     //     printf("UART RX: ");
@@ -308,9 +310,6 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
     /* Put next byte into RDR if the target is ready for it */
     stm32_uart_fill_receive_data_register(s);
     //  if (s->periph==19) printf("DR: %c\n", s->defs.DR.DR);
-
-    //start no-receive idle timer.
-    timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
 }
 
 /* REGISTER IMPLEMENTATION */
@@ -343,7 +342,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         /* If the receive buffer is not empty, return the value. and mark the
          * buffer as empty.
          */
-        // printf("DR read: %02x\n", *read_value);
+        // if (s->parent.periph == STM32_P_UART3) printf("DR read: %02x\n", s->defs.DR.DR);
 
         s->defs.SR.RXNE = 0;
 
@@ -366,7 +365,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
 static void stm32_uart_USART_DR_write(Stm32Uart *s, uint32_t new_value)
 {
     uint32_t write_value = new_value & 0x000001ff;
-    //printf("uart %d: wr: %02x\n",s->uart_index, write_value);
+    // if (s->parent.periph == STM32_P_UART3) printf ("uart wr: %02x\n", write_value);
 
     if(!s->defs.CR1.UE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART was disabled.");
@@ -418,6 +417,9 @@ static void stm32_uart_reset(DeviceState *dev)
     s->idle_interrupt_blocked = false;
 
     s->curr_irq_level = 0;
+
+    // Empty the RX buffer...
+    s->rcv_char_bytes = 0;
 
     // Do not initialize USART_DR - it is documented as undefined at reset
     // and does not behave like normal registers.
@@ -515,7 +517,7 @@ static void stm32_uart_write(void *opaque, hwaddr addr,
             break;
         case USART_BRR_OFFSET:
             s->regs[addr] = data;
-            stm32_uart_baud_update(s);
+            stm32_uart_baud_update(STM32_PERIPHERAL(s));
             break;
         case USART_CR1_OFFSET:
 		case USART_CR3_OFFSET:
@@ -557,8 +559,7 @@ static void stm32_uart_init(Object *obj)
 
     // s->stm32_rcc = (Stm32Rcc *)s->stm32_rcc_prop;
 
-    memory_region_init_io(&s->iomem, obj,  &stm32_uart_ops, s,
-                          "uart", 0x03ff);
+    STM32_MR_IO_INIT(&s->iomem, obj,  &stm32_uart_ops, s, 1U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
@@ -576,10 +577,6 @@ static void stm32_uart_init(Object *obj)
         timer_new_ns(QEMU_CLOCK_VIRTUAL,
                   (QEMUTimerCB *)stm32_uart_idle_timer_expire, s);
 
-    /* Register handlers to handle updates to the USART's peripheral clock. */
-    s->clk_irq =
-          qemu_allocate_irqs(stm32_uart_clk_irq_handler, (void *)s, 1);
-	stm32_rcc_if_set_periph_clk_irq(&s->parent, s->clk_irq[0]);
 
     //stm32_uart_connect(s, &s->chr);
 
@@ -655,6 +652,9 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, stm32_uart_properties);
     dc->realize = stm32_uart_realize;
     dc->vmsd = &vmstate_stm32_uart;
+
+    STM32PeripheralClass *k = STM32_PERIPHERAL_CLASS(klass);
+    k->clock_update = stm32_uart_baud_update;
 }
 
 static TypeInfo stm32_uart_info = {
