@@ -338,7 +338,7 @@ static Property corexy_properties[] = {
 static void corexy_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = corexy_reset;
+    device_class_set_legacy_reset(dc, corexy_reset);
     dc->realize = corexy_realize;
     dc->vmsd = &vmstate_corexy;
     device_class_set_props(dc, corexy_properties);

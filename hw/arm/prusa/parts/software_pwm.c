@@ -134,7 +134,7 @@ static void software_pwm_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = software_pwm_reset;
+    device_class_set_legacy_reset(dc, software_pwm_reset);
     dc->vmsd = &vmstate_software_pwm;
     device_class_set_props(dc, software_pwm_properties);
 }

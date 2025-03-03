@@ -267,7 +267,7 @@ static const VMStateDescription vmstate_encoder_input = {
 static void encoder_input_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = encoder_input_reset;
+    device_class_set_legacy_reset(dc, encoder_input_reset);
     // dc->realize = encoder_input_realize;
     // dc->unrealize = encoder_input_unrealize;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);

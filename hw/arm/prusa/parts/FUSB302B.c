@@ -95,7 +95,7 @@ void fusb302b_class_init(ObjectClass *klass, void *data)
     k->send = &fusb302b_send;
 
     device_class_set_props(dc, fusb302b_props);
-    dc->reset = fusb302b_reset;
+    device_class_set_legacy_reset(dc, fusb302b_reset);
 }
 
 static

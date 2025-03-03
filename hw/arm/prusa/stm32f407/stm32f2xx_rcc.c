@@ -676,7 +676,7 @@ static const VMStateDescription vmstate_STM32F2xx_RCC = {
 static void stm32_rcc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32_rcc_reset;
+    device_class_set_legacy_reset(dc, stm32_rcc_reset);
     dc->realize = stm32_rcc_realize;
     dc->vmsd = &vmstate_STM32F2xx_RCC;
 	COM_CLASS_NAME(F4xxRcc) *k = STM32F4xx_RCC_CLASS(klass);

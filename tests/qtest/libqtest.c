@@ -1064,12 +1064,6 @@ void qtest_irq_intercept_in(QTestState *s, const char *qom_path)
     qtest_rsp(s);
 }
 
-void qtest_irq_intercept_out_named(QTestState *s, const char *qom_path, const char* name)
-{
-    qtest_sendf(s, "irq_intercept_out_named %s %s\n", qom_path, name);
-    qtest_rsp(s);
-}
-
 void qtest_irq_intercept_in_named(QTestState *s, const char *qom_path, const char* name)
 {
     qtest_sendf(s, "irq_intercept_in_named %s %s\n", qom_path, name);

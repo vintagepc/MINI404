@@ -247,7 +247,7 @@ void gt911_class_init(ObjectClass *klass, void *data)
 	k->event = &gt911_event;
 
     device_class_set_props(dc, gt911_props);
-    dc->reset = gt911_reset;
+    device_class_set_legacy_reset(dc, gt911_reset);
 }
 
 static

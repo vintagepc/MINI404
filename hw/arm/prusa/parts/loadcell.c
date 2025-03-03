@@ -233,7 +233,7 @@ static const VMStateDescription vmstate_loadcell = {
 static void loadcell_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = loadcell_reset;
+    device_class_set_legacy_reset(dc, loadcell_reset);
     dc->vmsd = &vmstate_loadcell;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = loadcell_process_action;

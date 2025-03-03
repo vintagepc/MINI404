@@ -566,7 +566,7 @@ stm32_f2xx_f4xx_dma_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_f2xx_f4xx_dma;
-    dc->reset = stm32_f2xx_f4xx_dma_reset;
+    device_class_set_legacy_reset(dc, stm32_f2xx_f4xx_dma_reset);
 	dc->realize = stm32_f2xx_f4xx_dma_realize;
 	device_class_set_props(dc, stm32_f2xx_f4xx_dma_properties);
 }

@@ -131,6 +131,6 @@ static const VMStateDescription vmstate_cbtl3257 = {
 static void cbtl3257_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = cbtl3257_reset;
+    device_class_set_legacy_reset(dc, cbtl3257_reset);
     dc->vmsd = &vmstate_cbtl3257;
 }

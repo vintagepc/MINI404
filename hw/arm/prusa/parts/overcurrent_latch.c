@@ -116,7 +116,7 @@ static const VMStateDescription vmstate_oc_latch = {
 static void oc_latch_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = oc_latch_reset;
+    device_class_set_legacy_reset(dc, oc_latch_reset);
     dc->vmsd = &vmstate_oc_latch;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = oc_latch_process_action;

@@ -195,8 +195,7 @@ static void stm32_peripheral_rcc_reset(void *opaque, int n, int level)
 {
 	if (level)
 	{
-		DeviceClass *c = DEVICE_GET_CLASS(opaque);
-		c->reset(DEVICE(opaque));
+        device_cold_reset(DEVICE(opaque));
 	}
 }
 

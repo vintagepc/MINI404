@@ -55,8 +55,8 @@ typedef struct sockaddr sockaddr;
 
 //USB definitions
 
-#define byte unsigned char
-#define word unsigned short
+#define byte uint8_t
+#define word uint16_t
 
 // USB Descriptors
 
