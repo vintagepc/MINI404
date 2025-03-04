@@ -72,5 +72,5 @@ libwebpdemux-*.dll
 libwinpthread-1.dll
 libyuv.dll
 libzstd.dll
-rav1e.dll
+librav1e.dll
 zlib1.dll
