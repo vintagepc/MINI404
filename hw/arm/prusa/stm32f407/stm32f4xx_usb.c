@@ -3138,12 +3138,12 @@ static void STM32F4xx_reset_exit(Object *obj, ResetType type)
     }
 }
 
-static void stm32f4xx_usb_reset(DeviceState *ds) {
-    // printf("RCC USB reset signal: %d\n",level);
-    STM32F4xxUSBState *s = STM32F4xx_USB(ds);
-	STM32F4xx_reset_enter(OBJECT(s),RESET_TYPE_COLD);
-	STM32F4xx_reset_exit(OBJECT(s), RESET_TYPE_COLD);
-}
+// static void stm32f4xx_usb_reset(DeviceState *ds) {
+//     // printf("RCC USB reset signal: %d\n",level);
+//     STM32F4xxUSBState *s = STM32F4xx_USB(ds);
+// 	STM32F4xx_reset_enter(OBJECT(s),RESET_TYPE_COLD);
+// 	STM32F4xx_reset_exit(OBJECT(s), RESET_TYPE_COLD);
+// }
 
 static void STM32F4xx_realize(DeviceState *dev, Error **errp)
 {
@@ -3325,7 +3325,7 @@ static void STM32F4xx_class_init(ObjectClass *klass, void *data)
     ResettableClass *rc = RESETTABLE_CLASS(klass);
 
     dc->realize = STM32F4xx_realize;
-	device_class_set_legacy_reset(dc, stm32f4xx_usb_reset);
+	//device_class_set_legacy_reset(dc, stm32f4xx_usb_reset);
     dc->vmsd = &vmstate_STM32F4xx_state;
     set_bit(DEVICE_CATEGORY_USB, dc->categories);
     device_class_set_props(dc, STM32F4xx_usb_properties);

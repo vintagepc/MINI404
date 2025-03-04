@@ -571,14 +571,14 @@ stm32_f2xx_f4xx_dma_class_init(ObjectClass *klass, void *data)
 	device_class_set_props(dc, stm32_f2xx_f4xx_dma_properties);
 }
 
-static const TypeInfo
-stm32_f2xx_dma_info = {
-    .name          = TYPE_STM32F2xx_DMA,
-    .parent        = TYPE_STM32_PERIPHERAL,
-    .instance_size = sizeof(STM32F2XX_STRUCT_NAME(Dma)),
-    .instance_init = stm32_f2xx_f4xx_dma_init,
-    .class_init    = stm32_f2xx_f4xx_dma_class_init,
-};
+// static const TypeInfo
+// stm32_f2xx_dma_info = {
+//     .name          = TYPE_STM32F2xx_DMA,
+//     .parent        = TYPE_STM32_PERIPHERAL,
+//     .instance_size = sizeof(STM32F2XX_STRUCT_NAME(Dma)),
+//     .instance_init = stm32_f2xx_f4xx_dma_init,
+//     .class_init    = stm32_f2xx_f4xx_dma_class_init,
+// };
 
 static const TypeInfo
 stm32_f4xx_dma_info = {
@@ -592,7 +592,7 @@ stm32_f4xx_dma_info = {
 static void
 stm32_f2xx_f4xx_dma_register_types(void)
 {
-    type_register_static(&stm32_f2xx_dma_info);
+    //type_register_static(&stm32_f2xx_dma_info);
     type_register_static(&stm32_f4xx_dma_info);
 }
 

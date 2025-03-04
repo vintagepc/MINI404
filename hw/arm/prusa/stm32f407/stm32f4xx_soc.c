@@ -227,9 +227,9 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     // Global HS: 77. WKUP: 76, EP1 in/out = 75/74.
 
 
-    NICInfo* nd = qemu_find_nic_info("stm32f4xx-ethernet", true, NULL);
+    //NICInfo* nd = qemu_find_nic_info("stm32f4xx-ethernet", true, "mini-eth");
     dev = stm32_soc_get_periph(dev_soc, STM32_P_ETH);
-    qdev_set_nic_properties(dev, nd);
+    //qdev_set_nic_properties(dev, nd);
     if (qemu_find_netdev("mini-eth")!=NULL){
         qdev_prop_set_string(dev,"netdev","mini-eth");
         qdev_prop_set_bit(dev, "connected", true);

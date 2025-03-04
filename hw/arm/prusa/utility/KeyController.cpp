@@ -44,9 +44,9 @@ KeyController::~KeyController() {
 
 extern "C"
 {
-	extern void p404_keyctl_handle_key(int keycode)
+	extern void p404_keyctl_handle_key(int keycode, bool bdown)
 	{
-		KeyController::GetController().OnKeyPressed_C(keycode);
+		KeyController::GetController().OnKeyPressed_C(keycode, bdown);
 	}
 }
 
@@ -58,24 +58,21 @@ void KeyController::AddNewClient_C(IKeyClient* src)
 	}
 }
 
-void KeyController::OnKeyPressed_C(int keycode)
+void KeyController::OnKeyPressed_C(int keycode, bool bDown)
 {
 	// Maps qemu keys to standard character types:
-	if (keycode == 42)
+	if (keycode == Q_KEY_CODE_SHIFT || keycode == Q_KEY_CODE_SHIFT_R)
 	{
-		m_bShift = true;
+		m_bShift = bDown;
 	}
-	else if (keycode == 170)
+	KeyTuple keyset = {keycode, m_bShift, !bDown};
+	if (!m_qemu2char.count(keyset))
 	{
-		m_bShift = false;
+		//std::cout << "KeyController: Unknown QEMU keycode " << std::to_string(keycode) << "//" << std::to_string(m_bShift) << "//" << std::to_string(bDown) << "\n";
 	}
-	else if (!m_qemu2char.count({keycode, m_bShift}))
+	else if (m_mClients.count(m_qemu2char.at(keyset)))
 	{
-		// std::cout << "KeyController: Unknown QEMU keycode " << std::to_string(keycode) << "\n";
-	}
-	else if (m_mClients.count(m_qemu2char.at({keycode, m_bShift})))
-	{
-		auto key = m_qemu2char.at({keycode, m_bShift});
+		auto key = m_qemu2char.at(keyset);
 		for (auto c : m_mClients.at(key))
 		{
 			if (c->IsP404KeyInput()) // This can happen here because it's already the same thread, and the GL event loop may not be running.
@@ -83,7 +80,7 @@ void KeyController::OnKeyPressed_C(int keycode)
 				c->OnKeyPress(key);
 			}
 		}
-		KeyController::GetController().OnKeyPressed(m_qemu2char.at({keycode, m_bShift}));
+		KeyController::GetController().OnKeyPressed(m_qemu2char.at(keyset));
 	}
 }
 
