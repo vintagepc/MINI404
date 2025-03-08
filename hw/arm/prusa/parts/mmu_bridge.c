@@ -154,7 +154,7 @@ static Property mmu_bridge_properties[] = {
 static void mmu_bridge_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = mmu_bridge_reset;
+    device_class_set_legacy_reset(dc, mmu_bridge_reset);
     dc->vmsd = &vmstate_mmu_bridge;
 	dc->realize = mmu_bridge_realize;
 

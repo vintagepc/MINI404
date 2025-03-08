@@ -197,7 +197,7 @@ static const VMStateDescription vmstate_pinda = {
 static void pinda_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = pinda_reset;
+    device_class_set_legacy_reset(dc, pinda_reset);
     dc->vmsd = &vmstate_pinda;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = pinda_process_action;

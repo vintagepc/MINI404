@@ -530,8 +530,8 @@ stm32_common_dma_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_dma;
-    dc->reset = stm32_common_dma_reset;
-	dc->realize = stm32_common_dma_realize;
+    device_class_set_legacy_reset(dc, stm32_common_dma_reset);
+    dc->realize = stm32_common_dma_realize;
 	device_class_set_props(dc, stm32_common_dma_properties);
 
 	COM_CLASS_NAME(Dma) *k = STM32COM_DMA_CLASS(klass);

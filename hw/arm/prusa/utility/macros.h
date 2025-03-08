@@ -52,11 +52,6 @@
     type_init(module_obj_name##_register_types);
 
 
-#define OBJECT_DEFINE_SIMPLE_TYPE (ModuleObjName, module_obj_name, \
-                        MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME) \
-                        OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(ModuleObjName, module_obj_name, \
-                            MODULE_OBJ_NAME, PARENT_MODULE_OBJ_NAME, {NULL})
-
 #define _JOIN2R(a,b) a##b
 #define _JOIN3(a,b,c) a#b#c
 #define _JOIN3R(a,b,c) a##b##c

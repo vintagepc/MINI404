@@ -342,7 +342,7 @@ static Property at21csxx_eeprom_props[] = {
 static void at21csxx_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = at21csxx_reset;
+    device_class_set_legacy_reset(dc, at21csxx_reset);
     dc->vmsd = &vmstate_at21csxx;
 	dc->realize = at21csxx_realize;
 	device_class_set_props(dc, at21csxx_eeprom_props);

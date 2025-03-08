@@ -163,7 +163,7 @@ static void powersource_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = powersource_reset;
+    device_class_set_legacy_reset(dc, powersource_reset);
     dc->vmsd = &vmstate_powersource;
     device_class_set_props(dc, powersource_properties);
 

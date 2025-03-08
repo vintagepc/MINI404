@@ -194,7 +194,7 @@ static Property hall_sensor_properties[] = {
 static void hall_sensor_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = hall_sensor_reset;
+    device_class_set_legacy_reset(dc, hall_sensor_reset);
 	dc->realize = hall_sensor_realize;
     dc->vmsd = &vmstate_hall_sensor;
 

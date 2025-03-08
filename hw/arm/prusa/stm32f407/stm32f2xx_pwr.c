@@ -161,7 +161,7 @@ static void
 f2xx_pwr_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = f2xx_pwr_reset;
+    device_class_set_legacy_reset(dc, f2xx_pwr_reset);
     dc->vmsd = &vmstate_stm32f2xx_pwr;
 }
 

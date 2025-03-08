@@ -288,7 +288,8 @@ static void
 stm32_common_crc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32_common_crc_reset;
+    device_class_set_legacy_reset(dc, stm32_common_crc_reset);
+
     dc->vmsd = &vmstate_stm32stm32_common_crc;
 
 	COM_CLASS_NAME(Crc) *k = STM32COM_CRC_CLASS(klass);

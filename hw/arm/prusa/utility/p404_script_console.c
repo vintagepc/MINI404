@@ -299,6 +299,6 @@ static void scriptcon_class_init(ObjectClass *klass, void *data)
     dc->realize = scriptcon_realize;
     dc->user_creatable = true;
 
-//    //dc->reset = scriptcon_reset;
+//    //device_class_set_legacy_reset(dc, scriptcon_reset);
     device_class_set_props(dc, scriptcon_properties);
 }

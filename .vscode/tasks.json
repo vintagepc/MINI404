@@ -79,10 +79,14 @@
             "problemMatcher": []
         },
         {
-            "label": "Build QEMU (1 thread)",
+            "label": "Build QEMU ($nproc -2 threads)",
             "type": "shell",
-            "command": "make",
+            "command": "make -j $(($(nproc) - 2))",
             "group": "build",
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["relative", "${workspaceFolder}/build"]
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -93,81 +97,14 @@
             }
         },
         {
-            "label": "Build QEMU (4 threads)",
+            "label": "Build QEMU ($nproc threads)",
             "type": "shell",
-            "command": "make -j4",
+            "command": "make -j $(nproc)",
             "group": "build",
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": true
-            }
-        },
-        {
-            "label": "Build QEMU (6 threads)",
-            "type": "shell",
-            "command": "make -j6",
-            "group": "build",
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": true
-            }
-        },
-        {
-            "label": "Build QEMU (8 threads)",
-            "type": "shell",
-            "command": "make -j8",
-            "group": "build",
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": true
-            }
-        },
-        {
-            "label": "Build QEMU (12 threads)",
-            "type": "shell",
-            "command": "make -j12",
-            "group": "build",
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": true
-            }
-        },
-        {
-            "label": "Build QEMU (16 threads)",
-            "type": "shell",
-            "command": "make -j16",
-            "group": "build",
-            "problemMatcher": [
-                "$gcc"
-            ],
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["relative", "${workspaceFolder}/build"]
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -182,9 +119,10 @@
             "type": "shell",
             "command": "make check-qtest-buddy -j10",
             "group": "build",
-            "problemMatcher": [
-                "$gcc"
-            ],
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["relative", "${workspaceFolder}/build"]
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",

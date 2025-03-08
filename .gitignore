@@ -21,3 +21,4 @@ GTAGS
 *.swp
 *.patch
 *.gcov
+tests/qtest/prusa
