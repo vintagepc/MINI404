@@ -84,11 +84,13 @@ struct AT21CSxxState {
 	QEMUTimer *line_release;
 
     uint32_t refined_icount;
+    bool icount_enabled;
 
 	int64_t low_start, high_start;
 	uint8_t bit_counter;
 	uint8_t byte_in, byte_out;
 	uint8_t sio_state;
+
 
 	uint8_t byte_count;
 	uint8_t address_pointer;
@@ -170,11 +172,13 @@ static bool at21csxx_process_byte(AT21CSxxState *s, uint8_t byte)
 static void at21csxx_sio(void* opaque, int n, int level) {
     trace_at21csxx_sio_level(level);
     AT21CSxxState *s = AT21CSXX(opaque);
-    const uint32_t ICOUNT_PER_US = s->refined_icount;
+    const uint32_t ICOUNT_PER_US = s->icount_enabled ? s->refined_icount : 1000;
 	if (!level)
 	{
-		s->low_start = icount_get_raw();
+
+		s->low_start = s->icount_enabled ? icount_get_raw() : qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 		int64_t tHigh = s->low_start - s->high_start;
+        trace_at21csxx_sio_high_icount(tHigh);
 		if (tHigh > 500 * ICOUNT_PER_US)
 		{
 			trace_at21csxx_start_condition();
@@ -183,15 +187,18 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 		return;
 	}
 
-	s->high_start = icount_get_raw();
+	s->high_start = s->icount_enabled ? icount_get_raw() : qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
 	int64_t tLow = s->high_start - s->low_start;
 
-	if (tLow > 150 * ICOUNT_PER_US)
+    trace_at21csxx_sio_low_icount(tLow);
+
+	if (tLow >= 150 * ICOUNT_PER_US)
 	{
 		s->bit_counter = 0;
 		s->byte_in = 0;
         trace_at21csxx_enter_discovery();
+        qemu_set_irq(s->irq, 1);
 		s->sio_state = SIO_DISC;
 		return;
 	}
@@ -260,6 +267,7 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 					}
 					/* fallthru */
 				case 1 ... 7 :
+                    trace_at21csxx_sio_out(s->bit_counter, s->byte_out&0x80);
 					qemu_set_irq(s->irq, (s->byte_out & 0x80) > 0 );
 					s->bit_counter++;
 					s->byte_out <<= 1;
@@ -299,6 +307,12 @@ static void at21csxx_realize(DeviceState *dev, Error **errp)
 		printf("WARNING: icount is disabled. AT21CSxx EEPROM will NOT WORK!\n");
 		printf("WARNING: use -icount [number] to enable it.\n");
 	}
+    else 
+    {
+        s->icount_enabled = true;
+    }
+#else
+    s->icount_enabled = icount_enabled();
 #endif    
     if (s->blk) {
 
@@ -330,7 +344,7 @@ static void at21csxx_realize(DeviceState *dev, Error **errp)
         OTP_v2* otp = (OTP_v2*) s->data;
         otp->version = 2;
         otp->size = sizeof(OTP_v2);
-        otp->bomID = 32; // Last variant that uses table 5... ;) 
+        otp->bomID = 31; // Last variant that uses table 5... ;) 
         // Should keep the bootloader happy:
         otp->datamatrix[0] = '0';
         otp->datamatrix[1] = '0';

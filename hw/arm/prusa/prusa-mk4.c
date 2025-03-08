@@ -891,6 +891,7 @@ static void mk4_init(MachineState *machine)
     if (cfg.has_at21) {
         dev = qdev_new("at21csxx");
 		qdev_prop_set_drive(dev, "drive", blk_by_name("loveboard-eeprom"));
+        object_property_add_child(OBJECT(periphs), "at21csxx", OBJECT(dev));
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         // 2-way bitbang
         // WARNING: F13 is also used by the fan tach gate. So the output gets re-bount below
