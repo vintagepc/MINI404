@@ -591,7 +591,7 @@ static void mk4_init(MachineState *machine)
     qdev_prop_set_string(db2, "indicators", "ZF");
 
     {
-        int32_t ends[4] = { 100*16*255, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
+        int32_t ends[4] = { 100*16*255, 100*16*218, 400*16*(cfg.has_loadcell ? 221: 212),0 };
         static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
 

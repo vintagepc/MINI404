@@ -30,6 +30,7 @@
 #include "../utility/p404scriptable.h"
 #include "../utility/p404_motor_if.h"
 #include "../utility/ScriptHost_C.h"
+#include "trace.h"
 
 //#define DEBUG_TMC2209 1
 
@@ -352,6 +353,7 @@ static void tmc2209_read(tmc2209_state *s)
     reply[7] = tmc2209_calcCRC(reply,7);
     for (int i=0; i<8; i++)
     {
+        trace_tmc2209_byte_out(s->address, reply[i]);
         qemu_set_irq(s->byte_out, reply[i]); //
     }
 }
@@ -362,6 +364,8 @@ static void tmc2209_receive(void *opaque, int n, int level)
 
     s->rx_buffer[s->rx_pos] = (uint8_t)level;
     s->rx_pos++;
+
+    trace_tmc2209_byte_in(s->address, level);
 
     if (s->rx_pos == 8 && s->rx_buffer[2] & 0x80)
     {

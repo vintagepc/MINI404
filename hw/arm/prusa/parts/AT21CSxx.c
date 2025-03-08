@@ -32,6 +32,8 @@
 #include "sysemu/block-backend.h"
 #include "sysemu/cpu-timers.h"
 #include "migration/vmstate.h"
+#include "../otp.h"
+#include "trace.h"
 
 #define TYPE_AT21CSXX "at21csxx"
 
@@ -44,7 +46,8 @@
 #define AT21_OP_SSM  0xD
 #define AT21_OP_HSM  0xE
 
-#define ICOUNT_PER_US 168
+// Empirically determined based on the bootloader code and its NOP()s... :-/
+#define ICOUNT_PER_US_INITIAL 124
 
 #define DEV_ADDR 0
 #define DEV_SIZE 128
@@ -79,6 +82,8 @@ struct AT21CSxxState {
     at21csxx_cmd_t cmd;
 
 	QEMUTimer *line_release;
+
+    uint32_t refined_icount;
 
 	int64_t low_start, high_start;
 	uint8_t bit_counter;
@@ -122,6 +127,7 @@ static void at21csxx_line_release(void *opaque)
 
 static bool at21csxx_process_byte(AT21CSxxState *s, uint8_t byte)
 {
+    trace_at21csxx_byte_in(s->byte_count, byte);
 	switch (s->byte_count)
 	{
 		case 0:
@@ -131,6 +137,7 @@ static bool at21csxx_process_byte(AT21CSxxState *s, uint8_t byte)
 				if (s->cmd.def.read)
 				{
 					s->sio_state = SIO_DOUT;
+                    trace_at21csxx_read_mode();
 				}
 				switch (s->cmd.def.opcode)
 				{
@@ -147,11 +154,13 @@ static bool at21csxx_process_byte(AT21CSxxState *s, uint8_t byte)
 			if (byte < DEV_SIZE)
 			{
 				s->address_pointer = byte;
+                trace_at21csxx_address_set(s->address_pointer);
 				s->byte_count++;
 				return true;
 			}
 			return false;
 		default:
+            trace_at21csxx_data_write(s->address_pointer, byte);
 			s->data[s->address_pointer++] = byte;
 			s->address_pointer %= DEV_SIZE;
 			return true;
@@ -159,14 +168,16 @@ static bool at21csxx_process_byte(AT21CSxxState *s, uint8_t byte)
 }
 
 static void at21csxx_sio(void* opaque, int n, int level) {
+    trace_at21csxx_sio_level(level);
     AT21CSxxState *s = AT21CSXX(opaque);
+    const uint32_t ICOUNT_PER_US = s->refined_icount;
 	if (!level)
 	{
 		s->low_start = icount_get_raw();
 		int64_t tHigh = s->low_start - s->high_start;
 		if (tHigh > 500 * ICOUNT_PER_US)
 		{
-			// printf("AT21 Start cond\n");
+			trace_at21csxx_start_condition();
 			s->sio_state = SIO_IDLE;
 		}
 		return;
@@ -180,6 +191,7 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 	{
 		s->bit_counter = 0;
 		s->byte_in = 0;
+        trace_at21csxx_enter_discovery();
 		s->sio_state = SIO_DISC;
 		return;
 	}
@@ -193,7 +205,7 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 			{
 				qemu_irq_lower(s->irq);
 				timer_mod(s->line_release, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + NS_SCALE(6000)); // 2-6 us from the datasheet
-				// printf("Discovery ack\n");
+				trace_at21csxx_discovery_ack();
 				s->sio_state = SIO_IDLE;
 			}
 			break;
@@ -208,6 +220,7 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 		case SIO_DIN:
 			if (logic_one || logic_zero )
 			{
+                trace_at21csxx_bit_logic_val(s->bit_counter, logic_one, logic_zero);
 				if (s->bit_counter < 8)
 				{
 					s->byte_in <<= 1;
@@ -218,12 +231,13 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 			}
 			else
 			{
+                trace_at21csxx_bit_duration_error(s->bit_counter, tLow);
 				// printf("w1 Bus unhandled low duration: %"PRId64" instructions\n", tLow);
 			}
 			if (s->bit_counter == 8)
 			{
 				bool send_ack = at21csxx_process_byte(s, s->byte_in);
-				// printf("Byte in: %02x - %s\n", s->byte_in, send_ack? "ACK" : "NACK");
+				//printf("Byte in: %02x - %s\n", s->byte_in, send_ack? "ACK" : "NACK");
 				s->byte_in = 0;
 				qemu_set_irq(s->irq, !send_ack);
 				timer_mod(s->line_release, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + NS_SCALE(2000)); // 2-6 us from the datasheet
@@ -238,7 +252,7 @@ static void at21csxx_sio(void* opaque, int n, int level) {
 					{
 						case AT21_OP_EEA:
 							s->byte_out = s->data[s->address_pointer++];
-							printf("AT21CSxx: Sending byte@ %02x: %02x\n",s->address_pointer-1, s->byte_out);
+                            trace_at21csxx_data_read(s->address_pointer-1, s->byte_out);
 							break;
 						default:
 							printf("AT21 Unhandled read opcode %x\n", s->cmd.def.opcode);
@@ -313,12 +327,14 @@ static void at21csxx_realize(DeviceState *dev, Error **errp)
 	else
 	{
 		// Add some fake data just to avoid 400 re-read attempts during boot... :(
-		s->data[0] = 0x00;
-		s->data[1] = 0x20;
-		s->data[2] = 0x00;
-		s->data[3] = 0x01;
-		s->data[8] = '0';
-		s->data[9] = '0';
+        OTP_v2* otp = (OTP_v2*) s->data;
+        otp->version = 2;
+        otp->size = sizeof(OTP_v2);
+        otp->bomID = 32; // Last variant that uses table 5... ;) 
+        // Should keep the bootloader happy:
+        otp->datamatrix[0] = '0';
+        otp->datamatrix[1] = '0';
+
 	}
 }
 
@@ -336,6 +352,7 @@ static void at21csxx_init(Object *obj)
 
 static Property at21csxx_eeprom_props[] = {
     DEFINE_PROP_DRIVE("drive", AT21CSxxState, blk),
+    DEFINE_PROP_UINT32("icount-per-us", AT21CSxxState, refined_icount, ICOUNT_PER_US_INITIAL),
     DEFINE_PROP_END_OF_LIST()
 };
 
