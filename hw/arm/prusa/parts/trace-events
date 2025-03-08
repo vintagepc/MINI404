@@ -1,0 +1,17 @@
+tmc2209_byte_in(uint8_t address, uint8_t byte) "A: %u D: %02x"
+tmc2209_byte_out(uint8_t address, uint8_t byte) "A: %u D: %02x"
+at21csxx_byte_in(uint8_t ct, uint8_t data) "D@%u: %02x"
+at21csxx_byte_out(uint8_t ct, uint8_t data) "D@%u: %02x"
+at21csxx_read_mode(void)
+at21csxx_address_set(uint8_t address) "A: %02x"
+at21csxx_data_write(uint8_t addr, uint8_t data) "write@%u = %02x"
+at21csxx_data_read(uint8_t addr, uint8_t data) "read@%u = %02x"
+at21csxx_bit_logic_val(uint8_t bit_count, bool logic_1, bool logic_0) "bit %u: 1:%u 0:%u"
+at21csxx_bit_duration_error(uint8_t bit_count, uint32_t duration) "Unknown low duration for bit %u: %u"
+at21csxx_sio_level(uint8_t level) "SIO: %u"
+at21csxx_sio_out(uint8_t bit, bool level) "SIO bit %u: %u"
+at21csxx_sio_low_icount(uint32_t icount) "SIO low: %u"
+at21csxx_sio_high_icount(uint32_t icount) "SIO high: %u"
+at21csxx_start_condition(void)
+at21csxx_enter_discovery(void)
+at21csxx_discovery_ack(void)
