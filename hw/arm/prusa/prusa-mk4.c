@@ -638,7 +638,7 @@ static void mk4_init(MachineState *machine)
     qdev_prop_set_string(db2, "indicators", "ZF");
 
     {
-        int32_t ends[4] = { 100*16*255, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
+        int32_t ends[4] = { 100*16*255, 100*16*218, 400*16*(cfg.has_loadcell ? 221: 212),0 };
         static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
 
@@ -938,6 +938,7 @@ static void mk4_init(MachineState *machine)
     if (cfg.has_at21) {
         dev = qdev_new("at21csxx");
 		qdev_prop_set_drive(dev, "drive", blk_by_name("loveboard-eeprom"));
+        object_property_add_child(OBJECT(periphs), "at21csxx", OBJECT(dev));
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         // 2-way bitbang
         // WARNING: F13 is also used by the fan tach gate. So the output gets re-bount below

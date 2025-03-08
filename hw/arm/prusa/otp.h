@@ -27,13 +27,17 @@ typedef struct {
 } OTP_v4;
 
 // Puppies are using OTP_V5 format
-typedef struct {
+typedef struct  {
     uint8_t version; // Data structure version (1 bytes)
     uint16_t size; // Data structure size (uint16_t little endian)
     uint8_t bomID; // BOM ID (1 bytes)
     uint32_t timestamp; // UNIX Timestamp from 1970 (uint32_t little endian)
     uint8_t datamatrix[24]; // DataMatrix ID 1 (24 bytes)
 } OTP_v5;
+
+
+// They are identical:
+typedef OTP_v5 OTP_v2;
 
 #pragma pack(pop)
 
