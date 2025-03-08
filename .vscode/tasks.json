@@ -79,23 +79,9 @@
             "problemMatcher": []
         },
         {
-            "label": "Build QEMU (1 thread)",
+            "label": "Build QEMU ($nproc -2 threads)",
             "type": "shell",
-            "command": "make",
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": true
-            }
-        },
-        {
-            "label": "Build QEMU (12 threads)",
-            "type": "shell",
-            "command": "make -j12",
+            "command": "make -j $(($(nproc) - 2))",
             "group": "build",
             "problemMatcher": {
                 "base": "$gcc",

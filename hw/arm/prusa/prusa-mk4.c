@@ -45,6 +45,8 @@
 #include "otp.h"
 #include "parts/c1_bridge.h"
 #include "parts/xl_bridge.h"
+#include "qapi/qmp/qlist.h"
+
 
 #define TYPE_XBUDDY_MACHINE "xbuddy-machine"
 
@@ -471,16 +473,11 @@ static void mk4_init(MachineState *machine)
 	qdev_prop_set_uint32(dev,"flash-size", flash_size);
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-	qdev_prop_set_uint32(otp,"len-otp-data", 9);
-	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
-	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
-	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
-	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
-	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
-	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
-	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
-	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
-	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
+    QList *otp_list = qlist_new();
+    for (int i = 0; i < 9; i++) {
+        qlist_append_int(otp_list, otp_raw[i]);
+    }
+    qdev_prop_set_array(otp, "otp-data", otp_list);
 
 	DeviceState* dev_soc = dev;
     if (arghelper_is_arg("appendix")) {
@@ -538,6 +535,7 @@ static void mk4_init(MachineState *machine)
 		int display_order[4] = {2, 0, 1, 3};
         for (int i=0; i<4; i++) {
             npixel[i] = qdev_new("spi_rgb");
+            qdev_prop_set_uint8(npixel[i], "cs", 1 + i);
             if (i==3) {
                 qdev_prop_set_uint8(npixel[i],"led-type",SPI_RGB_WS2811);
             }
@@ -676,6 +674,7 @@ static void mk4_init(MachineState *machine)
             }
 			dev = qdev_new("tmc2130");
             motors[i] = dev;
+            qdev_prop_set_uint8(dev, "cs", i);
             qdev_prop_set_uint8(dev, "axis",cfg.m_label[i]);
             qdev_prop_set_uint8(dev, "inverted",cfg.m_inverted[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);

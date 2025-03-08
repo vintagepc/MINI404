@@ -429,13 +429,16 @@ static void spi_display_write_png(SPIDisplayState *s, const char* file)
     png_write_info(png_ptr, info_p);
     png_set_bgr(png_ptr);
 
-    png_byte row[s->dpy_info->cols*4];
+    size_t row_size = s->dpy_info->cols*4*sizeof(png_byte);
 
+    png_byte* row = malloc(row_size);
 
     for (int i=0; i< s->dpy_info->rows; i++){
-        memcpy(&row, &s->framebuffer[i*s->dpy_info->cols], sizeof(row));
+        memcpy(row, &s->framebuffer[i*s->dpy_info->cols], row_size);
         png_write_row(png_ptr, row);
     }
+
+    free(row);
 
     png_write_end(png_ptr, NULL);
 

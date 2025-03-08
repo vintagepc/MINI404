@@ -363,7 +363,7 @@ static void stm32_common_spi_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = stm32_common_spi_reset;
+    device_class_set_legacy_reset(dc, stm32_common_spi_reset);
     dc->vmsd = &vmstate_stm32_common_spi;
 
 	COM_CLASS_NAME(Spi) *k = STM32COM_SPI_CLASS(klass);

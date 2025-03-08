@@ -18,7 +18,7 @@
 #include "hw/core/cpu.h"
 
 /* static CPU definition */
-struct S390CPUDef {
+typedef struct S390CPUDef {
     const char *name;       /* name exposed to the user */
     const char *desc;       /* description exposed to the user */
     uint8_t gen;            /* hw generation identification */
@@ -38,10 +38,10 @@ struct S390CPUDef {
     S390FeatBitmap full_feat;
     /* used to init full_feat from generated data */
     S390FeatInit full_init;
-};
+} S390CPUDef;
 
 /* CPU model based on a CPU definition */
-struct S390CPUModel {
+typedef struct S390CPUModel {
     const S390CPUDef *def;
     S390FeatBitmap features;
     /* values copied from the "host" model, can change during migration */
@@ -49,7 +49,7 @@ struct S390CPUModel {
     uint32_t cpu_id;        /* CPU id */
     uint8_t cpu_id_format;  /* CPU id format bit */
     uint8_t cpu_ver;        /* CPU version, usually "ff" for kvm */
-};
+} S390CPUModel;
 
 /*
  * CPU ID
@@ -96,33 +96,26 @@ static inline bool s390_known_cpu_type(uint16_t type)
 {
     return s390_get_gen_for_cpu_type(type) != 0;
 }
+#define CPU_ID_SHIFT 32
+#define CPU_ID_BITS 24
+/*
+ * When cpu_id_format is 0 (basic mode), the leftmost 4 bits of cpu_id contain
+ * the rightmost 4 bits of the physical CPU address.
+ */
+#define CPU_PHYS_ADDR_BITS 4
+#define CPU_PHYS_ADDR_SHIFT (CPU_ID_SHIFT + CPU_ID_BITS - CPU_PHYS_ADDR_BITS)
 static inline uint64_t s390_cpuid_from_cpu_model(const S390CPUModel *model)
 {
     return ((uint64_t)model->cpu_ver << 56) |
-           ((uint64_t)model->cpu_id << 32) |
+           ((uint64_t)model->cpu_id << CPU_ID_SHIFT) |
            ((uint64_t)model->def->type << 16) |
            (model->def->gen == 7 ? 0 : (uint64_t)model->cpu_id_format << 15);
 }
 S390CPUDef const *s390_find_cpu_def(uint16_t type, uint8_t gen, uint8_t ec_ga,
                                     S390FeatBitmap features);
 
-#ifdef CONFIG_KVM
 bool kvm_s390_cpu_models_supported(void);
-void kvm_s390_get_host_cpu_model(S390CPUModel *model, Error **errp);
-void kvm_s390_apply_cpu_model(const S390CPUModel *model,  Error **errp);
-#else
-static inline void kvm_s390_get_host_cpu_model(S390CPUModel *model,
-                                               Error **errp)
-{
-}
-static inline void kvm_s390_apply_cpu_model(const S390CPUModel *model,
-                                            Error **errp)
-{
-}
-static inline bool kvm_s390_cpu_models_supported(void)
-{
-    return false;
-}
-#endif
+bool kvm_s390_get_host_cpu_model(S390CPUModel *model, Error **errp);
+bool kvm_s390_apply_cpu_model(const S390CPUModel *model,  Error **errp);
 
 #endif /* TARGET_S390X_CPU_MODELS_H */

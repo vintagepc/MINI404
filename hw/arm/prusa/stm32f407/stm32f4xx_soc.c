@@ -141,6 +141,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     armv7m = DEVICE(&s->armv7m);
 	stm32_common_rcc_connect_cpu_clocks(stm32_soc_get_periph(dev_soc, STM32_P_RCC), armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", cfg->nvic_irqs);
+    qdev_prop_set_uint8(armv7m, "num-prio-bits", 4);
     qdev_prop_set_string(armv7m, "cpu-type", s->parent.cpu_type);
     qdev_prop_set_bit(armv7m, "enable-bitband", true);
     object_property_set_link(OBJECT(&s->armv7m), "memory",
@@ -174,7 +175,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 		}
     }
 
-	for (int i=STM32_P_ADC_BEGIN; i<STM32_P_ADC_END; i++)
+	for (i=STM32_P_ADC_BEGIN; i<STM32_P_ADC_END; i++)
     {
         if (NULL == stm32_soc_get_periph(dev_soc, i))
         {
@@ -192,7 +193,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
        	qdev_connect_gpio_out(syscfg, i, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_EXTI), i));
     }
 
-	for (int i=STM32_P_GPIO_BEGIN; i<STM32_P_GPIO_END; i++)
+	for (i=STM32_P_GPIO_BEGIN; i<STM32_P_GPIO_END; i++)
 	{
 		DeviceState* gpio = stm32_soc_get_periph(dev_soc, i);
 		if (gpio == NULL)
@@ -226,9 +227,9 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     // Global HS: 77. WKUP: 76, EP1 in/out = 75/74.
 
 
-    qemu_check_nic_model(&nd_table[0], "stm32f4xx-ethernet");
+    //NICInfo* nd = qemu_find_nic_info("stm32f4xx-ethernet", true, "mini-eth");
     dev = stm32_soc_get_periph(dev_soc, STM32_P_ETH);
-    qdev_set_nic_properties(dev, &nd_table[0]);
+    //qdev_set_nic_properties(dev, nd);
     if (qemu_find_netdev("mini-eth")!=NULL){
         qdev_prop_set_string(dev,"netdev","mini-eth");
         qdev_prop_set_bit(dev, "connected", true);
@@ -238,7 +239,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
 	qdev_prop_set_chr(stm32_soc_get_periph(dev_soc, STM32_P_ITM), "chardev", qemu_chr_find("stm32_itm"));
 
-	for (int i = STM32_P_DMA_BEGIN; i <= STM32_P_DMA_END; i++)
+	for (i = STM32_P_DMA_BEGIN; i <= STM32_P_DMA_END; i++)
 	{
 		object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, i)), "system-memory", OBJECT(system_memory), &error_fatal);
 	}

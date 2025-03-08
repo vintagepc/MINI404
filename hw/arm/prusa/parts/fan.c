@@ -255,7 +255,7 @@ static void fan_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, fan_properties);
     dc->vmsd = &vmstate_fan;
-    dc->reset = fan_reset;
+    device_class_set_legacy_reset(dc, fan_reset);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = fan_process_action;
 }

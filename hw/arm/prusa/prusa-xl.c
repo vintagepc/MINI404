@@ -41,6 +41,7 @@
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
+#include "qapi/qmp/qlist.h"
 
 #define TYPE_XLBUDDY_MACHINE "xlbuddy-machine"
 
@@ -257,16 +258,11 @@ static void xl_init(MachineState *machine)
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-	qdev_prop_set_uint32(otp,"len-otp-data", 9);
-	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
-	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
-	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
-	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
-	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
-	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
-	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
-	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
-	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
+    QList *otp_list = qlist_new();
+    for (int i = 0; i < 9; i++) {
+        qlist_append_int(otp_list, otp_raw[i]);
+    }
+    qdev_prop_set_array(otp, "otp-data", otp_list);
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
@@ -315,6 +311,7 @@ static void xl_init(MachineState *machine)
 
         for (int i=0; i<4; i++) {
             npixel[i] = qdev_new("spi_rgb");
+            qdev_prop_set_uint8(npixel[i], "cs", 1 + i);
             if (i==3) {
                 qdev_prop_set_uint8(npixel[i],"led-type",SPI_RGB_WS2811);
             }
@@ -329,6 +326,7 @@ static void xl_init(MachineState *machine)
                 );
         }
 		npixel[5] = qdev_new("spi_rgb");
+        qdev_prop_set_uint8(npixel[5], "cs", 6);
 		qdev_prop_set_uint8(npixel[5],"led-type",SPI_RGB_WS2811);
 		qdev_prop_set_uint8(npixel[5],"flags",SPI_RGB_FLAG_ALT_TIMINGS | SPI_RGB_FLAG_INVERTED);
 		ssi_realize_and_unref(npixel[5],
@@ -337,6 +335,7 @@ static void xl_init(MachineState *machine)
 			"ssi"),
 		&error_fatal);
 		npixel[4] = qdev_new("spi_rgb");
+        qdev_prop_set_uint8(npixel[4], "cs", 5);
 		qdev_prop_set_uint8(npixel[4],"led-type",SPI_RGB_WS2811);
 		//qdev_prop_set_bit(npixel[4],"debug",true);
         uint8_t flags = SPI_RGB_FLAG_INVERTED;
@@ -488,6 +487,7 @@ static void xl_init(MachineState *machine)
             dev = qdev_new("tmc2130");
             // Common setup code:
             motors[i] = dev;
+            qdev_prop_set_uint8(dev, "cs", i);
             qdev_prop_set_uint8(dev, "axis",cfg.m_label[i]);
             qdev_prop_set_uint8(dev, "inverted",cfg.m_inversion[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);

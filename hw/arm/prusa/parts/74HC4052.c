@@ -124,7 +124,7 @@ static Property hc4052_properties[] = {
 static void hc4052_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = hc4052_reset;
+    device_class_set_legacy_reset(dc, hc4052_reset);
     dc->vmsd = &vmstate_hc4052;
 	device_class_set_props(dc, hc4052_properties);
 }

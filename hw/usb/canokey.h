@@ -4,7 +4,7 @@
  * Copyright (c) 2021-2022 Canokeys.org <contact@canokeys.org>
  * Written by Hongren (Zenithal) Zheng <i@zenithal.me>
  *
- * This code is licensed under the Apache-2.0.
+ * This code is licensed under the GPL v2 or later.
  */
 
 #ifndef CANOKEY_H
@@ -24,8 +24,6 @@
 #define CANOKEY_EP_NUM 3
 /* BULK/INTR IN can be up to 1352 bytes, e.g. get key info */
 #define CANOKEY_EP_IN_BUFFER_SIZE 2048
-/* BULK OUT can be up to 270 bytes, e.g. PIV import cert */
-#define CANOKEY_EP_OUT_BUFFER_SIZE 512
 
 typedef enum {
     CANOKEY_EP_IN_WAIT,
@@ -59,8 +57,6 @@ typedef struct CanoKeyState {
     /* OUT pointer to canokey recv buffer */
     uint8_t *ep_out[CANOKEY_EP_NUM];
     uint32_t ep_out_size[CANOKEY_EP_NUM];
-    /* For large BULK OUT, multiple write to ep_out is needed */
-    uint8_t ep_out_buffer[CANOKEY_EP_NUM][CANOKEY_EP_OUT_BUFFER_SIZE];
 
     /* Properties */
     char *file; /* canokey-file */

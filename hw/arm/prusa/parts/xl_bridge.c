@@ -649,7 +649,7 @@ static const VMStateDescription vmstate_xl_bridge = {
 static void xl_bridge_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = xl_bridge_reset;
+    device_class_set_legacy_reset(dc, xl_bridge_reset);
     dc->vmsd = &vmstate_xl_bridge;
 	device_class_set_props(dc, xl_bridge_properties);
 	dc->realize = xl_bridge_realize;

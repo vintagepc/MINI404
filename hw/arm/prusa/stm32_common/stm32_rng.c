@@ -291,7 +291,7 @@ stm32_common_rng_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32_common_rng_realize;
-    dc->reset = &stm32_common_rng_reset;
+    device_class_set_legacy_reset(dc, stm32_common_rng_reset);
     dc->vmsd = &vmstate_stm32_common_rng;
 
 	COM_CLASS_NAME(Rng) *k = STM32COM_RNG_CLASS(klass);

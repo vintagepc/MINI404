@@ -37,25 +37,33 @@ struct P404KeyState {
     /*< public >*/
 };
 
-extern void p404_keyctl_handle_key(int keycode);
+extern void p404_keyctl_handle_key(int keycode, bool bDown);
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(P404KeyState, p404_key, P404_KEY_INPUT, SYS_BUS_DEVICE, {NULL})
 
 
-static void p404_key_input_keyevent(void* opaque, int keycode)
+static void p404_key_input_keyevent(DeviceState *dev, QemuConsole *src,
+                               InputEvent *evt)
 {
-    p404_keyctl_handle_key(keycode);
+    InputKeyEvent *key = evt->u.key.data;
+    int qcode = qemu_input_key_value_to_qcode(key->key);
+    p404_keyctl_handle_key(qcode, key->down);
 }
 
 static void p404_key_finalize(Object *obj)
 {
 }
 
+static const QemuInputHandler p404_keyboard_handler = {
+    .name  = "MINI404 Key",
+    .mask  = INPUT_EVENT_MASK_KEY,
+    .event = p404_key_input_keyevent,
+};
+
 static void p404_key_init(Object *obj)
 {
     P404KeyState *s = P404_KEY_INPUT(obj);
-    qemu_add_kbd_event_handler(&p404_key_input_keyevent,s);
-
+    qemu_input_handler_register(DEVICE(s), &p404_keyboard_handler);
 }
 
 static void p404_key_class_init(ObjectClass *oc, void *data)

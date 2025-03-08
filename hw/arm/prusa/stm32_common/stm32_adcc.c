@@ -185,8 +185,7 @@ static void stm32_common_adcc_init(Object *obj)
 static void stm32_common_adcc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-
-    dc->reset = stm32_common_adcc_reset;
+    device_class_set_legacy_reset(dc, stm32_common_adcc_reset);
     dc->vmsd = &vmstate_stm32common_adcc;
 
 	COM_CLASS_NAME(Adcc) *k = STM32COM_ADCC_CLASS(klass);

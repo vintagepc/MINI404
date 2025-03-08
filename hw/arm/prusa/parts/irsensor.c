@@ -130,7 +130,7 @@ static const VMStateDescription vmstate_irsensor = {
 static void irsensor_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = irsensor_reset;
+    device_class_set_legacy_reset(dc, irsensor_reset);
     dc->vmsd = &vmstate_irsensor;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = irsensor_process_action;
