@@ -129,7 +129,7 @@ static const VMStateDescription vmstate_stm32h503_icache = {
 static void stm32_h503_icache_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32_h503_icache_reset;
+    device_class_set_legacy_reset(dc, stm32_h503_icache_reset);
     dc->realize = stm32_h503_icache_realize;
     dc->vmsd = &vmstate_stm32h503_icache;
 }

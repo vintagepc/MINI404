@@ -40,6 +40,7 @@
 #include "parts/c1_bridge.h"
 #include "otp.h"
 #include "parts/fan.h"
+#include "qapi/qmp/qlist.h"
 
 enum HW_VER
 {
@@ -86,16 +87,11 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m33"));
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-	qdev_prop_set_uint32(otp,"len-otp-data", 8);
-	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
-	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
-	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
-	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
-	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
-	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
-	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
-	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
-
+    QList *otp_list = qlist_new();
+    for (int i = 0; i < 8; i++) {
+        qlist_append_int(otp_list, otp_raw[i]);
+    }
+    qdev_prop_set_array(otp, "otp-data", otp_list);
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.

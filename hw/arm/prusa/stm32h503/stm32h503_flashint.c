@@ -292,7 +292,7 @@ static void
 stm32h503_fint_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32h503_fint_reset;
+    device_class_set_legacy_reset(dc, stm32h503_fint_reset);
     dc->vmsd = &vmstate_stm32h503_fint;
 	device_class_set_props(dc, stm32h503_fint_properties);
 }

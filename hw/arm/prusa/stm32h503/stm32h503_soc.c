@@ -119,13 +119,13 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_uint32(armv7m, "num-irq", cfg->nvic_irqs);
     qdev_prop_set_string(armv7m, "cpu-type", s->parent.cpu_type);
     qdev_prop_set_bit(armv7m, "enable-bitband", false);
+	qdev_prop_set_uint32(armv7m, "mpu-ns-regions", 8);
+	qdev_prop_set_uint32(armv7m, "mpu-s-regions", 8);
     object_property_set_link(OBJECT(&s->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {
         return; // LCOV_EXCL_BR_LINE
     }
-	// HACK - Defaults to 16 in QEMU but the fw expects 8...
-	s->armv7m.cpu->pmsav7_dregion = 8;
     /* System configuration controller */
 	// object_property_set_link(
 	// 		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),

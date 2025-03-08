@@ -279,7 +279,7 @@ static const VMStateDescription vmstate_stm32h503_i2c = {
 static void stm32_h503_i2c_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32_h503_i2c_reset;
+    device_class_set_legacy_reset(dc, stm32_h503_i2c_reset);
     dc->realize = stm32_h503_i2c_realize;
     dc->vmsd = &vmstate_stm32h503_i2c;
 }

@@ -414,7 +414,7 @@ static const VMStateDescription vmstate_c1_bridge = {
 static void c1_bridge_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = c1_bridge_reset;
+    device_class_set_legacy_reset(dc, c1_bridge_reset);
     dc->vmsd = &vmstate_c1_bridge;
 	device_class_set_props(dc, c1_bridge_properties);
 	dc->realize = c1_bridge_realize;
