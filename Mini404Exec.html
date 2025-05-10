@@ -90,7 +90,7 @@ Just pick the options you'd like and watch the full command built right before y
     {% include textinput.html excludes= "-drive" name="drive" index=1 label="USB via Folder (vvfat/read-only)" optional=1 format="-drive id=usbstick,readonly=on,file=fat:%1 -device usb-storage,drive=usbstick" %}
     {% include textinput.html excludes= "-drive" name="drive" index=2 label="USB via Folder (vvfat/read-write)" optional=1 format="-drive id=usbstick,file=fat:rw:%1 -device usb-storage,drive=usbstick" %}
     {% include checkbox.html name="chardev" label="Fake USB CDC via virtual console" optional=1 format="-chardev vc,rows=25,cols=80,id=stm32usbfscdc" %}
-    {% include dropdown.html name="icount" label="Enable instruction counting" optional=1 options="auto@1@2@3@4@5@6" format="-icount %1" %}
+    {% include dropdown.html name="icount" label="Enable instruction counting" optional=1 options="2@auto@1@3@4@5@6" format="-icount %1" %}
     {% include checkbox.html name="append" index=3 label="Appendix (Mini404 warranty void if unchecked 😉)" optional=1 format="-append appendix" %}
     <fieldset>
     <legend>3D Visuals</legend>
