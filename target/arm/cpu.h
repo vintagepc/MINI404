@@ -62,6 +62,7 @@
 #define EXCP_NMI            26
 #define EXCP_VINMI          27
 #define EXCP_VFNMI          28
+#define EXCP_MON_TRAP       29   /* AArch32 trap to Monitor mode */
 /* NB: add new EXCP_ defines to the array in arm_log_exception() too */
 
 #define ARMV7M_EXCP_RESET   1
@@ -1139,6 +1140,8 @@ void arm_gt_vtimer_cb(void *opaque);
 void arm_gt_htimer_cb(void *opaque);
 void arm_gt_stimer_cb(void *opaque);
 void arm_gt_hvtimer_cb(void *opaque);
+void arm_gt_sel2timer_cb(void *opaque);
+void arm_gt_sel2vtimer_cb(void *opaque);
 
 unsigned int gt_cntfrq_period_ns(ARMCPU *cpu);
 void gt_rme_post_el_change(ARMCPU *cpu, void *opaque);
@@ -2557,6 +2560,11 @@ static inline ARMSecuritySpace arm_security_space_below_el3(CPUARMState *env)
 }
 
 static inline bool arm_is_secure_below_el3(CPUARMState *env)
+{
+    return false;
+}
+
+static inline bool arm_is_el3_or_mon(CPUARMState *env)
 {
     return false;
 }
