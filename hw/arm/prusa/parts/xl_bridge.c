@@ -149,12 +149,12 @@ static void xl_bridge_tx_assert(void *opaque, int n, int level)
 			qemu_chr_fe_write_all(&s->chr[s->id],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 
 		}
-		//printf("%s: sent %u bytes to %d\n",shm_names[s->id], s->buffer_level, s->buffer[0]);
-		// for (int i=0; i<s->buffer_level; i++)
-		// {
-		// 	printf("%02x ",s->buffer[i]);
-		// }
-		// printf("\n");
+// @@DR tady povolit dump prenasenych dat
+		// printf("%s: sent %u bytes to %d\n",shm_names[s->id], s->buffer_level, s->buffer[0]);
+		// for (int i=0; i<s->buffer_level; i++){
+		//	printf("%02x ",s->buffer[i]);
+		//}
+		//printf("\n");
 	}
 }
 
@@ -201,7 +201,8 @@ static int xl_bridge_gpio_can_receive(void *opaque)
 static void xl_bridge_receive(void *opaque, const uint8_t *buf, int size)
 {
    	XLBridgeState *s = XLBRIDGE(opaque);
-	//#define FILTER size < 20 && s->id == XL_DEV_XBUDDY
+	// #define FILTER size < 20 && s->id == XL_DEV_XBUDDY
+// @@DR tady povolit dump prenasenych dat
 	#define FILTER false
     // assert(size % 2 == 0);
 	if (FILTER) printf(" %u Received: ", s->id);

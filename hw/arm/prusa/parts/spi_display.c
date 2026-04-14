@@ -228,6 +228,9 @@ static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
             uint32_t value = s->cmd_data[0];
             switch (value&0x07)
             {
+                case 0x1: // 3-bit/pixel tribit (1 bit per R,G,B), 2 pixels per byte
+                    s->bpp_mode = 3;
+                    break;
                 case 0x5: // 5-6-5, 16bpp
                     s->bpp_mode = 16;
                     break;
@@ -245,36 +248,60 @@ static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
                 s->row = s->row_start;
                 s->col = s->col_start;
                 // printf("RAWR: %d %d\n", sr->row, s->col);
-                DATA(s->bpp_mode == 16 ? 2 : 3);
+                DATA(s->bpp_mode == 16 ? 2 : (s->bpp_mode == 3 ? 1 : 3));
             } else {// One of an unknown number of 16-bit words.
                 switch (s->bpp_mode) {
+                    case 3: // Tribit: 2 pixels per byte, bits [5:3] and [2:0]
+                    {
+                        DATA(1);
+                        uint8_t byte = s->cmd_data[0];
+                        // Pixel 1: bits [5:3] -> R=bit5, G=bit4, B=bit3
+                        uint8_t hi = (byte >> 3) & 0x07;
+                        color.r = (hi & 0x4) ? 0xFC : 0x00;
+                        color.g = (hi & 0x2) ? 0xFC : 0x00;
+                        color.b = (hi & 0x1) ? 0xFC : 0x00;
+                        color.a = 0xFF;
+                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
+                        s->col++;
+                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
+                        if (s->row>s->row_end) { s->row = s->row_start; }
+                        // Pixel 2: bits [2:0] -> R=bit2, G=bit1, B=bit0
+                        uint8_t lo = byte & 0x07;
+                        color.r = (lo & 0x4) ? 0xFC : 0x00;
+                        color.g = (lo & 0x2) ? 0xFC : 0x00;
+                        color.b = (lo & 0x1) ? 0xFC : 0x00;
+                        color.a = 0xFF;
+                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
+                        s->col++;
+                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
+                        if (s->row>s->row_end) { s->row = s->row_start; }
+                        break;
+                    }
                     case 16:
                         DATA(2);
                         word = (s->cmd_data[0]<<8|s->cmd_data[1]);
                         color.r = (word & 0xF800)>>8;
                         color.g = (word & 0x7E0)>> 3;
                         color.b = (word & 0x1F) << 3;
+                        color.a = 0xFF;
+                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
+                        s->col++;
+                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
+                        if (s->row>s->row_end) { s->row = s->row_start; }
                         break;
                     case 18:
                         DATA(3);
                         color.b = s->cmd_data[0];
                         color.g = s->cmd_data[1];
                         color.r = s->cmd_data[2];
+                        color.a = 0xFF;
+                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
+                        s->col++;
+                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
+                        if (s->row>s->row_end) { s->row = s->row_start; }
                         break;
                     default:
                         printf("FIXME: unhandled bpp mode in RAMWR: %u\n", s->bpp_mode);
-                }
-                color.a = 0xFF;
-                s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
-                s->col++;
-                if (s->col>s->col_end)
-                {
-                    s->row++;
-                    s->col = s->col_start;
-                }
-                if (s->row>s->row_end)
-                {
-                    s->row = s->row_start;
                 }
                 s->cmd_len=0; // "remove" the data from the queue. We'll get more,
                 s->redraw = 1;
