@@ -83,7 +83,7 @@ static void cbtl3257_select(void *opaque, int n, int level){
 	{
 		if (s->levels[old_sel][i] != s->levels[s->select][i])
 		{
-			qemu_set_irq(s->irq[n],s->levels[s->select][i]);
+			qemu_set_irq(s->irq[i],s->levels[s->select][i]);
 		}
 	}
 }
@@ -95,11 +95,11 @@ static void cbtl3257_nOE(void *opaque, int n, int level){
 	{
 		if (s->oe)
 		{
-			qemu_set_irq(s->irq[n],s->levels[s->select][i]);
+			qemu_set_irq(s->irq[i],s->levels[s->select][i]);
 		}
 		else
 		{
-			qemu_irq_lower(s->irq[n]);
+			qemu_irq_lower(s->irq[i]);
 		}
 	}
 }
@@ -131,6 +131,6 @@ static const VMStateDescription vmstate_cbtl3257 = {
 static void cbtl3257_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = cbtl3257_reset;
+    device_class_set_legacy_reset(dc, cbtl3257_reset);
     dc->vmsd = &vmstate_cbtl3257;
 }

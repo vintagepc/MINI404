@@ -125,7 +125,7 @@ static Property current_sum_properties[] = {
 static void current_sum_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = current_sum_reset;
+    device_class_set_legacy_reset(dc, current_sum_reset);
  //   dc->vmsd = &vmstate_acs711;
    device_class_set_props(dc, current_sum_properties);
 }

@@ -70,6 +70,13 @@ struct WS281xState {
 
 };
 
+#define T0H_NS 350
+#define T1H_NS 700
+#define T0L_NS 800
+#define T1L_NS 600
+#define THRESH_NS 150
+#define RESET_NS 50000
+
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(WS281xState, ws281x, WS281X, SYS_BUS_DEVICE, {NULL} );
 
 // handler for chaining via din/dout - so only the first LED on the SPI bus needs to decode the bitpattern.
@@ -109,8 +116,8 @@ static void ws281x_gpio(void* opaque, int n, int level)
 	}
 	if (level)
 	{
-		s->last_highc = icount_get_raw();
-		if (s->last_highc - s->last_lowc >15000)
+		s->last_highc = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL); //icount_get_raw();
+		if (s->last_highc - s->last_lowc >= RESET_NS)
 		{
 			s->bit_count = 0;
 			s->current_colour.raw = 0;
@@ -120,15 +127,22 @@ static void ws281x_gpio(void* opaque, int n, int level)
 	}
 	else
 	{
-		s->last_lowc = icount_get_raw();
-		if (s->last_lowc == 0)
+		s->last_lowc =  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL); // icount_get_raw();
+        float time_scale = 1;
+		if (icount_enabled())
 		{
-			printf("ERR: WS281x detected '-icount ' is not set. LED will not function without accurate timing!\n");
-			s->disabled = true;
+            // Based on casual testing icount 5 seems to get "closest" to the real timings as set in the FW (220, 580 uS)
+            // Scale any different values accordingly so the RGB keeps working regardless of icount. 
+            time_scale = (float)icount_to_ns(1) / 32.f;
 		}
+        else
+        {
+            // Note that for the unit tests, we do not have icount enabled, but the clock is stepped by the correct ns value.
+            printf("# -icount not specified. one-wire LED may not work properly!\n");
+        }
 		s->current_colour.raw <<= 1;
-		s->current_colour.raw |= (s->last_lowc - s->last_highc) > 22; // This value is highly dependent on the value of icount. Tested with -icount 2 gets ns values close to correct in real ns
-		// printf("last high: %d\n",(s->last_lowc - s->last_highc));
+		s->current_colour.raw |= abs(((s->last_lowc - s->last_highc) / time_scale) - T0H_NS) > THRESH_NS; // This value is highly dependent on the value of icount. Tested with -icount 2 gets ns values close to correct in real ns
+		// printf("last high: %ld, ic: %f\n",(s->last_lowc - s->last_highc), time_scale);
 		s->bit_count++;
         if (s->bit_count == 24)
         {

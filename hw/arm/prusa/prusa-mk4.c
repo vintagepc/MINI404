@@ -1,7 +1,7 @@
 /*
- * Prusa MK4 xBuddy machine model
+ * Prusa MK4/iX xBuddy machine model
  *
- * Copyright 2020 VintagePC <github.com/vintagepc>
+ * Copyright 2020-2024 VintagePC <github.com/vintagepc>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -43,6 +43,9 @@
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
 #include "otp.h"
+#include "parts/xl_bridge.h"
+#include "qapi/qmp/qlist.h"
+
 
 #define TYPE_XBUDDY_MACHINE "xbuddy-machine"
 
@@ -79,6 +82,12 @@ enum {
 };
 
 enum {
+    FAN_PRINT,
+    FAN_HBR, 
+    FAN_MAX
+};
+
+enum {
 	T_NOZ,
 	T_BED,
 	T_BRK,
@@ -109,11 +118,15 @@ typedef struct mk4_cfg_t {
     stm_pin enc_b;
     stm_pin enc_btn;
     stm_pin z_min;
+    uint16_t f_rpms[FAN_MAX];
+    stm_pin f_tach[FAN_MAX];
+    bool f_inverted;
     bool has_at21;
 	bool has_loadcell;
 	temp_cfg_t temps;
     uint8_t motor;
 	uint8_t e_t_mass;
+    bool e_loopback;
     char m_label[AXIS_MAX];
     stm_pin m_step[AXIS_MAX];
     stm_pin m_dir[AXIS_MAX];
@@ -135,12 +148,16 @@ typedef struct mk4_cfg_t {
 typedef struct xBuddyMachineClass {
     MachineClass        parent;
     const mk4_cfg_t     *cfg;
+    bool                has_mmu;
+    bool                has_modbed;
 } xBuddyMachineClass;
 
 typedef struct xBuddyData {
 	const mk4_cfg_t* cfg;
 	const char* name;
 	const char* descr;
+    const bool has_mmu;
+    const bool has_modbed;
 } xBuddyData;
 
 #define XBUDDY_MACHINE_CLASS(klass)                                    \
@@ -164,6 +181,9 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7500 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
+    .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -173,6 +193,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
+
 	.e_t_mass = 35,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
@@ -205,6 +226,9 @@ static const mk4_cfg_t mk4_034_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7500 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
+    .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -246,6 +270,9 @@ static const mk4_cfg_t mk3v5_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 4500, 7500 },
+    .f_tach = {STM_PIN(GPIOA,10), STM_PIN(GPIOE,10)},
+    .f_inverted = false,
     .has_at21 = false,
 	.temps =
 	{
@@ -255,6 +282,7 @@ static const mk4_cfg_t mk3v5_cfg = {
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
 	.e_t_mass = 30,
+    .e_loopback = true,
     .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -262,7 +290,7 @@ static const mk4_cfg_t mk3v5_cfg = {
     .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
-	.m_inverted = {0,1,0,1},
+	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = false,
 	.dm_ver = 34,
@@ -286,6 +314,9 @@ static const mk4_cfg_t mk3v9_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 7000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
+    .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -313,10 +344,56 @@ static const mk4_cfg_t mk3v9_cfg = {
 	.xflash_fn = XFLASH_FN(Mk3v9)
 };
 
+static const mk4_cfg_t ix_027c_cfg = {
+    .lcd_spi = STM32_P_SPI6,
+    .lcd_cs = STM_PIN(GPIOD,11),
+    .lcd_cs_invert = false,
+    .lcd_cd = STM_PIN(GPIOD,15),
+    .w25_spi = STM32_P_SPI5,
+    .w25_cs = STM_PIN(GPIOF,2),
+    .at24_i2c = STM32_P_I2C2,
+    .hx717_data = STM_PIN(GPIOE,7),
+    .hx717_sck = STM_PIN(GPIOG,1),
+    .enc_a = STM_PIN(GPIOD,13),
+    .enc_b = STM_PIN(GPIOD,12),
+    .enc_btn = STM_PIN(GPIOG,3),
+    .z_min = STM_PIN(GPIOB, 8),
+    .f_rpms = { 6600, 8000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
+    .f_inverted = true,
+    .has_at21 = true,
+	.has_loadcell = true,
+	.temps =
+	{
+		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
+		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
+		.ambient = {18, 20, 21, 25, 19},
+		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
+	},
+
+	.e_t_mass = 30,
+    .motor = TMC2130,
+    .m_label = {'A','B','Z','E'},
+    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
+    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
+    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
+    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
+    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
+	.m_inverted = {1, 0 ,0,1},
+    .m_spi = STM32_P_SPI3,
+	.is_400step = false,
+	.dm_ver = 27,
+	.boot_fn = BOOTLOADER_IMAGE(iX),
+	.eeprom_fn = EEPROM_FN(iX),
+	.eeprom_sys_fn = EEPROM_SYS_FN(iX),
+	.xflash_fn = XFLASH_FN(iX)
+};
+
 static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
@@ -337,6 +414,9 @@ static void mk4_init(MachineState *machine)
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
 	uint64_t flash_size = stm32_soc_get_flash_size(dev);
     arghelper_setargs(machine->kernel_cmdline);
+
+    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
+    // Parse those now.
 	bool args_continue_running = arghelper_parseargs();
 	if (arghelper_is_arg("4x_flash"))
     {
@@ -346,25 +426,27 @@ static void mk4_init(MachineState *machine)
 	qdev_prop_set_uint32(dev,"flash-size", flash_size);
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-	qdev_prop_set_uint32(otp,"len-otp-data", 9);
-	qdev_prop_set_uint32(otp,"otp-data[0]", otp_raw[0]);
-	qdev_prop_set_uint32(otp,"otp-data[1]", otp_raw[1]);
-	qdev_prop_set_uint32(otp,"otp-data[2]", otp_raw[2]);
-	qdev_prop_set_uint32(otp,"otp-data[3]", otp_raw[3]);
-	qdev_prop_set_uint32(otp,"otp-data[4]", otp_raw[4]);
-	qdev_prop_set_uint32(otp,"otp-data[5]", otp_raw[5]);
-	qdev_prop_set_uint32(otp,"otp-data[6]", otp_raw[6]);
-	qdev_prop_set_uint32(otp,"otp-data[7]", otp_raw[7]);
-	qdev_prop_set_uint32(otp,"otp-data[8]", otp_raw[8]);
+    QList *otp_list = qlist_new();
+    for (int i = 0; i < 9; i++) {
+        qlist_append_int(otp_list, otp_raw[i]);
+    }
+    qdev_prop_set_array(otp, "otp-data", otp_list);
 
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
-    // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
-    // Parse those now.
-	// ugly hack... FIXME.
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
+    if (cfg.e_loopback) {
+		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),"idr-mask", 0x80);
+    }
+
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    
+    if(cfg.e_loopback)
+    {
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), 7));
+    }
+
 
     char* kfn = machine->kernel_filename;
     int kernel_len = kfn ? strlen(kfn) : 0;
@@ -386,9 +468,7 @@ static void mk4_init(MachineState *machine)
     }
     else // Raw bin or ELF file, load directly.
     {
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-                        machine->kernel_filename, 0,
-                        flash_size);
+       stm32_soc_load_kernel(OBJECT(dev_soc), machine->kernel_filename);
     }
 
 	DeviceState* key_in = qdev_new("p404-key-input");
@@ -408,6 +488,7 @@ static void mk4_init(MachineState *machine)
 		int display_order[4] = {2, 0, 1, 3};
         for (int i=0; i<4; i++) {
             npixel[i] = qdev_new("spi_rgb");
+            qdev_prop_set_uint8(npixel[i], "cs", 1 + i);
             if (i==3) {
                 qdev_prop_set_uint8(npixel[i],"led-type",SPI_RGB_WS2811);
             }
@@ -510,10 +591,20 @@ static void mk4_init(MachineState *machine)
     qdev_prop_set_string(db2, "indicators", "ZF");
 
     {
-
-        int32_t ends[4] = { 100*16*255, 100*16*214, 400*16*(cfg.has_loadcell ? 221: 212),0 };
+        int32_t ends[4] = { 100*16*255, 100*16*218, 400*16*(cfg.has_loadcell ? 221: 212),0 };
+        static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
- 		static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
+
+        if(mc->has_modbed)
+        {
+            ends[0] = 0*100*16*295;
+            ends[1] = 0*100*16*310;
+            ends[2] = 800*16*195;
+            stepsize[2] <<= 1;
+            links[2] = "motor[4]";
+            links[3] = "motor[5]";
+        }
+
         if (cfg.is_400step) {
             stepsize[0] <<= 1;
             stepsize[1] <<= 1;
@@ -536,6 +627,7 @@ static void mk4_init(MachineState *machine)
             }
 			dev = qdev_new("tmc2130");
             motors[i] = dev;
+            qdev_prop_set_uint8(dev, "cs", i);
             qdev_prop_set_uint8(dev, "axis",cfg.m_label[i]);
             qdev_prop_set_uint8(dev, "inverted",cfg.m_inverted[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);
@@ -566,6 +658,25 @@ static void mk4_init(MachineState *machine)
         }
 
     }
+    if (mc->has_modbed)
+    {
+        dev = qdev_new("corexy-helper");
+        qdev_prop_set_uint32(dev, "x-max-um", 1000U*290U);
+        qdev_prop_set_uint32(dev, "y-max-um", 1000U*310U);
+        qdev_prop_set_bit(dev,"swap-calc",true);
+        // qdev_prop_set_bit(dev,"invert-y",true);
+
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in_named(motors[0],"ext-stall",0));
+        qdev_connect_gpio_out(dev, 1, qdev_get_gpio_in_named(motors[1],"ext-stall",0));
+        qdev_connect_gpio_out_named(motors[1],"um-out",0,qdev_get_gpio_in(dev,0));
+        qdev_connect_gpio_out_named(motors[0],"um-out",0,qdev_get_gpio_in(dev,1));
+
+        // Cheat/hack, the helper will alternate between the status structures it returns when they are polled by the UI.
+        object_property_set_link(OBJECT(db2), "motor[2]", OBJECT(dev), &error_fatal);
+        object_property_set_link(OBJECT(db2), "motor[3]", OBJECT(dev), &error_fatal);
+    }
+
     sysbus_realize(SYS_BUS_DEVICE(db2), &error_fatal);
     DeviceState *bed = NULL, *hotend = NULL;
     for (int i=0; i<T_MAX; i++)
@@ -590,16 +701,41 @@ static void mk4_init(MachineState *machine)
 		}
 		qdev_connect_gpio_out_named(dev, "temp_out_256x", 0, qdev_get_gpio_in_named(db2,"therm-temp",i));
     }
+     // Currents - heater, mmu, system. All on ADC3
+	// TBD -find out the system scaling, it's not the same as the other two.... perhaps not a CS30
+    DeviceState* e_heater = NULL;
+	{
+		uint16_t currents[] = {105, 300, 100};
+		uint8_t channels[] = {9, 4, 14};
+		for (int i=0; i<3; i++)
+		{
+			DeviceState* vdev = qdev_new("cs30bl");
+			qdev_prop_set_uint32(vdev,"mA",currents[i]);
+			sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
+			qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in",channels[i]));
+            if (i==0)
+            {
+                e_heater = vdev;
+            }
+		}
+	}
+ 
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
-
     dev = qdev_new("heater");
     qdev_prop_set_uint8(dev, "thermal_mass_x10",cfg.e_t_mass);
     qdev_prop_set_uint8(dev,"label", 'E');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
+    if (mc->has_modbed)
+    {
+        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed", 3, qdev_get_gpio_in_named(dev, "raw-pwm-in",0));
+    }
+    else
+    {
+        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed", 3, qdev_get_gpio_in_named(dev, "pwm_in",0));
+    }
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
 #ifdef BUDDY_HAS_GL
-    qemu_irq split_htr = qemu_irq_split(qdev_get_gpio_in_named(db2,"therm-pwm",0),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_HTR));
+    qemu_irq split_htr = qemu_irq_split(qdev_get_gpio_in_named(db2,"therm-pwm",0),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_HTR),  qdev_get_gpio_in_named(e_heater, "pwm-in",0));
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, split_htr);
 #else
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",0));
@@ -619,16 +755,22 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",1));
 #endif
 
+    DeviceState *hs = NULL;
+
 	if (cfg.has_loadcell) {
 		DeviceState *lc = qdev_new("loadcell");
+        object_property_add_child(OBJECT(periphs), "loadcell", OBJECT(lc));
 		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
-		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,0));
+		qdev_connect_gpio_out_named(motors[2],"um-out",0,qdev_get_gpio_in(lc,2));
 
-		DeviceState *hs = qdev_new("hall-sensor");
+		hs = qdev_new("hall-sensor");
+        object_property_add_child(OBJECT(periphs), "hall-sensor", OBJECT(hs));
+        qdev_prop_set_bit(hs, "start-state", !mc->has_mmu); // MMU starts unloaded.
 		sysbus_realize(SYS_BUS_DEVICE(hs), &error_fatal);
 		qdev_connect_gpio_out_named(hs, "status", 0,qdev_get_gpio_in_named(db2,"led-digital",1));
 
 		dev = qdev_new("hx717");
+        object_property_add_child(OBJECT(periphs), "hx717", OBJECT(dev));
 		sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
@@ -664,15 +806,6 @@ static void mk4_init(MachineState *machine)
 
 	}
 
-    if (cfg.has_at21) {
-        dev = qdev_new("at21csxx");
-		qdev_prop_set_drive(dev, "drive", blk_by_name("loveboard-eeprom"));
-        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        // 2-way bitbang
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF),13,qdev_get_gpio_in(dev, 0));
-        qdev_connect_gpio_out(dev,0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF), 13));
-    }
-
     // dev = qdev_new("hc4052");
     // sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),8,qdev_get_gpio_in_named(dev,"select",0)); // S0
@@ -689,21 +822,6 @@ static void mk4_init(MachineState *machine)
 	// qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_read", 3,  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
     qdev_connect_gpio_out_named(vdev, "v_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1),"adc_data_in",3));
     qdev_connect_gpio_out_named(vdev, "panic",0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 0));
-
-    // Currents - heater, mmu, system. All on ADC3
-	// TBD -find out the system scaling, it's not the same as the other two.... perhaps not a CS30
-	{
-		uint16_t currents[] = {105, 300, 100};
-		uint8_t channels[] = {9, 4, 14};
-		for (int i=0; i<3; i++)
-		{
-			vdev = qdev_new("cs30bl");
-			qdev_prop_set_uint32(vdev,"mA",currents[i]);
-			sysbus_realize(SYS_BUS_DEVICE(vdev),&error_fatal);
-			qdev_connect_gpio_out_named(vdev, "a_sense",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_data_in",channels[i]));
-			//qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3),"adc_read", channels[i],  qdev_get_gpio_in_named(vdev, "adc_read_request",0));
-		}
-	}
 
     // Bed V, always on.
     vdev = qdev_new("powersource");
@@ -740,25 +858,25 @@ static void mk4_init(MachineState *machine)
 
     // hotend = fan1
     // print fan = fan0
-    uint16_t fan_max_rpms[] = { 6600, 7000 };
     uint8_t  fan_pwm_pins[] = { 11, 9};
-    uint8_t fan_tach_pins[] = { 10, 14};
     uint8_t fan_labels[] = {'P','E'};
+    DeviceState* fans[FAN_MAX];
 	DeviceState* fanpwm = qdev_new("software-pwm");
-    qdev_prop_set_bit(fanpwm, "is_inverted", true);
+    qdev_prop_set_bit(fanpwm, "is_inverted", cfg.f_inverted);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(fanpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM14), "timer", 0, qdev_get_gpio_in_named(fanpwm, "tick-in", 0));
-    for (int i=0; i<2; i++)
+    for (int i=0; i<FAN_MAX; i++)
     {
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), fan_pwm_pins[i],
 			qdev_get_gpio_in_named(fanpwm, "gpio-in",i)
 		);
         dev = qdev_new("fan");
+        fans[i] = dev;
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
-        qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
+        qdev_prop_set_uint32(dev, "max_rpm",cfg.f_rpms[i]);
         //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),fan_tach_pins[i]));
+        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.f_tach[i])), PIN(cfg.f_tach[i])));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
         qdev_connect_gpio_out_named(dev, "rpm-out", 0, qdev_get_gpio_in_named(db2,"fan-rpm",i));
 		qdev_connect_gpio_out(fanpwm,i,split_fan);
@@ -770,11 +888,40 @@ static void mk4_init(MachineState *machine)
 // #endif
     }
 
+    if (cfg.has_at21) {
+        dev = qdev_new("at21csxx");
+		qdev_prop_set_drive(dev, "drive", blk_by_name("loveboard-eeprom"));
+        object_property_add_child(OBJECT(periphs), "at21csxx", OBJECT(dev));
+        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+        // 2-way bitbang
+        // WARNING: F13 is also used by the fan tach gate. So the output gets re-bount below
+        // and re-uses the value of dev set above!
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF),13,qdev_get_gpio_in(dev, 0));
+        qdev_connect_gpio_out(dev,0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF), 13));
+    }
+    // <--- See WARNING above before inserting code here!! --->
+    if (cfg.f_tach[1] == cfg.f_tach[0]) // If it's a shared tach pin, setup the mux config.
+    {
+        // Tach select is F13, H = print fan, L = HBR
+        // the fan has an active-high tach-disable line, so for the print fan it must be inverted.
+        qemu_irq sel_inv = qemu_irq_invert(qdev_get_gpio_in_named(fans[FAN_PRINT], "tach-disable", 0));
+        qemu_irq split_sel = NULL;
+        if (cfg.has_at21)
+        {
+           split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_HBR], "tach-disable", 0), sel_inv, qdev_get_gpio_in(dev, 0));
+        }
+        else
+        {
+           split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_HBR], "tach-disable", 0), sel_inv);
+        }
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF), 13, split_sel);
+    }
+
     DeviceState* encoder = qdev_new("encoder-input");
     sysbus_realize(SYS_BUS_DEVICE(encoder), &error_fatal);
     qdev_connect_gpio_out_named(encoder, "encoder-button",  0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_btn)), PIN(cfg.enc_btn)));
-    qdev_connect_gpio_out_named(encoder, "encoder-a",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
-    qdev_connect_gpio_out_named(encoder, "encoder-b",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
+    qdev_connect_gpio_out_named(encoder, "encoder-ab",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
+    qdev_connect_gpio_out_named(encoder, "encoder-ab",       1,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
 
 	bus = qdev_get_child_bus(
 		stm32_soc_get_periph(dev_soc, STM32_P_I2C3),
@@ -790,6 +937,35 @@ static void mk4_init(MachineState *machine)
 	qdev_connect_gpio_out_named(encoder, "cursor_xy", 0, x_split);
     qdev_connect_gpio_out_named(encoder, "cursor_xy", 1, y_split);
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
+
+    // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
+    if (kernel_len == 0)
+    {
+        // No bridge setup in this case...
+    }
+    else if (mc->has_mmu)
+    {
+        dev = qdev_new("mmu-bridge");
+        object_property_add_child(OBJECT(periphs), "mmu-bridge", OBJECT(dev));
+    	sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG),8,qdev_get_gpio_in_named(dev, "reset-in", 0));
+        if (hs != NULL) 
+        {
+	        qdev_connect_gpio_out_named(dev, "fs-out",0, qdev_get_gpio_in_named(hs, "ext-in", 0));
+        }
+
+    }
+    else if (mc->has_modbed)
+    {
+        dev = qdev_new("xl-bridge");
+		qdev_prop_set_uint8(dev, "device", XL_DEV_XBUDDY);
+		qdev_prop_set_bit(dev, "is-iX", true);
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB), 7, qdev_get_gpio_in_named(dev,"tx-assert",0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART6),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_PUPPY));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART6),"uart-byte-in", XLBRIDGE_UART_PUPPY));
+		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 8, qdev_get_gpio_in_named(dev,"reset-in",XL_DEV_BED));
+    }
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
@@ -818,6 +994,8 @@ static void xbuddy_class_init(ObjectClass *oc, void *data)
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
+        xmc->has_mmu = d->has_mmu;
+        xmc->has_modbed = d->has_modbed;
 }
 
 static const xBuddyData mk4_027c = {
@@ -825,10 +1003,23 @@ static const xBuddyData mk4_027c = {
 	.descr = "Prusa Mk4 0.2.7c",
 };
 
+static const xBuddyData mk4_027c_mmu = {
+	.cfg = &mk4_027c_cfg,
+	.descr = "Prusa Mk4 0.2.7c with MMU3",
+    .has_mmu = true,
+};
+
 static const xBuddyData mk4_034 = {
 	.cfg = &mk4_034_cfg,
 	.descr = "Prusa Mk4 0.3.4",
 };
+
+static const xBuddyData mk4_034_mmu = {
+	.cfg = &mk4_034_cfg,
+	.descr = "Prusa Mk4 0.3.4 with MMU3",
+    .has_mmu = true,
+};
+
 
 static const xBuddyData mk3v5 = {
 	.cfg = &mk3v5_cfg,
@@ -838,6 +1029,12 @@ static const xBuddyData mk3v5 = {
 static const xBuddyData mk3v9 = {
 	.cfg = &mk3v9_cfg,
 	.descr = "Prusa Mk3.9",
+};
+
+static const xBuddyData iX_027c = {
+	.cfg = &ix_027c_cfg,
+	.descr = "Prusa iX 0.2.7c",
+    .has_modbed = true,
 };
 
 static const TypeInfo xbuddy_machine_types[] = {
@@ -851,12 +1048,21 @@ static const TypeInfo xbuddy_machine_types[] = {
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk4_027c
-    },
-	{
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-027c-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_027c_mmu,
+    }, {
         .name           = MACHINE_TYPE_NAME("prusa-mk4-034"),
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk4_034
+    }, {
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-034-mmu"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&mk4_034_mmu
     },{
         .name           = MACHINE_TYPE_NAME("prusa-mk3-35"),
         .parent         = TYPE_XBUDDY_MACHINE,
@@ -867,6 +1073,11 @@ static const TypeInfo xbuddy_machine_types[] = {
         .parent         = TYPE_XBUDDY_MACHINE,
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&mk3v9
-    },
+    },{
+        .name           = MACHINE_TYPE_NAME("prusa-iX-027c"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+		.class_init     = xbuddy_class_init,
+		.class_data		= (void*)&iX_027c
+    }
 };
 DEFINE_TYPES(xbuddy_machine_types)

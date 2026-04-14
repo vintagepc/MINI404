@@ -1,7 +1,8 @@
 # MINI404 - PRINTER NOT FOUND
-A project/repo for simulating the Prusa Mini hardware.
+A project/repo for simulating the Prusa *Buddy platform hardware (i.e. the MINI, the MK3.5/9, MK4, and XL at this time).
 
-*Summary status:* "Mostly" functional, it runs stock firmware very close to the real thing. Be sure to check out the [wiki](https://github.com/vintagepc/MINI404/wiki) for more technical details.
+*Summary status:* "Mostly" functional for MINI and MK4, it runs stock firmware very close to the real thing. Be sure to check out the [wiki](https://github.com/vintagepc/MINI404/wiki) for more technical details. 
+XL support is a WIP and has some known pitfalls.
 
 Remaining To-Dos of note:
 - [See open issues...](https://github.com/vintagepc/MINI404/issues/)

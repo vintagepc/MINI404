@@ -34,6 +34,7 @@
 typedef struct COM_CLASS_NAME(Otp) {
 	STM32PeripheralClass parent_class;
     hwaddr otp_size;
+    bool init_temp_cal;
 } COM_CLASS_NAME(Otp);
 
 // Not actual register, just to store info for the variant.
@@ -72,6 +73,8 @@ typedef struct COM_STRUCT_NAME(Otp) {
     uint32_t data[MAX_OTP_SIZE_BYTES/sizeof(uint32_t)];
 
 	hwaddr cfg_otp_end_bytes;
+
+    bool init_temp_cal;
 
 	uint32_t nr_init;
     uint32_t *init_data;
@@ -116,6 +119,17 @@ static const MemoryRegionOps stm32_common_otp_ops = {
 static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
 {
     COM_STRUCT_NAME(Otp) *s = STM32COM_OTP(dev);
+
+    if (s->init_temp_cal)
+    {
+        // Cheat for easier debugging. We set the mcu temp scale
+        // to 10 adc counts per degree C so the ADC value (without any oversampling)
+        // is effectively x10 C
+        // We set VREF cal to 3000 mv for (hopefully) a coeff of 1.
+        s->data[362] = 0x0E53012C; // TS_CAL1 at 30C (uint16_t), upper 16 bits are VREF cal
+        s->data[370] = 0x05140000; // TS_CAL2 at 130C (uint16_t, 2nd half of u32)
+    }
+
     s->blk = blk_by_name("stm32-otp");
     if (s->blk) {
 
@@ -159,6 +173,7 @@ stm32_common_otp_init(Object *obj)
     STM32_MR_IO_INIT(&s->iomem, obj, &stm32_common_otp_ops, s, MAX_OTP_SIZE_BYTES);
     s->iomem.readonly = true;
 	s->cfg_otp_end_bytes = c->otp_size;
+    s->init_temp_cal = c->init_temp_cal;
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 }
 
@@ -189,7 +204,7 @@ stm32_common_otp_class_init(ObjectClass *klass, void *data)
 	COM_CLASS_NAME(Otp) *k = STM32COM_OTP_CLASS(klass);
 	stm32_reginfo_t* d = data;
 	k->otp_size = d[DATA_SIZE].mask;
-
+    k->init_temp_cal = (data == &stm32g070_otp_reginfo);
 }
 
 static const TypeInfo

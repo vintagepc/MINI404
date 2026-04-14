@@ -167,7 +167,7 @@ void pca9557_class_init(ObjectClass *klass, void *data)
 	k->event = &pca9557_event;
 
     device_class_set_props(dc, pca9557_props);
-    dc->reset = pca9557_reset;
+    device_class_set_legacy_reset(dc, pca9557_reset);
 }
 
 static

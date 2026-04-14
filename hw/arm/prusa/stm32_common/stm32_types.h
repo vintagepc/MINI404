@@ -63,6 +63,7 @@
 #define TYPE_STM32COM_DBG _STM_COM_PART(dbg)
 #define TYPE_STM32COM_DMA _STM_COM_PART(dma)
 #define TYPE_STM32COM_DMAMUX _STM_COM_PART(dmamux)
+#define TYPE_STM32COM_DYNMAP _STM_COM_PART(dynmap)
 #define TYPE_STM32COM_GPIO _STM_COM_PART(gpio)
 #define TYPE_STM32COM_IWDG _STM_COM_PART(iwdg)
 #define TYPE_STM32COM_SPI _STM_COM_PART(spi)
@@ -138,7 +139,8 @@
 
 #define TYPE_STM32F030_SPI _STM_F030_PART(spi)
 #define TYPE_STM32G070_SPI _STM_G070_PART(spi)
-#define TYPE_STM32F2xx_SPI _STM_F2xx_PART(spi)
+// v suffix is because this otherwise conflicts with the public SPI type in hw/ssi.
+#define TYPE_STM32F2xx_SPI _STM_F2xx_PART(spi-v)
 #define TYPE_STM32F4xx_SPI _STM_F4xx_PART(spi)
 
 #define TYPE_STM32F030_USART _STM_F030_PART(usart)
@@ -146,5 +148,8 @@
 
 #define TYPE_STM32G070_OTP _STM_G070_PART(otp)
 #define TYPE_STM32F4xx_OTP _STM_F4xx_PART(otp)
+
+#define TYPE_STM32G070_DYNMAP _STM_G070_PART(dynmap)
+#define TYPE_STM32F4xx_DYNMAP _STM_F4xx_PART(dynmap)
 
 #endif
