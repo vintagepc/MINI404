@@ -147,6 +147,15 @@ static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
 	else // Not initialized, fill first 1k with FFs.
 	{
 		memset(s->data, 0xFF, MIN(sizeof(s->data), 1U*KiB));
+		// Set STM32G0 temperature sensor and VREFINT calibration constants
+		// so the firmware's MCU temperature calculation doesn't divide by zero.
+		// Offsets from OTP base (0x1FFF7000):
+		//   0x5A8: TS_CAL1 (uint16) — ADC raw at 30°C  (typical ~835)
+		//   0x5AA: VREFINT_CAL (uint16) — Vref ADC raw  (typical ~1524)
+		//   0x5CA: TS_CAL2 (uint16) — ADC raw at 130°C  (typical ~1045)
+		// data[] is uint32_t, so offset 0x5A8 = index 362, 0x5C8 = index 370.
+		s->data[0x5A8/4] = (1524U << 16) | 835U;   // [VREFINT_CAL : TS_CAL1]
+		s->data[0x5CA/4] |= (1045U << 16);          // [TS_CAL2 : (keep lower)]
 	}
 }
 
