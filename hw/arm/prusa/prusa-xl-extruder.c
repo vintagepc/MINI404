@@ -111,10 +111,10 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	DeviceState* dev_soc = dev;
 	qdev_prop_set_string(dev, "flash-file", FLASH_NAMES[index]);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m0"));
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 
 	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
 	// Without these the firmware's MCU temp calculation divides by zero.
+	// Must be set before realize — OTP properties are frozen after that.
 	{
 		#define OTP_TS_CAL1     835U
 		#define OTP_VREFINT_CAL 1524U
@@ -136,6 +136,8 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL2_INDEX);
 		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
 	}
+
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 
 	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
 	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C

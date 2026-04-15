@@ -71,6 +71,31 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
 	qdev_prop_set_uint16(stm32_soc_get_periph(dev, STM32_P_GPIOC), "idr-mask", 0x0D);
 	qdev_prop_set_uint16(stm32_soc_get_periph(dev, STM32_P_GPIOC), "idr-force", 0x0F);
 
+	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
+	// Without these the firmware's MCU temp calculation divides by zero.
+	// Must be set before realize — OTP properties are frozen after that.
+	{
+		#define OTP_TS_CAL1     835U
+		#define OTP_VREFINT_CAL 1524U
+		#define OTP_TS_CAL2     1045U
+		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
+		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
+		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
+
+		DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+		qdev_prop_set_uint32(otp, "len-otp-data", OTP_DATA_COUNT);
+		for (int i = 0; i < 256; i++) {
+			gchar prop[32];
+			snprintf(prop, sizeof(prop), "otp-data[%d]", i);
+			qdev_prop_set_uint32(otp, prop, 0xFFFFFFFF);
+		}
+		gchar prop[32];
+		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL1_INDEX);
+		qdev_prop_set_uint32(otp, prop, (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1);
+		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL2_INDEX);
+		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
+	}
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
@@ -105,35 +130,6 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
     }
 
 	DeviceState* dev_soc = dev;
-
-	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
-	// Without these the firmware's MCU temp calculation divides by zero.
-	// OTP layout (offsets from base 0x1FFF7000):
-	//   0x5A8: TS_CAL1 (uint16) = 835  — ADC raw at 30°C, Vref=3.0V
-	//   0x5AA: VREFINT_CAL (uint16) = 1524
-	//   0x5CA: TS_CAL2 (uint16) = 1045 — ADC raw at 130°C, Vref=3.0V
-	{
-		#define OTP_TS_CAL1     835U
-		#define OTP_VREFINT_CAL 1524U
-		#define OTP_TS_CAL2     1045U
-		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
-		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
-		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
-
-		DeviceState* otp = stm32_soc_get_periph(dev_soc, STM32_P_OTP);
-		qdev_prop_set_uint32(otp, "len-otp-data", OTP_DATA_COUNT);
-		// First 1KB (256 uint32) = 0xFF (unprogrammed OTP), rest stays 0
-		for (int i = 0; i < 256; i++) {
-			gchar prop[32];
-			snprintf(prop, sizeof(prop), "otp-data[%d]", i);
-			qdev_prop_set_uint32(otp, prop, 0xFFFFFFFF);
-		}
-		gchar prop[32];
-		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL1_INDEX);
-		qdev_prop_set_uint32(otp, prop, (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1);
-		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL2_INDEX);
-		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
-	}
 
 	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
 	// These have no external peripheral providing data.
