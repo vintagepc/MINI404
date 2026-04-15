@@ -305,14 +305,6 @@ static uint16_t adc_lookup_smpr(COM_STRUCT_NAME(Adc) *s, uint8_t value) {
 static uint32_t stm32_adc_get_value(COM_STRUCT_NAME(Adc) *s)
 {
 	uint32_t internal_value = s->adc_data[s->adc_sequence_position];
-	// Internal channels: provide default values if no peripheral has written data.
-	// Ch12 = temperature sensor, Ch13 = VREFINT. Without these, MCU temp reads as
-	// garbage and firmware triggers MAXTEMP errors.
-	if (s->adc_sequence_position == 12 && internal_value == 0) {
-		internal_value = 856; // ~40°C with typical G0 cal constants (TS_CAL1=835, TS_CAL2=1045)
-	} else if (s->adc_sequence_position == 13 && internal_value == 0) {
-		internal_value = 1524; // Matches VREFINT_CAL so vref_coef ≈ 1.0
-	}
 	// I'm not sure why this is yet - some sort of built in oversampling
 	// that is enabled in non-DMA mode?
 	// Mask: RES 0..3 == 12..6 bit mask, so shift right 2* RES

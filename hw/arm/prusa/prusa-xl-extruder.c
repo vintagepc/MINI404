@@ -112,6 +112,35 @@ static void _prusa_xl_extruder_init(MachineState *machine, int index, int type)
 	qdev_prop_set_string(dev, "flash-file", FLASH_NAMES[index]);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m0"));
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
+	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
+	// Without these the firmware's MCU temp calculation divides by zero.
+	{
+		#define OTP_TS_CAL1     835U
+		#define OTP_VREFINT_CAL 1524U
+		#define OTP_TS_CAL2     1045U
+		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
+		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
+		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
+
+		DeviceState* otp = stm32_soc_get_periph(dev_soc, STM32_P_OTP);
+		qdev_prop_set_uint32(otp, "len-otp-data", OTP_DATA_COUNT);
+		for (int i = 0; i < 256; i++) {
+			gchar prop[32];
+			snprintf(prop, sizeof(prop), "otp-data[%d]", i);
+			qdev_prop_set_uint32(otp, prop, 0xFFFFFFFF);
+		}
+		gchar prop[32];
+		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL1_INDEX);
+		qdev_prop_set_uint32(otp, prop, (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1);
+		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL2_INDEX);
+		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
+	}
+
+	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 13), 1524); // VREFINT
+
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
     arghelper_setargs(machine->kernel_cmdline);

@@ -105,6 +105,41 @@ static void prusa_xl_bed_init(MachineState *machine, int hw_type)
     }
 
 	DeviceState* dev_soc = dev;
+
+	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
+	// Without these the firmware's MCU temp calculation divides by zero.
+	// OTP layout (offsets from base 0x1FFF7000):
+	//   0x5A8: TS_CAL1 (uint16) = 835  — ADC raw at 30°C, Vref=3.0V
+	//   0x5AA: VREFINT_CAL (uint16) = 1524
+	//   0x5CA: TS_CAL2 (uint16) = 1045 — ADC raw at 130°C, Vref=3.0V
+	{
+		#define OTP_TS_CAL1     835U
+		#define OTP_VREFINT_CAL 1524U
+		#define OTP_TS_CAL2     1045U
+		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
+		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
+		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
+
+		DeviceState* otp = stm32_soc_get_periph(dev_soc, STM32_P_OTP);
+		qdev_prop_set_uint32(otp, "len-otp-data", OTP_DATA_COUNT);
+		// First 1KB (256 uint32) = 0xFF (unprogrammed OTP), rest stays 0
+		for (int i = 0; i < 256; i++) {
+			gchar prop[32];
+			snprintf(prop, sizeof(prop), "otp-data[%d]", i);
+			qdev_prop_set_uint32(otp, prop, 0xFFFFFFFF);
+		}
+		gchar prop[32];
+		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL1_INDEX);
+		qdev_prop_set_uint32(otp, prop, (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1);
+		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL2_INDEX);
+		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
+	}
+
+	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
+	// These have no external peripheral providing data.
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 13), 1524); // VREFINT
+
 // HACK
 	// SOC->usarts[0].rs485_dest = 0x08;
 	// SOC->usarts[0].do_rs485 = true;
