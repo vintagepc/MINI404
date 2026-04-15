@@ -240,7 +240,7 @@ stm32_common_dmamux_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_dmamux;
-    dc->reset = stm32_common_dmamux_reset;
+    device_class_set_legacy_reset(dc, stm32_common_dmamux_reset);
 
 	COM_CLASS_NAME(Dmamux) *k = STM32COM_DMAMUX_CLASS(klass);
 	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));

@@ -662,7 +662,7 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 	if (GetLineState().iLine != m_iLine || m_state == State::Idle)
 	{
 		m_state = State::Running;
-		std::cout << "ScriptHost: Executing line " << strLine << "\n";
+		std::cout << "# ScriptHost: Executing line " << strLine << "\n";
 		ParseLine(m_iLine);
 	}
 	if (GetLineState().isValid)
@@ -695,11 +695,11 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 				m_eCmdStatus = TermSuccess;
 				break;
 			case LS::Unhandled:
-				std::cout << "ScriptHost: Unhandled action, considering this an error.\n";
+				std::cout << "# ScriptHost: Unhandled action, considering this an error.\n";
 				/* FALLTHRU */
 			case LS::Error:
 			{
-				std::cout << "ScriptHost: Script FAILED on line " << m_iLine << '\n';
+				std::cout << "# ScriptHost: Script FAILED on line " << m_iLine << '\n';
 				m_state = State::Error;
 				m_iLine = scriptSize; // Error, end scripting.
 				m_eCmdStatus = TermFailed;
@@ -735,12 +735,12 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 				m_state = State::Timeout;
 				if (m_bQuitOnTimeout)
 				{
-					std::cout << "ScriptHost: Script TIMED OUT on " << strLine << ". Quitting...\n";
+					std::cout << "# ScriptHost: Script TIMED OUT on " << strLine << ". Quitting...\n";
 					m_iLine = scriptSize;
 					qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
 					return;
 				}
-				std::cout << "ScriptHost: Script TIMED OUT on #" << m_iLine << ": " << strLine << '\n';
+				std::cout << "# ScriptHost: Script TIMED OUT on #" << m_iLine << ": " << strLine << '\n';
 				m_iLine++;
 				m_iTimeoutCount = 0;
 				m_eCmdStatus = TermTimedOut;
@@ -752,7 +752,7 @@ void ScriptHost::OnMachineCycle(int64_t iGuestUs)
 		}
 		if (m_iLine==scriptSize)
 		{
-			std::cout << "ScriptHost: Script FINISHED\n";
+			std::cout << "# ScriptHost: Script FINISHED\n";
 			m_bCanAcceptInput = true;
 			m_state = State::Finished;
 		}

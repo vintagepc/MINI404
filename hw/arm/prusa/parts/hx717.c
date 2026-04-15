@@ -218,7 +218,7 @@ static const VMStateDescription vmstate_hx717 = {
 static void hx717_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = hx717_reset;
+    device_class_set_legacy_reset(dc, hx717_reset);
     dc->vmsd = &vmstate_hx717;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = hx717_process_action;

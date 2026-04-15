@@ -46,8 +46,7 @@ struct InputState {
     /*< private >*/
     /*< public >*/
     qemu_irq irq_enc_button;
-    qemu_irq irq_enc_a;
-    qemu_irq irq_enc_b;
+    qemu_irq irq_enc[2];
     qemu_irq irq_rst;
 	qemu_irq cursor_xy[2];
 	qemu_irq tap;
@@ -83,7 +82,10 @@ static void encoder_input_handle_key(P404KeyIF *opaque, Key keycode)
         case 13: // enter
             qemu_set_irq(s->irq_enc_button,0);
             timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
-            // printf("return\n");
+			break;
+		case 'l':
+			qemu_set_irq(s->irq_enc_button,0);
+            timer_mod(s->release, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 2000);
             break;
 
     }
@@ -114,8 +116,8 @@ static void encoder_input_timer_expire(void *opaque)
         s->phase+=3;
     }
     s->phase = s->phase%4;
-    qemu_set_irq(s->irq_enc_a, (encoder_input_phases[s->phase]&0xF0)>0);
-    qemu_set_irq(s->irq_enc_b, (encoder_input_phases[s->phase]&0x0F)>0);
+    qemu_set_irq(s->irq_enc[0], (encoder_input_phases[s->phase]&0xF0)>0);
+    qemu_set_irq(s->irq_enc[1], (encoder_input_phases[s->phase]&0x0F)>0);
     s->encoder_ticks--;
 
     if (s->encoder_ticks>0)
@@ -171,8 +173,9 @@ static void encoder_input_reset(DeviceState *dev)
     InputState *s = ENCODER_INPUT(dev);
     s->last_state = 0;
     s->phase = 0;
-    qemu_irq_lower(s->irq_enc_a);
-    qemu_irq_lower(s->irq_enc_b);
+    qemu_irq_raise(s->irq_enc_button);
+    qemu_irq_raise(s->irq_enc[0]);
+    qemu_irq_raise(s->irq_enc[1]);
 }
 
 static int encoder_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -204,8 +207,7 @@ static void encoder_input_init(Object *obj)
 {
     InputState *s = ENCODER_INPUT(obj);
     qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_button, "encoder-button", 1);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_a, "encoder-a", 1);
-    qdev_init_gpio_out_named(DEVICE(obj), &s->irq_enc_b, "encoder-b", 1);
+    qdev_init_gpio_out_named(DEVICE(obj), s->irq_enc, "encoder-ab", 2);
     qdev_init_gpio_out_named(DEVICE(obj), s->cursor_xy, "cursor_xy", 2);
 	qdev_init_gpio_out_named(DEVICE(obj), &s->tap, "touch", 1);
     qemu_add_mouse_event_handler(&encoder_input_mouseevent,ENCODER_INPUT(obj),false, "encoder-mouse");
@@ -229,6 +231,7 @@ static void encoder_input_init(Object *obj)
     p404_register_keyhandler(pKey, 'w',"Twists encoder up");
     p404_register_keyhandler(pKey, 's',"Twists encoder down");
     p404_register_keyhandler(pKey, 0xd,"Presses encoder button");
+	p404_register_keyhandler(pKey, 'l',"Holds encoder for 2s");
 
 }
 
@@ -264,7 +267,7 @@ static const VMStateDescription vmstate_encoder_input = {
 static void encoder_input_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = encoder_input_reset;
+    device_class_set_legacy_reset(dc, encoder_input_reset);
     // dc->realize = encoder_input_realize;
     // dc->unrealize = encoder_input_unrealize;
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);

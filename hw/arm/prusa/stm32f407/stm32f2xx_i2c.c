@@ -381,5 +381,5 @@ stm32f2xxi2c_class_init(ObjectClass *c, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(c);
     dc->vmsd = &vmstate_stm32f2xx_i2c;
-    dc->reset = stm32f2xxi2c_reset;
+    device_class_set_legacy_reset(dc, stm32f2xxi2c_reset);
 }

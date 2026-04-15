@@ -8,7 +8,7 @@
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * furnished to do so, subject to the following conditions:d
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
@@ -39,6 +39,7 @@
 #include "stm32_common/stm32_common.h"
 #include "stm32_common/stm32_types.h"
 #include "hw/arm/armv7m.h"
+#include "qapi/qmp/qlist.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -48,14 +49,20 @@
 
 typedef struct mini_config_t {
     const char* flash_chip;
+    const char* flash_fn;
+    int flash_size;
 } mini_config_t;
 
 static const mini_config_t mini_100_cfg = {
-    .flash_chip = "w25q64jv"
+    .flash_chip = "w25q64jv",
+    .flash_fn = XFLASH_FN,
+    .flash_size = 8U*MiB
 };
 
 static const mini_config_t mini_014_cfg = {
-    .flash_chip = "w25w80d"
+    .flash_chip = "w25w80d",
+    .flash_fn = "Prusa_Mini_xflash_1M.bin",
+    .flash_size = 1U*MiB
 };
 
 static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg);
@@ -74,19 +81,23 @@ static void prusa_mini_100_init(MachineState *machine)
 static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 {
     DeviceState *dev;
+    Object* periphs = container_get(OBJECT(machine), "/peripheral");
 
     dev = qdev_new(TYPE_STM32F407xG_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-	qdev_prop_set_uint32(otp, "len-otp-data",8);
-	qdev_prop_set_uint32(otp, "otp-data[1]",1081065844);
-	qdev_prop_set_uint32(otp, "otp-data[2]",0x56207942);
-	qdev_prop_set_uint32(otp, "otp-data[3]",0x61746e69);
-	qdev_prop_set_uint32(otp, "otp-data[4]",0x43506567);
-	qdev_prop_set_uint32(otp, "otp-data[6]",0x04040000);
-	qdev_prop_set_uint32(otp, "otp-data[7]",0x04040404);
+    QList *otp_list = qlist_new();
+    qlist_append_int(otp_list, 0);
+    qlist_append_int(otp_list, 1081065844);
+    qlist_append_int(otp_list, 0x56207942);
+    qlist_append_int(otp_list, 0x61746e69);
+    qlist_append_int(otp_list, 0x43506567);
+    qlist_append_int(otp_list, 0);
+    qlist_append_int(otp_list, 0x04040000);
+    qlist_append_int(otp_list, 0x04040404);
+    qdev_prop_set_array(otp, "otp-data", otp_list);
 
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
@@ -160,7 +171,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     {
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI3), "ssi");
         dev = qdev_new(cfg->flash_chip);
-        blk = get_or_create_drive(IF_MTD, 0, XFLASH_FN, XFLASH_ID,  8U*MiB, &error_fatal);
+        blk = get_or_create_drive(IF_MTD, 0, cfg->flash_fn, XFLASH_ID,  cfg->flash_size, &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize_and_unref(dev, bus, &error_fatal);
         qemu_irq flash_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
@@ -189,6 +200,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     }
 
     DeviceState* pinda = qdev_new("pinda");
+    object_property_add_child(OBJECT(periphs), "pinda", OBJECT(pinda));
     sysbus_realize(SYS_BUS_DEVICE(pinda), &error_fatal);
 
     // DeviceState *vis = qdev_new("mini-visuals");
@@ -327,7 +339,8 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
 
     dev = qdev_new("ir-sensor");
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+    object_property_add_child(OBJECT(periphs), "ir-sensor", OBJECT(dev));
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     qemu_irq split_fsensor = qemu_irq_split( qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOB),4),qemu_irq_invert(qdev_get_gpio_in_named(db2,"led-digital",1)));
     qdev_connect_gpio_out(dev, 0, split_fsensor);
 
@@ -340,6 +353,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     for (int i=0; i<2; i++)
     {
         dev = qdev_new("fan");
+        object_property_add_child(OBJECT(periphs), g_strdup_printf("fan-%c",fan_labels[i]), OBJECT(dev));
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
         qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
@@ -356,10 +370,11 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     }
 
     dev = qdev_new("encoder-input");
+    object_property_add_child(periphs, "encoder-input", OBJECT(dev));
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(dev, "encoder-button",	0, 	qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),12));
-    qdev_connect_gpio_out_named(dev, "encoder-a",		0, 	qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),15));
-    qdev_connect_gpio_out_named(dev, "encoder-b",		0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),13));
+    qdev_connect_gpio_out_named(dev, "encoder-ab",		0, 	qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),15));
+    qdev_connect_gpio_out_named(dev, "encoder-ab",		1,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),13));
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");

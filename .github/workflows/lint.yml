@@ -21,7 +21,7 @@ jobs:
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout ${{ github.event.pull_request.head.ref }}
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       if: ${{ github.event.pull_request }}
       with:
         repository: vintagepc/MINI404.git
@@ -29,7 +29,7 @@ jobs:
         submodules: false
 
     - name: Checkout ${{ github.event.ref }}
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       if: ${{ !github.event.pull_request }}
       with:
         repository: vintagepc/MINI404.git
@@ -37,7 +37,7 @@ jobs:
         submodules: false
 
     - name: Cache packages
-      uses: actions/cache@v3.0.11
+      uses: actions/cache@v4
       id: cache-pkgs
       with:
           path: "packages"
@@ -60,7 +60,7 @@ jobs:
     - name: Run CPPCheck
       run: |
         cd ${{ runner.workspace }}/MINI404
-        cppcheck --template='::{severity} file={file},line={line}::{message}' -I include --error-exitcode=2 --inline-suppr --enable=warning --suppress='*:hw/arm/prusa/3rdParty/*' --suppress='*:include/*' hw/arm/prusa
+        cppcheck --template='::{severity} file={file},line={line}::{message}' -I include -I /usr/include/glib* --error-exitcode=2 --inline-suppr --enable=warning --suppress='*:hw/arm/prusa/3rdParty/*' --suppress='*:include/*' hw/arm/prusa
 
     # - name: Run Clang-tidy
     #   run: |
