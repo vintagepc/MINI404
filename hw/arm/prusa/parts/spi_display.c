@@ -152,18 +152,30 @@ static const DisplayInfo spi_display_models[] = {
 // OBJECT_DECLARE_SIMPLE_TYPE(SPIDisplayState, ILI9488)
 OBJECT_DECLARE_TYPE(SPIDisplayState, SPIDisplayClass, SPI_DISPLAY)
 
+typedef union {
+    uint32_t full;
+    struct {
+        uint8_t b;
+        uint8_t g;
+        uint8_t r;
+        uint8_t a;
+    };
+} QEMU_PACKED pixel_color_t;
+
+// Write a pixel to the framebuffer and advance the cursor.
+static inline void spi_display_write_pixel(SPIDisplayState *s, pixel_color_t *color)
+{
+    color->a = 0xFF;
+    s->framebuffer[s->col + s->row * s->dpy_info->cols] = color->full;
+    s->col++;
+    if (s->col > s->col_end) { s->row++; s->col = s->col_start; }
+    if (s->row > s->row_end) { s->row = s->row_start; }
+}
+
 static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
 {
     SPIDisplayState *s = SPI_DISPLAY(dev);
-    union color{
-        uint32_t full;
-        struct{
-            uint8_t b;
-            uint8_t g;
-            uint8_t r;
-            uint8_t a;
-        };
-    }  QEMU_PACKED color;
+    pixel_color_t color;
     color.full = 0;
     uint16_t word = 0;
 	// If this is a read, pipe out the data appropriately.
@@ -260,21 +272,13 @@ static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
                         color.r = (hi & 0x4) ? 0xFC : 0x00;
                         color.g = (hi & 0x2) ? 0xFC : 0x00;
                         color.b = (hi & 0x1) ? 0xFC : 0x00;
-                        color.a = 0xFF;
-                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
-                        s->col++;
-                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
-                        if (s->row>s->row_end) { s->row = s->row_start; }
+                        spi_display_write_pixel(s, &color);
                         // Pixel 2: bits [2:0] -> R=bit2, G=bit1, B=bit0
                         uint8_t lo = byte & 0x07;
                         color.r = (lo & 0x4) ? 0xFC : 0x00;
                         color.g = (lo & 0x2) ? 0xFC : 0x00;
                         color.b = (lo & 0x1) ? 0xFC : 0x00;
-                        color.a = 0xFF;
-                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
-                        s->col++;
-                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
-                        if (s->row>s->row_end) { s->row = s->row_start; }
+                        spi_display_write_pixel(s, &color);
                         break;
                     }
                     case 16:
@@ -283,22 +287,14 @@ static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
                         color.r = (word & 0xF800)>>8;
                         color.g = (word & 0x7E0)>> 3;
                         color.b = (word & 0x1F) << 3;
-                        color.a = 0xFF;
-                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
-                        s->col++;
-                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
-                        if (s->row>s->row_end) { s->row = s->row_start; }
+                        spi_display_write_pixel(s, &color);
                         break;
                     case 18:
                         DATA(3);
                         color.b = s->cmd_data[0];
                         color.g = s->cmd_data[1];
                         color.r = s->cmd_data[2];
-                        color.a = 0xFF;
-                        s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
-                        s->col++;
-                        if (s->col>s->col_end) { s->row++; s->col = s->col_start; }
-                        if (s->row>s->row_end) { s->row = s->row_start; }
+                        spi_display_write_pixel(s, &color);
                         break;
                     default:
                         printf("FIXME: unhandled bpp mode in RAMWR: %u\n", s->bpp_mode);
