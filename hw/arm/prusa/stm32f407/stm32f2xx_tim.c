@@ -27,7 +27,7 @@
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_rcc_if.h"
 
@@ -588,7 +588,7 @@ static const VMStateDescription vmstate_stm32f2xx_tim = {
 };
 
 static void
-f2xx_tim_class_init(ObjectClass *klass, void *data)
+f2xx_tim_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32f2xx_tim;

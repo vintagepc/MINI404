@@ -30,13 +30,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_types.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "stm32_rcc_if.h"
 #include "stm32_crc_regdata.h"
 
@@ -285,7 +285,7 @@ static const VMStateDescription vmstate_stm32stm32_common_crc = {
 };
 
 static void
-stm32_common_crc_class_init(ObjectClass *klass, void *data)
+stm32_common_crc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_common_crc_reset);
@@ -319,7 +319,7 @@ stm32_common_crc_register_types(void)
             .class_data = (void *)stm32_crc_variants[i].variant_regs,
 			.instance_init = stm32_common_crc_init,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

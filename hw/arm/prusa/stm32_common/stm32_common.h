@@ -5,9 +5,9 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "sysemu/blockdev.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
+#include "system/blockdev.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
 #include "../utility/macros.h"
 #include "stm32_shared.h"
 #include "stm32_types.h"

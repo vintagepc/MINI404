@@ -24,11 +24,10 @@
 #include "stm32_common.h"
 #include "qemu/log.h"
 #include "../utility/macros.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
-#include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "hw/core/sysbus.h"
+#include "system/memory.h"
 
 typedef struct COM_CLASS_NAME(Dbg) {
 	STM32PeripheralClass parent_class;
@@ -144,10 +143,6 @@ stm32_common_dbg_init(Object *obj)
 	s->reginfo = c->reginfo;
 }
 
-static Property stm32_common_dbg_props[] = {
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static const VMStateDescription vmstate_stm32_common_dbg = {
     .name = TYPE_STM32COM_DBG,
     .version_id = 1,
@@ -159,12 +154,11 @@ static const VMStateDescription vmstate_stm32_common_dbg = {
 };
 
 static void
-stm32_common_dbg_class_init(ObjectClass *klass, void *data)
+stm32_common_dbg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32_common_dbg_realize;
     dc->vmsd = &vmstate_stm32_common_dbg;
-    device_class_set_props(dc, stm32_common_dbg_props);
 
 	COM_CLASS_NAME(Dbg) *k = STM32COM_DBG_CLASS(klass);
 	k->reginfo = data;
@@ -191,7 +185,7 @@ stm32_common_dbg_register_types(void)
     		.class_init    = stm32_common_dbg_class_init,
             .class_data = (void *)stm32_common_dbg_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 
 }

@@ -21,9 +21,9 @@
 
 #include "qemu/osdep.h"
 #include "../utility/macros.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 
 #define TYPE_GPIODEMUX "cs-demux"
@@ -86,7 +86,7 @@ static const VMStateDescription vmstate_demux = {
     }
 };
 
-static void demux_class_init(ObjectClass *oc, void *data)
+static void demux_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, demux_reset);

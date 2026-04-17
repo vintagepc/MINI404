@@ -161,11 +161,11 @@ struct Stm32Uart {
     uint8_t rcv_char_buf[USART_RCV_BUF_LEN];
     uint32_t rcv_char_bytes;    /* number of bytes avaialable in rcv_char_buf */
 
-    CharBackend chr;
+    CharFrontend chr;
 
     qemu_irq *clk_irq;
 };
 
-void stm32_uart_connect(Stm32Uart *s, CharBackend *chr);
+void stm32_uart_connect(Stm32Uart *s, ChardevBackend *chr);
 
 #endif // STM32_UART_H

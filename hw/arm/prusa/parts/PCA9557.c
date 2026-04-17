@@ -27,9 +27,9 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/i2c/i2c.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qom/object.h"
 
 
@@ -151,12 +151,8 @@ static void pca9557_reset(DeviceState *state)
 {
 }
 
-static Property pca9557_props[] = {
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static
-void pca9557_class_init(ObjectClass *klass, void *data)
+void pca9557_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
@@ -166,7 +162,6 @@ void pca9557_class_init(ObjectClass *klass, void *data)
     k->send = &pca9557_send;
 	k->event = &pca9557_event;
 
-    device_class_set_props(dc, pca9557_props);
     device_class_set_legacy_reset(dc, pca9557_reset);
 }
 

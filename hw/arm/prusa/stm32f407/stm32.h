@@ -25,7 +25,7 @@
 
 #include "qemu/timer.h"
 #include "hw/arm/armv7m.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/log.h"
 #include "../stm32_common/stm32_shared.h"
 // #include "sysemu/char.h"

@@ -24,16 +24,16 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "exec/memory.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "system/memory.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "qemu/bitops.h"
@@ -259,7 +259,7 @@ typedef struct COM_STRUCT_NAME(Usart) {
 	char* prefix;
 	bool shift;
 
-    CharBackend chr;
+    CharFrontend chr;
 
 	stm32_reginfo_t* reginfo;
 
@@ -1007,36 +1007,39 @@ static void stm32_common_usart_init(Object *obj)
 static void stm32_common_usart_realize(DeviceState *dev, Error **errp)
 {
 	COM_STRUCT_NAME(Usart) *s = STM32COM_USART(dev);
-
-    qemu_chr_fe_set_handlers(&s->chr, stm32_common_usart_can_receive, stm32_common_usart_receive, NULL,
-            NULL,s,NULL,true);
-    qemu_chr_fe_set_echo(&s->chr, true);
-    // No symlink support for these.
-#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
-    if (CHARDEV_IS_PTY(s->chr.chr)) {
-        char link_path[] = "/tmp/stmf0-uart0";
-        link_path[15] += s->parent.periph - STM32_P_UART1;
-		if (s->shift)
-			link_path[15] += 5;
-        unlink(link_path);
-        if (symlink(s->chr.chr->filename+4, link_path) != 0)
-        {
-            printf("WARN: Can't create %s (%s)\n",link_path, strerror(errno));
-        }
-        else
-        {
-            printf("%s now points to: %s\n",link_path, s->chr.chr->filename);
+    if (qemu_chr_fe_backend_connected(&s->chr))
+    {
+        qemu_chr_fe_set_handlers(&s->chr, stm32_common_usart_can_receive, stm32_common_usart_receive, NULL,
+                NULL,s,NULL,true);
+        qemu_chr_fe_set_echo(&s->chr, true);
+        // No symlink support for these.
+    #if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
+        const char* pty_name = qemu_chr_get_pty_name(s->chr.chr);
+        if (pty_name) {
+            char link_path[] = "/tmp/stmf0-uart0";
+            link_path[15] += s->parent.periph - STM32_P_UART1;
+            if (s->shift)
+                link_path[15] += 5;
+            unlink(link_path);
+            if (symlink(s->chr.chr->label+4, link_path) != 0)
+            {
+                printf("WARN: Can't create %s (%s)\n",link_path, strerror(errno));
+            }
+            else
+            {
+                printf("%s now points to: %s\n",link_path, s->chr.chr->label);
+            }
         }
     }
 #endif
 }
 
-static Property stm32_common_usart_properties[] = {
+static const Property stm32_common_usart_properties[] = {
     DEFINE_PROP_CHR("chardev", COM_STRUCT_NAME(Usart), chr),
 	DEFINE_PROP_STRING("prefix", COM_STRUCT_NAME(Usart), prefix),
 	DEFINE_PROP_BOOL("do_rs485", COM_STRUCT_NAME(Usart), do_rs485, false),
 	DEFINE_PROP_UINT8("rs485_dest", COM_STRUCT_NAME(Usart), rs485_dest, 0),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static const VMStateDescription vmstate_stm32_common_usart = {
@@ -1058,7 +1061,7 @@ static const VMStateDescription vmstate_stm32_common_usart = {
     }
 };
 
-static void stm32_common_usart_class_init(ObjectClass *klass, void *data)
+static void stm32_common_usart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_common_usart_reset);
@@ -1091,7 +1094,7 @@ static void stm32_common_usart_register_types(void)
     		.class_init    = stm32_common_usart_class_init,
             .class_data = (void *)stm32_usart_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

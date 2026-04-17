@@ -19,11 +19,11 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
 #include "qemu/module.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "thermistortables.h"
 #include "migration/vmstate.h"
 #include "../utility/macros.h"
@@ -252,11 +252,10 @@ static void thermistor_init(Object *obj)
     scripthost_register_scriptable(s->handle);
 }
 
-static Property thermistor_properties[] = {
+static const Property thermistor_properties[] = {
     DEFINE_PROP_UINT16("temp", ThermistorState, start_temp,0),
     DEFINE_PROP_UINT16("table_no", ThermistorState, table_index, 0),
     DEFINE_PROP_UINT8("index", ThermistorState, index, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 
@@ -298,7 +297,7 @@ static const VMStateDescription vmstate_thermistor = {
     }
 };
 
-static void thermistor_class_init(ObjectClass *klass, void *data)
+static void thermistor_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

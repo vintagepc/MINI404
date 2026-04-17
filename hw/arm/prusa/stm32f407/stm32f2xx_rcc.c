@@ -22,13 +22,13 @@
  */
 
 #include "stm32f2xx_rcc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
 #include <stdio.h>
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_rcc_if.h"
 #include "../stm32_common/stm32_rcc_regdefs.h"
@@ -673,7 +673,7 @@ static const VMStateDescription vmstate_STM32F2xx_RCC = {
     }
 };
 
-static void stm32_rcc_class_init(ObjectClass *klass, void *data)
+static void stm32_rcc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_rcc_reset);
@@ -703,7 +703,7 @@ static void stm32_rcc_register_types(void)
     		.instance_init = stm32_rcc_init,
             .class_data = (void *)stm32f4xx_rcc_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

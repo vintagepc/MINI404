@@ -158,7 +158,7 @@ static const VMStateDescription vmstate_stm32f2xx_pwr = {
 };
 
 static void
-f2xx_pwr_class_init(ObjectClass *klass, void *data)
+f2xx_pwr_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, f2xx_pwr_reset);

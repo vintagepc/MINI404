@@ -17,10 +17,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/p404_keyclient.h"
@@ -137,11 +137,10 @@ static int powersource_post_load(void *opaque, int version) {
     return 0;
 }
 
-static Property powersource_properties[] = {
+static const Property powersource_properties[] = {
     DEFINE_PROP_UINT32("mV", PSState, start_voltage,0),
     DEFINE_PROP_UINT32("R1", PSState, r1,10000),
     DEFINE_PROP_UINT32("R2", PSState, r2,1000),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_powersource = {
@@ -159,7 +158,7 @@ static const VMStateDescription vmstate_powersource = {
     }
 };
 
-static void powersource_class_init(ObjectClass *klass, void *data)
+static void powersource_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

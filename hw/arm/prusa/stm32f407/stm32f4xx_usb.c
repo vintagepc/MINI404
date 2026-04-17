@@ -46,15 +46,15 @@
 
 #include "migration/vmstate.h"
 #include "trace.h"
-#include "sysemu/dma.h"
-#include "hw/irq.h"
-#include "hw/usb.h"
-#include "exec/address-spaces.h"
+#include "system/dma.h"
+#include "hw/core/irq.h"
+#include "hw/usb/usb.h"
+#include "system/address-spaces.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
 #include "qemu/log.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "../stm32_common/stm32_common.h"
 #include "../utility/macros.h"
 
@@ -674,7 +674,7 @@ struct STM32F4xxUSBState {
 
     char cdc_in;
 
-    CharBackend cdc;
+    CharFrontend cdc;
 
 };
 
@@ -3310,15 +3310,14 @@ const VMStateDescription vmstate_STM32F4xx_state = {
     }
 };
 
-static Property STM32F4xx_usb_properties[] = {
+static const Property STM32F4xx_usb_properties[] = {
     DEFINE_PROP_UINT32("usb_version", STM32F4xxUSBState, usb_version, 2),
     DEFINE_PROP_CHR("chardev", STM32F4xxUSBState, cdc),
 	DEFINE_PROP_LINK("system-memory", STM32F4xxUSBState, cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
     DEFINE_PROP_BOOL("disable_sof_interrupt", STM32F4xxUSBState, disable_sofi, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void STM32F4xx_class_init(ObjectClass *klass, void *data)
+static void STM32F4xx_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     STM32F4xxClass *c = STM32F4xx_USB_CLASS(klass);

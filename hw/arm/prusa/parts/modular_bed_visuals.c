@@ -27,9 +27,8 @@
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "../utility/macros.h"
-#include "hw/qdev-properties.h"
-#include "sysemu/sysemu.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "ui/console.h"
 
 struct ModBedVisualsState {
@@ -37,7 +36,7 @@ struct ModBedVisualsState {
 
     Chardev *input_source;
 
-    CharBackend be;
+    CharFrontend be;
 
 	uint8_t rows;
 	uint8_t cols;
@@ -248,13 +247,12 @@ static void mod_bed_visuals_realize(DeviceState *d, Error **errp)
 
 }
 
-static Property mod_bed_visuals_properties[] = {
+static const Property mod_bed_visuals_properties[] = {
     DEFINE_PROP_UINT8("rows", ModBedVisualsState, rows, 4),
     DEFINE_PROP_UINT8("cols", ModBedVisualsState, cols, 4),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void mod_bed_visuals_class_init(ObjectClass *klass, void *data)
+static void mod_bed_visuals_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = mod_bed_visuals_realize;

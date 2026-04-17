@@ -17,12 +17,12 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
 #include "../utility/macros.h"
@@ -514,12 +514,12 @@ static void tmc2130_init(Object *obj){
 
 }
 
-static Property tmc2130_properties[] = {
+static const Property tmc2130_properties[] = {
     DEFINE_PROP_UINT8("axis", tmc2130_state, id,(uint8_t)' '),
     DEFINE_PROP_UINT8("inverted",tmc2130_state, is_inverted, 0),
     DEFINE_PROP_UINT64("max_step", tmc2130_state, max_step,16*100),
     DEFINE_PROP_UINT32("fullstepspermm",tmc2130_state, max_steps_per_mm,160*16*100),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 
@@ -558,7 +558,7 @@ static const VMStateDescription vmstate_tmc2130 = {
     }
 };
 
-static void tmc2130_class_init(ObjectClass *klass, void *data)
+static void tmc2130_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_tmc2130;

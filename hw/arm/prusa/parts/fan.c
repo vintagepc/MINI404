@@ -22,10 +22,10 @@
 
 #include "qemu/osdep.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
@@ -212,11 +212,11 @@ static void fan_init(Object *obj){
 }
 
 
-static Property fan_properties[] = {
+static const Property fan_properties[] = {
     DEFINE_PROP_UINT8("label", fan_state, label,(uint8_t)' '),
     DEFINE_PROP_UINT32("max_rpm", fan_state, max_rpm,8800),
     DEFINE_PROP_BOOL("is_nonlinear", fan_state, is_nonlinear, 0),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static const VMStateDescription vmstate_fan = {
@@ -243,7 +243,7 @@ static const VMStateDescription vmstate_fan = {
 };
 
 
-static void fan_class_init(ObjectClass *klass, void *data)
+static void fan_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, fan_properties);

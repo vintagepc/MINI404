@@ -28,9 +28,9 @@
 #define STM32F2XX_TIM_H
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/timer.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "../stm32_common/stm32_shared.h"
 #include "../stm32_common/stm32_common.h"
 

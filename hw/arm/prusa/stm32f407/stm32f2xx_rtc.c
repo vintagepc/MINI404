@@ -25,12 +25,12 @@
  */
 #include "stm32f2xx_rtc.h"
 #include <sys/time.h>
-#include "sysemu/rtc.h"
+#include "system/rtc.h"
 #include "migration/vmstate.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/bcd.h"
 #include "qemu/units.h"
 #include "qemu/cutils.h"
@@ -632,7 +632,7 @@ static const VMStateDescription vmstate_stm32f2xx_rtc = {
 };
 
 static void
-f2xx_rtc_class_init(ObjectClass *klass, void *data)
+f2xx_rtc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32f2xx_rtc;
