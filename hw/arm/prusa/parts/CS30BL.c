@@ -152,7 +152,7 @@ static void cs30bl_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = cs30bl_reset;
+    device_class_set_legacy_reset(dc, cs30bl_reset);
     dc->vmsd = &vmstate_cs30bl;
     device_class_set_props(dc, cs30bl_properties);
 

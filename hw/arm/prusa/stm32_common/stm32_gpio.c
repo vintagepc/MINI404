@@ -308,7 +308,7 @@ static void
 stm32_common_gpio_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32_common_gpio_reset;
+    device_class_set_legacy_reset(dc, stm32_common_gpio_reset);
     dc->vmsd = &vmstate_stm32_common_gpio;
     device_class_set_props(dc, stm32_common_gpio_properties);
 

@@ -357,7 +357,7 @@ stm32_common_syscfg_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_syscfg;
-    dc->reset = stm32_common_syscfg_reset;
+    device_class_set_legacy_reset(dc, stm32_common_syscfg_reset);
 	device_class_set_props(dc, stm32_common_syscfg_properties);
 
 	COM_CLASS_NAME(Syscfg) *k = STM32COM_SYSCFG_CLASS(klass);

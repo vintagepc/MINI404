@@ -648,7 +648,7 @@ static const VMStateDescription vmstate_stm32_uart = {
 static void stm32_uart_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = stm32_uart_reset;
+    device_class_set_legacy_reset(dc, stm32_uart_reset);
     device_class_set_props(dc, stm32_uart_properties);
     dc->realize = stm32_uart_realize;
     dc->vmsd = &vmstate_stm32_uart;

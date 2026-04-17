@@ -39,7 +39,7 @@ jobs:
         submodules: false
 
     - name: Cache packages
-      uses: actions/cache@v3.0.11
+      uses: actions/cache@v3
       id: cache-pkgs
       with:
           path: "packages"

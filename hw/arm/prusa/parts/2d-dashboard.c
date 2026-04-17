@@ -137,7 +137,7 @@ static void dashboard_2d_update_display(void *opaque)
                     memset(&s->framebuffer[row*DPY_MAX_COLS], 0, DPY_MAX_COLS*sizeof(uint32_t)*FONT_HEIGHT);
                     for (int j=1; j<FONT_HEIGHT-1; j++)
                     {
-                        int offset = index + (j*DPY_MAX_COLS);
+                        offset = index + (j*DPY_MAX_COLS);
                         s->framebuffer[offset] = 0xFFFF0000;
                         s->framebuffer[offset + 1] = 0xFFFF0000;
                         s->framebuffer[offset + 2 + MIN(400, scale*(uint16_t)m[i]->current_pos)] = 0xFF00FFFFU;

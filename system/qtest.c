@@ -363,9 +363,7 @@ static void qtest_process_command(CharBackend *chr, gchar **words)
 
     g_assert(command);
     if (strcmp(words[0], "irq_intercept_out") == 0
-        || strcmp(words[0], "irq_intercept_in") == 0
-        || strcmp(words[0], "irq_intercept_out_named") == 0
-        || strcmp(words[0], "irq_intercept_in_named") == 0) {
+        || strcmp(words[0], "irq_intercept_in") == 0) {
         DeviceState *dev;
         NamedGPIOList *ngl;
         bool is_named;
@@ -396,11 +394,6 @@ static void qtest_process_command(CharBackend *chr, gchar **words)
                 qtest_send(chr, "OK\n");
             }
             return;
-        }
-        if (strcmp(words[0], "irq_intercept_out_named") == 0
-            || strcmp(words[0], "irq_intercept_in_named") == 0) {
-            g_assert(words[2]);
-            name = words[2];
         }
         QLIST_FOREACH(ngl, &dev->gpios, node) {
             /* We don't support inbound interception of named GPIOs yet */

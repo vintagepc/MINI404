@@ -140,7 +140,7 @@ static void acs711_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = acs711_reset;
+    device_class_set_legacy_reset(dc, acs711_reset);
     dc->vmsd = &vmstate_acs711;
     device_class_set_props(dc, acs711_properties);
 

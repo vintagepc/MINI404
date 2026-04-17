@@ -279,7 +279,7 @@ stm32_common_iwdg_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_iwdg;
-    dc->reset = stm32_common_iwdg_reset;
+    device_class_set_legacy_reset(dc, stm32_common_iwdg_reset);
 
 	COM_CLASS_NAME(Iwdg) *k = STM32COM_IWDG_CLASS(klass);
 	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));

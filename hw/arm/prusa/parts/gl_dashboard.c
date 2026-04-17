@@ -117,7 +117,7 @@ static Property gldashboard_properties[] = {
 static void gldashboard_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = gldashboard_reset;
+    device_class_set_legacy_reset(dc, gldashboard_reset);
     dc->realize = gldashboard_realize;
     device_class_set_props(dc, gldashboard_properties);
 }
