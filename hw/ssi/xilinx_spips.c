@@ -163,7 +163,7 @@
     FIELD(GQSPI_CNFG, ENDIAN, 26, 1)
     /* Poll timeout not implemented */
     FIELD(GQSPI_CNFG, EN_POLL_TIMEOUT, 20, 1)
-    /* QEMU doesn't care about any of these last three */
+    /* QEMU doesnt care about any of these last three */
     FIELD(GQSPI_CNFG, BR, 3, 3)
     FIELD(GQSPI_CNFG, CPH, 2, 1)
     FIELD(GQSPI_CNFG, CPL, 1, 1)
@@ -469,7 +469,7 @@ static void xlnx_zynqmp_qspips_flush_fifo_g(XlnxZynqMPQSPIPS *s)
 
             imm = ARRAY_FIELD_EX32(s->regs, GQSPI_GF_SNAPSHOT, IMMEDIATE_DATA);
             if (!ARRAY_FIELD_EX32(s->regs, GQSPI_GF_SNAPSHOT, DATA_XFER)) {
-                /* immediate transfer */
+                /* immedate transfer */
                 if (ARRAY_FIELD_EX32(s->regs, GQSPI_GF_SNAPSHOT, TRANSMIT) ||
                     ARRAY_FIELD_EX32(s->regs, GQSPI_GF_SNAPSHOT, RECIEVE)) {
                     s->regs[R_GQSPI_DATA_STS] = 1;
@@ -620,9 +620,7 @@ static void xilinx_spips_flush_txfifo(XilinxSPIPS *s)
         } else if (s->snoop_state == SNOOP_STRIPING ||
                    s->snoop_state == SNOOP_NONE) {
             for (i = 0; i < num_effective_busses(s); ++i) {
-                if (!fifo8_is_empty(&s->tx_fifo)) {
-                    tx_rx[i] = fifo8_pop(&s->tx_fifo);
-                }
+                tx_rx[i] = fifo8_pop(&s->tx_fifo);
             }
             stripe8(tx_rx, num_effective_busses(s), false);
         } else if (s->snoop_state >= SNOOP_ADDR) {
@@ -770,7 +768,7 @@ static void xilinx_spips_check_zero_pump(XilinxSPIPS *s)
      */
     while (s->regs[R_TRANSFER_SIZE] &&
            s->rx_fifo.num + s->tx_fifo.num < RXFF_A_Q - 3) {
-        /* endianness just doesn't matter when zero pumping */
+        /* endianess just doesn't matter when zero pumping */
         tx_data_bytes(&s->tx_fifo, 0, 4, false);
         s->regs[R_TRANSFER_SIZE] &= ~0x03ull;
         s->regs[R_TRANSFER_SIZE] -= 4;
@@ -889,7 +887,7 @@ static uint64_t xilinx_spips_read(void *opaque, hwaddr addr,
     case R_INTR_STATUS:
         ret = s->regs[addr] & IXR_ALL;
         s->regs[addr] = 0;
-        DB_PRINT_L(0, "addr=" HWADDR_FMT_plx " = %x\n", addr * 4, ret);
+        DB_PRINT_L(0, "addr=" TARGET_FMT_plx " = %x\n", addr * 4, ret);
         xilinx_spips_update_ixr(s);
         return ret;
     case R_INTR_MASK:
@@ -918,12 +916,12 @@ static uint64_t xilinx_spips_read(void *opaque, hwaddr addr,
         if (!(s->regs[R_CONFIG] & R_CONFIG_ENDIAN)) {
             ret <<= 8 * shortfall;
         }
-        DB_PRINT_L(0, "addr=" HWADDR_FMT_plx " = %x\n", addr * 4, ret);
+        DB_PRINT_L(0, "addr=" TARGET_FMT_plx " = %x\n", addr * 4, ret);
         xilinx_spips_check_flush(s);
         xilinx_spips_update_ixr(s);
         return ret;
     }
-    DB_PRINT_L(0, "addr=" HWADDR_FMT_plx " = %x\n", addr * 4,
+    DB_PRINT_L(0, "addr=" TARGET_FMT_plx " = %x\n", addr * 4,
                s->regs[addr] & mask);
     return s->regs[addr] & mask;
 
@@ -973,10 +971,8 @@ static void xilinx_spips_write(void *opaque, hwaddr addr,
     XilinxSPIPS *s = opaque;
     bool try_flush = true;
 
-    DB_PRINT_L(0, "addr=" HWADDR_FMT_plx " = %x\n", addr, (unsigned)value);
+    DB_PRINT_L(0, "addr=" TARGET_FMT_plx " = %x\n", addr, (unsigned)value);
     addr >>= 2;
-    assert(addr < XLNX_SPIPS_R_MAX);
-
     switch (addr) {
     case R_CONFIG:
         mask = ~(R_CONFIG_RSVD | MAN_START_COM);
@@ -1303,7 +1299,7 @@ static void xilinx_spips_realize(DeviceState *dev, Error **errp)
     }
 
     memory_region_init_io(&s->iomem, OBJECT(s), xsc->reg_ops, s,
-                          "spi", xsc->reg_size);
+                          "spi", XLNX_ZYNQMP_SPIPS_R_MAX * 4);
     sysbus_init_mmio(sbd, &s->iomem);
 
     s->irqline = -1;
@@ -1371,7 +1367,7 @@ static const VMStateDescription vmstate_xilinx_spips = {
     .version_id = 2,
     .minimum_version_id = 2,
     .post_load = xilinx_spips_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_FIFO8(tx_fifo, XilinxSPIPS),
         VMSTATE_FIFO8(rx_fifo, XilinxSPIPS),
         VMSTATE_UINT32_ARRAY(regs, XilinxSPIPS, XLNX_SPIPS_R_MAX),
@@ -1397,7 +1393,7 @@ static const VMStateDescription vmstate_xilinx_qspips = {
     .name = "xilinx_qspips",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(parent_obj, XilinxQSPIPS, 0,
                        vmstate_xilinx_spips, XilinxSPIPS),
         VMSTATE_END_OF_LIST()
@@ -1409,7 +1405,7 @@ static const VMStateDescription vmstate_xlnx_zynqmp_qspips = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = xlnx_zynqmp_qspips_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(parent_obj, XlnxZynqMPQSPIPS, 0,
                        vmstate_xilinx_qspips, XilinxQSPIPS),
         VMSTATE_FIFO8(tx_fifo_g, XlnxZynqMPQSPIPS),
@@ -1439,7 +1435,6 @@ static void xilinx_qspips_class_init(ObjectClass *klass, void * data)
 
     dc->realize = xilinx_qspips_realize;
     xsc->reg_ops = &qspips_ops;
-    xsc->reg_size = XLNX_SPIPS_R_MAX * 4;
     xsc->rx_fifo_size = RXFF_A_Q;
     xsc->tx_fifo_size = TXFF_A_Q;
 }
@@ -1450,12 +1445,11 @@ static void xilinx_spips_class_init(ObjectClass *klass, void *data)
     XilinxSPIPSClass *xsc = XILINX_SPIPS_CLASS(klass);
 
     dc->realize = xilinx_spips_realize;
-    device_class_set_legacy_reset(dc, xilinx_spips_reset);
+    dc->reset = xilinx_spips_reset;
     device_class_set_props(dc, xilinx_spips_properties);
     dc->vmsd = &vmstate_xilinx_spips;
 
     xsc->reg_ops = &spips_ops;
-    xsc->reg_size = XLNX_SPIPS_R_MAX * 4;
     xsc->rx_fifo_size = RXFF_A;
     xsc->tx_fifo_size = TXFF_A;
 }
@@ -1466,11 +1460,10 @@ static void xlnx_zynqmp_qspips_class_init(ObjectClass *klass, void * data)
     XilinxSPIPSClass *xsc = XILINX_SPIPS_CLASS(klass);
 
     dc->realize = xlnx_zynqmp_qspips_realize;
-    device_class_set_legacy_reset(dc, xlnx_zynqmp_qspips_reset);
+    dc->reset = xlnx_zynqmp_qspips_reset;
     dc->vmsd = &vmstate_xlnx_zynqmp_qspips;
     device_class_set_props(dc, xilinx_zynqmp_qspips_properties);
     xsc->reg_ops = &xlnx_zynqmp_qspips_ops;
-    xsc->reg_size = XLNX_ZYNQMP_SPIPS_R_MAX * 4;
     xsc->rx_fifo_size = RXFF_A_Q;
     xsc->tx_fifo_size = TXFF_A_Q;
 }

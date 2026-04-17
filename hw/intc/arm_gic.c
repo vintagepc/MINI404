@@ -239,7 +239,7 @@ static inline bool gic_lr_entry_is_free(uint32_t entry)
 }
 
 /* Return true if this LR should trigger an EOI maintenance interrupt, i.e. the
- * corresponding bit in EISR is set.
+ * corrsponding bit in EISR is set.
  */
 static inline bool gic_lr_entry_is_eoi(uint32_t entry)
 {
@@ -1263,14 +1263,9 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
                     trace_gic_enable_irq(irq + i);
                 }
                 GIC_DIST_SET_ENABLED(irq + i, cm);
-                /*
-                 * If a raised level triggered IRQ enabled then mark
-                 * it as pending on 11MPCore. For other GIC revisions we
-                 * handle the "level triggered and line asserted" check
-                 * at the other end in gic_test_pending().
-                 */
-                if (s->revision == REV_11MPCORE
-                        && GIC_DIST_TEST_LEVEL(irq + i, mask)
+                /* If a raised level triggered IRQ enabled then mark
+                   is as pending.  */
+                if (GIC_DIST_TEST_LEVEL(irq + i, mask)
                         && !GIC_DIST_TEST_EDGE_TRIGGER(irq + i)) {
                     DPRINTF("Set %d pending mask %x\n", irq + i, mask);
                     GIC_DIST_SET_PENDING(irq + i, mask);
@@ -1313,15 +1308,12 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
 
         for (i = 0; i < 8; i++) {
             if (value & (1 << i)) {
-                int mask = (irq < GIC_INTERNAL) ? (1 << cpu)
-                                                : GIC_DIST_TARGET(irq + i);
-
                 if (s->security_extn && !attrs.secure &&
                     !GIC_DIST_TEST_GROUP(irq + i, 1 << cpu)) {
                     continue; /* Ignore Non-secure access of Group0 IRQ */
                 }
 
-                GIC_DIST_SET_PENDING(irq + i, mask);
+                GIC_DIST_SET_PENDING(irq + i, GIC_DIST_TARGET(irq + i));
             }
         }
     } else if (offset < 0x300) {
@@ -1341,7 +1333,7 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
 
             /* ??? This currently clears the pending bit for all CPUs, even
                for per-CPU interrupts.  It's unclear whether this is the
-               correct behavior.  */
+               corect behavior.  */
             if (value & (1 << i)) {
                 GIC_DIST_CLEAR_PENDING(irq + i, ALL_CPU_MASK);
             }
@@ -1415,13 +1407,6 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
                 value = ALL_CPU_MASK;
             }
             s->irq_target[irq] = value & ALL_CPU_MASK;
-            if (irq >= GIC_INTERNAL && s->irq_state[irq].pending) {
-                /*
-                 * Changing the target of an interrupt that is currently
-                 * pending updates the set of CPUs it is pending on.
-                 */
-                s->irq_state[irq].pending = value & ALL_CPU_MASK;
-            }
         }
     } else if (offset < 0xf00) {
         /* Interrupt Configuration.  */
@@ -1673,7 +1658,7 @@ static MemTxResult gic_cpu_read(GICState *s, int cpu, int offset,
             *data = s->h_apr[gic_get_vcpu_real_id(cpu)];
         } else if (gic_cpu_ns_access(s, cpu, attrs)) {
             /* NS view of GICC_APR<n> is the top half of GIC_NSAPR<n> */
-            *data = gic_apr_ns_view(s, cpu, regno);
+            *data = gic_apr_ns_view(s, regno, cpu);
         } else {
             *data = s->apr[regno][cpu];
         }
@@ -1761,7 +1746,7 @@ static MemTxResult gic_cpu_write(GICState *s, int cpu, int offset,
             s->h_apr[gic_get_vcpu_real_id(cpu)] = value;
         } else if (gic_cpu_ns_access(s, cpu, attrs)) {
             /* NS view of GICC_APR<n> is the top half of GIC_NSAPR<n> */
-            gic_apr_write_ns_view(s, cpu, regno, value);
+            gic_apr_write_ns_view(s, regno, cpu, value);
         } else {
             s->apr[regno][cpu] = value;
         }

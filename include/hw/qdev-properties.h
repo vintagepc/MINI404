@@ -37,7 +37,7 @@ struct PropertyInfo {
     int (*print)(Object *obj, Property *prop, char *dest, size_t len);
     void (*set_default_value)(ObjectProperty *op, const Property *prop);
     ObjectProperty *(*create)(ObjectClass *oc, const char *name,
-                              const Property *prop);
+                              Property *prop);
     ObjectPropertyAccessor *get;
     ObjectPropertyAccessor *set;
     ObjectPropertyRelease *release;
@@ -61,7 +61,7 @@ extern const PropertyInfo qdev_prop_size;
 extern const PropertyInfo qdev_prop_string;
 extern const PropertyInfo qdev_prop_on_off_auto;
 extern const PropertyInfo qdev_prop_size32;
-extern const PropertyInfo qdev_prop_array;
+extern const PropertyInfo qdev_prop_arraylen;
 extern const PropertyInfo qdev_prop_link;
 
 #define DEFINE_PROP(_name, _state, _field, _prop, _type, ...) {  \
@@ -115,6 +115,8 @@ extern const PropertyInfo qdev_prop_link;
                 .bitmask    = (_bitmask),                     \
                 .set_default = false)
 
+#define PROP_ARRAY_LEN_PREFIX "len-"
+
 /**
  * DEFINE_PROP_ARRAY:
  * @_name: name of the array
@@ -125,25 +127,28 @@ extern const PropertyInfo qdev_prop_link;
  * @_arrayprop: PropertyInfo defining what property the array elements have
  * @_arraytype: C type of the array elements
  *
- * Define device properties for a variable-length array _name.  The array is
- * represented as a list in the visitor interface.
+ * Define device properties for a variable-length array _name.  A
+ * static property "len-arrayname" is defined. When the device creator
+ * sets this property to the desired length of array, further dynamic
+ * properties "arrayname[0]", "arrayname[1]", ...  are defined so the
+ * device creator can set the array element values. Setting the
+ * "len-arrayname" property more than once is an error.
  *
- * @_arraytype is required to be movable with memcpy().
- *
- * When the array property is set, the @_field member of the device
+ * When the array length is set, the @_field member of the device
  * struct is set to the array length, and @_arrayfield is set to point
- * to the memory allocated for the array.
- *
+ * to (zero-initialised) memory allocated for the array.  For a zero
+ * length array, @_field will be set to 0 and @_arrayfield to NULL.
  * It is the responsibility of the device deinit code to free the
  * @_arrayfield memory.
  */
-#define DEFINE_PROP_ARRAY(_name, _state, _field,                        \
-                          _arrayfield, _arrayprop, _arraytype)          \
-    DEFINE_PROP(_name, _state, _field, qdev_prop_array, uint32_t,       \
-                .set_default = true,                                    \
-                .defval.u = 0,                                          \
-                .arrayinfo = &(_arrayprop),                             \
-                .arrayfieldsize = sizeof(_arraytype),                   \
+#define DEFINE_PROP_ARRAY(_name, _state, _field,               \
+                          _arrayfield, _arrayprop, _arraytype) \
+    DEFINE_PROP((PROP_ARRAY_LEN_PREFIX _name),                 \
+                _state, _field, qdev_prop_arraylen, uint32_t,  \
+                .set_default = true,                           \
+                .defval.u = 0,                                 \
+                .arrayinfo = &(_arrayprop),                    \
+                .arrayfieldsize = sizeof(_arraytype),          \
                 .arrayoffset = offsetof(_state, _arrayfield))
 
 #define DEFINE_PROP_LINK(_name, _state, _field, _type, _ptr_type)     \
@@ -201,9 +206,6 @@ void qdev_prop_set_macaddr(DeviceState *dev, const char *name,
                            const uint8_t *value);
 void qdev_prop_set_enum(DeviceState *dev, const char *name, int value);
 
-/* Takes ownership of @values */
-void qdev_prop_set_array(DeviceState *dev, const char *name, QList *values);
-
 void *object_field_prop_ptr(Object *obj, Property *prop);
 
 void qdev_prop_register_global(GlobalProperty *prop);
@@ -223,15 +225,15 @@ void error_set_from_qdev_prop_error(Error **errp, int ret, Object *obj,
  * On error, store error in @errp.  Static properties access data in a struct.
  * The type of the QOM property is derived from prop->info.
  */
-void qdev_property_add_static(DeviceState *dev, const Property *prop);
+void qdev_property_add_static(DeviceState *dev, Property *prop);
 
 /**
  * qdev_alias_all_properties: Create aliases on source for all target properties
  * @target: Device which has properties to be aliased
  * @source: Object to add alias properties to
  *
- * Add alias properties to the @source object for all properties on the @target
- * DeviceState.
+ * Add alias properties to the @source object for all qdev properties on
+ * the @target DeviceState.
  *
  * This is useful when @target is an internal implementation object
  * owned by @source, and you want to expose all the properties of that

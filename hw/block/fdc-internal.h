@@ -25,6 +25,8 @@
 #ifndef HW_BLOCK_FDC_INTERNAL_H
 #define HW_BLOCK_FDC_INTERNAL_H
 
+#include "exec/memory.h"
+#include "exec/ioport.h"
 #include "hw/block/block.h"
 #include "hw/block/fdc.h"
 #include "qapi/qapi-types-block.h"
@@ -90,6 +92,7 @@ typedef struct FDrive {
 } FDrive;
 
 struct FDCtrl {
+    MemoryRegion iomem;
     qemu_irq irq;
     /* Controller state */
     QEMUTimer *result_timer;
@@ -137,6 +140,7 @@ struct FDCtrl {
     /* Timers state */
     uint8_t timer0;
     uint8_t timer1;
+    PortioList portio_list;
 };
 
 extern const FDFormat fd_formats[];

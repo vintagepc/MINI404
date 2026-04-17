@@ -27,7 +27,6 @@
 #include "sysemu/sysemu.h"
 #include "sysemu/dma.h"
 #include "sysemu/reset.h"
-#include "exec/address-spaces.h"
 #include "hw/boards.h"
 #include "hw/nvram/fw_cfg.h"
 #include "hw/qdev-properties.h"
@@ -202,7 +201,7 @@ static void fw_cfg_bootsplash(FWCfgState *s)
     }
 
     /* insert splash file if user configurated */
-    if (current_machine->boot_config.splash) {
+    if (current_machine->boot_config.has_splash) {
         const char *boot_splash_filename = current_machine->boot_config.splash;
         filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, boot_splash_filename);
         if (filename == NULL) {
@@ -657,7 +656,7 @@ static int fw_cfg_acpi_mr_restore_post_load(void *opaque, int version_id)
 static const VMStateDescription vmstate_fw_cfg_dma = {
     .name = "fw_cfg/dma",
     .needed = fw_cfg_dma_enabled,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT64(dma_addr, FWCfgState),
         VMSTATE_END_OF_LIST()
     },
@@ -669,7 +668,7 @@ static const VMStateDescription vmstate_fw_cfg_acpi_mr = {
     .minimum_version_id = 1,
     .needed = fw_cfg_acpi_mr_restore,
     .post_load = fw_cfg_acpi_mr_restore_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT64(table_mr_size, FWCfgState),
         VMSTATE_UINT64(linker_mr_size, FWCfgState),
         VMSTATE_UINT64(rsdp_mr_size, FWCfgState),
@@ -681,25 +680,25 @@ static const VMStateDescription vmstate_fw_cfg = {
     .name = "fw_cfg",
     .version_id = 2,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT16(cur_entry, FWCfgState),
         VMSTATE_UINT16_HACK(cur_offset, FWCfgState, is_version_1),
         VMSTATE_UINT32_V(cur_offset, FWCfgState, 2),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * const []) {
+    .subsections = (const VMStateDescription*[]) {
         &vmstate_fw_cfg_dma,
         &vmstate_fw_cfg_acpi_mr,
         NULL,
     }
 };
 
-static void fw_cfg_add_bytes_callback(FWCfgState *s, uint16_t key,
-                                      FWCfgCallback select_cb,
-                                      FWCfgWriteCallback write_cb,
-                                      void *callback_opaque,
-                                      void *data, size_t len,
-                                      bool read_only)
+void fw_cfg_add_bytes_callback(FWCfgState *s, uint16_t key,
+                               FWCfgCallback select_cb,
+                               FWCfgWriteCallback write_cb,
+                               void *callback_opaque,
+                               void *data, size_t len,
+                               bool read_only)
 {
     int arch = !!(key & FW_CFG_ARCH_LOCAL);
 
@@ -878,7 +877,7 @@ static struct {
 /*
  * Any sub-page size update to these table MRs will be lost during migration,
  * as we use aligned size in ram_load_precopy() -> qemu_ram_resize() path.
- * In order to avoid the inconsistency in sizes save them separately and
+ * In order to avoid the inconsistency in sizes save them seperately and
  * migrate over in vmstate post_load().
  */
 static void fw_cfg_acpi_mr_save(FWCfgState *s, const char *filename, size_t len)
@@ -1143,7 +1142,6 @@ FWCfgState *fw_cfg_init_io_dma(uint32_t iobase, uint32_t dma_iobase,
     SysBusDevice *sbd;
     FWCfgIoState *ios;
     FWCfgState *s;
-    MemoryRegion *iomem = get_system_io();
     bool dma_requested = dma_iobase && dma_as;
 
     dev = qdev_new(TYPE_FW_CFG_IO);
@@ -1157,7 +1155,7 @@ FWCfgState *fw_cfg_init_io_dma(uint32_t iobase, uint32_t dma_iobase,
     sbd = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(sbd, &error_fatal);
     ios = FW_CFG_IO(dev);
-    memory_region_add_subregion(iomem, iobase, &ios->comb_iomem);
+    sysbus_add_io(sbd, iobase, &ios->comb_iomem);
 
     s = FW_CFG(dev);
 
@@ -1165,10 +1163,15 @@ FWCfgState *fw_cfg_init_io_dma(uint32_t iobase, uint32_t dma_iobase,
         /* 64 bits for the address field */
         s->dma_as = dma_as;
         s->dma_addr = 0;
-        memory_region_add_subregion(iomem, dma_iobase, &s->dma_iomem);
+        sysbus_add_io(sbd, dma_iobase, &s->dma_iomem);
     }
 
     return s;
+}
+
+FWCfgState *fw_cfg_init_io(uint32_t iobase)
+{
+    return fw_cfg_init_io_dma(iobase, 0, NULL);
 }
 
 FWCfgState *fw_cfg_init_mem_wide(hwaddr ctl_addr,
@@ -1255,7 +1258,7 @@ static void fw_cfg_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, fw_cfg_reset);
+    dc->reset = fw_cfg_reset;
     dc->vmsd = &vmstate_fw_cfg;
 
     device_class_set_props(dc, fw_cfg_properties);

@@ -8,11 +8,12 @@
  */
 
 #include "qemu/osdep.h"
-
-#include "hw/boards.h"
 #include "hw/cpu/core.h"
-#include "qapi/error.h"
 #include "qapi/visitor.h"
+#include "qemu/module.h"
+#include "qapi/error.h"
+#include "sysemu/cpus.h"
+#include "hw/boards.h"
 
 static void core_prop_get_core_id(Object *obj, Visitor *v, const char *name,
                                   void *opaque, Error **errp)

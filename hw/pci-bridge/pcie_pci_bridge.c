@@ -132,7 +132,7 @@ static Property pcie_pci_bridge_dev_properties[] = {
 static const VMStateDescription pcie_pci_bridge_dev_vmstate = {
         .name = TYPE_PCIE_PCI_BRIDGE_DEV,
         .priority = MIG_PRI_PCI_BUS,
-        .fields = (const VMStateField[]) {
+        .fields = (VMStateField[]) {
             VMSTATE_PCI_DEVICE(parent_obj, PCIBridge),
             SHPC_VMSTATE(shpc, PCIDevice, NULL),
             VMSTATE_END_OF_LIST()
@@ -145,6 +145,7 @@ static void pcie_pci_bridge_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(klass);
 
+    k->is_bridge = true;
     k->vendor_id = PCI_VENDOR_ID_REDHAT;
     k->device_id = PCI_DEVICE_ID_REDHAT_PCIE_BRIDGE;
     k->realize = pcie_pci_bridge_realize;
@@ -152,7 +153,7 @@ static void pcie_pci_bridge_class_init(ObjectClass *klass, void *data)
     k->config_write = pcie_pci_bridge_write_config;
     dc->vmsd = &pcie_pci_bridge_dev_vmstate;
     device_class_set_props(dc, pcie_pci_bridge_dev_properties);
-    device_class_set_legacy_reset(dc, pcie_pci_bridge_reset);
+    dc->reset = &pcie_pci_bridge_reset;
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     hc->plug = pci_bridge_dev_plug_cb;
     hc->unplug = pci_bridge_dev_unplug_cb;

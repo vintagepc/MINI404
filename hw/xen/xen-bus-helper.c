@@ -10,7 +10,6 @@
 #include "hw/xen/xen-bus.h"
 #include "hw/xen/xen-bus-helper.h"
 #include "qapi/error.h"
-#include "trace.h"
 
 #include <glib/gprintf.h>
 
@@ -47,28 +46,34 @@ const char *xs_strstate(enum xenbus_state state)
     return "INVALID";
 }
 
-void xs_node_create(struct qemu_xs_handle *h, xs_transaction_t tid,
-                    const char *node, unsigned int owner, unsigned int domid,
-                    unsigned int perms, Error **errp)
+void xs_node_create(struct xs_handle *xsh, xs_transaction_t tid,
+                    const char *node, struct xs_permissions perms[],
+                    unsigned int nr_perms, Error **errp)
 {
     trace_xs_node_create(node);
 
-    if (!qemu_xen_xs_create(h, tid, owner, domid, perms, node)) {
+    if (!xs_write(xsh, tid, node, "", 0)) {
         error_setg_errno(errp, errno, "failed to create node '%s'", node);
+        return;
+    }
+
+    if (!xs_set_permissions(xsh, tid, node, perms, nr_perms)) {
+        error_setg_errno(errp, errno, "failed to set node '%s' permissions",
+                         node);
     }
 }
 
-void xs_node_destroy(struct qemu_xs_handle *h, xs_transaction_t tid,
+void xs_node_destroy(struct xs_handle *xsh, xs_transaction_t tid,
                      const char *node, Error **errp)
 {
     trace_xs_node_destroy(node);
 
-    if (!qemu_xen_xs_destroy(h, tid, node)) {
+    if (!xs_rm(xsh, tid, node)) {
         error_setg_errno(errp, errno, "failed to destroy node '%s'", node);
     }
 }
 
-void xs_node_vprintf(struct qemu_xs_handle *h, xs_transaction_t tid,
+void xs_node_vprintf(struct xs_handle *xsh, xs_transaction_t tid,
                      const char *node, const char *key, Error **errp,
                      const char *fmt, va_list ap)
 {
@@ -81,7 +86,7 @@ void xs_node_vprintf(struct qemu_xs_handle *h, xs_transaction_t tid,
 
     trace_xs_node_vprintf(path, value);
 
-    if (!qemu_xen_xs_write(h, tid, path, value, len)) {
+    if (!xs_write(xsh, tid, path, value, len)) {
         error_setg_errno(errp, errno, "failed to write '%s' to '%s'",
                          value, path);
     }
@@ -90,18 +95,18 @@ void xs_node_vprintf(struct qemu_xs_handle *h, xs_transaction_t tid,
     g_free(path);
 }
 
-void xs_node_printf(struct qemu_xs_handle *h,  xs_transaction_t tid,
+void xs_node_printf(struct xs_handle *xsh,  xs_transaction_t tid,
                     const char *node, const char *key, Error **errp,
                     const char *fmt, ...)
 {
     va_list ap;
 
     va_start(ap, fmt);
-    xs_node_vprintf(h, tid, node, key, errp, fmt, ap);
+    xs_node_vprintf(xsh, tid, node, key, errp, fmt, ap);
     va_end(ap);
 }
 
-int xs_node_vscanf(struct qemu_xs_handle *h,  xs_transaction_t tid,
+int xs_node_vscanf(struct xs_handle *xsh,  xs_transaction_t tid,
                    const char *node, const char *key, Error **errp,
                    const char *fmt, va_list ap)
 {
@@ -110,7 +115,7 @@ int xs_node_vscanf(struct qemu_xs_handle *h,  xs_transaction_t tid,
 
     path = (strlen(node) != 0) ? g_strdup_printf("%s/%s", node, key) :
         g_strdup(key);
-    value = qemu_xen_xs_read(h, tid, path, NULL);
+    value = xs_read(xsh, tid, path, NULL);
 
     trace_xs_node_vscanf(path, value);
 
@@ -128,7 +133,7 @@ int xs_node_vscanf(struct qemu_xs_handle *h,  xs_transaction_t tid,
     return rc;
 }
 
-int xs_node_scanf(struct qemu_xs_handle *h,  xs_transaction_t tid,
+int xs_node_scanf(struct xs_handle *xsh,  xs_transaction_t tid,
                   const char *node, const char *key, Error **errp,
                   const char *fmt, ...)
 {
@@ -136,35 +141,42 @@ int xs_node_scanf(struct qemu_xs_handle *h,  xs_transaction_t tid,
     int rc;
 
     va_start(ap, fmt);
-    rc = xs_node_vscanf(h, tid, node, key, errp, fmt, ap);
+    rc = xs_node_vscanf(xsh, tid, node, key, errp, fmt, ap);
     va_end(ap);
 
     return rc;
 }
 
-struct qemu_xs_watch *xs_node_watch(struct qemu_xs_handle *h, const char *node,
-                                    const char *key, xs_watch_fn fn,
-                                    void *opaque, Error **errp)
+void xs_node_watch(struct xs_handle *xsh, const char *node, const char *key,
+                   char *token, Error **errp)
 {
     char *path;
-    struct qemu_xs_watch *w;
 
     path = (strlen(node) != 0) ? g_strdup_printf("%s/%s", node, key) :
         g_strdup(key);
 
     trace_xs_node_watch(path);
 
-    w = qemu_xen_xs_watch(h, path, fn, opaque);
-    if (!w) {
+    if (!xs_watch(xsh, path, token)) {
         error_setg_errno(errp, errno, "failed to watch node '%s'", path);
     }
 
     g_free(path);
-
-    return w;
 }
 
-void xs_node_unwatch(struct qemu_xs_handle *h, struct qemu_xs_watch *w)
+void xs_node_unwatch(struct xs_handle *xsh, const char *node,
+                     const char *key, const char *token, Error **errp)
 {
-    qemu_xen_xs_unwatch(h, w);
+    char *path;
+
+    path = (strlen(node) != 0) ? g_strdup_printf("%s/%s", node, key) :
+        g_strdup(key);
+
+    trace_xs_node_unwatch(path);
+
+    if (!xs_unwatch(xsh, path, token)) {
+        error_setg_errno(errp, errno, "failed to unwatch node '%s'", path);
+    }
+
+    g_free(path);
 }

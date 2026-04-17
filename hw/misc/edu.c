@@ -23,9 +23,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/log.h"
 #include "qemu/units.h"
 #include "hw/pci/pci.h"
+#include "hw/hw.h"
 #include "hw/pci/msi.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
@@ -103,25 +103,25 @@ static void edu_lower_irq(EduState *edu, uint32_t val)
     }
 }
 
-static void edu_check_range(uint64_t xfer_start, uint64_t xfer_size,
-                uint64_t dma_start, uint64_t dma_size)
+static bool within(uint64_t addr, uint64_t start, uint64_t end)
 {
-    uint64_t xfer_end = xfer_start + xfer_size;
-    uint64_t dma_end = dma_start + dma_size;
+    return start <= addr && addr < end;
+}
 
-    /*
-     * 1. ensure we aren't overflowing
-     * 2. ensure that xfer is within dma address range
-     */
-    if (dma_end >= dma_start && xfer_end >= xfer_start &&
-        xfer_start >= dma_start && xfer_end <= dma_end) {
+static void edu_check_range(uint64_t addr, uint64_t size1, uint64_t start,
+                uint64_t size2)
+{
+    uint64_t end1 = addr + size1;
+    uint64_t end2 = start + size2;
+
+    if (within(addr, start, end2) &&
+            end1 > addr && within(end1, start, end2)) {
         return;
     }
 
-    qemu_log_mask(LOG_GUEST_ERROR,
-                  "EDU: DMA range 0x%016"PRIx64"-0x%016"PRIx64
-                  " out of bounds (0x%016"PRIx64"-0x%016"PRIx64")!",
-                  xfer_start, xfer_end - 1, dma_start, dma_end - 1);
+    hw_error("EDU: DMA range 0x%016"PRIx64"-0x%016"PRIx64
+             " out of bounds (0x%016"PRIx64"-0x%016"PRIx64")!",
+            addr, end1 - 1, start, end2 - 1);
 }
 
 static dma_addr_t edu_clamp_addr(const EduState *edu, dma_addr_t addr)
@@ -129,9 +129,7 @@ static dma_addr_t edu_clamp_addr(const EduState *edu, dma_addr_t addr)
     dma_addr_t res = addr & edu->dma_mask;
 
     if (addr != res) {
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "EDU: clamping DMA 0x%016"PRIx64" to 0x%016"PRIx64"!",
-                      addr, res);
+        printf("EDU: clamping DMA %#.16"PRIx64" to %#.16"PRIx64"!\n", addr, res);
     }
 
     return res;
@@ -269,8 +267,6 @@ static void edu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     case 0x20:
         if (val & EDU_STATUS_IRQFACT) {
             qatomic_or(&edu->status, EDU_STATUS_IRQFACT);
-            /* Order check of the COMPUTING flag after setting IRQFACT.  */
-            smp_mb__after_rmw();
         } else {
             qatomic_and(&edu->status, ~EDU_STATUS_IRQFACT);
         }
@@ -353,13 +349,10 @@ static void *edu_fact_thread(void *opaque)
         qemu_mutex_unlock(&edu->thr_mutex);
         qatomic_and(&edu->status, ~EDU_STATUS_COMPUTING);
 
-        /* Clear COMPUTING flag before checking IRQFACT.  */
-        smp_mb__after_rmw();
-
         if (qatomic_read(&edu->status) & EDU_STATUS_IRQFACT) {
-            bql_lock();
+            qemu_mutex_lock_iothread();
             edu_raise_irq(edu, FACT_IRQ);
-            bql_unlock();
+            qemu_mutex_unlock_iothread();
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2021-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,8 +25,6 @@
  */
 
 #include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -34,23 +32,45 @@
 #include <setjmp.h>
 #include <signal.h>
 
+typedef unsigned char uint8_t;
+
 int err;
-
-#include "hex_test.h"
-
-bool segv_caught;
+int segv_caught;
 
 #define SHOULD_NOT_CHANGE_VAL        5
-int32_t should_not_change = SHOULD_NOT_CHANGE_VAL;
+int should_not_change = SHOULD_NOT_CHANGE_VAL;
 
 #define BUF_SIZE        300
-uint8_t buf[BUF_SIZE];
+unsigned char buf[BUF_SIZE];
+
+
+static void __check(const char *filename, int line, int x, int expect)
+{
+    if (x != expect) {
+        printf("ERROR %s:%d - %d != %d\n",
+               filename, line, x, expect);
+        err++;
+    }
+}
+
+#define check(x, expect) __check(__FILE__, __LINE__, (x), (expect))
+
+static void __chk_error(const char *filename, int line, int ret)
+{
+    if (ret < 0) {
+        printf("ERROR %s:%d - %d\n", filename, line, ret);
+        err++;
+    }
+}
+
+#define chk_error(ret) __chk_error(__FILE__, __LINE__, (ret))
+
 jmp_buf jmp_env;
 
 static void sig_segv(int sig, siginfo_t *info, void *puc)
 {
-    check32(sig, SIGSEGV);
-    segv_caught = true;
+    check(sig, SIGSEGV);
+    segv_caught = 1;
     longjmp(jmp_env, 1);
 }
 
@@ -78,8 +98,8 @@ int main()
     act.sa_flags = 0;
     chk_error(sigaction(SIGSEGV, &act, NULL));
 
-    check32(segv_caught, true);
-    check32(should_not_change, SHOULD_NOT_CHANGE_VAL);
+    check(segv_caught, 1);
+    check(should_not_change, SHOULD_NOT_CHANGE_VAL);
 
     puts(err ? "FAIL" : "PASS");
     return err ? EXIT_FAILURE : EXIT_SUCCESS;

@@ -4,8 +4,8 @@ PowerMac family boards (``g3beige``, ``mac99``)
 Use the executable ``qemu-system-ppc`` to simulate a complete PowerMac
 PowerPC system.
 
-- ``g3beige``              Heathrow based PowerMac
-- ``mac99``                Mac99 based PowerMac
+- ``g3beige``              Heathrow based PowerMAC
+- ``mac99``                Mac99 based PowerMAC
 
 Supported devices
 -----------------

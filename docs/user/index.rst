@@ -1,5 +1,3 @@
-.. _User Mode Emulation:
-
 -------------------
 User Mode Emulation
 -------------------

@@ -17,12 +17,15 @@
 KVMState *kvm_state;
 bool kvm_kernel_irqchip;
 bool kvm_async_interrupts_allowed;
+bool kvm_eventfds_allowed;
+bool kvm_irqfds_allowed;
 bool kvm_resamplefds_allowed;
 bool kvm_msi_via_irqfd_allowed;
 bool kvm_gsi_routing_allowed;
 bool kvm_gsi_direct_mapping;
 bool kvm_allowed;
 bool kvm_readonly_mem_allowed;
+bool kvm_ioeventfd_any_length_allowed;
 bool kvm_msi_use_devid;
 
 void kvm_flush_coalesced_mmio_buffer(void)
@@ -36,6 +39,11 @@ void kvm_cpu_synchronize_state(CPUState *cpu)
 bool kvm_has_sync_mmu(void)
 {
     return false;
+}
+
+int kvm_has_many_ioeventfds(void)
+{
+    return 0;
 }
 
 int kvm_on_sigbus_vcpu(CPUState *cpu, int code, void *addr)
@@ -83,6 +91,11 @@ void kvm_irqchip_change_notify(void)
 {
 }
 
+int kvm_irqchip_add_adapter_route(KVMState *s, AdapterInfo *adapter)
+{
+    return -ENOSYS;
+}
+
 int kvm_irqchip_add_irqfd_notifier_gsi(KVMState *s, EventNotifier *n,
                                        EventNotifier *rn, int virq)
 {
@@ -95,14 +108,9 @@ int kvm_irqchip_remove_irqfd_notifier_gsi(KVMState *s, EventNotifier *n,
     return -ENOSYS;
 }
 
-unsigned int kvm_get_max_memslots(void)
+bool kvm_has_free_slot(MachineState *ms)
 {
-    return 0;
-}
-
-unsigned int kvm_get_free_memslots(void)
-{
-    return 0;
+    return false;
 }
 
 void kvm_init_cpu_signals(CPUState *cpu)
@@ -123,14 +131,4 @@ bool kvm_dirty_ring_enabled(void)
 uint32_t kvm_dirty_ring_size(void)
 {
     return 0;
-}
-
-bool kvm_hwpoisoned_mem(void)
-{
-    return false;
-}
-
-int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
-{
-    return -ENOSYS;
 }

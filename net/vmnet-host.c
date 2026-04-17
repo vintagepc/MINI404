@@ -21,20 +21,38 @@
 static bool validate_options(const Netdev *netdev, Error **errp)
 {
     const NetdevVmnetHostOptions *options = &(netdev->u.vmnet_host);
-    QemuUUID net_uuid;
 
-    if (options->net_uuid &&
+#if defined(MAC_OS_VERSION_11_0) && \
+    MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_VERSION_11_0
+
+    QemuUUID net_uuid;
+    if (options->has_net_uuid &&
         qemu_uuid_parse(options->net_uuid, &net_uuid) < 0) {
         error_setg(errp, "Invalid UUID provided in 'net-uuid'");
         return false;
     }
+#else
+    if (options->has_isolated) {
+        error_setg(errp,
+                   "vmnet-host.isolated feature is "
+                   "unavailable: outdated vmnet.framework API");
+        return false;
+    }
 
-    if ((options->start_address ||
-         options->end_address ||
-         options->subnet_mask) &&
-        !(options->start_address &&
-          options->end_address &&
-          options->subnet_mask)) {
+    if (options->has_net_uuid) {
+        error_setg(errp,
+                   "vmnet-host.net-uuid feature is "
+                   "unavailable: outdated vmnet.framework API");
+        return false;
+    }
+#endif
+
+    if ((options->has_start_address ||
+         options->has_end_address ||
+         options->has_subnet_mask) &&
+        !(options->has_start_address &&
+          options->has_end_address &&
+          options->has_subnet_mask)) {
         error_setg(errp,
                    "'start-address', 'end-address', 'subnet-mask' "
                    "should be provided together");
@@ -53,19 +71,23 @@ static xpc_object_t build_if_desc(const Netdev *netdev)
                               vmnet_operation_mode_key,
                               VMNET_HOST_MODE);
 
+#if defined(MAC_OS_VERSION_11_0) && \
+    MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_VERSION_11_0
+
     xpc_dictionary_set_bool(if_desc,
                             vmnet_enable_isolation_key,
                             options->isolated);
 
     QemuUUID net_uuid;
-    if (options->net_uuid) {
+    if (options->has_net_uuid) {
         qemu_uuid_parse(options->net_uuid, &net_uuid);
         xpc_dictionary_set_uuid(if_desc,
                                 vmnet_network_identifier_key,
                                 net_uuid.data);
     }
+#endif
 
-    if (options->start_address) {
+    if (options->has_start_address) {
         xpc_dictionary_set_string(if_desc,
                                   vmnet_start_address_key,
                                   options->start_address);

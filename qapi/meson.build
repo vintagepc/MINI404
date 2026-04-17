@@ -31,13 +31,10 @@ qapi_all_modules = [
   'compat',
   'control',
   'crypto',
-  'cxl',
   'dump',
-  'ebpf',
   'error',
   'introspect',
   'job',
-  'machine-common',
   'machine',
   'machine-target',
   'migration',
@@ -52,7 +49,6 @@ qapi_all_modules = [
   'stats',
   'trace',
   'transaction',
-  'vfio',
   'virtio',
   'yank',
 ]
@@ -60,9 +56,9 @@ if have_system
   qapi_all_modules += [
     'acpi',
     'audio',
-    'cryptodev',
     'qdev',
     'pci',
+    'rdma',
     'rocker',
     'tpm',
   ]
@@ -143,6 +139,6 @@ foreach output : qapi_specific_outputs + qapi_nonmodule_outputs
   if output.endswith('.trace-events')
     qapi_trace_events += qapi_files[i]
   endif
-  specific_ss.add(when: 'CONFIG_SYSTEM_ONLY', if_true: qapi_files[i])
+  specific_ss.add(when: 'CONFIG_SOFTMMU', if_true: qapi_files[i])
   i = i + 1
 endforeach

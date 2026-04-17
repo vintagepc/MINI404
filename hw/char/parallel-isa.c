@@ -13,7 +13,6 @@
 #include "sysemu/sysemu.h"
 #include "hw/isa/isa.h"
 #include "hw/qdev-properties.h"
-#include "hw/char/parallel-isa.h"
 #include "hw/char/parallel.h"
 #include "qapi/error.h"
 
@@ -22,7 +21,7 @@ static void parallel_init(ISABus *bus, int index, Chardev *chr)
     DeviceState *dev;
     ISADevice *isadev;
 
-    isadev = isa_new(TYPE_ISA_PARALLEL);
+    isadev = isa_new("isa-parallel");
     dev = DEVICE(isadev);
     qdev_prop_set_uint32(dev, "index", index);
     qdev_prop_set_chr(dev, "chardev", chr);
@@ -40,18 +39,4 @@ void parallel_hds_isa_init(ISABus *bus, int n)
             parallel_init(bus, i, parallel_hds[i]);
         }
     }
-}
-
-void isa_parallel_set_iobase(ISADevice *parallel, hwaddr iobase)
-{
-    ISAParallelState *s = ISA_PARALLEL(parallel);
-
-    parallel->ioport_id = iobase;
-    s->iobase = iobase;
-    portio_list_set_address(&s->portio_list, s->iobase);
-}
-
-void isa_parallel_set_enabled(ISADevice *parallel, bool enabled)
-{
-    portio_list_set_enabled(&ISA_PARALLEL(parallel)->portio_list, enabled);
 }

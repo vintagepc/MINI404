@@ -27,9 +27,6 @@
 #include "io/net-listener.h"
 #include "trace.h"
 #include "postcopy-ram.h"
-#include "options.h"
-#include "qapi/clone-visitor.h"
-#include "qapi/qapi-visit-sockets.h"
 
 struct SocketOutgoingArgs {
     SocketAddress *saddr;
@@ -40,6 +37,35 @@ void socket_send_channel_create(QIOTaskFunc f, void *data)
     QIOChannelSocket *sioc = qio_channel_socket_new();
     qio_channel_socket_connect_async(sioc, outgoing_args.saddr,
                                      f, data, NULL, NULL);
+}
+
+QIOChannel *socket_send_channel_create_sync(Error **errp)
+{
+    QIOChannelSocket *sioc = qio_channel_socket_new();
+
+    if (!outgoing_args.saddr) {
+        object_unref(OBJECT(sioc));
+        error_setg(errp, "Initial sock address not set!");
+        return NULL;
+    }
+
+    if (qio_channel_socket_connect_sync(sioc, outgoing_args.saddr, errp) < 0) {
+        object_unref(OBJECT(sioc));
+        return NULL;
+    }
+
+    return QIO_CHANNEL(sioc);
+}
+
+int socket_send_channel_destroy(QIOChannel *send)
+{
+    /* Remove channel */
+    object_unref(OBJECT(send));
+    if (outgoing_args.saddr) {
+        qapi_free_SocketAddress(outgoing_args.saddr);
+        outgoing_args.saddr = NULL;
+    }
+    return 0;
 }
 
 struct SocketConnectData {
@@ -71,7 +97,7 @@ static void socket_outgoing_migration(QIOTask *task,
 
     trace_migration_socket_outgoing_connected(data->hostname);
 
-    if (migrate_zero_copy_send() &&
+    if (migrate_use_zero_copy_send() &&
         !qio_channel_has_feature(sioc, QIO_CHANNEL_FEATURE_WRITE_ZERO_COPY)) {
         error_setg(&err, "Zero copy send feature not detected in host kernel");
     }
@@ -81,19 +107,19 @@ out:
     object_unref(OBJECT(sioc));
 }
 
-void socket_start_outgoing_migration(MigrationState *s,
-                                     SocketAddress *saddr,
-                                     Error **errp)
+static void
+socket_start_outgoing_migration_internal(MigrationState *s,
+                                         SocketAddress *saddr,
+                                         Error **errp)
 {
     QIOChannelSocket *sioc = qio_channel_socket_new();
     struct SocketConnectData *data = g_new0(struct SocketConnectData, 1);
-    SocketAddress *addr = QAPI_CLONE(SocketAddress, saddr);
 
     data->s = s;
 
     /* in case previous migration leaked it */
     qapi_free_SocketAddress(outgoing_args.saddr);
-    outgoing_args.saddr = addr;
+    outgoing_args.saddr = saddr;
 
     if (saddr->type == SOCKET_ADDRESS_TYPE_INET) {
         data->hostname = g_strdup(saddr->u.inet.host);
@@ -108,12 +134,16 @@ void socket_start_outgoing_migration(MigrationState *s,
                                      NULL);
 }
 
-void socket_cleanup_outgoing_migration(void)
+void socket_start_outgoing_migration(MigrationState *s,
+                                     const char *str,
+                                     Error **errp)
 {
-    if (outgoing_args.saddr) {
-        qapi_free_SocketAddress(outgoing_args.saddr);
-        outgoing_args.saddr = NULL;
+    Error *err = NULL;
+    SocketAddress *saddr = socket_parse(str, &err);
+    if (!err) {
+        socket_start_outgoing_migration_internal(s, saddr, &err);
     }
+    error_propagate(errp, err);
 }
 
 static void socket_accept_incoming_migration(QIONetListener *listener,
@@ -141,8 +171,9 @@ socket_incoming_migration_end(void *opaque)
     object_unref(OBJECT(listener));
 }
 
-void socket_start_incoming_migration(SocketAddress *saddr,
-                                     Error **errp)
+static void
+socket_start_incoming_migration_internal(SocketAddress *saddr,
+                                         Error **errp)
 {
     QIONetListener *listener = qio_net_listener_new();
     MigrationIncomingState *mis = migration_incoming_get_current();
@@ -151,7 +182,7 @@ void socket_start_incoming_migration(SocketAddress *saddr,
 
     qio_net_listener_set_name(listener, "migration-socket-listener");
 
-    if (migrate_multifd()) {
+    if (migrate_use_multifd()) {
         num = migrate_multifd_channels();
     } else if (migrate_postcopy_preempt()) {
         num = RAM_CHANNEL_MAX;
@@ -181,3 +212,13 @@ void socket_start_incoming_migration(SocketAddress *saddr,
     }
 }
 
+void socket_start_incoming_migration(const char *str, Error **errp)
+{
+    Error *err = NULL;
+    SocketAddress *saddr = socket_parse(str, &err);
+    if (!err) {
+        socket_start_incoming_migration_internal(saddr, &err);
+    }
+    qapi_free_SocketAddress(saddr);
+    error_propagate(errp, err);
+}

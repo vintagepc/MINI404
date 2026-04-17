@@ -24,9 +24,8 @@
 #ifndef BLOCK_INT_H
 #define BLOCK_INT_H
 
-#include "block/block_int-global-state.h"
-#include "block/block_int-io.h"
-#include "block/graph-lock.h"
+#include "block_int-global-state.h"
+#include "block_int-io.h"
 
 /* DO NOT ADD ANYTHING IN HERE. USE ONE OF THE HEADERS INCLUDED ABOVE */
 

@@ -1184,8 +1184,7 @@ pvscsi_realizefn(PCIDevice *pci_dev, Error **errp)
         pcie_endpoint_cap_init(pci_dev, PVSCSI_EXP_EP_OFFSET);
     }
 
-    s->completion_worker = qemu_bh_new_guarded(pvscsi_process_completion_queue, s,
-                                               &DEVICE(pci_dev)->mem_reentrancy_guard);
+    s->completion_worker = qemu_bh_new(pvscsi_process_completion_queue, s);
 
     scsi_bus_init(&s->bus, sizeof(s->bus), DEVICE(pci_dev), &pvscsi_scsi_info);
     /* override default SCSI bus hotplug-handler, with pvscsi's one */
@@ -1249,7 +1248,7 @@ static bool pvscsi_vmstate_test_pci_device(void *opaque, int version_id)
 static const VMStateDescription vmstate_pvscsi_pcie_device = {
     .name = "pvscsi/pcie",
     .needed = pvscsi_vmstate_need_pcie_device,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, PVSCSIState),
         VMSTATE_END_OF_LIST()
     }
@@ -1261,7 +1260,7 @@ static const VMStateDescription vmstate_pvscsi = {
     .minimum_version_id = 0,
     .pre_save = pvscsi_pre_save,
     .post_load = pvscsi_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT_TEST(parent_obj, PVSCSIState,
                             pvscsi_vmstate_test_pci_device, 0,
                             vmstate_pci_device, PCIDevice),
@@ -1290,7 +1289,7 @@ static const VMStateDescription vmstate_pvscsi = {
 
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * const []) {
+    .subsections = (const VMStateDescription*[]) {
         &vmstate_pvscsi_pcie_device,
         NULL
     }
@@ -1333,7 +1332,7 @@ static void pvscsi_class_init(ObjectClass *klass, void *data)
     k->subsystem_id = 0x1000;
     device_class_set_parent_realize(dc, pvscsi_realize,
                                     &pvs_k->parent_dc_realize);
-    device_class_set_legacy_reset(dc, pvscsi_reset);
+    dc->reset = pvscsi_reset;
     dc->vmsd = &vmstate_pvscsi;
     device_class_set_props(dc, pvscsi_properties);
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);

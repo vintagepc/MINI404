@@ -12,6 +12,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/coroutine.h"
 #include "qemu/coroutine_int.h"
 #include "qemu/timer.h"
 #include "block/aio.h"

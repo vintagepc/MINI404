@@ -9,8 +9,6 @@
 #   git config diff.orderFile scripts/git.orderfile
 #
 
-MAINTAINERS
-
 # Documentation
 docs/*
 *.rst

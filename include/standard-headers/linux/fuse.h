@@ -194,32 +194,6 @@
  *  - add FUSE_SECURITY_CTX init flag
  *  - add security context to create, mkdir, symlink, and mknod requests
  *  - add FUSE_HAS_INODE_DAX, FUSE_ATTR_DAX
- *
- *  7.37
- *  - add FUSE_TMPFILE
- *
- *  7.38
- *  - add FUSE_EXPIRE_ONLY flag to fuse_notify_inval_entry
- *  - add FOPEN_PARALLEL_DIRECT_WRITES
- *  - add total_extlen to fuse_in_header
- *  - add FUSE_MAX_NR_SECCTX
- *  - add extension header
- *  - add FUSE_EXT_GROUPS
- *  - add FUSE_CREATE_SUPP_GROUP
- *  - add FUSE_HAS_EXPIRE_ONLY
- *
- *  7.39
- *  - add FUSE_DIRECT_IO_ALLOW_MMAP
- *  - add FUSE_STATX and related structures
- *
- *  7.40
- *  - add max_stack_depth to fuse_init_out, add FUSE_PASSTHROUGH init flag
- *  - add backing_id to fuse_open_out, add FOPEN_PASSTHROUGH open flag
- *  - add FUSE_NO_EXPORT_SUPPORT init flag
- *  - add FUSE_NOTIFY_RESEND, add FUSE_HAS_RESEND init flag
- *
- *  7.41
- *  - add FUSE_ALLOW_IDMAP
  */
 
 #ifndef _LINUX_FUSE_H
@@ -251,7 +225,7 @@
 #define FUSE_KERNEL_VERSION 7
 
 /** Minor version number of this interface */
-#define FUSE_KERNEL_MINOR_VERSION 41
+#define FUSE_KERNEL_MINOR_VERSION 36
 
 /** The node ID of the root inode */
 #define FUSE_ROOT_ID 1
@@ -276,40 +250,6 @@ struct fuse_attr {
 	uint32_t	rdev;
 	uint32_t	blksize;
 	uint32_t	flags;
-};
-
-/*
- * The following structures are bit-for-bit compatible with the statx(2) ABI in
- * Linux.
- */
-struct fuse_sx_time {
-	int64_t		tv_sec;
-	uint32_t	tv_nsec;
-	int32_t		__reserved;
-};
-
-struct fuse_statx {
-	uint32_t	mask;
-	uint32_t	blksize;
-	uint64_t	attributes;
-	uint32_t	nlink;
-	uint32_t	uid;
-	uint32_t	gid;
-	uint16_t	mode;
-	uint16_t	__spare0[1];
-	uint64_t	ino;
-	uint64_t	size;
-	uint64_t	blocks;
-	uint64_t	attributes_mask;
-	struct fuse_sx_time	atime;
-	struct fuse_sx_time	btime;
-	struct fuse_sx_time	ctime;
-	struct fuse_sx_time	mtime;
-	uint32_t	rdev_major;
-	uint32_t	rdev_minor;
-	uint32_t	dev_major;
-	uint32_t	dev_minor;
-	uint64_t	__spare2[14];
 };
 
 struct fuse_kstatfs {
@@ -357,8 +297,6 @@ struct fuse_file_lock {
  * FOPEN_CACHE_DIR: allow caching this directory
  * FOPEN_STREAM: the file is stream-like (no file position at all)
  * FOPEN_NOFLUSH: don't flush data cache on close (unless FUSE_WRITEBACK_CACHE)
- * FOPEN_PARALLEL_DIRECT_WRITES: Allow concurrent direct writes on the same inode
- * FOPEN_PASSTHROUGH: passthrough read/write io for this open file
  */
 #define FOPEN_DIRECT_IO		(1 << 0)
 #define FOPEN_KEEP_CACHE	(1 << 1)
@@ -366,8 +304,6 @@ struct fuse_file_lock {
 #define FOPEN_CACHE_DIR		(1 << 3)
 #define FOPEN_STREAM		(1 << 4)
 #define FOPEN_NOFLUSH		(1 << 5)
-#define FOPEN_PARALLEL_DIRECT_WRITES	(1 << 6)
-#define FOPEN_PASSTHROUGH	(1 << 7)
 
 /**
  * INIT request/reply flags
@@ -413,14 +349,6 @@ struct fuse_file_lock {
  * FUSE_SECURITY_CTX:	add security context to create, mkdir, symlink, and
  *			mknod
  * FUSE_HAS_INODE_DAX:  use per inode DAX
- * FUSE_CREATE_SUPP_GROUP: add supplementary group info to create, mkdir,
- *			symlink and mknod (single group that matches parent)
- * FUSE_HAS_EXPIRE_ONLY: kernel supports expiry-only entry invalidation
- * FUSE_DIRECT_IO_ALLOW_MMAP: allow shared mmap in FOPEN_DIRECT_IO mode.
- * FUSE_NO_EXPORT_SUPPORT: explicitly disable export support
- * FUSE_HAS_RESEND: kernel supports resending pending requests, and the high bit
- *		    of the request ID indicates resend requests
- * FUSE_ALLOW_IDMAP: allow creation of idmapped mounts
  */
 #define FUSE_ASYNC_READ		(1 << 0)
 #define FUSE_POSIX_LOCKS	(1 << 1)
@@ -457,16 +385,6 @@ struct fuse_file_lock {
 /* bits 32..63 get shifted down 32 bits into the flags2 field */
 #define FUSE_SECURITY_CTX	(1ULL << 32)
 #define FUSE_HAS_INODE_DAX	(1ULL << 33)
-#define FUSE_CREATE_SUPP_GROUP	(1ULL << 34)
-#define FUSE_HAS_EXPIRE_ONLY	(1ULL << 35)
-#define FUSE_DIRECT_IO_ALLOW_MMAP (1ULL << 36)
-#define FUSE_PASSTHROUGH	(1ULL << 37)
-#define FUSE_NO_EXPORT_SUPPORT	(1ULL << 38)
-#define FUSE_HAS_RESEND		(1ULL << 39)
-
-/* Obsolete alias for FUSE_DIRECT_IO_ALLOW_MMAP */
-#define FUSE_DIRECT_IO_RELAX	FUSE_DIRECT_IO_ALLOW_MMAP
-#define FUSE_ALLOW_IDMAP	(1ULL << 40)
 
 /**
  * CUSE INIT request/reply flags
@@ -566,23 +484,6 @@ struct fuse_file_lock {
  */
 #define FUSE_SETXATTR_ACL_KILL_SGID	(1 << 0)
 
-/**
- * notify_inval_entry flags
- * FUSE_EXPIRE_ONLY
- */
-#define FUSE_EXPIRE_ONLY		(1 << 0)
-
-/**
- * extension type
- * FUSE_MAX_NR_SECCTX: maximum value of &fuse_secctx_header.nr_secctx
- * FUSE_EXT_GROUPS: &fuse_supp_groups extension
- */
-enum fuse_ext_type {
-	/* Types 0..31 are reserved for fuse_secctx_header */
-	FUSE_MAX_NR_SECCTX	= 31,
-	FUSE_EXT_GROUPS		= 32,
-};
-
 enum fuse_opcode {
 	FUSE_LOOKUP		= 1,
 	FUSE_FORGET		= 2,  /* no reply */
@@ -632,8 +533,6 @@ enum fuse_opcode {
 	FUSE_SETUPMAPPING	= 48,
 	FUSE_REMOVEMAPPING	= 49,
 	FUSE_SYNCFS		= 50,
-	FUSE_TMPFILE		= 51,
-	FUSE_STATX		= 52,
 
 	/* CUSE specific operations */
 	CUSE_INIT		= 4096,
@@ -650,7 +549,6 @@ enum fuse_notify_code {
 	FUSE_NOTIFY_STORE = 4,
 	FUSE_NOTIFY_RETRIEVE = 5,
 	FUSE_NOTIFY_DELETE = 6,
-	FUSE_NOTIFY_RESEND = 7,
 	FUSE_NOTIFY_CODE_MAX,
 };
 
@@ -697,22 +595,6 @@ struct fuse_attr_out {
 	uint32_t	attr_valid_nsec;
 	uint32_t	dummy;
 	struct fuse_attr attr;
-};
-
-struct fuse_statx_in {
-	uint32_t	getattr_flags;
-	uint32_t	reserved;
-	uint64_t	fh;
-	uint32_t	sx_flags;
-	uint32_t	sx_mask;
-};
-
-struct fuse_statx_out {
-	uint64_t	attr_valid;	/* Cache timeout for the attributes */
-	uint32_t	attr_valid_nsec;
-	uint32_t	flags;
-	uint64_t	spare[2];
-	struct fuse_statx stat;
 };
 
 #define FUSE_COMPAT_MKNOD_IN_SIZE 8
@@ -777,7 +659,7 @@ struct fuse_create_in {
 struct fuse_open_out {
 	uint64_t	fh;
 	uint32_t	open_flags;
-	int32_t		backing_id;
+	uint32_t	padding;
 };
 
 struct fuse_release_in {
@@ -893,8 +775,7 @@ struct fuse_init_out {
 	uint16_t	max_pages;
 	uint16_t	map_alignment;
 	uint32_t	flags2;
-	uint32_t	max_stack_depth;
-	uint32_t	unused[6];
+	uint32_t	unused[7];
 };
 
 #define CUSE_INIT_INFO_MAX 4096
@@ -977,29 +858,6 @@ struct fuse_fallocate_in {
 	uint32_t	padding;
 };
 
-/**
- * FUSE request unique ID flag
- *
- * Indicates whether this is a resend request. The receiver should handle this
- * request accordingly.
- */
-#define FUSE_UNIQUE_RESEND (1ULL << 63)
-
-/**
- * This value will be set by the kernel to
- * (struct fuse_in_header).{uid,gid} fields in
- * case when:
- * - fuse daemon enabled FUSE_ALLOW_IDMAP
- * - idmapping information is not available and uid/gid
- *   can not be mapped in accordance with an idmapping.
- *
- * Note: an idmapping information always available
- * for inode creation operations like:
- * FUSE_MKNOD, FUSE_SYMLINK, FUSE_MKDIR, FUSE_TMPFILE,
- * FUSE_CREATE and FUSE_RENAME2 (with RENAME_WHITEOUT).
- */
-#define FUSE_INVALID_UIDGID ((uint32_t)(-1))
-
 struct fuse_in_header {
 	uint32_t	len;
 	uint32_t	opcode;
@@ -1008,8 +866,7 @@ struct fuse_in_header {
 	uint32_t	uid;
 	uint32_t	gid;
 	uint32_t	pid;
-	uint16_t	total_extlen; /* length of extensions in 8byte units */
-	uint16_t	padding;
+	uint32_t	padding;
 };
 
 struct fuse_out_header {
@@ -1054,7 +911,7 @@ struct fuse_notify_inval_inode_out {
 struct fuse_notify_inval_entry_out {
 	uint64_t	parent;
 	uint32_t	namelen;
-	uint32_t	flags;
+	uint32_t	padding;
 };
 
 struct fuse_notify_delete_out {
@@ -1089,18 +946,9 @@ struct fuse_notify_retrieve_in {
 	uint64_t	dummy4;
 };
 
-struct fuse_backing_map {
-	int32_t		fd;
-	uint32_t	flags;
-	uint64_t	padding;
-};
-
 /* Device ioctls: */
 #define FUSE_DEV_IOC_MAGIC		229
 #define FUSE_DEV_IOC_CLONE		_IOR(FUSE_DEV_IOC_MAGIC, 0, uint32_t)
-#define FUSE_DEV_IOC_BACKING_OPEN	_IOW(FUSE_DEV_IOC_MAGIC, 1, \
-					     struct fuse_backing_map)
-#define FUSE_DEV_IOC_BACKING_CLOSE	_IOW(FUSE_DEV_IOC_MAGIC, 2, uint32_t)
 
 struct fuse_lseek_in {
 	uint64_t	fh;
@@ -1177,29 +1025,6 @@ struct fuse_secctx {
 struct fuse_secctx_header {
 	uint32_t	size;
 	uint32_t	nr_secctx;
-};
-
-/**
- * struct fuse_ext_header - extension header
- * @size: total size of this extension including this header
- * @type: type of extension
- *
- * This is made compatible with fuse_secctx_header by using type values >
- * FUSE_MAX_NR_SECCTX
- */
-struct fuse_ext_header {
-	uint32_t	size;
-	uint32_t	type;
-};
-
-/**
- * struct fuse_supp_groups - Supplementary group extension
- * @nr_groups: number of supplementary groups
- * @groups: flexible array of group IDs
- */
-struct fuse_supp_groups {
-	uint32_t	nr_groups;
-	uint32_t	groups[];
 };
 
 #endif /* _LINUX_FUSE_H */

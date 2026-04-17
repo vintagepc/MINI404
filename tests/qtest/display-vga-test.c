@@ -8,46 +8,61 @@
  */
 
 #include "qemu/osdep.h"
-#include "libqtest.h"
+#include "libqtest-single.h"
+
+static void pci_cirrus(void)
+{
+    qtest_start("-vga none -device cirrus-vga");
+    qtest_end();
+}
+
+static void pci_stdvga(void)
+{
+    qtest_start("-vga none -device VGA");
+    qtest_end();
+}
+
+static void pci_secondary(void)
+{
+    qtest_start("-vga none -device secondary-vga");
+    qtest_end();
+}
 
 static void pci_multihead(void)
 {
-    QTestState *qts;
-
-    qts = qtest_init("-vga none -device VGA -device secondary-vga");
-    qtest_quit(qts);
+    qtest_start("-vga none -device VGA -device secondary-vga");
+    qtest_end();
 }
 
-static void test_vga(gconstpointer data)
+static void pci_virtio_gpu(void)
 {
-    QTestState *qts;
+    qtest_start("-vga none -device virtio-gpu-pci");
+    qtest_end();
+}
 
-    qts = qtest_initf("-vga none -device %s", (const char *)data);
-    qtest_quit(qts);
+static void pci_virtio_vga(void)
+{
+    qtest_start("-vga none -device virtio-vga");
+    qtest_end();
 }
 
 int main(int argc, char **argv)
 {
-    static const char *devices[] = {
-        "cirrus-vga",
-        "VGA",
-        "secondary-vga",
-        "virtio-gpu-pci",
-        "virtio-vga"
-    };
+    const char *arch = qtest_get_arch();
 
     g_test_init(&argc, &argv, NULL);
 
-    for (int i = 0; i < ARRAY_SIZE(devices); i++) {
-        if (qtest_has_device(devices[i])) {
-            char *testpath = g_strdup_printf("/display/pci/%s", devices[i]);
-            qtest_add_data_func(testpath, devices[i], test_vga);
-            g_free(testpath);
-        }
+    if (strcmp(arch, "alpha") == 0 || strcmp(arch, "i386") == 0 ||
+        strcmp(arch, "mips") == 0 || strcmp(arch, "x86_64") == 0) {
+        qtest_add_func("/display/pci/cirrus", pci_cirrus);
     }
-
-    if (qtest_has_device("secondary-vga")) {
-        qtest_add_func("/display/pci/multihead", pci_multihead);
+    qtest_add_func("/display/pci/stdvga", pci_stdvga);
+    qtest_add_func("/display/pci/secondary", pci_secondary);
+    qtest_add_func("/display/pci/multihead", pci_multihead);
+    qtest_add_func("/display/pci/virtio-gpu", pci_virtio_gpu);
+    if (g_str_equal(arch, "i386") || g_str_equal(arch, "x86_64") ||
+        g_str_equal(arch, "hppa") || g_str_equal(arch, "ppc64")) {
+        qtest_add_func("/display/pci/virtio-vga", pci_virtio_vga);
     }
 
     return g_test_run();

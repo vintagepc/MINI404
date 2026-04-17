@@ -17,7 +17,6 @@ OBJECT_DECLARE_TYPE(AspeedSDMCState, AspeedSDMCClass, ASPEED_SDMC)
 #define TYPE_ASPEED_2400_SDMC TYPE_ASPEED_SDMC "-ast2400"
 #define TYPE_ASPEED_2500_SDMC TYPE_ASPEED_SDMC "-ast2500"
 #define TYPE_ASPEED_2600_SDMC TYPE_ASPEED_SDMC "-ast2600"
-#define TYPE_ASPEED_2700_SDMC TYPE_ASPEED_SDMC "-ast2700"
 
 /*
  * SDMC has 174 documented registers. In addition the u-boot device tree
@@ -30,7 +29,7 @@ OBJECT_DECLARE_TYPE(AspeedSDMCState, AspeedSDMCClass, ASPEED_SDMC)
  * time, and the other is in the DDR-PHY IP which is used during DDR-PHY
  * training.
  */
-#define ASPEED_SDMC_NR_REGS (0x1000 >> 2)
+#define ASPEED_SDMC_NR_REGS (0x500 >> 2)
 
 struct AspeedSDMCState {
     /*< private >*/
@@ -42,7 +41,6 @@ struct AspeedSDMCState {
     uint32_t regs[ASPEED_SDMC_NR_REGS];
     uint64_t ram_size;
     uint64_t max_ram_size;
-    bool unlocked;
 };
 
 
@@ -53,7 +51,6 @@ struct AspeedSDMCClass {
     const uint64_t *valid_ram_sizes;
     uint32_t (*compute_conf)(AspeedSDMCState *s, uint32_t data);
     void (*write)(AspeedSDMCState *s, uint32_t reg, uint32_t data);
-    bool is_bus64bit;
 };
 
 #endif /* ASPEED_SDMC_H */

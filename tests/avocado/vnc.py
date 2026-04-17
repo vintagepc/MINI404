@@ -88,8 +88,9 @@ class Vnc(QemuSystemTest):
         self.vm.add_args('-nodefaults', '-S', '-vnc', ':0,password=on')
         self.vm.launch()
         self.assertTrue(self.vm.qmp('query-vnc')['return']['enabled'])
-        self.vm.cmd('change-vnc-password',
-                    password='new_password')
+        set_password_response = self.vm.qmp('change-vnc-password',
+                                            password='new_password')
+        self.assertEqual(set_password_response['return'], {})
 
     def test_change_listen(self):
         a, b, c = find_free_ports(3)
@@ -104,11 +105,12 @@ class Vnc(QemuSystemTest):
         self.assertFalse(check_connect(b))
         self.assertFalse(check_connect(c))
 
-        self.vm.cmd('display-update', type='vnc',
-                    addresses=[{'type': 'inet', 'host': VNC_ADDR,
-                                'port': str(b)},
-                               {'type': 'inet', 'host': VNC_ADDR,
-                                'port': str(c)}])
+        res = self.vm.qmp('display-update', type='vnc',
+                          addresses=[{'type': 'inet', 'host': VNC_ADDR,
+                                      'port': str(b)},
+                                     {'type': 'inet', 'host': VNC_ADDR,
+                                      'port': str(c)}])
+        self.assertEqual(res['return'], {})
         self.assertEqual(self.vm.qmp('query-vnc')['return']['service'], str(b))
         self.assertFalse(check_connect(a))
         self.assertTrue(check_connect(b))

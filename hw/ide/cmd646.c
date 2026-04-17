@@ -33,24 +33,23 @@
 #include "sysemu/reset.h"
 
 #include "hw/ide/pci.h"
-#include "ide-internal.h"
 #include "trace.h"
 
 /* CMD646 specific */
-#define CFR                  0x50
-#define   CFR_INTR_CH0       0x04
-#define CNTRL                0x51
-#define   CNTRL_EN_CH0       0x04
-#define   CNTRL_EN_CH1       0x08
-#define ARTTIM23             0x57
-#define    ARTTIM23_INTR_CH1 0x10
-#define MRDMODE              0x71
-#define   MRDMODE_INTR_CH0   0x04
-#define   MRDMODE_INTR_CH1   0x08
-#define   MRDMODE_BLK_CH0    0x10
-#define   MRDMODE_BLK_CH1    0x20
-#define UDIDETCR0            0x73
-#define UDIDETCR1            0x7B
+#define CFR		0x50
+#define   CFR_INTR_CH0	0x04
+#define CNTRL		0x51
+#define   CNTRL_EN_CH0	0x04
+#define   CNTRL_EN_CH1	0x08
+#define ARTTIM23	0x57
+#define    ARTTIM23_INTR_CH1	0x10
+#define MRDMODE		0x71
+#define   MRDMODE_INTR_CH0	0x04
+#define   MRDMODE_INTR_CH1	0x08
+#define   MRDMODE_BLK_CH0	0x10
+#define   MRDMODE_BLK_CH1	0x20
+#define UDIDETCR0	0x73
+#define UDIDETCR1	0x7B
 
 static void cmd646_update_irq(PCIDevice *pd);
 
@@ -145,7 +144,7 @@ static void bmdma_write(void *opaque, hwaddr addr,
         cmd646_update_irq(pci_dev);
         break;
     case 2:
-        bmdma_status_writeb(bm, val);
+        bm->status = (val & 0x60) | (bm->status & 1) | (bm->status & ~val & 0x06);
         break;
     case 3:
         if (bm == &bm->pci_dev->bmdma[0]) {
@@ -258,7 +257,7 @@ static void pci_cmd646_ide_realize(PCIDevice *dev, Error **errp)
 
     pci_conf[CNTRL] = CNTRL_EN_CH0; // enable IDE0
     if (d->secondary) {
-        /* XXX: if not enabled, really disable the secondary IDE controller */
+        /* XXX: if not enabled, really disable the seconday IDE controller */
         pci_conf[CNTRL] |= CNTRL_EN_CH1; /* enable IDE1 */
     }
 
@@ -295,10 +294,11 @@ static void pci_cmd646_ide_realize(PCIDevice *dev, Error **errp)
     qdev_init_gpio_in(ds, cmd646_set_irq, 2);
     for (i = 0; i < 2; i++) {
         ide_bus_init(&d->bus[i], sizeof(d->bus[i]), ds, i, 2);
-        ide_bus_init_output_irq(&d->bus[i], qdev_get_gpio_in(ds, i));
+        ide_init2(&d->bus[i], qdev_get_gpio_in(ds, i));
 
         bmdma_init(&d->bus[i], &d->bmdma[i], d);
-        ide_bus_register_restart_cb(&d->bus[i]);
+        d->bmdma[i].bus = &d->bus[i];
+        ide_register_restart_cb(&d->bus[i]);
     }
 }
 
@@ -323,7 +323,7 @@ static void cmd646_ide_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, cmd646_reset);
+    dc->reset = cmd646_reset;
     dc->vmsd = &vmstate_ide_pci;
     k->realize = pci_cmd646_ide_realize;
     k->exit = pci_cmd646_ide_exitfn;

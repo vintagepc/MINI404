@@ -1,5 +1,5 @@
 /*
- * QTest TPM common test code
+ * QTest TPM commont test code
  *
  * Copyright (c) 2018 IBM Corporation
  *

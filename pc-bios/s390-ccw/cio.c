@@ -11,8 +11,7 @@
  * directory.
  */
 
-#include <string.h>
-#include <stdio.h>
+#include "libc.h"
 #include "s390-ccw.h"
 #include "s390-arch.h"
 #include "helper.h"
@@ -59,8 +58,7 @@ uint16_t cu_type(SubChannelId schid)
     };
 
     if (do_cio(schid, CU_TYPE_UNKNOWN, ptr2u32(&sense_id_ccw), CCW_FMT1)) {
-        puts("Failed to run SenseID CCW");
-        return CU_TYPE_UNKNOWN;
+        panic("Failed to run SenseID CCw\n");
     }
 
     return sense_data.cu_type;
@@ -92,9 +90,9 @@ static void print_eckd_dasd_sense_data(SenseDataEckdDasd *sd)
     char msgline[512];
 
     if (sd->config_info & 0x8000) {
-        puts("Eckd Dasd Sense Data (fmt 24-bytes):");
+        sclp_print("Eckd Dasd Sense Data (fmt 24-bytes):\n");
     } else {
-        puts("Eckd Dasd Sense Data (fmt 32-bytes):");
+        sclp_print("Eckd Dasd Sense Data (fmt 32-bytes):\n");
     }
 
     strcat(msgline, "    Sense Condition Flags :");
@@ -160,21 +158,22 @@ static void print_eckd_dasd_sense_data(SenseDataEckdDasd *sd)
     if (sd->status[1] & SNS_STAT2_IMPRECISE_END) {
         strcat(msgline, " [Imprecise-End]");
     }
-    puts(msgline);
+    strcat(msgline, "\n");
+    sclp_print(msgline);
 
-    printf("    Residual Count     = 0x%X\n", sd->res_count);
-    printf("    Phys Drive ID      = 0x%X\n", sd->phys_drive_id);
-    printf("    low cyl address    = 0x%X\n", sd->low_cyl_addr);
-    printf("    head addr & hi cyl = 0x%X\n", sd->head_high_cyl_addr);
-    printf("    format/message     = 0x%X\n", sd->fmt_msg);
-    printf("    fmt-dependent[0-7] = 0x%llX\n", sd->fmt_dependent_info[0]);
-    printf("    fmt-dependent[8-15]= 0x%llX\n", sd->fmt_dependent_info[1]);
-    printf("    prog action code   = 0x%X\n", sd->program_action_code);
-    printf("    Configuration info = 0x%X\n", sd->config_info);
-    printf("    mcode / hi-cyl     = 0x%X\n", sd->mcode_hicyl);
-    printf("    cyl & head addr [0]= 0x%X\n", sd->cyl_head_addr[0]);
-    printf("    cyl & head addr [1]= 0x%X\n", sd->cyl_head_addr[1]);
-    printf("    cyl & head addr [2]= 0x%X\n", sd->cyl_head_addr[2]);
+    print_int("    Residual Count     =", sd->res_count);
+    print_int("    Phys Drive ID      =", sd->phys_drive_id);
+    print_int("    low cyl address    =", sd->low_cyl_addr);
+    print_int("    head addr & hi cyl =", sd->head_high_cyl_addr);
+    print_int("    format/message     =", sd->fmt_msg);
+    print_int("    fmt-dependent[0-7] =", sd->fmt_dependent_info[0]);
+    print_int("    fmt-dependent[8-15]=", sd->fmt_dependent_info[1]);
+    print_int("    prog action code   =", sd->program_action_code);
+    print_int("    Configuration info =", sd->config_info);
+    print_int("    mcode / hi-cyl     =", sd->mcode_hicyl);
+    print_int("    cyl & head addr [0]=", sd->cyl_head_addr[0]);
+    print_int("    cyl & head addr [1]=", sd->cyl_head_addr[1]);
+    print_int("    cyl & head addr [2]=", sd->cyl_head_addr[2]);
 }
 
 static void print_irb_err(Irb *irb)
@@ -183,7 +182,7 @@ static void print_irb_err(Irb *irb)
     uint64_t prev_ccw = *(uint64_t *)u32toptr(irb->scsw.cpa - 8);
     char msgline[256];
 
-    puts("Interrupt Response Block Data:");
+    sclp_print("Interrupt Response Block Data:\n");
 
     strcat(msgline, "    Function Ctrl :");
     if (irb->scsw.ctrl & SCSW_FCTL_START_FUNC) {
@@ -195,7 +194,8 @@ static void print_irb_err(Irb *irb)
     if (irb->scsw.ctrl & SCSW_FCTL_CLEAR_FUNC) {
         strcat(msgline, " [Clear]");
     }
-    puts(msgline);
+    strcat(msgline, "\n");
+    sclp_print(msgline);
 
     msgline[0] = '\0';
     strcat(msgline, "    Activity Ctrl :");
@@ -220,7 +220,8 @@ static void print_irb_err(Irb *irb)
     if (irb->scsw.ctrl & SCSW_ACTL_SUSPENDED) {
         strcat(msgline, " [Suspended]");
     }
-    puts(msgline);
+    strcat(msgline, "\n");
+    sclp_print(msgline);
 
     msgline[0] = '\0';
     strcat(msgline, "    Status Ctrl :");
@@ -239,7 +240,9 @@ static void print_irb_err(Irb *irb)
     if (irb->scsw.ctrl & SCSW_SCTL_STATUS_PEND) {
         strcat(msgline, " [Status-Pending]");
     }
-    puts(msgline);
+
+    strcat(msgline, "\n");
+    sclp_print(msgline);
 
     msgline[0] = '\0';
     strcat(msgline, "    Device Status :");
@@ -267,7 +270,8 @@ static void print_irb_err(Irb *irb)
     if (irb->scsw.dstat & SCSW_DSTAT_UEXCP) {
         strcat(msgline, " [Unit-Exception]");
     }
-    puts(msgline);
+    strcat(msgline, "\n");
+    sclp_print(msgline);
 
     msgline[0] = '\0';
     strcat(msgline, "    Channel Status :");
@@ -295,11 +299,12 @@ static void print_irb_err(Irb *irb)
     if (irb->scsw.cstat & SCSW_CSTAT_CHAINCHK) {
         strcat(msgline, " [Chaining-Check]");
     }
-    puts(msgline);
+    strcat(msgline, "\n");
+    sclp_print(msgline);
 
-    printf("    cpa= 0x%X\n", irb->scsw.cpa);
-    printf("    prev_ccw= 0x%llX\n", prev_ccw);
-    printf("    this_ccw= 0x%llX\n", this_ccw);
+    print_int("    cpa=", irb->scsw.cpa);
+    print_int("    prev_ccw=", prev_ccw);
+    print_int("    this_ccw=", this_ccw);
 }
 
 /*
@@ -336,7 +341,7 @@ static int __do_cio(SubChannelId schid, uint32_t ccw_addr, int fmt, Irb *irb)
         return -1;
     }
     if (rc) {
-        printf("ssch failed with cc= 0x%x\n", rc);
+        print_int("ssch failed with cc=", rc);
         return rc;
     }
 
@@ -345,7 +350,7 @@ static int __do_cio(SubChannelId schid, uint32_t ccw_addr, int fmt, Irb *irb)
     /* collect status */
     rc = tsch(schid, irb);
     if (rc) {
-        printf("tsch failed with cc= 0x%X\n", rc);
+        print_int("tsch failed with cc=", rc);
     }
 
     return rc;
@@ -401,12 +406,12 @@ int do_cio(SubChannelId schid, uint16_t cutype, uint32_t ccw_addr, int fmt)
             continue;
         }
 
-        printf("cio device error\n");
-        printf("  ssid  0x%X\n", schid.ssid);
-        printf("  cssid 0x%X\n", schid.cssid);
-        printf("  sch_no 0x%X\n", schid.sch_no);
-        printf("  ctrl-unit type 0x%X\n", cutype);
-        printf("\n");
+        sclp_print("cio device error\n");
+        print_int("  ssid  ", schid.ssid);
+        print_int("  cssid ", schid.cssid);
+        print_int("  sch_no", schid.sch_no);
+        print_int("  ctrl-unit type", cutype);
+        sclp_print("\n");
         print_irb_err(&irb);
         if (cutype == CU_TYPE_DASD_3990 || cutype == CU_TYPE_DASD_2107 ||
             cutype == CU_TYPE_UNKNOWN) {

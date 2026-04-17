@@ -31,7 +31,7 @@ struct HDACodecBus {
 struct HDACodecDeviceClass {
     DeviceClass parent_class;
 
-    void (*init)(HDACodecDevice *dev, Error **errp);
+    int (*init)(HDACodecDevice *dev);
     void (*exit)(HDACodecDevice *dev);
     void (*command)(HDACodecDevice *dev, uint32_t nid, uint32_t data);
     void (*stream)(HDACodecDevice *dev, uint32_t stnr, bool running, bool output);

@@ -22,7 +22,6 @@
 
 #include "target_arch_elf.h"
 #include "elf.h"
-#include "user/tswap-target.h"
 
 /* this flag is uneffective under linux too, should be deleted */
 #ifndef MAP_DENYWRITE

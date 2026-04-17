@@ -28,11 +28,16 @@
  */
 
 #include "qemu/osdep.h"
-#include "qapi/error.h"
 #include "hw/pci/pci.h"
+#include "migration/vmstate.h"
+#include "qapi/error.h"
+#include "qemu/module.h"
+#include "sysemu/block-backend.h"
+#include "sysemu/blockdev.h"
+#include "sysemu/dma.h"
+
 #include "hw/ide/piix.h"
 #include "hw/ide/pci.h"
-#include "ide-internal.h"
 #include "trace.h"
 
 static uint64_t bmdma_read(void *opaque, hwaddr addr, unsigned size)
@@ -76,7 +81,7 @@ static void bmdma_write(void *opaque, hwaddr addr,
         bmdma_cmd_writeb(bm, val);
         break;
     case 2:
-        bmdma_status_writeb(bm, val);
+        bm->status = (val & 0x60) | (bm->status & 1) | (bm->status & ~val & 0x06);
         break;
     }
 }
@@ -118,10 +123,10 @@ static void piix_ide_reset(DeviceState *dev)
     pci_set_word(pci_conf + PCI_COMMAND, 0x0000);
     pci_set_word(pci_conf + PCI_STATUS,
                  PCI_STATUS_DEVSEL_MEDIUM | PCI_STATUS_FAST_BACK);
-    pci_set_long(pci_conf + 0x20, 0x1);  /* BMIBA: 20-23h */
+    pci_set_byte(pci_conf + 0x20, 0x01);  /* BMIBA: 20-23h */
 }
 
-static bool pci_piix_init_bus(PCIIDEState *d, unsigned i, Error **errp)
+static int pci_piix_init_ports(PCIIDEState *d)
 {
     static const struct {
         int iobase;
@@ -131,38 +136,42 @@ static bool pci_piix_init_bus(PCIIDEState *d, unsigned i, Error **errp)
         {0x1f0, 0x3f6, 14},
         {0x170, 0x376, 15},
     };
-    int ret;
+    int i, ret;
 
-    ide_bus_init(&d->bus[i], sizeof(d->bus[i]), DEVICE(d), i, 2);
-    ret = ide_init_ioport(&d->bus[i], NULL, port_info[i].iobase,
-                          port_info[i].iobase2);
-    if (ret) {
-        error_setg_errno(errp, -ret, "Failed to realize %s port %u",
-                         object_get_typename(OBJECT(d)), i);
-        return false;
+    for (i = 0; i < 2; i++) {
+        ide_bus_init(&d->bus[i], sizeof(d->bus[i]), DEVICE(d), i, 2);
+        ret = ide_init_ioport(&d->bus[i], NULL, port_info[i].iobase,
+                              port_info[i].iobase2);
+        if (ret) {
+            return ret;
+        }
+        ide_init2(&d->bus[i], isa_get_irq(NULL, port_info[i].isairq));
+
+        bmdma_init(&d->bus[i], &d->bmdma[i], d);
+        d->bmdma[i].bus = &d->bus[i];
+        ide_register_restart_cb(&d->bus[i]);
     }
-    ide_bus_init_output_irq(&d->bus[i], isa_get_irq(NULL, port_info[i].isairq));
 
-    bmdma_init(&d->bus[i], &d->bmdma[i], d);
-    ide_bus_register_restart_cb(&d->bus[i]);
-
-    return true;
+    return 0;
 }
 
 static void pci_piix_ide_realize(PCIDevice *dev, Error **errp)
 {
     PCIIDEState *d = PCI_IDE(dev);
     uint8_t *pci_conf = dev->config;
+    int rc;
 
     pci_conf[PCI_CLASS_PROG] = 0x80; // legacy ATA mode
 
     bmdma_setup_bar(d);
     pci_register_bar(dev, 4, PCI_BASE_ADDRESS_SPACE_IO, &d->bmdma_bar);
 
-    for (unsigned i = 0; i < 2; i++) {
-        if (!pci_piix_init_bus(d, i, errp)) {
-            return;
-        }
+    vmstate_register(VMSTATE_IF(dev), 0, &vmstate_ide_pci, d);
+
+    rc = pci_piix_init_ports(d);
+    if (rc) {
+        error_setg_errno(errp, -rc, "Failed to realize %s",
+                         object_get_typename(OBJECT(dev)));
     }
 }
 
@@ -183,8 +192,7 @@ static void piix3_ide_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, piix_ide_reset);
-    dc->vmsd = &vmstate_ide_pci;
+    dc->reset = piix_ide_reset;
     k->realize = pci_piix_ide_realize;
     k->exit = pci_piix_ide_exitfn;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
@@ -206,8 +214,7 @@ static void piix4_ide_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, piix_ide_reset);
-    dc->vmsd = &vmstate_ide_pci;
+    dc->reset = piix_ide_reset;
     k->realize = pci_piix_ide_realize;
     k->exit = pci_piix_ide_exitfn;
     k->vendor_id = PCI_VENDOR_ID_INTEL;

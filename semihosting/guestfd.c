@@ -9,10 +9,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "gdbstub/syscalls.h"
+#include "exec/gdbstub.h"
 #include "semihosting/semihost.h"
 #include "semihosting/guestfd.h"
-#ifndef CONFIG_USER_ONLY
+#ifdef CONFIG_USER_ONLY
+#include "qemu.h"
+#else
+#include "semihosting/softmmu-uaccess.h"
 #include CONFIG_DEVICES
 #endif
 

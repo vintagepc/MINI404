@@ -51,6 +51,7 @@ static int pr_manager_worker(void *opaque)
 int coroutine_fn pr_manager_execute(PRManager *pr_mgr, AioContext *ctx, int fd,
                                     struct sg_io_hdr *hdr)
 {
+    ThreadPool *pool = aio_get_thread_pool(ctx);
     PRManagerData data = {
         .pr_mgr = pr_mgr,
         .fd     = fd,
@@ -61,7 +62,7 @@ int coroutine_fn pr_manager_execute(PRManager *pr_mgr, AioContext *ctx, int fd,
 
     /* The matching object_unref is in pr_manager_worker.  */
     object_ref(OBJECT(pr_mgr));
-    return thread_pool_submit_co(pr_manager_worker, &data);
+    return thread_pool_submit_co(pool, pr_manager_worker, &data);
 }
 
 bool pr_manager_is_connected(PRManager *pr_mgr)

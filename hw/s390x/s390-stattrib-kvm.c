@@ -17,7 +17,6 @@
 #include "sysemu/kvm.h"
 #include "exec/ram_addr.h"
 #include "kvm/kvm_s390x.h"
-#include "qapi/error.h"
 
 Object *kvm_s390_stattrib_create(void)
 {
@@ -138,21 +137,14 @@ static void kvm_s390_stattrib_synchronize(S390StAttribState *sa)
     }
 }
 
-static int kvm_s390_stattrib_set_migrationmode(S390StAttribState *sa, bool val,
-                                               Error **errp)
+static int kvm_s390_stattrib_set_migrationmode(S390StAttribState *sa, bool val)
 {
     struct kvm_device_attr attr = {
         .group = KVM_S390_VM_MIGRATION,
         .attr = val,
         .addr = 0,
     };
-    int r;
-
-    r = kvm_vm_ioctl(kvm_state, KVM_SET_DEVICE_ATTR, &attr);
-    if (r) {
-        error_setg_errno(errp, -r, "setting KVM_S390_VM_MIGRATION failed");
-    }
-    return r;
+    return kvm_vm_ioctl(kvm_state, KVM_SET_DEVICE_ATTR, &attr);
 }
 
 static long long kvm_s390_stattrib_get_dirtycount(S390StAttribState *sa)

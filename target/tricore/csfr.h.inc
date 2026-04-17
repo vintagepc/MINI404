@@ -1,4 +1,4 @@
-/* A(ll) access permitted
+/* A(ll) access permited
    R(ead only) access
    E(nd init protected) access
 

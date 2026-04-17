@@ -5,6 +5,7 @@
 #include "qapi/visitor.h"
 #include "qom/object_interfaces.h"
 #include "block/aio.h"
+#include "qemu/coroutine.h"
 
 #define TYPE_PR_MANAGER "pr-manager"
 

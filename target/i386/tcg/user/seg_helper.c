@@ -26,6 +26,7 @@
 #include "tcg/helper-tcg.h"
 #include "tcg/seg_helper.h"
 
+#ifdef TARGET_X86_64
 void helper_syscall(CPUX86State *env, int next_eip_addend)
 {
     CPUState *cs = env_cpu(env);
@@ -35,6 +36,7 @@ void helper_syscall(CPUX86State *env, int next_eip_addend)
     env->exception_next_eip = env->eip + next_eip_addend;
     cpu_loop_exit(cs);
 }
+#endif /* TARGET_X86_64 */
 
 /*
  * fake user mode interrupt. is_int is TRUE if coming from the int

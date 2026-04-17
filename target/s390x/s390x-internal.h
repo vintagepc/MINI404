@@ -11,7 +11,6 @@
 #define S390X_INTERNAL_H
 
 #include "cpu.h"
-#include "fpu/softfloat.h"
 
 #ifndef CONFIG_USER_ONLY
 typedef struct LowCore {
@@ -300,7 +299,7 @@ uint32_t set_cc_nz_f128(float128 v);
 uint8_t s390_softfloat_exc_to_ieee(unsigned int exc);
 int s390_swap_bfp_rounding_mode(CPUS390XState *env, int m3);
 void s390_restore_bfp_rounding_mode(CPUS390XState *env, int old_mode);
-int float_comp_to_cc(CPUS390XState *env, FloatRelation float_compare);
+int float_comp_to_cc(CPUS390XState *env, int float_compare);
 
 #define DCMASK_ZERO             0x0c00
 #define DCMASK_NORMAL           0x0300

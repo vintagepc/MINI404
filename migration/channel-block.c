@@ -53,7 +53,6 @@ qio_channel_block_readv(QIOChannel *ioc,
                         size_t niov,
                         int **fds,
                         size_t *nfds,
-                        int flags,
                         Error **errp)
 {
     QIOChannelBlock *bioc = QIO_CHANNEL_BLOCK(ioc);
@@ -158,9 +157,8 @@ qio_channel_block_close(QIOChannel *ioc,
 
 static void
 qio_channel_block_set_aio_fd_handler(QIOChannel *ioc,
-                                     AioContext *read_ctx,
+                                     AioContext *ctx,
                                      IOHandler *io_read,
-                                     AioContext *write_ctx,
                                      IOHandler *io_write,
                                      void *opaque)
 {

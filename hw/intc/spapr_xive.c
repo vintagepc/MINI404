@@ -16,6 +16,7 @@
 #include "sysemu/cpus.h"
 #include "sysemu/reset.h"
 #include "migration/vmstate.h"
+#include "monitor/monitor.h"
 #include "hw/ppc/fdt.h"
 #include "hw/ppc/spapr.h"
 #include "hw/ppc/spapr_cpu_core.h"
@@ -26,7 +27,7 @@
 #include "trace.h"
 
 /*
- * XIVE Virtualization Controller BAR and Thread Management BAR that we
+ * XIVE Virtualization Controller BAR and Thread Managment BAR that we
  * use for the ESB pages and the TIMA pages
  */
 #define SPAPR_XIVE_VC_BASE   0x0006010000000000ull
@@ -131,7 +132,7 @@ static int spapr_xive_target_to_end(uint32_t target, uint8_t prio,
  * structure dumping only the information related to the OS EQ.
  */
 static void spapr_xive_end_pic_print_info(SpaprXive *xive, XiveEND *end,
-                                          GString *buf)
+                                          Monitor *mon)
 {
     uint64_t qaddr_base = xive_end_qaddr(end);
     uint32_t qindex = xive_get_field32(END_W1_PAGE_OFF, end->w1);
@@ -141,11 +142,11 @@ static void spapr_xive_end_pic_print_info(SpaprXive *xive, XiveEND *end,
     uint32_t nvt = xive_get_field32(END_W6_NVT_INDEX, end->w6);
     uint8_t priority = xive_get_field32(END_W7_F0_PRIORITY, end->w7);
 
-    g_string_append_printf(buf, "%3d/%d % 6d/%5d @%"PRIx64" ^%d",
-                           spapr_xive_nvt_to_target(0, nvt),
-                           priority, qindex, qentries, qaddr_base, qgen);
+    monitor_printf(mon, "%3d/%d % 6d/%5d @%"PRIx64" ^%d",
+                   spapr_xive_nvt_to_target(0, nvt),
+                   priority, qindex, qentries, qaddr_base, qgen);
 
-    xive_end_queue_pic_print_info(end, 6, buf);
+    xive_end_queue_pic_print_info(end, 6, mon);
 }
 
 /*
@@ -155,7 +156,7 @@ static void spapr_xive_end_pic_print_info(SpaprXive *xive, XiveEND *end,
 #define spapr_xive_in_kernel(xive) \
     (kvm_irqchip_in_kernel() && (xive)->fd != -1)
 
-static void spapr_xive_pic_print_info(SpaprXive *xive, GString *buf)
+static void spapr_xive_pic_print_info(SpaprXive *xive, Monitor *mon)
 {
     XiveSource *xsrc = &xive->source;
     int i;
@@ -170,7 +171,7 @@ static void spapr_xive_pic_print_info(SpaprXive *xive, GString *buf)
         }
     }
 
-    g_string_append_printf(buf, "  LISN         PQ    EISN     CPU/PRIO EQ\n");
+    monitor_printf(mon, "  LISN         PQ    EISN     CPU/PRIO EQ\n");
 
     for (i = 0; i < xive->nr_irqs; i++) {
         uint8_t pq = xive_source_esb_get(xsrc, i);
@@ -180,13 +181,13 @@ static void spapr_xive_pic_print_info(SpaprXive *xive, GString *buf)
             continue;
         }
 
-        g_string_append_printf(buf, "  %08x %s %c%c%c %s %08x ", i,
-                               xive_source_irq_is_lsi(xsrc, i) ? "LSI" : "MSI",
-                               pq & XIVE_ESB_VAL_P ? 'P' : '-',
-                               pq & XIVE_ESB_VAL_Q ? 'Q' : '-',
-                               xive_source_is_asserted(xsrc, i) ? 'A' : ' ',
-                               xive_eas_is_masked(eas) ? "M" : " ",
-                               (int) xive_get_field64(EAS_END_DATA, eas->w));
+        monitor_printf(mon, "  %08x %s %c%c%c %s %08x ", i,
+                       xive_source_irq_is_lsi(xsrc, i) ? "LSI" : "MSI",
+                       pq & XIVE_ESB_VAL_P ? 'P' : '-',
+                       pq & XIVE_ESB_VAL_Q ? 'Q' : '-',
+                       xive_source_is_asserted(xsrc, i) ? 'A' : ' ',
+                       xive_eas_is_masked(eas) ? "M" : " ",
+                       (int) xive_get_field64(EAS_END_DATA, eas->w));
 
         if (!xive_eas_is_masked(eas)) {
             uint32_t end_idx = xive_get_field64(EAS_END_INDEX, eas->w);
@@ -196,11 +197,10 @@ static void spapr_xive_pic_print_info(SpaprXive *xive, GString *buf)
             end = &xive->endt[end_idx];
 
             if (xive_end_is_valid(end)) {
-                spapr_xive_end_pic_print_info(xive, end, buf);
+                spapr_xive_end_pic_print_info(xive, end, mon);
             }
-
         }
-        g_string_append_c(buf, '\n');
+        monitor_printf(mon, "\n");
     }
 }
 
@@ -316,6 +316,7 @@ static void spapr_xive_realize(DeviceState *dev, Error **errp)
     if (!qdev_realize(DEVICE(xsrc), NULL, errp)) {
         return;
     }
+    sysbus_init_mmio(SYS_BUS_DEVICE(xive), &xsrc->esb_mmio);
 
     /*
      * Initialize the END ESB source
@@ -327,6 +328,7 @@ static void spapr_xive_realize(DeviceState *dev, Error **errp)
     if (!qdev_realize(DEVICE(end_xsrc), NULL, errp)) {
         return;
     }
+    sysbus_init_mmio(SYS_BUS_DEVICE(xive), &end_xsrc->esb_mmio);
 
     /* Set the mapping address of the END ESB pages after the source ESBs */
     xive->end_base = xive->vc_base + xive_source_esb_len(xsrc);
@@ -345,17 +347,15 @@ static void spapr_xive_realize(DeviceState *dev, Error **errp)
     /* TIMA initialization */
     memory_region_init_io(&xive->tm_mmio, OBJECT(xive), &spapr_xive_tm_ops,
                           xive, "xive.tima", 4ull << TM_SHIFT);
+    sysbus_init_mmio(SYS_BUS_DEVICE(xive), &xive->tm_mmio);
 
     /*
      * Map all regions. These will be enabled or disabled at reset and
      * can also be overridden by KVM memory regions if active
      */
-    memory_region_add_subregion(get_system_memory(), xive->vc_base,
-                                &xsrc->esb_mmio);
-    memory_region_add_subregion(get_system_memory(), xive->end_base,
-                                &end_xsrc->esb_mmio);
-    memory_region_add_subregion(get_system_memory(), xive->tm_base,
-                                &xive->tm_mmio);
+    sysbus_mmio_map(SYS_BUS_DEVICE(xive), 0, xive->vc_base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(xive), 1, xive->end_base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(xive), 2, xive->tm_base);
 }
 
 static int spapr_xive_get_eas(XiveRouter *xrtr, uint8_t eas_blk,
@@ -475,21 +475,6 @@ static int spapr_xive_match_nvt(XivePresenter *xptr, uint8_t format,
     return count;
 }
 
-static uint32_t spapr_xive_presenter_get_config(XivePresenter *xptr)
-{
-    uint32_t cfg = 0;
-
-    /*
-     * Let's claim GEN1 TIMA format. If running with KVM on P10, the
-     * correct answer is deep in the hardware and not accessible to
-     * us.  But it shouldn't matter as it only affects the presenter
-     * as seen by a guest OS.
-     */
-    cfg |= XIVE_PRESENTER_GEN1_TIMA_OS;
-
-    return cfg;
-}
-
 static uint8_t spapr_xive_get_block_id(XiveRouter *xrtr)
 {
     return SPAPR_XIVE_BLOCK_ID;
@@ -522,7 +507,7 @@ static const VMStateDescription vmstate_spapr_xive_end = {
     .name = TYPE_SPAPR_XIVE "/end",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField []) {
+    .fields = (VMStateField []) {
         VMSTATE_UINT32(w0, XiveEND),
         VMSTATE_UINT32(w1, XiveEND),
         VMSTATE_UINT32(w2, XiveEND),
@@ -539,7 +524,7 @@ static const VMStateDescription vmstate_spapr_xive_eas = {
     .name = TYPE_SPAPR_XIVE "/eas",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField []) {
+    .fields = (VMStateField []) {
         VMSTATE_UINT64(w, XiveEAS),
         VMSTATE_END_OF_LIST()
     },
@@ -577,7 +562,7 @@ static const VMStateDescription vmstate_spapr_xive = {
     .minimum_version_id = 1,
     .pre_save = vmstate_spapr_xive_pre_save,
     .post_load = NULL, /* handled at the machine level */
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_EQUAL(nr_irqs, SpaprXive, NULL),
         VMSTATE_STRUCT_VARRAY_POINTER_UINT32(eat, SpaprXive, nr_irqs,
                                      vmstate_spapr_xive_eas, XiveEAS),
@@ -699,7 +684,7 @@ static void spapr_xive_set_irq(SpaprInterruptController *intc, int irq, int val)
     }
 }
 
-static void spapr_xive_print_info(SpaprInterruptController *intc, GString *buf)
+static void spapr_xive_print_info(SpaprInterruptController *intc, Monitor *mon)
 {
     SpaprXive *xive = SPAPR_XIVE(intc);
     CPUState *cs;
@@ -707,9 +692,10 @@ static void spapr_xive_print_info(SpaprInterruptController *intc, GString *buf)
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
 
-        xive_tctx_pic_print_info(spapr_cpu_state(cpu)->tctx, buf);
+        xive_tctx_pic_print_info(spapr_cpu_state(cpu)->tctx, mon);
     }
-    spapr_xive_pic_print_info(xive, buf);
+
+    spapr_xive_pic_print_info(xive, mon);
 }
 
 static void spapr_xive_dt(SpaprInterruptController *intc, uint32_t nr_servers,
@@ -846,7 +832,6 @@ static void spapr_xive_class_init(ObjectClass *klass, void *data)
     sicc->post_load = spapr_xive_post_load;
 
     xpc->match_nvt  = spapr_xive_match_nvt;
-    xpc->get_config = spapr_xive_presenter_get_config;
     xpc->in_kernel  = spapr_xive_in_kernel_xptr;
 }
 

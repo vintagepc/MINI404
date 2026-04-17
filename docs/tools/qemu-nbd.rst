@@ -197,9 +197,7 @@ driver options if :option:`--image-opts` is specified.
 
 .. option:: -v, --verbose
 
-  Display extra debugging information. This option also keeps the original
-  *STDERR* stream open if the ``qemu-nbd`` process is daemonized due to
-  other options like :option:`--fork` or :option:`-c`.
+  Display extra debugging information.
 
 .. option:: -h, --help
 

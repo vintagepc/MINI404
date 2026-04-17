@@ -1,5 +1,5 @@
 /*
- * QEMU RX CPU QOM header (target agnostic)
+ * RX CPU
  *
  * Copyright (c) 2019 Yoshinori Sato
  *
@@ -20,6 +20,7 @@
 #define RX_CPU_QOM_H
 
 #include "hw/core/cpu.h"
+#include "qom/object.h"
 
 #define TYPE_RX_CPU "rx-cpu"
 
@@ -27,7 +28,20 @@
 
 OBJECT_DECLARE_CPU_TYPE(RXCPU, RXCPUClass, RX_CPU)
 
-#define RX_CPU_TYPE_SUFFIX "-" TYPE_RX_CPU
-#define RX_CPU_TYPE_NAME(model) model RX_CPU_TYPE_SUFFIX
+/*
+ * RXCPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_reset: The parent class' reset handler.
+ *
+ * A RX CPU model.
+ */
+struct RXCPUClass {
+    /*< private >*/
+    CPUClass parent_class;
+    /*< public >*/
+
+    DeviceRealize parent_realize;
+    DeviceReset parent_reset;
+};
 
 #endif

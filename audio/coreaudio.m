@@ -44,6 +44,11 @@ typedef struct coreaudioVoiceOut {
     bool enabled;
 } coreaudioVoiceOut;
 
+#if !defined(MAC_OS_VERSION_12_0) \
+    || (MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_VERSION_12_0)
+#define kAudioObjectPropertyElementMain kAudioObjectPropertyElementMaster
+#endif
+
 static const AudioObjectPropertyAddress voice_addr = {
     kAudioHardwarePropertyDefaultOutputDevice,
     kAudioObjectPropertyScopeGlobal,
@@ -294,7 +299,7 @@ COREAUDIO_WRAPPER_FUNC(write, size_t, (HWVoiceOut *hw, void *buf, size_t size),
 #undef COREAUDIO_WRAPPER_FUNC
 
 /*
- * callback to feed audiooutput buffer. called without BQL.
+ * callback to feed audiooutput buffer. called without iothread lock.
  * allowed to lock "buf_mutex", but disallowed to have any other locks.
  */
 static OSStatus audioDeviceIOProc(
@@ -533,7 +538,7 @@ static void update_device_playback_state(coreaudioVoiceOut *core)
     }
 }
 
-/* called without BQL. */
+/* called without iothread lock. */
 static OSStatus handle_voice_change(
     AudioObjectID in_object_id,
     UInt32 in_number_addresses,
@@ -542,7 +547,7 @@ static OSStatus handle_voice_change(
 {
     coreaudioVoiceOut *core = in_client_data;
 
-    bql_lock();
+    qemu_mutex_lock_iothread();
 
     if (core->outputDeviceID) {
         fini_out_device(core);
@@ -552,7 +557,7 @@ static OSStatus handle_voice_change(
         update_device_playback_state(core);
     }
 
-    bql_unlock();
+    qemu_mutex_unlock_iothread();
     return 0;
 }
 
@@ -639,7 +644,7 @@ static void coreaudio_enable_out(HWVoiceOut *hw, bool enable)
     update_device_playback_state(core);
 }
 
-static void *coreaudio_audio_init(Audiodev *dev, Error **errp)
+static void *coreaudio_audio_init(Audiodev *dev)
 {
     return dev;
 }
@@ -668,6 +673,7 @@ static struct audio_driver coreaudio_audio_driver = {
     .init           = coreaudio_audio_init,
     .fini           = coreaudio_audio_fini,
     .pcm_ops        = &coreaudio_pcm_ops,
+    .can_be_default = 1,
     .max_voices_out = 1,
     .max_voices_in  = 0,
     .voice_size_out = sizeof (coreaudioVoiceOut),

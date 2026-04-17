@@ -98,6 +98,6 @@ def main() -> int:
                  builtins=args.builtins,
                  gen_tracing=not args.suppress_tracing)
     except QAPIError as err:
-        print(err, file=sys.stderr)
+        print(f"{sys.argv[0]}: {str(err)}", file=sys.stderr)
         return 1
     return 0

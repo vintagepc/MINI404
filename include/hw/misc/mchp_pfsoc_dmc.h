@@ -23,8 +23,6 @@
 #ifndef MCHP_PFSOC_DMC_H
 #define MCHP_PFSOC_DMC_H
 
-#include "hw/sysbus.h"
-
 /* DDR SGMII PHY module */
 
 #define MCHP_PFSOC_DDR_SGMII_PHY_REG_SIZE   0x1000

@@ -19,7 +19,7 @@
  */
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "gdbstub/helpers.h"
+#include "exec/gdbstub.h"
 
 #ifdef TARGET_ABI32
 #define gdb_get_rega(buf, val) gdb_get_reg32(buf, val)
@@ -29,7 +29,8 @@
 
 int sparc_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
 {
-    CPUSPARCState *env = cpu_env(cs);
+    SPARCCPU *cpu = SPARC_CPU(cs);
+    CPUSPARCState *env = &cpu->env;
 
     if (n < 8) {
         /* g0..g7 */
@@ -63,7 +64,7 @@ int sparc_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
     case 69:
         return gdb_get_rega(mem_buf, env->npc);
     case 70:
-        return gdb_get_rega(mem_buf, cpu_get_fsr(env));
+        return gdb_get_rega(mem_buf, env->fsr);
     case 71:
         return gdb_get_rega(mem_buf, 0); /* csr */
     default:
@@ -93,7 +94,7 @@ int sparc_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
                                      ((env->pstate & 0xfff) << 8) |
                                      cpu_get_cwp64(env));
     case 83:
-        return gdb_get_regl(mem_buf, cpu_get_fsr(env));
+        return gdb_get_regl(mem_buf, env->fsr);
     case 84:
         return gdb_get_regl(mem_buf, env->fprs);
     case 85:
@@ -108,7 +109,7 @@ int sparc_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
     SPARCCPU *cpu = SPARC_CPU(cs);
     CPUSPARCState *env = &cpu->env;
 #if defined(TARGET_ABI32)
-    uint32_t tmp;
+    abi_ulong tmp;
 
     tmp = ldl_p(mem_buf);
 #else
@@ -155,7 +156,7 @@ int sparc_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
             env->npc = tmp;
             break;
         case 70:
-            cpu_put_fsr(env, tmp);
+            env->fsr = tmp;
             break;
         default:
             return 0;
@@ -190,7 +191,7 @@ int sparc_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
             cpu_put_cwp64(env, tmp & 0xff);
             break;
         case 83:
-            cpu_put_fsr(env, tmp);
+            env->fsr = tmp;
             break;
         case 84:
             env->fprs = tmp;

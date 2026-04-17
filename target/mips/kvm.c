@@ -63,7 +63,8 @@ int kvm_arch_irqchip_create(KVMState *s)
 
 int kvm_arch_init_vcpu(CPUState *cs)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     int ret = 0;
 
     qemu_add_vm_change_state_handler(kvm_mips_update_state, cs);
@@ -137,7 +138,7 @@ void kvm_arch_pre_run(CPUState *cs, struct kvm_run *run)
     int r;
     struct kvm_mips_interrupt intr;
 
-    bql_lock();
+    qemu_mutex_lock_iothread();
 
     if ((cs->interrupt_request & CPU_INTERRUPT_HARD) &&
             cpu_mips_io_interrupts_pending(cpu)) {
@@ -150,7 +151,7 @@ void kvm_arch_pre_run(CPUState *cs, struct kvm_run *run)
         }
     }
 
-    bql_unlock();
+    qemu_mutex_unlock_iothread();
 }
 
 MemTxAttrs kvm_arch_post_run(CPUState *cs, struct kvm_run *run)
@@ -459,7 +460,8 @@ static inline int kvm_mips_change_one_reg(CPUState *cs, uint64_t reg_id,
  */
 static int kvm_mips_save_count(CPUState *cs)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     uint64_t count_ctl;
     int err, ret = 0;
 
@@ -500,7 +502,8 @@ static int kvm_mips_save_count(CPUState *cs)
  */
 static int kvm_mips_restore_count(CPUState *cs)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     uint64_t count_ctl;
     int err_dc, err, ret = 0;
 
@@ -587,7 +590,8 @@ static void kvm_mips_update_state(void *opaque, bool running, RunState state)
 
 static int kvm_mips_put_fpu_registers(CPUState *cs, int level)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     int err, ret = 0;
     unsigned int i;
 
@@ -666,7 +670,8 @@ static int kvm_mips_put_fpu_registers(CPUState *cs, int level)
 
 static int kvm_mips_get_fpu_registers(CPUState *cs)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     int err, ret = 0;
     unsigned int i;
 
@@ -746,7 +751,8 @@ static int kvm_mips_get_fpu_registers(CPUState *cs)
 
 static int kvm_mips_put_cp0_registers(CPUState *cs, int level)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     int err, ret = 0;
 
     (void)level;
@@ -968,7 +974,8 @@ static int kvm_mips_put_cp0_registers(CPUState *cs, int level)
 
 static int kvm_mips_get_cp0_registers(CPUState *cs)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     int err, ret = 0;
 
     err = kvm_mips_get_one_reg(cs, KVM_REG_MIPS_CP0_INDEX, &env->CP0_Index);
@@ -1172,9 +1179,10 @@ static int kvm_mips_get_cp0_registers(CPUState *cs)
     return ret;
 }
 
-int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
+int kvm_arch_put_registers(CPUState *cs, int level)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     struct kvm_regs regs;
     int ret;
     int i;
@@ -1207,9 +1215,10 @@ int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
     return ret;
 }
 
-int kvm_arch_get_registers(CPUState *cs, Error **errp)
+int kvm_arch_get_registers(CPUState *cs)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     int ret = 0;
     struct kvm_regs regs;
     int i;
@@ -1257,20 +1266,33 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
     abort();
 }
 
-int kvm_arch_get_default_type(MachineState *machine)
+int mips_kvm_type(MachineState *machine, const char *vm_type)
 {
-#if defined(KVM_CAP_MIPS_VZ)
+#if defined(KVM_CAP_MIPS_VZ) || defined(KVM_CAP_MIPS_TE)
     int r;
     KVMState *s = KVM_STATE(machine->accelerator);
+#endif
 
+#if defined(KVM_CAP_MIPS_VZ)
     r = kvm_check_extension(s, KVM_CAP_MIPS_VZ);
     if (r > 0) {
         return KVM_VM_MIPS_VZ;
     }
 #endif
 
-    error_report("KVM_VM_MIPS_VZ type is not available");
+#if defined(KVM_CAP_MIPS_TE)
+    r = kvm_check_extension(s, KVM_CAP_MIPS_TE);
+    if (r > 0) {
+        return KVM_VM_MIPS_TE;
+    }
+#endif
+
     return -1;
+}
+
+bool kvm_arch_cpu_check_are_resettable(void)
+{
+    return true;
 }
 
 void kvm_arch_accel_class_init(ObjectClass *oc)

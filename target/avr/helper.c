@@ -20,18 +20,16 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "qemu/error-report.h"
 #include "cpu.h"
 #include "hw/core/tcg-cpu-ops.h"
 #include "exec/exec-all.h"
-#include "exec/page-protection.h"
-#include "exec/cpu_ldst.h"
 #include "exec/address-spaces.h"
 #include "exec/helper-proto.h"
 
 bool avr_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
-    CPUAVRState *env = cpu_env(cs);
+    AVRCPU *cpu = AVR_CPU(cs);
+    CPUAVRState *env = &cpu->env;
 
     /*
      * We cannot separate a skip from the next instruction,
@@ -53,7 +51,7 @@ bool avr_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
     }
     if (interrupt_request & CPU_INTERRUPT_HARD) {
         if (cpu_interrupts_enabled(env) && env->intsrc != 0) {
-            int index = ctz64(env->intsrc);
+            int index = ctz32(env->intsrc);
             cs->exception_index = EXCP_INT(index);
             avr_cpu_do_interrupt(cs);
 
@@ -69,7 +67,8 @@ bool avr_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 
 void avr_cpu_do_interrupt(CPUState *cs)
 {
-    CPUAVRState *env = cpu_env(cs);
+    AVRCPU *cpu = AVR_CPU(cs);
+    CPUAVRState *env = &cpu->env;
 
     uint32_t ret = env->pc_w;
     int vector = 0;
@@ -79,7 +78,7 @@ void avr_cpu_do_interrupt(CPUState *cs)
     if (cs->exception_index == EXCP_RESET) {
         vector = 0;
     } else if (env->intsrc != 0) {
-        vector = ctz64(env->intsrc) + 1;
+        vector = ctz32(env->intsrc) + 1;
     }
 
     if (avr_feature(env, AVR_FEATURE_3_BYTE_PC)) {
@@ -143,7 +142,9 @@ bool avr_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
             if (probe) {
                 page_size = 1;
             } else {
-                cpu_env(cs)->fullacc = 1;
+                AVRCPU *cpu = AVR_CPU(cs);
+                CPUAVRState *env = &cpu->env;
+                env->fullacc = 1;
                 cpu_loop_exit_restore(cs, retaddr);
             }
         }

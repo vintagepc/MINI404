@@ -1,18 +1,16 @@
-.. _System Emulation:
-
 ----------------
 System Emulation
 ----------------
 
 This section of the manual is the overall guide for users using QEMU
 for full system emulation (as opposed to user-mode emulation).
-This includes working with hypervisors such as KVM, Xen
+This includes working with hypervisors such as KVM, Xen, Hax
 or Hypervisor.Framework.
 
 .. toctree::
    :maxdepth: 3
 
-   introduction
+   quickstart
    invocation
    device-emulation
    keys
@@ -38,4 +36,3 @@ or Hypervisor.Framework.
    security
    multi-process
    confidential-guest-support
-   vm-templating

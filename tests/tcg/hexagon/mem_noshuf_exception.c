@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2022-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2022 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -34,8 +34,6 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -43,31 +41,49 @@
 #include <signal.h>
 
 int err;
-
-#include "hex_test.h"
-
-bool segv_caught;
+int segv_caught;
 
 #define SHOULD_NOT_CHANGE_VAL        5
-int32_t should_not_change = SHOULD_NOT_CHANGE_VAL;
+int should_not_change = SHOULD_NOT_CHANGE_VAL;
 
 #define OK_TO_CHANGE_VAL        13
-int32_t ok_to_change = OK_TO_CHANGE_VAL;
+int ok_to_change = OK_TO_CHANGE_VAL;
+
+static void __check(const char *filename, int line, int x, int expect)
+{
+    if (x != expect) {
+        printf("ERROR %s:%d - %d != %d\n",
+               filename, line, x, expect);
+        err++;
+    }
+}
+
+#define check(x, expect) __check(__FILE__, __LINE__, (x), (expect))
+
+static void __chk_error(const char *filename, int line, int ret)
+{
+    if (ret < 0) {
+        printf("ERROR %s:%d - %d\n", filename, line, ret);
+        err++;
+    }
+}
+
+#define chk_error(ret) __chk_error(__FILE__, __LINE__, (ret))
 
 jmp_buf jmp_env;
 
 static void sig_segv(int sig, siginfo_t *info, void *puc)
 {
-    check32(sig, SIGSEGV);
-    segv_caught = true;
+    check(sig, SIGSEGV);
+    segv_caught = 1;
     longjmp(jmp_env, 1);
 }
 
 int main()
 {
     struct sigaction act;
-    int32_t dummy32;
-    int64_t dummy64;
+    int dummy32;
+    long long dummy64;
     void *p;
 
     /* SIGSEGV test */
@@ -90,8 +106,8 @@ int main()
     act.sa_flags = 0;
     chk_error(sigaction(SIGSEGV, &act, NULL));
 
-    check32(segv_caught, true);
-    check32(should_not_change, SHOULD_NOT_CHANGE_VAL);
+    check(segv_caught, 1);
+    check(should_not_change, SHOULD_NOT_CHANGE_VAL);
 
     /*
      * Check that a predicated load where the predicate is false doesn't
@@ -106,7 +122,7 @@ int main()
                  "}:mem_noshuf\n\t"
                   : "=r"(dummy32) : : "r18", "r19", "p0", "memory");
 
-    check32(ok_to_change, 7);
+    check(ok_to_change, 7);
 
     /*
      * Also check that the post-increment doesn't happen when the
@@ -122,8 +138,8 @@ int main()
                  "}:mem_noshuf\n\t"
                   : "+r"(p), "=r"(dummy64) : : "r18", "p0", "memory");
 
-    check32(ok_to_change, 9);
-    check32((int)p, (int)NULL);
+    check(ok_to_change, 9);
+    check((int)p, (int)NULL);
 
     puts(err ? "FAIL" : "PASS");
     return err ? EXIT_FAILURE : EXIT_SUCCESS;

@@ -202,11 +202,11 @@ static void quorum_report_bad(QuorumOpType type, uint64_t offset,
         msg = strerror(-ret);
     }
 
-    qapi_event_send_quorum_report_bad(type, msg, node_name, start_sector,
+    qapi_event_send_quorum_report_bad(type, !!msg, msg, node_name, start_sector,
                                       end_sector - start_sector);
 }
 
-static void GRAPH_RDLOCK quorum_report_failure(QuorumAIOCB *acb)
+static void quorum_report_failure(QuorumAIOCB *acb)
 {
     const char *reference = bdrv_get_device_or_node_name(acb->bs);
     int64_t start_sector = acb->offset / BDRV_SECTOR_SIZE;
@@ -219,7 +219,7 @@ static void GRAPH_RDLOCK quorum_report_failure(QuorumAIOCB *acb)
 
 static int quorum_vote_error(QuorumAIOCB *acb);
 
-static bool GRAPH_RDLOCK quorum_has_too_much_io_failed(QuorumAIOCB *acb)
+static bool quorum_has_too_much_io_failed(QuorumAIOCB *acb)
 {
     BDRVQuorumState *s = acb->bs->opaque;
 
@@ -270,11 +270,7 @@ static void quorum_report_bad_versions(BDRVQuorumState *s,
     }
 }
 
-/*
- * This function can count as GRAPH_RDLOCK because read_quorum_children() holds
- * the graph lock and keeps it until this coroutine has terminated.
- */
-static void coroutine_fn GRAPH_RDLOCK quorum_rewrite_entry(void *opaque)
+static void coroutine_fn quorum_rewrite_entry(void *opaque)
 {
     QuorumCo *co = opaque;
     QuorumAIOCB *acb = co->acb;
@@ -294,8 +290,8 @@ static void coroutine_fn GRAPH_RDLOCK quorum_rewrite_entry(void *opaque)
     }
 }
 
-static bool coroutine_fn GRAPH_RDLOCK
-quorum_rewrite_bad_versions(QuorumAIOCB *acb, QuorumVoteValue *value)
+static bool quorum_rewrite_bad_versions(QuorumAIOCB *acb,
+                                        QuorumVoteValue *value)
 {
     QuorumVoteVersion *version;
     QuorumVoteItem *item;
@@ -393,7 +389,7 @@ static int quorum_compute_hash(QuorumAIOCB *acb, int i, QuorumVoteValue *hash)
     /* XXX - would be nice if we could pass in the Error **
      * and propagate that back, but this quorum code is
      * restricted to just errno values currently */
-    if (qcrypto_hash_bytesv(QCRYPTO_HASH_ALGO_SHA256,
+    if (qcrypto_hash_bytesv(QCRYPTO_HASH_ALG_SHA256,
                             qiov->iov, qiov->niov,
                             &data, &len,
                             NULL) < 0) {
@@ -495,7 +491,7 @@ static int quorum_vote_error(QuorumAIOCB *acb)
     return ret;
 }
 
-static void coroutine_fn GRAPH_RDLOCK quorum_vote(QuorumAIOCB *acb)
+static void quorum_vote(QuorumAIOCB *acb)
 {
     bool quorum = true;
     int i, j, ret;
@@ -575,11 +571,7 @@ free_exit:
     quorum_free_vote_list(&acb->votes);
 }
 
-/*
- * This function can count as GRAPH_RDLOCK because read_quorum_children() holds
- * the graph lock and keeps it until this coroutine has terminated.
- */
-static void coroutine_fn GRAPH_RDLOCK read_quorum_children_entry(void *opaque)
+static void coroutine_fn read_quorum_children_entry(void *opaque)
 {
     QuorumCo *co = opaque;
     QuorumAIOCB *acb = co->acb;
@@ -607,7 +599,7 @@ static void coroutine_fn GRAPH_RDLOCK read_quorum_children_entry(void *opaque)
     }
 }
 
-static int coroutine_fn GRAPH_RDLOCK read_quorum_children(QuorumAIOCB *acb)
+static int coroutine_fn read_quorum_children(QuorumAIOCB *acb)
 {
     BDRVQuorumState *s = acb->bs->opaque;
     int i;
@@ -648,7 +640,7 @@ static int coroutine_fn GRAPH_RDLOCK read_quorum_children(QuorumAIOCB *acb)
     return acb->vote_ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK read_fifo_child(QuorumAIOCB *acb)
+static int coroutine_fn read_fifo_child(QuorumAIOCB *acb)
 {
     BDRVQuorumState *s = acb->bs->opaque;
     int n, ret;
@@ -669,9 +661,10 @@ static int coroutine_fn GRAPH_RDLOCK read_fifo_child(QuorumAIOCB *acb)
     return ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK
-quorum_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
-                 QEMUIOVector *qiov, BdrvRequestFlags flags)
+static int coroutine_fn quorum_co_preadv(BlockDriverState *bs,
+                                         int64_t offset, int64_t bytes,
+                                         QEMUIOVector *qiov,
+                                         BdrvRequestFlags flags)
 {
     BDRVQuorumState *s = bs->opaque;
     QuorumAIOCB *acb = quorum_aio_get(bs, qiov, offset, bytes, flags);
@@ -690,11 +683,7 @@ quorum_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
     return ret;
 }
 
-/*
- * This function can count as GRAPH_RDLOCK because quorum_co_pwritev() holds the
- * graph lock and keeps it until this coroutine has terminated.
- */
-static void coroutine_fn GRAPH_RDLOCK write_quorum_entry(void *opaque)
+static void coroutine_fn write_quorum_entry(void *opaque)
 {
     QuorumCo *co = opaque;
     QuorumAIOCB *acb = co->acb;
@@ -725,9 +714,9 @@ static void coroutine_fn GRAPH_RDLOCK write_quorum_entry(void *opaque)
     }
 }
 
-static int coroutine_fn GRAPH_RDLOCK
-quorum_co_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
-                  QEMUIOVector *qiov, BdrvRequestFlags flags)
+static int coroutine_fn quorum_co_pwritev(BlockDriverState *bs, int64_t offset,
+                                          int64_t bytes, QEMUIOVector *qiov,
+                                          BdrvRequestFlags flags)
 {
     BDRVQuorumState *s = bs->opaque;
     QuorumAIOCB *acb = quorum_aio_get(bs, qiov, offset, bytes, flags);
@@ -756,28 +745,28 @@ quorum_co_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
     return ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK
-quorum_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset, int64_t bytes,
-                        BdrvRequestFlags flags)
+static int coroutine_fn quorum_co_pwrite_zeroes(BlockDriverState *bs,
+                                                int64_t offset, int64_t bytes,
+                                                BdrvRequestFlags flags)
+
 {
     return quorum_co_pwritev(bs, offset, bytes, NULL,
                              flags | BDRV_REQ_ZERO_WRITE);
 }
 
-static int64_t coroutine_fn GRAPH_RDLOCK
-quorum_co_getlength(BlockDriverState *bs)
+static int64_t quorum_getlength(BlockDriverState *bs)
 {
     BDRVQuorumState *s = bs->opaque;
     int64_t result;
     int i;
 
     /* check that all file have the same length */
-    result = bdrv_co_getlength(s->children[0]->bs);
+    result = bdrv_getlength(s->children[0]->bs);
     if (result < 0) {
         return result;
     }
     for (i = 1; i < s->num_children; i++) {
-        int64_t value = bdrv_co_getlength(s->children[i]->bs);
+        int64_t value = bdrv_getlength(s->children[i]->bs);
         if (value < 0) {
             return value;
         }
@@ -789,7 +778,7 @@ quorum_co_getlength(BlockDriverState *bs)
     return result;
 }
 
-static coroutine_fn GRAPH_RDLOCK int quorum_co_flush(BlockDriverState *bs)
+static coroutine_fn int quorum_co_flush(BlockDriverState *bs)
 {
     BDRVQuorumState *s = bs->opaque;
     QuorumVoteVersion *winner = NULL;
@@ -825,8 +814,8 @@ static coroutine_fn GRAPH_RDLOCK int quorum_co_flush(BlockDriverState *bs)
     return result;
 }
 
-static bool GRAPH_RDLOCK
-quorum_recurse_can_replace(BlockDriverState *bs, BlockDriverState *to_replace)
+static bool quorum_recurse_can_replace(BlockDriverState *bs,
+                                       BlockDriverState *to_replace)
 {
     BDRVQuorumState *s = bs->opaque;
     int i;
@@ -1037,14 +1026,12 @@ static int quorum_open(BlockDriverState *bs, QDict *options, int flags,
 
 close_exit:
     /* cleanup on error */
-    bdrv_graph_wrlock();
     for (i = 0; i < s->num_children; i++) {
         if (!opened[i]) {
             continue;
         }
         bdrv_unref_child(bs, s->children[i]);
     }
-    bdrv_graph_wrunlock();
     g_free(s->children);
     g_free(opened);
 exit:
@@ -1057,17 +1044,15 @@ static void quorum_close(BlockDriverState *bs)
     BDRVQuorumState *s = bs->opaque;
     int i;
 
-    bdrv_graph_wrlock();
     for (i = 0; i < s->num_children; i++) {
         bdrv_unref_child(bs, s->children[i]);
     }
-    bdrv_graph_wrunlock();
 
     g_free(s->children);
 }
 
-static void GRAPH_WRLOCK
-quorum_add_child(BlockDriverState *bs, BlockDriverState *child_bs, Error **errp)
+static void quorum_add_child(BlockDriverState *bs, BlockDriverState *child_bs,
+                             Error **errp)
 {
     BDRVQuorumState *s = bs->opaque;
     BdrvChild *child;
@@ -1093,6 +1078,8 @@ quorum_add_child(BlockDriverState *bs, BlockDriverState *child_bs, Error **errp)
     }
     s->next_child_index++;
 
+    bdrv_drained_begin(bs);
+
     /* We can safely add the child now */
     bdrv_ref(child_bs);
 
@@ -1100,15 +1087,18 @@ quorum_add_child(BlockDriverState *bs, BlockDriverState *child_bs, Error **errp)
                               BDRV_CHILD_DATA, errp);
     if (child == NULL) {
         s->next_child_index--;
-        return;
+        goto out;
     }
     s->children = g_renew(BdrvChild *, s->children, s->num_children + 1);
     s->children[s->num_children++] = child;
     quorum_refresh_flags(bs);
+
+out:
+    bdrv_drained_end(bs);
 }
 
-static void GRAPH_WRLOCK
-quorum_del_child(BlockDriverState *bs, BdrvChild *child, Error **errp)
+static void quorum_del_child(BlockDriverState *bs, BdrvChild *child,
+                             Error **errp)
 {
     BDRVQuorumState *s = bs->opaque;
     char indexstr[INDEXSTR_LEN];
@@ -1138,14 +1128,16 @@ quorum_del_child(BlockDriverState *bs, BdrvChild *child, Error **errp)
         s->next_child_index--;
     }
 
+    bdrv_drained_begin(bs);
+
     /* We can safely remove this child now */
     memmove(&s->children[i], &s->children[i + 1],
             (s->num_children - i - 1) * sizeof(BdrvChild *));
     s->children = g_renew(BdrvChild *, s->children, --s->num_children);
-
     bdrv_unref_child(bs, child);
 
     quorum_refresh_flags(bs);
+    bdrv_drained_end(bs);
 }
 
 static void quorum_gather_child_options(BlockDriverState *bs, QDict *target,
@@ -1225,10 +1217,11 @@ static void quorum_child_perm(BlockDriverState *bs, BdrvChild *c,
  * return BDRV_BLOCK_ZERO if *all* children agree that a certain
  * region contains zeroes, and BDRV_BLOCK_DATA otherwise.
  */
-static int coroutine_fn GRAPH_RDLOCK
-quorum_co_block_status(BlockDriverState *bs, bool want_zero,
-                       int64_t offset, int64_t count,
-                       int64_t *pnum, int64_t *map, BlockDriverState **file)
+static int coroutine_fn quorum_co_block_status(BlockDriverState *bs,
+                                               bool want_zero,
+                                               int64_t offset, int64_t count,
+                                               int64_t *pnum, int64_t *map,
+                                               BlockDriverState **file)
 {
     BDRVQuorumState *s = bs->opaque;
     int i, ret;
@@ -1290,7 +1283,7 @@ static BlockDriver bdrv_quorum = {
 
     .bdrv_co_flush                      = quorum_co_flush,
 
-    .bdrv_co_getlength                  = quorum_co_getlength,
+    .bdrv_getlength                     = quorum_getlength,
 
     .bdrv_co_preadv                     = quorum_co_preadv,
     .bdrv_co_pwritev                    = quorum_co_pwritev,
@@ -1308,7 +1301,7 @@ static BlockDriver bdrv_quorum = {
 
 static void bdrv_quorum_init(void)
 {
-    if (!qcrypto_hash_supports(QCRYPTO_HASH_ALGO_SHA256)) {
+    if (!qcrypto_hash_supports(QCRYPTO_HASH_ALG_SHA256)) {
         /* SHA256 hash support is required for quorum device */
         return;
     }

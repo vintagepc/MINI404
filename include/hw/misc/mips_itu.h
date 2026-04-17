@@ -57,8 +57,8 @@ struct MIPSITUState {
     SysBusDevice parent_obj;
     /*< public >*/
 
-    uint32_t num_fifo;
-    uint32_t num_semaphores;
+    int32_t num_fifo;
+    int32_t num_semaphores;
 
     /* ITC Storage */
     ITCStorageCell *cell;
@@ -70,6 +70,11 @@ struct MIPSITUState {
 
     /* ITU Control Register */
     uint64_t icr0;
+
+    /* SAAR */
+    bool saar_present;
+    void *saar;
+
 };
 
 /* Get ITC Configuration Tag memory region. */

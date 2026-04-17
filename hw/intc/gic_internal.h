@@ -280,8 +280,6 @@ static inline void gic_set_active(GICState *s, int irq, int cpu)
 
 static inline void gic_clear_active(GICState *s, int irq, int cpu)
 {
-    unsigned int cm;
-
     if (gic_is_vcpu(cpu)) {
         uint32_t *entry = gic_get_lr_entry(s, irq, cpu);
         GICH_LR_CLEAR_ACTIVE(*entry);
@@ -303,13 +301,11 @@ static inline void gic_clear_active(GICState *s, int irq, int cpu)
              * the GIC is secure.
              */
             if (!s->security_extn || GIC_DIST_TEST_GROUP(phys_irq, 1 << rcpu)) {
-                cm = phys_irq < GIC_INTERNAL ? 1 << rcpu : ALL_CPU_MASK;
-                GIC_DIST_CLEAR_ACTIVE(phys_irq, cm);
+                GIC_DIST_CLEAR_ACTIVE(phys_irq, 1 << rcpu);
             }
         }
     } else {
-        cm = irq < GIC_INTERNAL ? 1 << cpu : ALL_CPU_MASK;
-        GIC_DIST_CLEAR_ACTIVE(irq, cm);
+        GIC_DIST_CLEAR_ACTIVE(irq, 1 << cpu);
     }
 }
 

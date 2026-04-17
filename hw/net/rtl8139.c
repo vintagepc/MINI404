@@ -48,10 +48,12 @@
  *  2011-Mar-22  Benjamin Poirier:  Implemented VLAN offloading
  */
 
-#include "qemu/osdep.h"
-#include <zlib.h> /* for crc32 */
+/* For crc32 */
 
-#include "hw/pci/pci_device.h"
+#include "qemu/osdep.h"
+#include <zlib.h>
+
+#include "hw/pci/pci.h"
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "sysemu/dma.h"
@@ -98,7 +100,7 @@ enum RTL8139_registers {
     MAC0 = 0,        /* Ethernet hardware address. */
     MAR0 = 8,        /* Multicast filter. */
     TxStatus0 = 0x10,/* Transmit status (Four 32bit registers). C mode only */
-                     /* Dump Tally Counter control register(64bit). C+ mode only */
+                     /* Dump Tally Conter control register(64bit). C+ mode only */
     TxAddr0 = 0x20,  /* Tx descriptors (also four 32bit). */
     RxBuf = 0x30,
     ChipCmd = 0x37,
@@ -824,6 +826,7 @@ static ssize_t rtl8139_do_receive(NetClientState *nc, const uint8_t *buf, size_t
 
     uint32_t packet_header = 0;
 
+    uint8_t buf1[MIN_BUF_SIZE + VLAN_HLEN];
     static const uint8_t broadcast_macaddr[6] =
         { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
@@ -932,6 +935,17 @@ static ssize_t rtl8139_do_receive(NetClientState *nc, const uint8_t *buf, size_t
             ++s->tally_counters.RxERR;
 
             return size;
+        }
+    }
+
+    /* if too small buffer, then expand it
+     * Include some tailroom in case a vlan tag is later removed. */
+    if (size < MIN_BUF_SIZE + VLAN_HLEN) {
+        memcpy(buf1, buf, size);
+        memset(buf1 + size, 0, MIN_BUF_SIZE + VLAN_HLEN - size);
+        buf = buf1;
+        if (size < MIN_BUF_SIZE) {
+            size = MIN_BUF_SIZE;
         }
     }
 
@@ -2140,9 +2154,6 @@ static int rtl8139_cplus_transmit_one(RTL8139State *s)
 
                 int large_send_mss = (txdw0 >> CP_TC_LGSEN_MSS_SHIFT) &
                                      CP_TC_LGSEN_MSS_MASK;
-                if (large_send_mss == 0) {
-                    goto skip_offload;
-                }
 
                 DPRINTF("+++ C+ mode offloaded task TSO IP data %d "
                     "frame data %d specified MSS=%d\n",
@@ -2736,11 +2747,7 @@ static void rtl8139_io_writeb(void *opaque, uint8_t addr, uint32_t val)
             }
 
             break;
-        case RxConfig:
-            DPRINTF("RxConfig write(b) val=0x%02x\n", val);
-            rtl8139_RxConfig_write(s,
-                (rtl8139_RxConfig_read(s) & 0xFFFFFF00) | val);
-            break;
+
         default:
             DPRINTF("not implemented write(b) addr=0x%x val=0x%02x\n", addr,
                 val);
@@ -3152,7 +3159,7 @@ static const VMStateDescription vmstate_rtl8139_hotplug_ready ={
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = rtl8139_hotplug_ready_needed,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_END_OF_LIST()
     }
 };
@@ -3175,7 +3182,7 @@ static const VMStateDescription vmstate_rtl8139 = {
     .minimum_version_id = 3,
     .post_load = rtl8139_post_load,
     .pre_save  = rtl8139_pre_save,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, RTL8139State),
         VMSTATE_PARTIAL_BUFFER(phys, RTL8139State, 6),
         VMSTATE_BUFFER(mult, RTL8139State),
@@ -3259,7 +3266,7 @@ static const VMStateDescription vmstate_rtl8139 = {
         VMSTATE_UINT32_V(cplus_enabled, RTL8139State, 4),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * const []) {
+    .subsections = (const VMStateDescription*[]) {
         &vmstate_rtl8139_hotplug_ready,
         NULL
     }
@@ -3390,8 +3397,7 @@ static void pci_rtl8139_realize(PCIDevice *dev, Error **errp)
     s->eeprom.contents[9] = s->conf.macaddr.a[4] | s->conf.macaddr.a[5] << 8;
 
     s->nic = qemu_new_nic(&net_rtl8139_info, &s->conf,
-                          object_get_typename(OBJECT(dev)), d->id,
-                          &d->mem_reentrancy_guard, s);
+                          object_get_typename(OBJECT(dev)), d->id, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
 
     s->cplus_txbuffer = NULL;
@@ -3427,7 +3433,7 @@ static void rtl8139_class_init(ObjectClass *klass, void *data)
     k->device_id = PCI_DEVICE_ID_REALTEK_8139;
     k->revision = RTL8139_PCI_REVID; /* >=0x20 is for 8139C+ */
     k->class_id = PCI_CLASS_NETWORK_ETHERNET;
-    device_class_set_legacy_reset(dc, rtl8139_reset);
+    dc->reset = rtl8139_reset;
     dc->vmsd = &vmstate_rtl8139;
     device_class_set_props(dc, rtl8139_properties);
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);

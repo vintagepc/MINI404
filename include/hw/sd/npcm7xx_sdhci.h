@@ -51,7 +51,7 @@ typedef struct NPCM7xxRegs {
     uint32_t boottoctrl;
 } NPCM7xxRegisters;
 
-struct NPCM7xxSDHCIState {
+typedef struct NPCM7xxSDHCIState {
     SysBusDevice parent;
 
     MemoryRegion container;
@@ -60,6 +60,6 @@ struct NPCM7xxSDHCIState {
     NPCM7xxRegisters regs;
 
     SDHCIState sdhci;
-};
+} NPCM7xxSDHCIState;
 
 #endif /* NPCM7XX_SDHCI_H */

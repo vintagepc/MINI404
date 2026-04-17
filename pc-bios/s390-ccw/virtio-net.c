@@ -51,16 +51,11 @@ int virtio_net_init(void *mac_addr)
     void *buf;
     int i;
 
-    rx_last_idx = 0;
-
     vdev->guest_features[0] = VIRTIO_NET_F_MAC_BIT;
     virtio_setup_ccw(vdev);
 
-    if (!(vdev->guest_features[0] & VIRTIO_NET_F_MAC_BIT)) {
-        puts("virtio-net device does not support the MAC address feature");
-        return -1;
-    }
-
+    IPL_assert(vdev->guest_features[0] & VIRTIO_NET_F_MAC_BIT,
+               "virtio-net device does not support the MAC address feature");
     memcpy(mac_addr, vdev->config.net.mac, ETH_ALEN);
 
     for (i = 0; i < 64; i++) {

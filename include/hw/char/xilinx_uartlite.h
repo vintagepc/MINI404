@@ -15,9 +15,24 @@
 #ifndef XILINX_UARTLITE_H
 #define XILINX_UARTLITE_H
 
-#include "qom/object.h"
+#include "hw/qdev-properties.h"
+#include "hw/sysbus.h"
 
-#define TYPE_XILINX_UARTLITE "xlnx.xps-uartlite"
-OBJECT_DECLARE_SIMPLE_TYPE(XilinxUARTLite, XILINX_UARTLITE)
+static inline DeviceState *xilinx_uartlite_create(hwaddr addr,
+                                        qemu_irq irq,
+                                        Chardev *chr)
+{
+    DeviceState *dev;
+    SysBusDevice *s;
+
+    dev = qdev_new("xlnx.xps-uartlite");
+    s = SYS_BUS_DEVICE(dev);
+    qdev_prop_set_chr(dev, "chardev", chr);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, addr);
+    sysbus_connect_irq(s, 0, irq);
+
+    return dev;
+}
 
 #endif

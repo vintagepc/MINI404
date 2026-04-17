@@ -24,16 +24,15 @@ import difflib
 import subprocess
 import contextlib
 import json
+import termios
 import shutil
 import sys
 from multiprocessing import Pool
-from typing import List, Optional, Any, Sequence, Dict
-from testenv import TestEnv
+from contextlib import contextmanager
+from typing import List, Optional, Iterator, Any, Sequence, Dict, \
+        ContextManager
 
-if sys.version_info >= (3, 9):
-    from contextlib import AbstractContextManager as ContextManager
-else:
-    from typing import ContextManager
+from testenv import TestEnv
 
 
 def silent_unlink(path: Path) -> None:
@@ -55,6 +54,22 @@ def file_diff(file1: str, file2: str) -> List[str]:
         res = [line.rstrip()
                for line in difflib.unified_diff(seq1, seq2, file1, file2)]
         return res
+
+
+# We want to save current tty settings during test run,
+# since an aborting qemu call may leave things screwed up.
+@contextmanager
+def savetty() -> Iterator[None]:
+    isterm = sys.stdin.isatty()
+    if isterm:
+        fd = sys.stdin.fileno()
+        attr = termios.tcgetattr(fd)
+
+    try:
+        yield
+    finally:
+        if isterm:
+            termios.tcsetattr(fd, termios.TCSADRAIN, attr)
 
 
 class LastElapsedTime(ContextManager['LastElapsedTime']):
@@ -154,6 +169,7 @@ class TestRunner(ContextManager['TestRunner']):
         self._stack = contextlib.ExitStack()
         self._stack.enter_context(self.env)
         self._stack.enter_context(self.last_elapsed)
+        self._stack.enter_context(savetty())
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
@@ -231,11 +247,13 @@ class TestRunner(ContextManager['TestRunner']):
 
         return f'{test}.out'
 
-    def do_run_test(self, test: str) -> TestResult:
+    def do_run_test(self, test: str, mp: bool) -> TestResult:
         """
         Run one test
 
         :param test: test file path
+        :param mp: if true, we are in a multiprocessing environment, use
+                   personal subdirectories for test run
 
         Note: this method may be called from subprocess, so it does not
         change ``self`` object in any way!
@@ -258,14 +276,12 @@ class TestRunner(ContextManager['TestRunner']):
 
         args = [str(f_test.resolve())]
         env = self.env.prepare_subprocess(args)
-
-        # Split test directories, so that tests running in parallel don't
-        # break each other.
-        for d in ['TEST_DIR', 'SOCK_DIR']:
-            env[d] = os.path.join(
-                env[d],
-                f"{self.env.imgfmt}-{self.env.imgproto}-{f_test.name}")
-            Path(env[d]).mkdir(parents=True, exist_ok=True)
+        if mp:
+            # Split test directories, so that tests running in parallel don't
+            # break each other.
+            for d in ['TEST_DIR', 'SOCK_DIR']:
+                env[d] = os.path.join(env[d], f_test.name)
+                Path(env[d]).mkdir(parents=True, exist_ok=True)
 
         test_dir = env['TEST_DIR']
         f_bad = Path(test_dir, f_test.name + '.out.bad')
@@ -278,7 +294,6 @@ class TestRunner(ContextManager['TestRunner']):
         t0 = time.time()
         with f_bad.open('w', encoding="utf-8") as f:
             with subprocess.Popen(args, cwd=str(f_test.parent), env=env,
-                                  stdin=subprocess.DEVNULL,
                                   stdout=f, stderr=subprocess.STDOUT) as proc:
                 try:
                     proc.wait()
@@ -350,7 +365,7 @@ class TestRunner(ContextManager['TestRunner']):
             testname = os.path.basename(test)
             print(f'# running {self.env.imgfmt} {testname}')
 
-        res = self.do_run_test(test)
+        res = self.do_run_test(test, mp)
 
         end = datetime.datetime.now().strftime('%H:%M:%S')
         self.test_print_one_line(test=test,
@@ -376,7 +391,6 @@ class TestRunner(ContextManager['TestRunner']):
         casenotrun = []
 
         if self.tap:
-            print('TAP version 13')
             self.env.print_env('# ')
             print('1..%d' % len(tests))
         else:

@@ -3,4 +3,3 @@ config PPC
 
 config PPC64
     bool
-    select PPC

@@ -1,5 +1,3 @@
-.. _vhost_user_rng:
-
 QEMU vhost-user-rng - RNG emulation
 ===================================
 

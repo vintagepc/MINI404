@@ -67,7 +67,8 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
         if persistent:
             params['persistent'] = True
 
-        vm.cmd('block-dirty-bitmap-add', params)
+        result = vm.qmp('block-dirty-bitmap-add', **params)
+        self.assert_qmp(result, 'return', {})
 
     def check_bitmap(self, vm, sha256):
         result = vm.qmp('x-debug-block-dirty-bitmap-sha256',
@@ -90,15 +91,16 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
         if migrate_bitmaps:
             mig_caps.append({'capability': 'dirty-bitmaps', 'state': True})
 
-        self.vm_a.cmd('migrate-set-capabilities',
-                      capabilities=mig_caps)
+        result = self.vm_a.qmp('migrate-set-capabilities',
+                               capabilities=mig_caps)
+        self.assert_qmp(result, 'return', {})
 
         self.add_bitmap(self.vm_a, granularity, persistent)
         for r in regions:
             self.vm_a.hmp_qemu_io('drive0', 'write %d %d' % r)
         sha256 = get_bitmap_hash(self.vm_a)
 
-        self.vm_a.cmd('migrate', uri=mig_cmd)
+        result = self.vm_a.qmp('migrate', uri=mig_cmd)
         while True:
             event = self.vm_a.event_wait('MIGRATION')
             if event['data']['status'] == 'completed':
@@ -112,7 +114,8 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
         removed = (not migrate_bitmaps) and persistent
         self.check_bitmap(self.vm_a, False if removed else sha256)
 
-        self.vm_a.cmd('cont')
+        result = self.vm_a.qmp('cont')
+        self.assert_qmp(result, 'return', {})
 
         # test that bitmap is still here after invalidation
         self.check_bitmap(self.vm_a, sha256)
@@ -155,8 +158,9 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
         if online:
             os.mkfifo(mig_file)
             self.vm_b.launch()
-            self.vm_b.cmd('migrate-set-capabilities',
-                          capabilities=mig_caps)
+            result = self.vm_b.qmp('migrate-set-capabilities',
+                                   capabilities=mig_caps)
+            self.assert_qmp(result, 'return', {})
 
         self.add_bitmap(self.vm_a, granularity, persistent)
         for r in regions:
@@ -167,10 +171,11 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
             self.vm_a.shutdown()
             self.vm_a.launch()
 
-        self.vm_a.cmd('migrate-set-capabilities',
-                      capabilities=mig_caps)
+        result = self.vm_a.qmp('migrate-set-capabilities',
+                               capabilities=mig_caps)
+        self.assert_qmp(result, 'return', {})
 
-        self.vm_a.cmd('migrate', uri=mig_cmd)
+        result = self.vm_a.qmp('migrate', uri=mig_cmd)
         while True:
             event = self.vm_a.event_wait('MIGRATION')
             if event['data']['status'] == 'completed':
@@ -179,9 +184,11 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
         if not online:
             self.vm_a.shutdown()
             self.vm_b.launch()
-            self.vm_b.cmd('migrate-set-capabilities',
-                          capabilities=mig_caps)
-            self.vm_b.cmd('migrate-incoming', uri=incoming_cmd)
+            result = self.vm_b.qmp('migrate-set-capabilities',
+                                   capabilities=mig_caps)
+            self.assert_qmp(result, 'return', {})
+            result = self.vm_b.qmp('migrate-incoming', uri=incoming_cmd)
+            self.assert_qmp(result, 'return', {})
 
         while True:
             event = self.vm_b.event_wait('MIGRATION')
@@ -247,7 +254,8 @@ class TestDirtyBitmapBackingMigration(iotests.QMPTestCase):
         self.vm = iotests.VM()
         self.vm.launch()
 
-        self.vm.cmd('blockdev-add', blockdev)
+        result = self.vm.qmp('blockdev-add', **blockdev)
+        self.assert_qmp(result, 'return', {})
 
         # Check that the bitmaps are there
         nodes = self.vm.qmp('query-named-block-nodes', flat=True)['return']
@@ -256,7 +264,8 @@ class TestDirtyBitmapBackingMigration(iotests.QMPTestCase):
                 self.assert_qmp(node, 'dirty-bitmaps[0]/name', 'bmap0')
 
         caps = [{'capability': 'events', 'state': True}]
-        self.vm.cmd('migrate-set-capabilities', capabilities=caps)
+        result = self.vm.qmp('migrate-set-capabilities', capabilities=caps)
+        self.assert_qmp(result, 'return', {})
 
     def tearDown(self):
         self.vm.shutdown()
@@ -267,12 +276,14 @@ class TestDirtyBitmapBackingMigration(iotests.QMPTestCase):
         """
         Continue the source after migration.
         """
-        self.vm.cmd('migrate', uri='exec: cat > /dev/null')
+        result = self.vm.qmp('migrate', uri='exec: cat > /dev/null')
+        self.assert_qmp(result, 'return', {})
 
         with Timeout(10, 'Migration timeout'):
             self.vm.wait_migration('postmigrate')
 
-        self.vm.cmd('cont')
+        result = self.vm.qmp('cont')
+        self.assert_qmp(result, 'return', {})
 
 
 def main() -> None:
