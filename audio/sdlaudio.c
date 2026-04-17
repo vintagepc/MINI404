@@ -26,7 +26,6 @@
 #include <SDL.h>
 #include <SDL_thread.h>
 #include "qemu/module.h"
-#include "qapi/error.h"
 #include "audio.h"
 
 #ifndef _WIN32
@@ -450,10 +449,10 @@ static void sdl_enable_in(HWVoiceIn *hw, bool enable)
     SDL_PauseAudioDevice(sdl->devid, !enable);
 }
 
-static void *sdl_audio_init(Audiodev *dev, Error **errp)
+static void *sdl_audio_init(Audiodev *dev)
 {
     if (SDL_InitSubSystem (SDL_INIT_AUDIO)) {
-        error_setg(errp, "SDL failed to initialize audio subsystem");
+        sdl_logerr ("SDL failed to initialize audio subsystem\n");
         return NULL;
     }
 
@@ -494,6 +493,7 @@ static struct audio_driver sdl_audio_driver = {
     .init           = sdl_audio_init,
     .fini           = sdl_audio_fini,
     .pcm_ops        = &sdl_pcm_ops,
+    .can_be_default = 1,
     .max_voices_out = INT_MAX,
     .max_voices_in  = INT_MAX,
     .voice_size_out = sizeof(SDLVoiceOut),

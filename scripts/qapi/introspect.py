@@ -26,9 +26,7 @@ from .common import c_name, mcgen
 from .gen import QAPISchemaMonolithicCVisitor
 from .schema import (
     QAPISchema,
-    QAPISchemaAlternatives,
     QAPISchemaArrayType,
-    QAPISchemaBranches,
     QAPISchemaBuiltinType,
     QAPISchemaEntity,
     QAPISchemaEnumMember,
@@ -38,6 +36,7 @@ from .schema import (
     QAPISchemaObjectTypeMember,
     QAPISchemaType,
     QAPISchemaVariant,
+    QAPISchemaVariants,
 )
 from .source import QAPISourceInfo
 
@@ -228,14 +227,10 @@ const QLitObject %(c_name)s = %(c_string)s;
 
         # Map the various integer types to plain int
         if typ.json_type() == 'int':
-            type_int = self._schema.lookup_type('int')
-            assert type_int
-            typ = type_int
+            typ = self._schema.lookup_type('int')
         elif (isinstance(typ, QAPISchemaArrayType) and
               typ.element_type.json_type() == 'int'):
-            type_intlist = self._schema.lookup_type('intList')
-            assert type_intlist
-            typ = type_intlist
+            typ = self._schema.lookup_type('intList')
         # Add type to work queue if new
         if typ not in self._used_types:
             self._used_types.append(typ)
@@ -336,24 +331,24 @@ const QLitObject %(c_name)s = %(c_string)s;
                                ifcond: QAPISchemaIfCond,
                                features: List[QAPISchemaFeature],
                                members: List[QAPISchemaObjectTypeMember],
-                               branches: Optional[QAPISchemaBranches]) -> None:
+                               variants: Optional[QAPISchemaVariants]) -> None:
         obj: SchemaInfoObject = {
             'members': [self._gen_object_member(m) for m in members]
         }
-        if branches:
-            obj['tag'] = branches.tag_member.name
-            obj['variants'] = [self._gen_variant(v) for v in branches.variants]
+        if variants:
+            obj['tag'] = variants.tag_member.name
+            obj['variants'] = [self._gen_variant(v) for v in variants.variants]
         self._gen_tree(name, 'object', obj, ifcond, features)
 
     def visit_alternate_type(self, name: str, info: Optional[QAPISourceInfo],
                              ifcond: QAPISchemaIfCond,
                              features: List[QAPISchemaFeature],
-                             alternatives: QAPISchemaAlternatives) -> None:
+                             variants: QAPISchemaVariants) -> None:
         self._gen_tree(
             name, 'alternate',
             {'members': [Annotated({'type': self._use_type(m.type)},
                                    m.ifcond)
-                         for m in alternatives.variants]},
+                         for m in variants.variants]},
             ifcond, features
         )
 

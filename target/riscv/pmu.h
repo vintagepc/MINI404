@@ -16,27 +16,21 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef RISCV_PMU_H
-#define RISCV_PMU_H
-
+#include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "cpu.h"
-#include "qapi/error.h"
+#include "qemu/main-loop.h"
+#include "exec/exec-all.h"
 
 bool riscv_pmu_ctr_monitor_instructions(CPURISCVState *env,
                                         uint32_t target_ctr);
 bool riscv_pmu_ctr_monitor_cycles(CPURISCVState *env,
                                   uint32_t target_ctr);
 void riscv_pmu_timer_cb(void *priv);
-void riscv_pmu_init(RISCVCPU *cpu, Error **errp);
+int riscv_pmu_init(RISCVCPU *cpu, int num_counters);
 int riscv_pmu_update_event_map(CPURISCVState *env, uint64_t value,
                                uint32_t ctr_idx);
 int riscv_pmu_incr_ctr(RISCVCPU *cpu, enum riscv_pmu_event_idx event_idx);
-void riscv_pmu_generate_fdt_node(void *fdt, uint32_t cmask, char *pmu_name);
+void riscv_pmu_generate_fdt_node(void *fdt, int num_counters, char *pmu_name);
 int riscv_pmu_setup_timer(CPURISCVState *env, uint64_t value,
                           uint32_t ctr_idx);
-void riscv_pmu_update_fixed_ctrs(CPURISCVState *env, target_ulong newpriv,
-                                 bool new_virt);
-RISCVException riscv_pmu_read_ctr(CPURISCVState *env, target_ulong *val,
-                                  bool upper_half, uint32_t ctr_idx);
-
-#endif /* RISCV_PMU_H */

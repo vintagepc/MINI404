@@ -76,29 +76,29 @@ struct packet_hash_info_t {
     };
 };
 
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(key_size, sizeof(__u32));
-    __uint(value_size, sizeof(struct rss_config_t));
-    __uint(max_entries, 1);
-    __uint(map_flags, BPF_F_MMAPABLE);
-} tap_rss_map_configurations SEC(".maps");
+struct bpf_map_def SEC("maps")
+tap_rss_map_configurations = {
+        .type        = BPF_MAP_TYPE_ARRAY,
+        .key_size    = sizeof(__u32),
+        .value_size  = sizeof(struct rss_config_t),
+        .max_entries = 1,
+};
 
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(key_size, sizeof(__u32));
-    __uint(value_size, sizeof(struct toeplitz_key_data_t));
-    __uint(max_entries, 1);
-    __uint(map_flags, BPF_F_MMAPABLE);
-} tap_rss_map_toeplitz_key SEC(".maps");
+struct bpf_map_def SEC("maps")
+tap_rss_map_toeplitz_key = {
+        .type        = BPF_MAP_TYPE_ARRAY,
+        .key_size    = sizeof(__u32),
+        .value_size  = sizeof(struct toeplitz_key_data_t),
+        .max_entries = 1,
+};
 
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(key_size, sizeof(__u32));
-    __uint(value_size, sizeof(__u16));
-    __uint(max_entries, INDIRECTION_TABLE_SIZE);
-    __uint(map_flags, BPF_F_MMAPABLE);
-} tap_rss_map_indirection_table SEC(".maps");
+struct bpf_map_def SEC("maps")
+tap_rss_map_indirection_table = {
+        .type        = BPF_MAP_TYPE_ARRAY,
+        .key_size    = sizeof(__u32),
+        .value_size  = sizeof(__u16),
+        .max_entries = INDIRECTION_TABLE_SIZE,
+};
 
 static inline void net_rx_rss_add_chunk(__u8 *rss_input, size_t *bytes_written,
                                         const void *ptr, size_t size) {
@@ -320,7 +320,7 @@ static inline int parse_packet(struct __sk_buff *skb,
 
         info->in_src = ip.saddr;
         info->in_dst = ip.daddr;
-        info->is_fragmented = !!(bpf_ntohs(ip.frag_off) & (0x2000 | 0x1fff));
+        info->is_fragmented = !!ip.frag_off;
 
         l4_protocol = ip.protocol;
         l4_offset = ip.ihl * 4;
@@ -380,19 +380,18 @@ error:
     return err;
 }
 
-static inline bool calculate_rss_hash(struct __sk_buff *skb,
-                                      struct rss_config_t *config,
-                                      struct toeplitz_key_data_t *toe,
-                                      __u32 *result)
+static inline __u32 calculate_rss_hash(struct __sk_buff *skb,
+        struct rss_config_t *config, struct toeplitz_key_data_t *toe)
 {
     __u8 rss_input[HASH_CALCULATION_BUFFER_SIZE] = {};
     size_t bytes_written = 0;
+    __u32 result = 0;
     int err = 0;
     struct packet_hash_info_t packet_info = {};
 
     err = parse_packet(skb, &packet_info);
     if (err) {
-        return false;
+        return 0;
     }
 
     if (packet_info.is_ipv4) {
@@ -525,16 +524,14 @@ static inline bool calculate_rss_hash(struct __sk_buff *skb,
         }
     }
 
-    if (!bytes_written) {
-        return false;
+    if (bytes_written) {
+        net_toeplitz_add(&result, rss_input, bytes_written, toe);
     }
 
-    net_toeplitz_add(result, rss_input, bytes_written, toe);
-
-    return true;
+    return result;
 }
 
-SEC("socket")
+SEC("tun_rss_steering")
 int tun_rss_steering_prog(struct __sk_buff *skb)
 {
 
@@ -547,23 +544,28 @@ int tun_rss_steering_prog(struct __sk_buff *skb)
     config = bpf_map_lookup_elem(&tap_rss_map_configurations, &key);
     toe = bpf_map_lookup_elem(&tap_rss_map_toeplitz_key, &key);
 
-    if (!config || !toe) {
-        return 0;
-    }
-
-    if (config->redirect && calculate_rss_hash(skb, config, toe, &hash)) {
-        __u32 table_idx = hash % config->indirections_len;
-        __u16 *queue = 0;
-
-        queue = bpf_map_lookup_elem(&tap_rss_map_indirection_table,
-                                    &table_idx);
-
-        if (queue) {
-            return *queue;
+    if (config && toe) {
+        if (!config->redirect) {
+            return config->default_queue;
         }
+
+        hash = calculate_rss_hash(skb, config, toe);
+        if (hash) {
+            __u32 table_idx = hash % config->indirections_len;
+            __u16 *queue = 0;
+
+            queue = bpf_map_lookup_elem(&tap_rss_map_indirection_table,
+                                        &table_idx);
+
+            if (queue) {
+                return *queue;
+            }
+        }
+
+        return config->default_queue;
     }
 
-    return config->default_queue;
+    return -1;
 }
 
 char _license[] SEC("license") = "GPL v2";

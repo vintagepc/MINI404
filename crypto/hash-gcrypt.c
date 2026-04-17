@@ -1,7 +1,6 @@
 /*
  * QEMU Crypto hash algorithms
  *
- * Copyright (c) 2024 Seagate Technology LLC and/or its Affiliates
  * Copyright (c) 2016 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
@@ -26,115 +25,92 @@
 #include "hashpriv.h"
 
 
-static int qcrypto_hash_alg_map[QCRYPTO_HASH_ALGO__MAX] = {
-    [QCRYPTO_HASH_ALGO_MD5] = GCRY_MD_MD5,
-    [QCRYPTO_HASH_ALGO_SHA1] = GCRY_MD_SHA1,
-    [QCRYPTO_HASH_ALGO_SHA224] = GCRY_MD_SHA224,
-    [QCRYPTO_HASH_ALGO_SHA256] = GCRY_MD_SHA256,
-    [QCRYPTO_HASH_ALGO_SHA384] = GCRY_MD_SHA384,
-    [QCRYPTO_HASH_ALGO_SHA512] = GCRY_MD_SHA512,
-    [QCRYPTO_HASH_ALGO_RIPEMD160] = GCRY_MD_RMD160,
-#ifdef CONFIG_CRYPTO_SM3
-    [QCRYPTO_HASH_ALGO_SM3] = GCRY_MD_SM3,
-#endif
+static int qcrypto_hash_alg_map[QCRYPTO_HASH_ALG__MAX] = {
+    [QCRYPTO_HASH_ALG_MD5] = GCRY_MD_MD5,
+    [QCRYPTO_HASH_ALG_SHA1] = GCRY_MD_SHA1,
+    [QCRYPTO_HASH_ALG_SHA224] = GCRY_MD_SHA224,
+    [QCRYPTO_HASH_ALG_SHA256] = GCRY_MD_SHA256,
+    [QCRYPTO_HASH_ALG_SHA384] = GCRY_MD_SHA384,
+    [QCRYPTO_HASH_ALG_SHA512] = GCRY_MD_SHA512,
+    [QCRYPTO_HASH_ALG_RIPEMD160] = GCRY_MD_RMD160,
 };
 
-gboolean qcrypto_hash_supports(QCryptoHashAlgo alg)
+gboolean qcrypto_hash_supports(QCryptoHashAlgorithm alg)
 {
     if (alg < G_N_ELEMENTS(qcrypto_hash_alg_map) &&
         qcrypto_hash_alg_map[alg] != GCRY_MD_NONE) {
-        return gcry_md_test_algo(qcrypto_hash_alg_map[alg]) == 0;
+        return true;
     }
     return false;
 }
 
-static
-QCryptoHash *qcrypto_gcrypt_hash_new(QCryptoHashAlgo alg, Error **errp)
+
+static int
+qcrypto_gcrypt_hash_bytesv(QCryptoHashAlgorithm alg,
+                           const struct iovec *iov,
+                           size_t niov,
+                           uint8_t **result,
+                           size_t *resultlen,
+                           Error **errp)
 {
-    QCryptoHash *hash;
-    gcry_error_t ret;
+    int i, ret;
+    gcry_md_hd_t md;
+    unsigned char *digest;
 
-    hash = g_new(QCryptoHash, 1);
-    hash->alg = alg;
-    hash->opaque = g_new(gcry_md_hd_t, 1);
+    if (!qcrypto_hash_supports(alg)) {
+        error_setg(errp,
+                   "Unknown hash algorithm %d",
+                   alg);
+        return -1;
+    }
 
-    ret = gcry_md_open((gcry_md_hd_t *) hash->opaque,
-                       qcrypto_hash_alg_map[alg], 0);
-    if (ret != 0) {
+    ret = gcry_md_open(&md, qcrypto_hash_alg_map[alg], 0);
+
+    if (ret < 0) {
         error_setg(errp,
                    "Unable to initialize hash algorithm: %s",
                    gcry_strerror(ret));
-        g_free(hash->opaque);
-        g_free(hash);
-        return NULL;
-    }
-    return hash;
-}
-
-static
-void qcrypto_gcrypt_hash_free(QCryptoHash *hash)
-{
-    gcry_md_hd_t *ctx = hash->opaque;
-
-    if (ctx) {
-        gcry_md_close(*ctx);
-        g_free(ctx);
-    }
-
-    g_free(hash);
-}
-
-
-static
-int qcrypto_gcrypt_hash_update(QCryptoHash *hash,
-                               const struct iovec *iov,
-                               size_t niov,
-                               Error **errp)
-{
-    gcry_md_hd_t *ctx = hash->opaque;
-
-    for (int i = 0; i < niov; i++) {
-        gcry_md_write(*ctx, iov[i].iov_base, iov[i].iov_len);
-    }
-
-    return 0;
-}
-
-static
-int qcrypto_gcrypt_hash_finalize(QCryptoHash *hash,
-                                 uint8_t **result,
-                                 size_t *result_len,
-                                 Error **errp)
-{
-    int ret;
-    unsigned char *digest;
-    gcry_md_hd_t *ctx = hash->opaque;
-
-    ret = gcry_md_get_algo_dlen(qcrypto_hash_alg_map[hash->alg]);
-    if (ret == 0) {
-        error_setg(errp, "Unable to get hash length");
         return -1;
     }
 
-    if (*result_len == 0) {
-        *result_len = ret;
-        *result = g_new(uint8_t, *result_len);
-    } else if (*result_len != ret) {
+    for (i = 0; i < niov; i++) {
+        gcry_md_write(md, iov[i].iov_base, iov[i].iov_len);
+    }
+
+    ret = gcry_md_get_algo_dlen(qcrypto_hash_alg_map[alg]);
+    if (ret <= 0) {
+        error_setg(errp,
+                   "Unable to get hash length: %s",
+                   gcry_strerror(ret));
+        goto error;
+    }
+    if (*resultlen == 0) {
+        *resultlen = ret;
+        *result = g_new0(uint8_t, *resultlen);
+    } else if (*resultlen != ret) {
         error_setg(errp,
                    "Result buffer size %zu is smaller than hash %d",
-                   *result_len, ret);
-        return -1;
+                   *resultlen, ret);
+        goto error;
     }
 
-    /* Digest is freed by gcry_md_close(), copy it */
-    digest = gcry_md_read(*ctx, 0);
-    memcpy(*result, digest, *result_len);
+    digest = gcry_md_read(md, 0);
+    if (!digest) {
+        error_setg(errp,
+                   "No digest produced");
+        goto error;
+    }
+    memcpy(*result, digest, *resultlen);
+
+    gcry_md_close(md);
     return 0;
+
+ error:
+    gcry_md_close(md);
+    return -1;
 }
 
+
 QCryptoHashDriver qcrypto_hash_lib_driver = {
-    .hash_new      = qcrypto_gcrypt_hash_new,
-    .hash_update   = qcrypto_gcrypt_hash_update,
-    .hash_finalize = qcrypto_gcrypt_hash_finalize,
-    .hash_free     = qcrypto_gcrypt_hash_free,
+    .hash_bytesv = qcrypto_gcrypt_hash_bytesv,
 };

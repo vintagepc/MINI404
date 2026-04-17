@@ -1,5 +1,5 @@
 /*
- * QEMU HPPA CPU QOM header (target agnostic)
+ * QEMU HPPA CPU
  *
  * Copyright (c) 2016 Richard Henderson <rth@twiddle.net>
  *
@@ -21,10 +21,27 @@
 #define QEMU_HPPA_CPU_QOM_H
 
 #include "hw/core/cpu.h"
+#include "qom/object.h"
 
 #define TYPE_HPPA_CPU "hppa-cpu"
-#define TYPE_HPPA64_CPU "hppa64-cpu"
 
 OBJECT_DECLARE_CPU_TYPE(HPPACPU, HPPACPUClass, HPPA_CPU)
+
+/**
+ * HPPACPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_reset: The parent class' reset handler.
+ *
+ * An HPPA CPU model.
+ */
+struct HPPACPUClass {
+    /*< private >*/
+    CPUClass parent_class;
+    /*< public >*/
+
+    DeviceRealize parent_realize;
+    DeviceReset parent_reset;
+};
+
 
 #endif

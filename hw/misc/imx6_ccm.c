@@ -15,7 +15,18 @@
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "trace.h"
+
+#ifndef DEBUG_IMX6_CCM
+#define DEBUG_IMX6_CCM 0
+#endif
+
+#define DPRINTF(fmt, args...) \
+    do { \
+        if (DEBUG_IMX6_CCM) { \
+            fprintf(stderr, "[%s]%s: " fmt , TYPE_IMX6_CCM, \
+                                             __func__, ##args); \
+        } \
+    } while (0)
 
 static const char *imx6_ccm_reg_name(uint32_t reg)
 {
@@ -85,7 +96,7 @@ static const char *imx6_ccm_reg_name(uint32_t reg)
     case CCM_CMEOR:
         return "CMEOR";
     default:
-        snprintf(unknown, sizeof(unknown), "%u ?", reg);
+        sprintf(unknown, "%u ?", reg);
         return unknown;
     }
 }
@@ -224,7 +235,7 @@ static const char *imx6_analog_reg_name(uint32_t reg)
     case USB_ANALOG_DIGPROG:
         return "USB_ANALOG_DIGPROG";
     default:
-        snprintf(unknown, sizeof(unknown), "%u ?", reg);
+        sprintf(unknown, "%u ?", reg);
         return unknown;
     }
 }
@@ -235,7 +246,7 @@ static const VMStateDescription vmstate_imx6_ccm = {
     .name = TYPE_IMX6_CCM,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(ccm, IMX6CCMState, CCM_MAX),
         VMSTATE_UINT32_ARRAY(analog, IMX6CCMState, CCM_ANALOG_MAX),
         VMSTATE_END_OF_LIST()
@@ -252,7 +263,7 @@ static uint64_t imx6_analog_get_pll2_clk(IMX6CCMState *dev)
         freq *= 20;
     }
 
-    trace_imx6_analog_get_pll2_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -264,7 +275,7 @@ static uint64_t imx6_analog_get_pll2_pfd0_clk(IMX6CCMState *dev)
     freq = imx6_analog_get_pll2_clk(dev) * 18
            / EXTRACT(dev->analog[CCM_ANALOG_PFD_528], PFD0_FRAC);
 
-    trace_imx6_analog_get_pll2_pfd0_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -276,7 +287,7 @@ static uint64_t imx6_analog_get_pll2_pfd2_clk(IMX6CCMState *dev)
     freq = imx6_analog_get_pll2_clk(dev) * 18
            / EXTRACT(dev->analog[CCM_ANALOG_PFD_528], PFD2_FRAC);
 
-    trace_imx6_analog_get_pll2_pfd2_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -301,9 +312,10 @@ static uint64_t imx6_analog_get_periph_clk(IMX6CCMState *dev)
     default:
         /* We should never get there */
         g_assert_not_reached();
+        break;
     }
 
-    trace_imx6_analog_get_periph_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -315,7 +327,7 @@ static uint64_t imx6_ccm_get_ahb_clk(IMX6CCMState *dev)
     freq = imx6_analog_get_periph_clk(dev)
            / (1 + EXTRACT(dev->ccm[CCM_CBCDR], AHB_PODF));
 
-    trace_imx6_ccm_get_ahb_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -327,7 +339,7 @@ static uint64_t imx6_ccm_get_ipg_clk(IMX6CCMState *dev)
     freq = imx6_ccm_get_ahb_clk(dev)
            / (1 + EXTRACT(dev->ccm[CCM_CBCDR], IPG_PODF));
 
-    trace_imx6_ccm_get_ipg_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -339,7 +351,7 @@ static uint64_t imx6_ccm_get_per_clk(IMX6CCMState *dev)
     freq = imx6_ccm_get_ipg_clk(dev)
            / (1 + EXTRACT(dev->ccm[CCM_CSCMR1], PERCLK_PODF));
 
-    trace_imx6_ccm_get_per_clk(freq);
+    DPRINTF("freq = %u\n", (uint32_t)freq);
 
     return freq;
 }
@@ -373,7 +385,7 @@ static uint32_t imx6_ccm_get_clock_frequency(IMXCCMState *dev, IMXClk clock)
         break;
     }
 
-    trace_imx6_ccm_get_clock_frequency(clock, freq);
+    DPRINTF("Clock = %d) = %u\n", clock, freq);
 
     return freq;
 }
@@ -382,7 +394,7 @@ static void imx6_ccm_reset(DeviceState *dev)
 {
     IMX6CCMState *s = IMX6_CCM(dev);
 
-    trace_imx6_ccm_reset();
+    DPRINTF("\n");
 
     s->ccm[CCM_CCR] = 0x040116FF;
     s->ccm[CCM_CCDR] = 0x00000000;
@@ -471,7 +483,7 @@ static uint64_t imx6_ccm_read(void *opaque, hwaddr offset, unsigned size)
 
     value = s->ccm[index];
 
-    trace_imx6_ccm_read(imx6_ccm_reg_name(index), value);
+    DPRINTF("reg[%s] => 0x%" PRIx32 "\n", imx6_ccm_reg_name(index), value);
 
     return (uint64_t)value;
 }
@@ -482,7 +494,8 @@ static void imx6_ccm_write(void *opaque, hwaddr offset, uint64_t value,
     uint32_t index = offset >> 2;
     IMX6CCMState *s = (IMX6CCMState *)opaque;
 
-    trace_imx6_ccm_write(imx6_ccm_reg_name(index), (uint32_t)value);
+    DPRINTF("reg[%s] <= 0x%" PRIx32 "\n", imx6_ccm_reg_name(index),
+            (uint32_t)value);
 
     /*
      * We will do a better implementation later. In particular some bits
@@ -578,7 +591,7 @@ static uint64_t imx6_analog_read(void *opaque, hwaddr offset, unsigned size)
         break;
     }
 
-    trace_imx6_analog_read(imx6_analog_reg_name(index), value);
+    DPRINTF("reg[%s] => 0x%" PRIx32 "\n", imx6_analog_reg_name(index), value);
 
     return (uint64_t)value;
 }
@@ -589,7 +602,8 @@ static void imx6_analog_write(void *opaque, hwaddr offset, uint64_t value,
     uint32_t index = offset >> 2;
     IMX6CCMState *s = (IMX6CCMState *)opaque;
 
-    trace_imx6_analog_write(imx6_analog_reg_name(index), (uint32_t)value);
+    DPRINTF("reg[%s] <= 0x%" PRIx32 "\n", imx6_analog_reg_name(index),
+            (uint32_t)value);
 
     switch (index) {
     case CCM_ANALOG_PLL_ARM_SET:
@@ -746,7 +760,7 @@ static void imx6_ccm_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     IMXCCMClass *ccm = IMX_CCM_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, imx6_ccm_reset);
+    dc->reset = imx6_ccm_reset;
     dc->vmsd = &vmstate_imx6_ccm;
     dc->desc = "i.MX6 Clock Control Module";
 

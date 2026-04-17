@@ -20,15 +20,3 @@ config XILINX_SPIPS
 config STM32F2XX_SPI
     bool
     select SSI
-
-config BCM2835_SPI
-    bool
-    select SSI
-
-config PNV_SPI
-    bool
-    select SSI
-
-config ALLWINNER_A10_SPI
-    bool
-    select SSI

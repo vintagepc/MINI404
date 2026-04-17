@@ -136,14 +136,13 @@ int64_t throttle_compute_wait(LeakyBucket *bkt)
 
 /* This function compute the time that must be waited while this IO
  *
- * @direction:  throttle direction
+ * @is_write:   true if the current IO is a write, false if it's a read
  * @ret:        time to wait
  */
 static int64_t throttle_compute_wait_for(ThrottleState *ts,
-                                         ThrottleDirection direction)
+                                         bool is_write)
 {
-    static const BucketType to_check[THROTTLE_MAX][4] = {
-                                  {THROTTLE_BPS_TOTAL,
+    BucketType to_check[2][4] = { {THROTTLE_BPS_TOTAL,
                                    THROTTLE_OPS_TOTAL,
                                    THROTTLE_BPS_READ,
                                    THROTTLE_OPS_READ},
@@ -154,8 +153,8 @@ static int64_t throttle_compute_wait_for(ThrottleState *ts,
     int64_t wait, max_wait = 0;
     int i;
 
-    for (i = 0; i < ARRAY_SIZE(to_check[THROTTLE_READ]); i++) {
-        BucketType index = to_check[direction][i];
+    for (i = 0; i < 4; i++) {
+        BucketType index = to_check[is_write][i];
         wait = throttle_compute_wait(&ts->cfg.buckets[index]);
         if (wait > max_wait) {
             max_wait = wait;
@@ -167,13 +166,13 @@ static int64_t throttle_compute_wait_for(ThrottleState *ts,
 
 /* compute the timer for this type of operation
  *
- * @direction:  throttle direction
+ * @is_write:   the type of operation
  * @now:        the current clock timestamp
  * @next_timestamp: the resulting timer
  * @ret:        true if a timer must be set
  */
 static bool throttle_compute_timer(ThrottleState *ts,
-                                   ThrottleDirection direction,
+                                   bool is_write,
                                    int64_t now,
                                    int64_t *next_timestamp)
 {
@@ -183,7 +182,7 @@ static bool throttle_compute_timer(ThrottleState *ts,
     throttle_do_leak(ts, now);
 
     /* compute the wait time if any */
-    wait = throttle_compute_wait_for(ts, direction);
+    wait = throttle_compute_wait_for(ts, is_write);
 
     /* if the code must wait compute when the next timer should fire */
     if (wait) {
@@ -200,15 +199,10 @@ static bool throttle_compute_timer(ThrottleState *ts,
 void throttle_timers_attach_aio_context(ThrottleTimers *tt,
                                         AioContext *new_context)
 {
-    ThrottleDirection dir;
-
-    for (dir = THROTTLE_READ; dir < THROTTLE_MAX; dir++) {
-        if (tt->timer_cb[dir]) {
-            tt->timers[dir] =
-                aio_timer_new(new_context, tt->clock_type, SCALE_NS,
-                              tt->timer_cb[dir], tt->timer_opaque);
-        }
-    }
+    tt->timers[0] = aio_timer_new(new_context, tt->clock_type, SCALE_NS,
+                                  tt->read_timer_cb, tt->timer_opaque);
+    tt->timers[1] = aio_timer_new(new_context, tt->clock_type, SCALE_NS,
+                                  tt->write_timer_cb, tt->timer_opaque);
 }
 
 /*
@@ -239,12 +233,11 @@ void throttle_timers_init(ThrottleTimers *tt,
                           QEMUTimerCB *write_timer_cb,
                           void *timer_opaque)
 {
-    assert(read_timer_cb || write_timer_cb);
     memset(tt, 0, sizeof(ThrottleTimers));
 
     tt->clock_type = clock_type;
-    tt->timer_cb[THROTTLE_READ] = read_timer_cb;
-    tt->timer_cb[THROTTLE_WRITE] = write_timer_cb;
+    tt->read_timer_cb = read_timer_cb;
+    tt->write_timer_cb = write_timer_cb;
     tt->timer_opaque = timer_opaque;
     throttle_timers_attach_aio_context(tt, aio_context);
 }
@@ -252,9 +245,7 @@ void throttle_timers_init(ThrottleTimers *tt,
 /* destroy a timer */
 static void throttle_timer_destroy(QEMUTimer **timer)
 {
-    if (*timer == NULL) {
-        return;
-    }
+    assert(*timer != NULL);
 
     timer_free(*timer);
     *timer = NULL;
@@ -263,10 +254,10 @@ static void throttle_timer_destroy(QEMUTimer **timer)
 /* Remove timers from event loop */
 void throttle_timers_detach_aio_context(ThrottleTimers *tt)
 {
-    ThrottleDirection dir;
+    int i;
 
-    for (dir = THROTTLE_READ; dir < THROTTLE_MAX; dir++) {
-        throttle_timer_destroy(&tt->timers[dir]);
+    for (i = 0; i < 2; i++) {
+        throttle_timer_destroy(&tt->timers[i]);
     }
 }
 
@@ -279,12 +270,8 @@ void throttle_timers_destroy(ThrottleTimers *tt)
 /* is any throttling timer configured */
 bool throttle_timers_are_initialized(ThrottleTimers *tt)
 {
-    ThrottleDirection dir;
-
-    for (dir = THROTTLE_READ; dir < THROTTLE_MAX; dir++) {
-        if (tt->timers[dir]) {
-            return true;
-        }
+    if (tt->timers[0]) {
+        return true;
     }
 
     return false;
@@ -426,24 +413,19 @@ void throttle_get_config(ThrottleState *ts, ThrottleConfig *cfg)
  * NOTE: this function is not unit tested due to it's usage of timer_mod
  *
  * @tt:       the timers structure
- * @direction: throttle direction
+ * @is_write: the type of operation (read/write)
  * @ret:      true if the timer has been scheduled else false
  */
 bool throttle_schedule_timer(ThrottleState *ts,
                              ThrottleTimers *tt,
-                             ThrottleDirection direction)
+                             bool is_write)
 {
     int64_t now = qemu_clock_get_ns(tt->clock_type);
     int64_t next_timestamp;
-    QEMUTimer *timer;
     bool must_wait;
 
-    assert(direction < THROTTLE_MAX);
-    timer = tt->timers[direction];
-    assert(timer);
-
     must_wait = throttle_compute_timer(ts,
-                                       direction,
+                                       is_write,
                                        now,
                                        &next_timestamp);
 
@@ -453,50 +435,48 @@ bool throttle_schedule_timer(ThrottleState *ts,
     }
 
     /* request throttled and timer pending -> do nothing */
-    if (timer_pending(timer)) {
+    if (timer_pending(tt->timers[is_write])) {
         return true;
     }
 
     /* request throttled and timer not pending -> arm timer */
-    timer_mod(timer, next_timestamp);
+    timer_mod(tt->timers[is_write], next_timestamp);
     return true;
 }
 
 /* do the accounting for this operation
  *
- * @direction: throttle direction
+ * @is_write: the type of operation (read/write)
  * @size:     the size of the operation
  */
-void throttle_account(ThrottleState *ts, ThrottleDirection direction,
-                      uint64_t size)
+void throttle_account(ThrottleState *ts, bool is_write, uint64_t size)
 {
-    static const BucketType bucket_types_size[THROTTLE_MAX][2] = {
+    const BucketType bucket_types_size[2][2] = {
         { THROTTLE_BPS_TOTAL, THROTTLE_BPS_READ },
         { THROTTLE_BPS_TOTAL, THROTTLE_BPS_WRITE }
     };
-    static const BucketType bucket_types_units[THROTTLE_MAX][2] = {
+    const BucketType bucket_types_units[2][2] = {
         { THROTTLE_OPS_TOTAL, THROTTLE_OPS_READ },
         { THROTTLE_OPS_TOTAL, THROTTLE_OPS_WRITE }
     };
     double units = 1.0;
     unsigned i;
 
-    assert(direction < THROTTLE_MAX);
     /* if cfg.op_size is defined and smaller than size we compute unit count */
     if (ts->cfg.op_size && size > ts->cfg.op_size) {
         units = (double) size / ts->cfg.op_size;
     }
 
-    for (i = 0; i < ARRAY_SIZE(bucket_types_size[THROTTLE_READ]); i++) {
+    for (i = 0; i < 2; i++) {
         LeakyBucket *bkt;
 
-        bkt = &ts->cfg.buckets[bucket_types_size[direction][i]];
+        bkt = &ts->cfg.buckets[bucket_types_size[is_write][i]];
         bkt->level += size;
         if (bkt->burst_length > 1) {
             bkt->burst_level += size;
         }
 
-        bkt = &ts->cfg.buckets[bucket_types_units[direction][i]];
+        bkt = &ts->cfg.buckets[bucket_types_units[is_write][i]];
         bkt->level += units;
         if (bkt->burst_length > 1) {
             bkt->burst_level += units;

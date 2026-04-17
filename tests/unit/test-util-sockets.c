@@ -326,7 +326,6 @@ static void test_socket_unix_abstract(void)
         test_socket_unix_abstract_row(&matrix[i]);
     }
 
-    unlink(addr.u.q_unix.path);
     g_free(addr.u.q_unix.path);
 }
 

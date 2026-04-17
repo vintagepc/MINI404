@@ -57,7 +57,7 @@ struct VirtIOCCWDeviceClass {
     CCWDeviceClass parent_class;
     void (*realize)(VirtioCcwDevice *dev, Error **errp);
     void (*unrealize)(VirtioCcwDevice *dev);
-    ResettablePhases parent_phases;
+    void (*parent_reset)(DeviceState *dev);
 };
 
 /* Performance improves when virtqueue kick processing is decoupled from the

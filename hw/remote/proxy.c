@@ -22,6 +22,7 @@
 #include "qom/object.h"
 #include "qemu/event_notifier.h"
 #include "sysemu/kvm.h"
+#include "util/event_notifier-posix.c"
 
 static void probe_pci_info(PCIDevice *dev, Error **errp);
 static void proxy_device_reset(DeviceState *dev);
@@ -107,7 +108,8 @@ static void pci_proxy_dev_realize(PCIDevice *device, Error **errp)
 
     error_setg(&dev->migration_blocker, "%s does not support migration",
                TYPE_PCI_PROXY_DEV);
-    if (migrate_add_blocker(&dev->migration_blocker, errp) < 0) {
+    if (migrate_add_blocker(dev->migration_blocker, errp) < 0) {
+        error_free(dev->migration_blocker);
         object_unref(dev->ioc);
         return;
     }
@@ -133,7 +135,9 @@ static void pci_proxy_dev_exit(PCIDevice *pdev)
         qio_channel_close(dev->ioc, NULL);
     }
 
-    migrate_del_blocker(&dev->migration_blocker);
+    migrate_del_blocker(dev->migration_blocker);
+
+    error_free(dev->migration_blocker);
 
     proxy_memory_listener_deconfigure(&dev->proxy_listener);
 
@@ -206,7 +210,7 @@ static void pci_proxy_dev_class_init(ObjectClass *klass, void *data)
     k->config_read = pci_proxy_read_config;
     k->config_write = pci_proxy_write_config;
 
-    device_class_set_legacy_reset(dc, proxy_device_reset);
+    dc->reset = proxy_device_reset;
 
     device_class_set_props(dc, proxy_properties);
 }

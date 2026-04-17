@@ -10,10 +10,11 @@
 #ifndef PPC_PNV_XIVE_H
 #define PPC_PNV_XIVE_H
 
-#include "hw/ppc/pnv.h"
 #include "hw/ppc/xive.h"
 #include "qom/object.h"
 #include "hw/ppc/xive2.h"
+
+struct PnvChip;
 
 #define TYPE_PNV_XIVE "pnv-xive"
 OBJECT_DECLARE_TYPE(PnvXive, PnvXiveClass,
@@ -30,7 +31,7 @@ struct PnvXive {
     XiveRouter    parent_obj;
 
     /* Owning chip */
-    PnvChip *chip;
+    struct PnvChip *chip;
 
     /* XSCOM addresses giving access to the controller registers */
     MemoryRegion  xscom_regs;
@@ -93,7 +94,7 @@ struct PnvXiveClass {
     DeviceRealize parent_realize;
 };
 
-void pnv_xive_pic_print_info(PnvXive *xive, GString *buf);
+void pnv_xive_pic_print_info(PnvXive *xive, Monitor *mon);
 
 /*
  * XIVE2 interrupt controller (POWER10)
@@ -105,7 +106,7 @@ typedef struct PnvXive2 {
     Xive2Router   parent_obj;
 
     /* Owning chip */
-    PnvChip *chip;
+    struct PnvChip *chip;
 
     /* XSCOM addresses giving access to the controller registers */
     MemoryRegion  xscom_regs;
@@ -163,6 +164,6 @@ typedef struct PnvXive2Class {
     DeviceRealize parent_realize;
 } PnvXive2Class;
 
-void pnv_xive2_pic_print_info(PnvXive2 *xive, GString *buf);
+void pnv_xive2_pic_print_info(PnvXive2 *xive, Monitor *mon);
 
 #endif /* PPC_PNV_XIVE_H */

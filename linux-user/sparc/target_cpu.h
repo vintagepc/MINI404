@@ -26,17 +26,6 @@
 # define TARGET_STACK_BIAS 0
 #endif
 
-static void set_syscall_C(CPUSPARCState *env, bool val)
-{
-#ifndef TARGET_SPARC64
-    env->icc_C = val;
-#elif defined(TARGET_ABI32)
-    env->icc_C = (uint64_t)val << 32;
-#else
-    env->xcc_C = val;
-#endif
-}
-
 static inline void cpu_clone_regs_child(CPUSPARCState *env, target_ulong newsp,
                                         unsigned flags)
 {
@@ -69,7 +58,11 @@ static inline void cpu_clone_regs_child(CPUSPARCState *env, target_ulong newsp,
          * do the pc advance twice.
          */
         env->regwptr[WREG_O0] = 0;
-        set_syscall_C(env, 0);
+#if defined(TARGET_SPARC64) && !defined(TARGET_ABI32)
+        env->xcc &= ~PSR_CARRY;
+#else
+        env->psr &= ~PSR_CARRY;
+#endif
         env->pc = env->npc;
         env->npc = env->npc + 4;
     }

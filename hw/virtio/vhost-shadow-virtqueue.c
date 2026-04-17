@@ -66,9 +66,9 @@ bool vhost_svq_valid_features(uint64_t features, Error **errp)
  *
  * @svq: The svq
  */
-uint16_t vhost_svq_available_slots(const VhostShadowVirtqueue *svq)
+static uint16_t vhost_svq_available_slots(const VhostShadowVirtqueue *svq)
 {
-    return svq->num_free;
+    return svq->vring.num - (svq->shadow_avail_idx - svq->shadow_used_idx);
 }
 
 /**
@@ -111,7 +111,7 @@ static bool vhost_svq_translate_addr(const VhostShadowVirtqueue *svq,
         addrs[i] = map->iova + off;
 
         needle_last = int128_add(int128_make64(needle.translated_addr),
-                                 int128_makes64(iovec[i].iov_len - 1));
+                                 int128_make64(iovec[i].iov_len));
         map_last = int128_make64(map->translated_addr + map->size);
         if (unlikely(int128_gt(needle_last, map_last))) {
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -263,7 +263,6 @@ int vhost_svq_add(VhostShadowVirtqueue *svq, const struct iovec *out_sg,
         return -EINVAL;
     }
 
-    svq->num_free -= ndescs;
     svq->desc_state[qemu_head].elem = elem;
     svq->desc_state[qemu_head].ndescs = ndescs;
     vhost_svq_kick(svq);
@@ -414,7 +413,6 @@ static uint16_t vhost_svq_last_desc_of_chain(const VhostShadowVirtqueue *svq,
     return i;
 }
 
-G_GNUC_WARN_UNUSED_RESULT
 static VirtQueueElement *vhost_svq_get_buf(VhostShadowVirtqueue *svq,
                                            uint32_t *len)
 {
@@ -451,7 +449,6 @@ static VirtQueueElement *vhost_svq_get_buf(VhostShadowVirtqueue *svq,
     last_used_chain = vhost_svq_last_desc_of_chain(svq, num, used_elem.id);
     svq->desc_next[last_used_chain] = svq->free_head;
     svq->free_head = used_elem.id;
-    svq->num_free += num;
 
     *len = used_elem.len;
     return g_steal_pointer(&svq->desc_state[used_elem.id].elem);
@@ -515,38 +512,29 @@ static void vhost_svq_flush(VhostShadowVirtqueue *svq,
 }
 
 /**
- * Poll the SVQ to wait for the device to use the specified number
- * of elements and return the total length written by the device.
+ * Poll the SVQ for one device used buffer.
  *
  * This function race with main event loop SVQ polling, so extra
  * synchronization is needed.
  *
- * @svq: The svq
- * @num: The number of elements that need to be used
+ * Return the length written by the device.
  */
-size_t vhost_svq_poll(VhostShadowVirtqueue *svq, size_t num)
+size_t vhost_svq_poll(VhostShadowVirtqueue *svq)
 {
-    size_t len = 0;
+    int64_t start_us = g_get_monotonic_time();
+    uint32_t len;
 
-    while (num--) {
-        g_autofree VirtQueueElement *elem = NULL;
-        int64_t start_us = g_get_monotonic_time();
-        uint32_t r = 0;
+    do {
+        if (vhost_svq_more_used(svq)) {
+            break;
+        }
 
-        do {
-            if (vhost_svq_more_used(svq)) {
-                break;
-            }
+        if (unlikely(g_get_monotonic_time() - start_us > 10e6)) {
+            return 0;
+        }
+    } while (true);
 
-            if (unlikely(g_get_monotonic_time() - start_us > 10e6)) {
-                return len;
-            }
-        } while (true);
-
-        elem = vhost_svq_get_buf(svq, &r);
-        len += r;
-    }
-
+    vhost_svq_get_buf(svq, &len);
     return len;
 }
 
@@ -654,32 +642,28 @@ void vhost_svq_set_svq_kick_fd(VhostShadowVirtqueue *svq, int svq_kick_fd)
  * @svq: Shadow Virtqueue
  * @vdev: VirtIO device
  * @vq: Virtqueue to shadow
- * @iova_tree: Tree to perform descriptors translations
  */
 void vhost_svq_start(VhostShadowVirtqueue *svq, VirtIODevice *vdev,
-                     VirtQueue *vq, VhostIOVATree *iova_tree)
+                     VirtQueue *vq)
 {
-    size_t desc_size;
+    size_t desc_size, driver_size, device_size;
 
-    event_notifier_set_handler(&svq->hdev_call, vhost_svq_handle_call);
     svq->next_guest_avail_elem = NULL;
     svq->shadow_avail_idx = 0;
     svq->shadow_used_idx = 0;
     svq->last_used_idx = 0;
     svq->vdev = vdev;
     svq->vq = vq;
-    svq->iova_tree = iova_tree;
 
     svq->vring.num = virtio_queue_get_num(vdev, virtio_get_queue_index(vq));
-    svq->num_free = svq->vring.num;
-    svq->vring.desc = mmap(NULL, vhost_svq_driver_area_size(svq),
-                           PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
-                           -1, 0);
+    driver_size = vhost_svq_driver_area_size(svq);
+    device_size = vhost_svq_device_area_size(svq);
+    svq->vring.desc = qemu_memalign(qemu_real_host_page_size(), driver_size);
     desc_size = sizeof(vring_desc_t) * svq->vring.num;
     svq->vring.avail = (void *)((char *)svq->vring.desc + desc_size);
-    svq->vring.used = mmap(NULL, vhost_svq_device_area_size(svq),
-                           PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
-                           -1, 0);
+    memset(svq->vring.desc, 0, driver_size);
+    svq->vring.used = qemu_memalign(qemu_real_host_page_size(), device_size);
+    memset(svq->vring.used, 0, device_size);
     svq->desc_state = g_new0(SVQDescState, svq->vring.num);
     svq->desc_next = g_new0(uint16_t, svq->vring.num);
     for (unsigned i = 0; i < svq->vring.num - 1; i++) {
@@ -707,42 +691,66 @@ void vhost_svq_stop(VhostShadowVirtqueue *svq)
         g_autofree VirtQueueElement *elem = NULL;
         elem = g_steal_pointer(&svq->desc_state[i].elem);
         if (elem) {
-            /*
-             * TODO: This is ok for networking, but other kinds of devices
-             * might have problems with just unpop these.
-             */
-            virtqueue_unpop(svq->vq, elem, 0);
+            virtqueue_detach_element(svq->vq, elem, 0);
         }
     }
 
     next_avail_elem = g_steal_pointer(&svq->next_guest_avail_elem);
     if (next_avail_elem) {
-        virtqueue_unpop(svq->vq, next_avail_elem, 0);
+        virtqueue_detach_element(svq->vq, next_avail_elem, 0);
     }
     svq->vq = NULL;
     g_free(svq->desc_next);
     g_free(svq->desc_state);
-    munmap(svq->vring.desc, vhost_svq_driver_area_size(svq));
-    munmap(svq->vring.used, vhost_svq_device_area_size(svq));
-    event_notifier_set_handler(&svq->hdev_call, NULL);
+    qemu_vfree(svq->vring.desc);
+    qemu_vfree(svq->vring.used);
 }
 
 /**
  * Creates vhost shadow virtqueue, and instructs the vhost device to use the
  * shadow methods and file descriptors.
  *
+ * @iova_tree: Tree to perform descriptors translations
  * @ops: SVQ owner callbacks
  * @ops_opaque: ops opaque pointer
+ *
+ * Returns the new virtqueue or NULL.
+ *
+ * In case of error, reason is reported through error_report.
  */
-VhostShadowVirtqueue *vhost_svq_new(const VhostShadowVirtqueueOps *ops,
+VhostShadowVirtqueue *vhost_svq_new(VhostIOVATree *iova_tree,
+                                    const VhostShadowVirtqueueOps *ops,
                                     void *ops_opaque)
 {
-    VhostShadowVirtqueue *svq = g_new0(VhostShadowVirtqueue, 1);
+    g_autofree VhostShadowVirtqueue *svq = g_new0(VhostShadowVirtqueue, 1);
+    int r;
+
+    r = event_notifier_init(&svq->hdev_kick, 0);
+    if (r != 0) {
+        error_report("Couldn't create kick event notifier: %s (%d)",
+                     g_strerror(errno), errno);
+        goto err_init_hdev_kick;
+    }
+
+    r = event_notifier_init(&svq->hdev_call, 0);
+    if (r != 0) {
+        error_report("Couldn't create call event notifier: %s (%d)",
+                     g_strerror(errno), errno);
+        goto err_init_hdev_call;
+    }
 
     event_notifier_init_fd(&svq->svq_kick, VHOST_FILE_UNBIND);
+    event_notifier_set_handler(&svq->hdev_call, vhost_svq_handle_call);
+    svq->iova_tree = iova_tree;
     svq->ops = ops;
     svq->ops_opaque = ops_opaque;
-    return svq;
+    return g_steal_pointer(&svq);
+
+err_init_hdev_call:
+    event_notifier_cleanup(&svq->hdev_kick);
+
+err_init_hdev_kick:
+    return NULL;
 }
 
 /**
@@ -754,5 +762,8 @@ void vhost_svq_free(gpointer pvq)
 {
     VhostShadowVirtqueue *vq = pvq;
     vhost_svq_stop(vq);
+    event_notifier_cleanup(&vq->hdev_kick);
+    event_notifier_set_handler(&vq->hdev_call, NULL);
+    event_notifier_cleanup(&vq->hdev_call);
     g_free(vq);
 }

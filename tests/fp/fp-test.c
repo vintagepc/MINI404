@@ -106,8 +106,7 @@ static const char commands_string[] =
     " -l = thoroughness level (1 (default), 2)\n"
     " -r = rounding mode (even (default), zero, down, up, tieaway, odd)\n"
     "      Set to 'all' to test all rounding modes, if applicable\n"
-    " -s = stop when a test fails\n"
-    " -q = minimise noise when testing, just show each function being tested";
+    " -s = stop when a test fails";
 
 static void usage_complete(int argc, char *argv[])
 {
@@ -191,11 +190,9 @@ static void do_testfloat(int op, int rmode, bool exact)
     ab_f128M_z_bool true_ab_f128M_z_bool;
     ab_f128M_z_bool subj_ab_f128M_z_bool;
 
-    if (verCases_verbosity) {
-        fputs(">> Testing ", stderr);
-        verCases_writeFunctionName(stderr);
-        fputs("\n", stderr);
-    }
+    fputs(">> Testing ", stderr);
+    verCases_writeFunctionName(stderr);
+    fputs("\n", stderr);
 
     if (!is_allowed(op, rmode)) {
         not_implemented();
@@ -840,7 +837,7 @@ static void parse_args(int argc, char *argv[])
     int c;
 
     for (;;) {
-        c = getopt(argc, argv, "he:f:l:r:sq");
+        c = getopt(argc, argv, "he:f:l:r:s");
         if (c < 0) {
             break;
         }
@@ -877,14 +874,8 @@ static void parse_args(int argc, char *argv[])
                 }
             }
             break;
-        /*
-         * The following flags are declared in testfloat/source/verCases_common.c
-         */
         case 's':
             verCases_errorStop = true;
-            break;
-        case 'q':
-            verCases_verbosity = 0;
             break;
         case '?':
             /* invalid option or missing argument; getopt prints error info */
@@ -934,8 +925,6 @@ static G_NORETURN
 void run_test(void)
 {
     unsigned int i;
-
-    set_float_2nan_prop_rule(float_2nan_prop_s_ab, &qsf);
 
     genCases_setLevel(test_level);
     verCases_maxErrorCount = n_max_errors;

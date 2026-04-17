@@ -14,7 +14,6 @@
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "hw/sysbus.h"
-#include "sysemu/sysemu.h"
 #include "net/eth.h"
 #include "hw/net/lasi_82596.h"
 #include "hw/net/i82596.h"
@@ -100,7 +99,7 @@ static const VMStateDescription vmstate_lasi_82596 = {
     .name = "i82596",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(state, SysBusI82596State, 0, vmstate_i82596,
                 I82596State),
         VMSTATE_END_OF_LIST()
@@ -118,21 +117,19 @@ static void lasi_82596_realize(DeviceState *dev, Error **errp)
     i82596_common_init(dev, s, &net_lasi_82596_info);
 }
 
-SysBusI82596State *lasi_82596_init(MemoryRegion *addr_space, hwaddr hpa,
-                                   qemu_irq lan_irq, gboolean match_default)
+SysBusI82596State *lasi_82596_init(MemoryRegion *addr_space,
+                  hwaddr hpa, qemu_irq lan_irq)
 {
     DeviceState *dev;
     SysBusI82596State *s;
     static const MACAddr HP_MAC = {
         .a = { 0x08, 0x00, 0x09, 0xef, 0x34, 0xf6 } };
 
-    dev = qemu_create_nic_device(TYPE_LASI_82596, match_default, "lasi");
-    if (!dev) {
-        return NULL;
-    }
-
+    qemu_check_nic_model(&nd_table[0], TYPE_LASI_82596);
+    dev = qdev_new(TYPE_LASI_82596);
     s = SYSBUS_I82596(dev);
     s->state.irq = lan_irq;
+    qdev_set_nic_properties(dev, &nd_table[0]);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     s->state.conf.macaddr = HP_MAC; /* set HP MAC prefix */
 
@@ -170,7 +167,7 @@ static void lasi_82596_class_init(ObjectClass *klass, void *data)
     dc->realize = lasi_82596_realize;
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
     dc->fw_name = "ethernet";
-    device_class_set_legacy_reset(dc, lasi_82596_reset);
+    dc->reset = lasi_82596_reset;
     dc->vmsd = &vmstate_lasi_82596;
     dc->user_creatable = false;
     device_class_set_props(dc, lasi_82596_properties);

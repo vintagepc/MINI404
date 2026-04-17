@@ -2,7 +2,6 @@
 
 ##
 # @FOO:
-#
 # Returns: blah
 ##
 { 'event': 'FOO' }

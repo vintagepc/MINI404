@@ -90,7 +90,7 @@ static void xlnx_zynqmp_pmu_soc_realize(DeviceState *dev, Error **errp)
     object_property_set_bool(OBJECT(&s->cpu), "use-pcmp-instr", true,
                              &error_abort);
     object_property_set_bool(OBJECT(&s->cpu), "use-mmu", false, &error_abort);
-    object_property_set_bool(OBJECT(&s->cpu), "little-endian", true,
+    object_property_set_bool(OBJECT(&s->cpu), "endianness", true,
                              &error_abort);
     object_property_set_str(OBJECT(&s->cpu), "version", "8.40.b",
                             &error_abort);
@@ -125,8 +125,6 @@ static void xlnx_zynqmp_pmu_soc_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
-    /* xlnx-zynqmp-pmu-soc causes crashes when cold-plugged twice */
-    dc->user_creatable = false;
     dc->realize = xlnx_zynqmp_pmu_soc_realize;
 }
 
@@ -181,13 +179,9 @@ static void xlnx_zynqmp_pmu_init(MachineState *machine)
 
 static void xlnx_zynqmp_pmu_machine_init(MachineClass *mc)
 {
-#if TARGET_BIG_ENDIAN
-    mc->desc = "Xilinx ZynqMP PMU machine (big endian)";
-    mc->deprecation_reason = "big endian support is not tested";
-#else
-    mc->desc = "Xilinx ZynqMP PMU machine (little endian)";
-#endif
+    mc->desc = "Xilinx ZynqMP PMU machine";
     mc->init = xlnx_zynqmp_pmu_init;
 }
 
 DEFINE_MACHINE("xlnx-zynqmp-pmu", xlnx_zynqmp_pmu_machine_init)
+

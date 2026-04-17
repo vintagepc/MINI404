@@ -65,7 +65,8 @@ static int fdmon_poll_wait(AioContext *ctx, AioHandlerList *ready_list,
     assert(npfd == 0);
 
     QLIST_FOREACH_RCU(node, &ctx->aio_handlers, node) {
-        if (!QLIST_IS_INSERTED(node, node_deleted) && node->pfd.events) {
+        if (!QLIST_IS_INSERTED(node, node_deleted) && node->pfd.events
+                && aio_node_check(ctx, node->is_external)) {
             add_pollfd(node);
         }
     }

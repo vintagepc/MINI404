@@ -2,6 +2,8 @@
 #include "sysemu/sysemu.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-ui.h"
+#include "qapi/qmp/qdict.h"
+#include "qemu/error-report.h"
 #include "trace.h"
 #include "ui/input.h"
 #include "ui/console.h"
@@ -10,7 +12,7 @@
 
 struct QemuInputHandlerState {
     DeviceState       *dev;
-    const QemuInputHandler *handler;
+    QemuInputHandler  *handler;
     int               id;
     int               events;
     QemuConsole       *con;
@@ -46,7 +48,7 @@ static uint32_t queue_count;
 static uint32_t queue_limit = 1024;
 
 QemuInputHandlerState *qemu_input_handler_register(DeviceState *dev,
-                                            const QemuInputHandler *handler)
+                                                   QemuInputHandler *handler)
 {
     QemuInputHandlerState *s = g_new0(QemuInputHandlerState, 1);
     static int id = 1;
@@ -56,7 +58,7 @@ QemuInputHandlerState *qemu_input_handler_register(DeviceState *dev,
     s->id = id++;
     QTAILQ_INSERT_TAIL(&handlers, s, node);
 
-    notifier_list_notify(&mouse_mode_notifiers, NULL);
+    qemu_input_check_mode_change();
     return s;
 }
 
@@ -64,21 +66,21 @@ void qemu_input_handler_activate(QemuInputHandlerState *s)
 {
     QTAILQ_REMOVE(&handlers, s, node);
     QTAILQ_INSERT_HEAD(&handlers, s, node);
-    notifier_list_notify(&mouse_mode_notifiers, NULL);
+    qemu_input_check_mode_change();
 }
 
 void qemu_input_handler_deactivate(QemuInputHandlerState *s)
 {
     QTAILQ_REMOVE(&handlers, s, node);
     QTAILQ_INSERT_TAIL(&handlers, s, node);
-    notifier_list_notify(&mouse_mode_notifiers, NULL);
+    qemu_input_check_mode_change();
 }
 
 void qemu_input_handler_unregister(QemuInputHandlerState *s)
 {
     QTAILQ_REMOVE(&handlers, s, node);
     g_free(s);
-    notifier_list_notify(&mouse_mode_notifiers, NULL);
+    qemu_input_check_mode_change();
 }
 
 void qemu_input_handler_bind(QemuInputHandlerState *s,
@@ -122,7 +124,7 @@ qemu_input_find_handler(uint32_t mask, QemuConsole *con)
     return NULL;
 }
 
-void qmp_input_send_event(const char *device,
+void qmp_input_send_event(bool has_device, const char *device,
                           bool has_head, int64_t head,
                           InputEventList *events, Error **errp)
 {
@@ -131,7 +133,7 @@ void qmp_input_send_event(const char *device,
     Error *err = NULL;
 
     con = NULL;
-    if (device) {
+    if (has_device) {
         if (!has_head) {
             head = 0;
         }
@@ -174,6 +176,37 @@ void qmp_input_send_event(const char *device,
     qemu_input_event_sync();
 }
 
+static int qemu_input_transform_invert_abs_value(int value)
+{
+  return (int64_t)INPUT_EVENT_ABS_MAX - value + INPUT_EVENT_ABS_MIN;
+}
+
+static void qemu_input_transform_abs_rotate(InputEvent *evt)
+{
+    InputMoveEvent *move = evt->u.abs.data;
+    switch (graphic_rotate) {
+    case 90:
+        if (move->axis == INPUT_AXIS_X) {
+            move->axis = INPUT_AXIS_Y;
+        } else if (move->axis == INPUT_AXIS_Y) {
+            move->axis = INPUT_AXIS_X;
+            move->value = qemu_input_transform_invert_abs_value(move->value);
+        }
+        break;
+    case 180:
+        move->value = qemu_input_transform_invert_abs_value(move->value);
+        break;
+    case 270:
+        if (move->axis == INPUT_AXIS_X) {
+            move->axis = INPUT_AXIS_Y;
+            move->value = qemu_input_transform_invert_abs_value(move->value);
+        } else if (move->axis == INPUT_AXIS_Y) {
+            move->axis = INPUT_AXIS_X;
+        }
+        break;
+    }
+}
+
 static void qemu_input_event_trace(QemuConsole *src, InputEvent *evt)
 {
     const char *name;
@@ -181,7 +214,6 @@ static void qemu_input_event_trace(QemuConsole *src, InputEvent *evt)
     InputKeyEvent *key;
     InputBtnEvent *btn;
     InputMoveEvent *move;
-    InputMultiTouchEvent *mtt;
 
     if (src) {
         idx = qemu_console_get_index(src);
@@ -219,11 +251,6 @@ static void qemu_input_event_trace(QemuConsole *src, InputEvent *evt)
         move = evt->u.abs.data;
         name = InputAxis_str(move->axis);
         trace_input_event_abs(idx, name, move->value);
-        break;
-    case INPUT_EVENT_KIND_MTT:
-        mtt = evt->u.mtt.data;
-        name = InputAxis_str(mtt->axis);
-        trace_input_event_mtt(idx, name, mtt->value);
         break;
     case INPUT_EVENT_KIND__MAX:
         /* keep gcc happy */
@@ -308,6 +335,11 @@ void qemu_input_event_send_impl(QemuConsole *src, InputEvent *evt)
     QemuInputHandlerState *s;
 
     qemu_input_event_trace(src, evt);
+
+    /* pre processing */
+    if (graphic_rotate && (evt->type == INPUT_EVENT_KIND_ABS)) {
+            qemu_input_transform_abs_rotate(evt);
+    }
 
     /* send event */
     s = qemu_input_find_handler(1 << evt->type, src);
@@ -458,12 +490,12 @@ void qemu_input_update_buttons(QemuConsole *src, uint32_t *button_map,
     }
 }
 
-bool qemu_input_is_absolute(QemuConsole *con)
+bool qemu_input_is_absolute(void)
 {
     QemuInputHandlerState *s;
 
     s = qemu_input_find_handler(INPUT_EVENT_MASK_REL | INPUT_EVENT_MASK_ABS,
-                                con);
+                                NULL);
     return (s != NULL) && (s->handler->mask & INPUT_EVENT_MASK_ABS);
 }
 
@@ -511,40 +543,19 @@ void qemu_input_queue_abs(QemuConsole *src, InputAxis axis, int value,
     qemu_input_event_send(src, &evt);
 }
 
-void qemu_input_queue_mtt(QemuConsole *src, InputMultiTouchType type,
-                          int slot, int tracking_id)
+void qemu_input_check_mode_change(void)
 {
-    InputMultiTouchEvent mtt = {
-        .type = type,
-        .slot = slot,
-        .tracking_id = tracking_id,
-    };
-    InputEvent evt = {
-        .type = INPUT_EVENT_KIND_MTT,
-        .u.mtt.data = &mtt,
-    };
+    static int current_is_absolute;
+    int is_absolute;
 
-    qemu_input_event_send(src, &evt);
-}
+    is_absolute = qemu_input_is_absolute();
 
-void qemu_input_queue_mtt_abs(QemuConsole *src, InputAxis axis, int value,
-                              int min_in, int max_in, int slot, int tracking_id)
-{
-    InputMultiTouchEvent mtt = {
-        .type = INPUT_MULTI_TOUCH_TYPE_DATA,
-        .slot = slot,
-        .tracking_id = tracking_id,
-        .axis = axis,
-        .value = qemu_input_scale_axis(value, min_in, max_in,
-                                       INPUT_EVENT_ABS_MIN,
-                                       INPUT_EVENT_ABS_MAX),
-    };
-    InputEvent evt = {
-        .type = INPUT_EVENT_KIND_MTT,
-        .u.mtt.data = &mtt,
-    };
+    if (is_absolute != current_is_absolute) {
+        trace_input_mouse_mode(is_absolute);
+        notifier_list_notify(&mouse_mode_notifiers, NULL);
+    }
 
-    qemu_input_event_send(src, &evt);
+    current_is_absolute = is_absolute;
 }
 
 void qemu_add_mouse_mode_change_notifier(Notifier *notify)
@@ -583,29 +594,29 @@ MouseInfoList *qmp_query_mice(Error **errp)
     return mice_list;
 }
 
-bool qemu_mouse_set(int index, Error **errp)
+void hmp_mouse_set(Monitor *mon, const QDict *qdict)
 {
     QemuInputHandlerState *s;
+    int index = qdict_get_int(qdict, "index");
+    int found = 0;
 
     QTAILQ_FOREACH(s, &handlers, node) {
-        if (s->id == index) {
-            break;
+        if (s->id != index) {
+            continue;
         }
+        if (!(s->handler->mask & (INPUT_EVENT_MASK_REL |
+                                  INPUT_EVENT_MASK_ABS))) {
+            error_report("Input device '%s' is not a mouse", s->handler->name);
+            return;
+        }
+        found = 1;
+        qemu_input_handler_activate(s);
+        break;
     }
 
-    if (!s) {
-        error_setg(errp, "Mouse at index '%d' not found", index);
-        return false;
+    if (!found) {
+        error_report("Mouse at index '%d' not found", index);
     }
 
-    if (!(s->handler->mask & (INPUT_EVENT_MASK_REL |
-                              INPUT_EVENT_MASK_ABS))) {
-        error_setg(errp, "Input device '%s' is not a mouse",
-                   s->handler->name);
-        return false;
-    }
-
-    qemu_input_handler_activate(s);
-    notifier_list_notify(&mouse_mode_notifiers, NULL);
-    return true;
+    qemu_input_check_mode_change();
 }

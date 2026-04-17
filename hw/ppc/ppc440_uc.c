@@ -14,11 +14,9 @@
 #include "qemu/log.h"
 #include "hw/irq.h"
 #include "hw/ppc/ppc4xx.h"
-#include "hw/pci-host/ppc4xx.h"
 #include "hw/qdev-properties.h"
 #include "hw/pci/pci.h"
 #include "sysemu/reset.h"
-#include "cpu.h"
 #include "ppc440.h"
 
 /*****************************************************************************/
@@ -73,6 +71,46 @@ typedef struct ppc4xx_l2sram_t {
     uint32_t l2cache[8];
     uint32_t isram0[11];
 } ppc4xx_l2sram_t;
+
+#ifdef MAP_L2SRAM
+static void l2sram_update_mappings(ppc4xx_l2sram_t *l2sram,
+                                   uint32_t isarc, uint32_t isacntl,
+                                   uint32_t dsarc, uint32_t dsacntl)
+{
+    if (l2sram->isarc != isarc ||
+        (l2sram->isacntl & 0x80000000) != (isacntl & 0x80000000)) {
+        if (l2sram->isacntl & 0x80000000) {
+            /* Unmap previously assigned memory region */
+            memory_region_del_subregion(get_system_memory(),
+                                        &l2sram->isarc_ram);
+        }
+        if (isacntl & 0x80000000) {
+            /* Map new instruction memory region */
+            memory_region_add_subregion(get_system_memory(), isarc,
+                                        &l2sram->isarc_ram);
+        }
+    }
+    if (l2sram->dsarc != dsarc ||
+        (l2sram->dsacntl & 0x80000000) != (dsacntl & 0x80000000)) {
+        if (l2sram->dsacntl & 0x80000000) {
+            /* Beware not to unmap the region we just mapped */
+            if (!(isacntl & 0x80000000) || l2sram->dsarc != isarc) {
+                /* Unmap previously assigned memory region */
+                memory_region_del_subregion(get_system_memory(),
+                                            &l2sram->dsarc_ram);
+            }
+        }
+        if (dsacntl & 0x80000000) {
+            /* Beware not to remap the region we just mapped */
+            if (!(isacntl & 0x80000000) || dsarc != isarc) {
+                /* Map new data memory region */
+                memory_region_add_subregion(get_system_memory(), dsarc,
+                                            &l2sram->dsarc_ram);
+            }
+        }
+    }
+}
+#endif
 
 static uint32_t dcr_read_l2sram(void *opaque, int dcrn)
 {
@@ -154,6 +192,7 @@ static void dcr_write_l2sram(void *opaque, int dcrn, uint32_t val)
         /*l2sram->isram1[dcrn - DCR_L2CACHE_BASE] = val;*/
         break;
     }
+    /*l2sram_update_mappings(l2sram, isarc, isacntl, dsarc, dsacntl);*/
 }
 
 static void l2sram_reset(void *opaque)
@@ -163,6 +202,7 @@ static void l2sram_reset(void *opaque)
     memset(l2sram->l2cache, 0, sizeof(l2sram->l2cache));
     l2sram->l2cache[DCR_L2CACHE_STAT - DCR_L2CACHE_BASE] = 0x80000000;
     memset(l2sram->isram0, 0, sizeof(l2sram->isram0));
+    /*l2sram_update_mappings(l2sram, isarc, isacntl, dsarc, dsacntl);*/
 }
 
 void ppc4xx_l2sram_init(CPUPPCState *env)
@@ -729,17 +769,15 @@ void ppc4xx_dma_init(CPUPPCState *env, int dcr_base)
  */
 #include "hw/pci/pcie_host.h"
 
+#define TYPE_PPC460EX_PCIE_HOST "ppc460ex-pcie-host"
 OBJECT_DECLARE_SIMPLE_TYPE(PPC460EXPCIEState, PPC460EX_PCIE_HOST)
 
 struct PPC460EXPCIEState {
-    PCIExpressHost parent_obj;
+    PCIExpressHost host;
 
-    MemoryRegion busmem;
     MemoryRegion iomem;
     qemu_irq irq[4];
-    int32_t num;
     int32_t dcrn_base;
-    PowerPCCPU *cpu;
 
     uint64_t cfg_base;
     uint32_t cfg_mask;
@@ -756,6 +794,9 @@ struct PPC460EXPCIEState {
     uint32_t special;
     uint32_t cfg;
 };
+
+#define DCRN_PCIE0_BASE 0x100
+#define DCRN_PCIE1_BASE 0x120
 
 enum {
     PEGPL_CFGBAH = 0x0,
@@ -785,78 +826,78 @@ enum {
 
 static uint32_t dcr_read_pcie(void *opaque, int dcrn)
 {
-    PPC460EXPCIEState *s = opaque;
+    PPC460EXPCIEState *state = opaque;
     uint32_t ret = 0;
 
-    switch (dcrn - s->dcrn_base) {
+    switch (dcrn - state->dcrn_base) {
     case PEGPL_CFGBAH:
-        ret = s->cfg_base >> 32;
+        ret = state->cfg_base >> 32;
         break;
     case PEGPL_CFGBAL:
-        ret = s->cfg_base;
+        ret = state->cfg_base;
         break;
     case PEGPL_CFGMSK:
-        ret = s->cfg_mask;
+        ret = state->cfg_mask;
         break;
     case PEGPL_MSGBAH:
-        ret = s->msg_base >> 32;
+        ret = state->msg_base >> 32;
         break;
     case PEGPL_MSGBAL:
-        ret = s->msg_base;
+        ret = state->msg_base;
         break;
     case PEGPL_MSGMSK:
-        ret = s->msg_mask;
+        ret = state->msg_mask;
         break;
     case PEGPL_OMR1BAH:
-        ret = s->omr1_base >> 32;
+        ret = state->omr1_base >> 32;
         break;
     case PEGPL_OMR1BAL:
-        ret = s->omr1_base;
+        ret = state->omr1_base;
         break;
     case PEGPL_OMR1MSKH:
-        ret = s->omr1_mask >> 32;
+        ret = state->omr1_mask >> 32;
         break;
     case PEGPL_OMR1MSKL:
-        ret = s->omr1_mask;
+        ret = state->omr1_mask;
         break;
     case PEGPL_OMR2BAH:
-        ret = s->omr2_base >> 32;
+        ret = state->omr2_base >> 32;
         break;
     case PEGPL_OMR2BAL:
-        ret = s->omr2_base;
+        ret = state->omr2_base;
         break;
     case PEGPL_OMR2MSKH:
-        ret = s->omr2_mask >> 32;
+        ret = state->omr2_mask >> 32;
         break;
     case PEGPL_OMR2MSKL:
-        ret = s->omr3_mask;
+        ret = state->omr3_mask;
         break;
     case PEGPL_OMR3BAH:
-        ret = s->omr3_base >> 32;
+        ret = state->omr3_base >> 32;
         break;
     case PEGPL_OMR3BAL:
-        ret = s->omr3_base;
+        ret = state->omr3_base;
         break;
     case PEGPL_OMR3MSKH:
-        ret = s->omr3_mask >> 32;
+        ret = state->omr3_mask >> 32;
         break;
     case PEGPL_OMR3MSKL:
-        ret = s->omr3_mask;
+        ret = state->omr3_mask;
         break;
     case PEGPL_REGBAH:
-        ret = s->reg_base >> 32;
+        ret = state->reg_base >> 32;
         break;
     case PEGPL_REGBAL:
-        ret = s->reg_base;
+        ret = state->reg_base;
         break;
     case PEGPL_REGMSK:
-        ret = s->reg_mask;
+        ret = state->reg_mask;
         break;
     case PEGPL_SPECIAL:
-        ret = s->special;
+        ret = state->special;
         break;
     case PEGPL_CFG:
-        ret = s->cfg;
+        ret = state->cfg;
         break;
     }
 
@@ -959,72 +1000,37 @@ static void ppc460ex_set_irq(void *opaque, int irq_num, int level)
        qemu_set_irq(s->irq[irq_num], level);
 }
 
-#define PPC440_PCIE_DCR(s, dcrn) \
-    ppc_dcr_register(&(s)->cpu->env, (s)->dcrn_base + (dcrn), (s), \
-                     &dcr_read_pcie, &dcr_write_pcie)
-
-
-static void ppc460ex_pcie_register_dcrs(PPC460EXPCIEState *s)
-{
-    PPC440_PCIE_DCR(s, PEGPL_CFGBAH);
-    PPC440_PCIE_DCR(s, PEGPL_CFGBAL);
-    PPC440_PCIE_DCR(s, PEGPL_CFGMSK);
-    PPC440_PCIE_DCR(s, PEGPL_MSGBAH);
-    PPC440_PCIE_DCR(s, PEGPL_MSGBAL);
-    PPC440_PCIE_DCR(s, PEGPL_MSGMSK);
-    PPC440_PCIE_DCR(s, PEGPL_OMR1BAH);
-    PPC440_PCIE_DCR(s, PEGPL_OMR1BAL);
-    PPC440_PCIE_DCR(s, PEGPL_OMR1MSKH);
-    PPC440_PCIE_DCR(s, PEGPL_OMR1MSKL);
-    PPC440_PCIE_DCR(s, PEGPL_OMR2BAH);
-    PPC440_PCIE_DCR(s, PEGPL_OMR2BAL);
-    PPC440_PCIE_DCR(s, PEGPL_OMR2MSKH);
-    PPC440_PCIE_DCR(s, PEGPL_OMR2MSKL);
-    PPC440_PCIE_DCR(s, PEGPL_OMR3BAH);
-    PPC440_PCIE_DCR(s, PEGPL_OMR3BAL);
-    PPC440_PCIE_DCR(s, PEGPL_OMR3MSKH);
-    PPC440_PCIE_DCR(s, PEGPL_OMR3MSKL);
-    PPC440_PCIE_DCR(s, PEGPL_REGBAH);
-    PPC440_PCIE_DCR(s, PEGPL_REGBAL);
-    PPC440_PCIE_DCR(s, PEGPL_REGMSK);
-    PPC440_PCIE_DCR(s, PEGPL_SPECIAL);
-    PPC440_PCIE_DCR(s, PEGPL_CFG);
-}
-
 static void ppc460ex_pcie_realize(DeviceState *dev, Error **errp)
 {
     PPC460EXPCIEState *s = PPC460EX_PCIE_HOST(dev);
     PCIHostState *pci = PCI_HOST_BRIDGE(dev);
-    int i;
-    char buf[20];
+    int i, id;
+    char buf[16];
 
-    if (!s->cpu) {
-        error_setg(errp, "cpu link property must be set");
+    switch (s->dcrn_base) {
+    case DCRN_PCIE0_BASE:
+        id = 0;
+        break;
+    case DCRN_PCIE1_BASE:
+        id = 1;
+        break;
+    default:
+        error_setg(errp, "invalid PCIe DCRN base");
         return;
     }
-    if (s->num < 0 || s->dcrn_base < 0) {
-        error_setg(errp, "busnum and dcrn-base properties must be set");
-        return;
-    }
-    snprintf(buf, sizeof(buf), "pcie%d-mem", s->num);
-    memory_region_init(&s->busmem, OBJECT(s), buf, UINT64_MAX);
-    snprintf(buf, sizeof(buf), "pcie%d-io", s->num);
-    memory_region_init(&s->iomem, OBJECT(s), buf, 64 * KiB);
+    snprintf(buf, sizeof(buf), "pcie%d-io", id);
+    memory_region_init(&s->iomem, OBJECT(s), buf, UINT64_MAX);
     for (i = 0; i < 4; i++) {
         sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq[i]);
     }
-    snprintf(buf, sizeof(buf), "pcie.%d", s->num);
+    snprintf(buf, sizeof(buf), "pcie.%d", id);
     pci->bus = pci_register_root_bus(DEVICE(s), buf, ppc460ex_set_irq,
-                                pci_swizzle_map_irq_fn, s, &s->busmem,
-                                &s->iomem, 0, 4, TYPE_PCIE_BUS);
-    ppc460ex_pcie_register_dcrs(s);
+                                pci_swizzle_map_irq_fn, s, &s->iomem,
+                                get_system_io(), 0, 4, TYPE_PCIE_BUS);
 }
 
 static Property ppc460ex_pcie_props[] = {
-    DEFINE_PROP_INT32("busnum", PPC460EXPCIEState, num, -1),
     DEFINE_PROP_INT32("dcrn-base", PPC460EXPCIEState, dcrn_base, -1),
-    DEFINE_PROP_LINK("cpu", PPC460EXPCIEState, cpu, TYPE_POWERPC_CPU,
-                     PowerPCCPU *),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -1051,3 +1057,68 @@ static void ppc460ex_pcie_register(void)
 }
 
 type_init(ppc460ex_pcie_register)
+
+static void ppc460ex_pcie_register_dcrs(PPC460EXPCIEState *s, CPUPPCState *env)
+{
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_CFGBAH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_CFGBAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_CFGMSK, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_MSGBAH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_MSGBAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_MSGMSK, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR1BAH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR1BAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR1MSKH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR1MSKL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR2BAH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR2BAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR2MSKH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR2MSKL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR3BAH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR3BAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR3MSKH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_OMR3MSKL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_REGBAH, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_REGBAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_REGMSK, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_SPECIAL, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+    ppc_dcr_register(env, s->dcrn_base + PEGPL_CFG, s,
+                     &dcr_read_pcie, &dcr_write_pcie);
+}
+
+void ppc460ex_pcie_init(CPUPPCState *env)
+{
+    DeviceState *dev;
+
+    dev = qdev_new(TYPE_PPC460EX_PCIE_HOST);
+    qdev_prop_set_int32(dev, "dcrn-base", DCRN_PCIE0_BASE);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    ppc460ex_pcie_register_dcrs(PPC460EX_PCIE_HOST(dev), env);
+
+    dev = qdev_new(TYPE_PPC460EX_PCIE_HOST);
+    qdev_prop_set_int32(dev, "dcrn-base", DCRN_PCIE1_BASE);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    ppc460ex_pcie_register_dcrs(PPC460EX_PCIE_HOST(dev), env);
+}

@@ -25,7 +25,6 @@ static const uint32_t ged_supported_events[] = {
     ACPI_GED_MEM_HOTPLUG_EVT,
     ACPI_GED_PWR_DOWN_EVT,
     ACPI_GED_NVDIMM_HOTPLUG_EVT,
-    ACPI_GED_CPU_HOTPLUG_EVT,
 };
 
 /*
@@ -107,9 +106,6 @@ void build_ged_aml(Aml *table, const char *name, HotplugHandler *hotplug_dev,
             case ACPI_GED_MEM_HOTPLUG_EVT:
                 aml_append(if_ctx, aml_call0(MEMORY_DEVICES_CONTAINER "."
                                              MEMORY_SLOT_SCAN_METHOD));
-                break;
-            case ACPI_GED_CPU_HOTPLUG_EVT:
-                aml_append(if_ctx, aml_call0(AML_GED_EVT_CPU_SCAN_METHOD));
                 break;
             case ACPI_GED_PWR_DOWN_EVT:
                 aml_append(if_ctx,
@@ -201,9 +197,9 @@ static void ged_regs_write(void *opaque, hwaddr addr, uint64_t data,
 
     switch (addr) {
     case ACPI_GED_REG_SLEEP_CTL:
-        slp_typ = (data >> ACPI_GED_SLP_TYP_POS) & ACPI_GED_SLP_TYP_MASK;
-        slp_en  = !!(data & ACPI_GED_SLP_EN);
-        if (slp_en && slp_typ == ACPI_GED_SLP_TYP_S5) {
+        slp_typ = (data >> 2) & 0x07;
+        slp_en  = (data >> 5) & 0x01;
+        if (slp_en && slp_typ == 5) {
             qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
         }
         return;
@@ -238,8 +234,6 @@ static void acpi_ged_device_plug_cb(HotplugHandler *hotplug_dev,
         } else {
             acpi_memory_plug_cb(hotplug_dev, &s->memhp_state, dev, errp);
         }
-    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
-        acpi_cpu_plug_cb(hotplug_dev, &s->cpuhp_state, dev, errp);
     } else {
         error_setg(errp, "virt: device plug request for unsupported device"
                    " type: %s", object_get_typename(OBJECT(dev)));
@@ -254,8 +248,6 @@ static void acpi_ged_unplug_request_cb(HotplugHandler *hotplug_dev,
     if ((object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM) &&
                        !(object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM)))) {
         acpi_memory_unplug_request_cb(hotplug_dev, &s->memhp_state, dev, errp);
-    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
-        acpi_cpu_unplug_request_cb(hotplug_dev, &s->cpuhp_state, dev, errp);
     } else {
         error_setg(errp, "acpi: device unplug request for unsupported device"
                    " type: %s", object_get_typename(OBJECT(dev)));
@@ -269,8 +261,6 @@ static void acpi_ged_unplug_cb(HotplugHandler *hotplug_dev,
 
     if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
         acpi_memory_unplug_cb(&s->memhp_state, dev, errp);
-    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
-        acpi_cpu_unplug_cb(&s->cpuhp_state, dev, errp);
     } else {
         error_setg(errp, "acpi: device unplug for unsupported device"
                    " type: %s", object_get_typename(OBJECT(dev)));
@@ -282,7 +272,6 @@ static void acpi_ged_ospm_status(AcpiDeviceIf *adev, ACPIOSTInfoList ***list)
     AcpiGedState *s = ACPI_GED(adev);
 
     acpi_memory_ospm_status(&s->memhp_state, list);
-    acpi_cpu_ospm_status(&s->cpuhp_state, list);
 }
 
 static void acpi_ged_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
@@ -297,8 +286,6 @@ static void acpi_ged_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
         sel = ACPI_GED_PWR_DOWN_EVT;
     } else if (ev & ACPI_NVDIMM_HOTPLUG_STATUS) {
         sel = ACPI_GED_NVDIMM_HOTPLUG_EVT;
-    } else if (ev & ACPI_CPU_HOTPLUG_STATUS) {
-        sel = ACPI_GED_CPU_HOTPLUG_EVT;
     } else {
         /* Unknown event. Return without generating interrupt. */
         warn_report("GED: Unsupported event %d. No irq injected", ev);
@@ -325,26 +312,8 @@ static const VMStateDescription vmstate_memhp_state = {
     .name = "acpi-ged/memhp",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
-        VMSTATE_MEMORY_HOTPLUG(memhp_state, AcpiGedState),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-static bool cpuhp_needed(void *opaque)
-{
-    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
-
-    return mc->has_hotpluggable_cpus;
-}
-
-static const VMStateDescription vmstate_cpuhp_state = {
-    .name = "acpi-ged/cpuhp",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .needed = cpuhp_needed,
     .fields      = (VMStateField[]) {
-        VMSTATE_CPU_HOTPLUG(cpuhp_state, AcpiGedState),
+        VMSTATE_MEMORY_HOTPLUG(memhp_state, AcpiGedState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -353,7 +322,7 @@ static const VMStateDescription vmstate_ged_state = {
     .name = "acpi-ged-state",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields      = (VMStateField[]) {
         VMSTATE_UINT32(sel, GEDState),
         VMSTATE_END_OF_LIST()
     }
@@ -363,7 +332,7 @@ static const VMStateDescription vmstate_ghes = {
     .name = "acpi-ghes",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields     = (VMStateField[]) {
         VMSTATE_UINT64(ghes_addr_le, AcpiGhesState),
         VMSTATE_END_OF_LIST()
     },
@@ -380,7 +349,7 @@ static const VMStateDescription vmstate_ghes_state = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = ghes_needed,
-    .fields = (const VMStateField[]) {
+    .fields      = (VMStateField[]) {
         VMSTATE_STRUCT(ghes_state, AcpiGedState, 1,
                        vmstate_ghes, AcpiGhesState),
         VMSTATE_END_OF_LIST()
@@ -391,53 +360,16 @@ static const VMStateDescription vmstate_acpi_ged = {
     .name = "acpi-ged",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(ged_state, AcpiGedState, 1, vmstate_ged_state, GEDState),
         VMSTATE_END_OF_LIST(),
     },
-    .subsections = (const VMStateDescription * const []) {
+    .subsections = (const VMStateDescription * []) {
         &vmstate_memhp_state,
-        &vmstate_cpuhp_state,
         &vmstate_ghes_state,
         NULL
     }
 };
-
-static void acpi_ged_realize(DeviceState *dev, Error **errp)
-{
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
-    AcpiGedState *s = ACPI_GED(dev);
-    uint32_t ged_events;
-    int i;
-
-    ged_events = ctpop32(s->ged_event_bitmap);
-
-    for (i = 0; i < ARRAY_SIZE(ged_supported_events) && ged_events; i++) {
-        uint32_t event = s->ged_event_bitmap & ged_supported_events[i];
-
-        if (!event) {
-            continue;
-        }
-
-        switch (event) {
-        case ACPI_GED_CPU_HOTPLUG_EVT:
-            /* initialize CPU Hotplug related regions */
-            memory_region_init(&s->container_cpuhp, OBJECT(dev),
-                                "cpuhp container",
-                                ACPI_CPU_HOTPLUG_REG_LEN);
-            sysbus_init_mmio(sbd, &s->container_cpuhp);
-            cpu_hotplug_hw_init(&s->container_cpuhp, OBJECT(dev),
-                                &s->cpuhp_state, 0);
-            break;
-        }
-        ged_events--;
-    }
-
-    if (ged_events) {
-        error_report("Unsupported events specified");
-        abort();
-    }
-}
 
 static void acpi_ged_initfn(Object *obj)
 {
@@ -479,7 +411,6 @@ static void acpi_ged_class_init(ObjectClass *class, void *data)
     dc->desc = "ACPI Generic Event Device";
     device_class_set_props(dc, acpi_ged_properties);
     dc->vmsd = &vmstate_acpi_ged;
-    dc->realize = acpi_ged_realize;
 
     hc->plug = acpi_ged_device_plug_cb;
     hc->unplug_request = acpi_ged_unplug_request_cb;

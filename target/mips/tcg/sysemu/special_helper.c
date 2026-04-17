@@ -68,7 +68,7 @@ static void debug_post_eret(CPUMIPSState *env)
         if (env->hflags & MIPS_HFLAG_DM) {
             qemu_log(" DEPC " TARGET_FMT_lx, env->CP0_DEPC);
         }
-        switch (mips_env_mmu_index(env)) {
+        switch (cpu_mmu_index(env, false)) {
         case 3:
             qemu_log(", ERL\n");
             break;
@@ -90,10 +90,11 @@ static void debug_post_eret(CPUMIPSState *env)
 
 bool mips_io_recompile_replay_branch(CPUState *cs, const TranslationBlock *tb)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
 
     if ((env->hflags & MIPS_HFLAG_BMASK) != 0
-        && !tcg_cflags_has(cs, CF_PCREL) && env->active_tc.PC != tb->pc) {
+        && env->active_tc.PC != tb_pc(tb)) {
         env->active_tc.PC -= (env->hflags & MIPS_HFLAG_B16 ? 2 : 4);
         env->hflags &= ~MIPS_HFLAG_BMASK;
         return true;

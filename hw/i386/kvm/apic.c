@@ -95,10 +95,9 @@ void kvm_get_apic_state(DeviceState *dev, struct kvm_lapic_state *kapic)
     apic_next_timer(s, s->initial_count_load_time);
 }
 
-static int kvm_apic_set_base(APICCommonState *s, uint64_t val)
+static void kvm_apic_set_base(APICCommonState *s, uint64_t val)
 {
     s->apicbase = val;
-    return 0;
 }
 
 static void kvm_apic_set_tpr(APICCommonState *s, uint8_t val)

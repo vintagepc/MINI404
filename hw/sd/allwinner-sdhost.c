@@ -77,7 +77,6 @@ enum {
     REG_SD_DATA1_CRC  = 0x12C, /* CRC Data 1 from card/eMMC */
     REG_SD_DATA0_CRC  = 0x130, /* CRC Data 0 from card/eMMC */
     REG_SD_CRC_STA    = 0x134, /* CRC status from card/eMMC during write */
-    REG_SD_SAMP_DL    = 0x144, /* Sample Delay Control (sun50i-a64) */
     REG_SD_FIFO       = 0x200, /* Read/Write FIFO */
 };
 
@@ -159,7 +158,6 @@ enum {
     REG_SD_RES_CRC_RST      = 0x0,
     REG_SD_DATA_CRC_RST     = 0x0,
     REG_SD_CRC_STA_RST      = 0x0,
-    REG_SD_SAMPLE_DL_RST    = 0x00002000,
     REG_SD_FIFO_RST         = 0x0,
 };
 
@@ -193,7 +191,7 @@ static void allwinner_sdhost_update_irq(AwSdHostState *s)
     }
 
     trace_allwinner_sdhost_update_irq(irq);
-    qemu_set_irq(s->irq, !!irq);
+    qemu_set_irq(s->irq, irq);
 }
 
 static void allwinner_sdhost_update_transfer_cnt(AwSdHostState *s,
@@ -304,30 +302,6 @@ static void allwinner_sdhost_auto_stop(AwSdHostState *s)
     }
 }
 
-static void read_descriptor(AwSdHostState *s, hwaddr desc_addr,
-                            TransferDescriptor *desc)
-{
-    uint32_t desc_words[4];
-    dma_memory_read(&s->dma_as, desc_addr, &desc_words, sizeof(desc_words),
-                    MEMTXATTRS_UNSPECIFIED);
-    desc->status = le32_to_cpu(desc_words[0]);
-    desc->size = le32_to_cpu(desc_words[1]);
-    desc->addr = le32_to_cpu(desc_words[2]);
-    desc->next = le32_to_cpu(desc_words[3]);
-}
-
-static void write_descriptor(AwSdHostState *s, hwaddr desc_addr,
-                             const TransferDescriptor *desc)
-{
-    uint32_t desc_words[4];
-    desc_words[0] = cpu_to_le32(desc->status);
-    desc_words[1] = cpu_to_le32(desc->size);
-    desc_words[2] = cpu_to_le32(desc->addr);
-    desc_words[3] = cpu_to_le32(desc->next);
-    dma_memory_write(&s->dma_as, desc_addr, &desc_words, sizeof(desc_words),
-                     MEMTXATTRS_UNSPECIFIED);
-}
-
 static uint32_t allwinner_sdhost_process_desc(AwSdHostState *s,
                                               hwaddr desc_addr,
                                               TransferDescriptor *desc,
@@ -338,7 +312,9 @@ static uint32_t allwinner_sdhost_process_desc(AwSdHostState *s,
     uint32_t num_bytes = max_bytes;
     uint8_t buf[1024];
 
-    read_descriptor(s, desc_addr, desc);
+    /* Read descriptor */
+    dma_memory_read(&s->dma_as, desc_addr, desc, sizeof(*desc),
+                    MEMTXATTRS_UNSPECIFIED);
     if (desc->size == 0) {
         desc->size = klass->max_desc_size;
     } else if (desc->size > klass->max_desc_size) {
@@ -380,7 +356,8 @@ static uint32_t allwinner_sdhost_process_desc(AwSdHostState *s,
 
     /* Clear hold flag and flush descriptor */
     desc->status &= ~DESC_STATUS_HOLD;
-    write_descriptor(s, desc_addr, desc);
+    dma_memory_write(&s->dma_as, desc_addr, desc, sizeof(*desc),
+                     MEMTXATTRS_UNSPECIFIED);
 
     return num_done;
 }
@@ -461,7 +438,6 @@ static uint64_t allwinner_sdhost_read(void *opaque, hwaddr offset,
 {
     AwSdHostState *s = AW_SDHOST(opaque);
     AwSdHostClass *sc = AW_SDHOST_GET_CLASS(s);
-    bool out_of_bounds = false;
     uint32_t res = 0;
 
     switch (offset) {
@@ -580,22 +556,11 @@ static uint64_t allwinner_sdhost_read(void *opaque, hwaddr offset,
     case REG_SD_FIFO:      /* Read/Write FIFO */
         res = allwinner_sdhost_fifo_read(s);
         break;
-    case REG_SD_SAMP_DL: /* Sample Delay */
-        if (sc->can_calibrate) {
-            res = s->sample_delay;
-        } else {
-            out_of_bounds = true;
-        }
-        break;
     default:
-        out_of_bounds = true;
-        res = 0;
-        break;
-    }
-
-    if (out_of_bounds) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: out-of-bounds offset %"
                       HWADDR_PRIx"\n", __func__, offset);
+        res = 0;
+        break;
     }
 
     trace_allwinner_sdhost_read(offset, res, size);
@@ -616,7 +581,6 @@ static void allwinner_sdhost_write(void *opaque, hwaddr offset,
 {
     AwSdHostState *s = AW_SDHOST(opaque);
     AwSdHostClass *sc = AW_SDHOST_GET_CLASS(s);
-    bool out_of_bounds = false;
 
     trace_allwinner_sdhost_write(offset, value, size);
 
@@ -740,21 +704,10 @@ static void allwinner_sdhost_write(void *opaque, hwaddr offset,
     case REG_SD_DATA0_CRC: /* CRC Data 0 from card/eMMC */
     case REG_SD_CRC_STA:   /* CRC status from card/eMMC in write operation */
         break;
-    case REG_SD_SAMP_DL: /* Sample delay control */
-        if (sc->can_calibrate) {
-            s->sample_delay = value;
-        } else {
-            out_of_bounds = true;
-        }
-        break;
     default:
-        out_of_bounds = true;
-        break;
-    }
-
-    if (out_of_bounds) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: out-of-bounds offset %"
                       HWADDR_PRIx"\n", __func__, offset);
+        break;
     }
 }
 
@@ -773,7 +726,7 @@ static const VMStateDescription vmstate_allwinner_sdhost = {
     .name = "allwinner-sdhost",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(global_ctl, AwSdHostState),
         VMSTATE_UINT32(clock_ctl, AwSdHostState),
         VMSTATE_UINT32(timeout, AwSdHostState),
@@ -803,7 +756,6 @@ static const VMStateDescription vmstate_allwinner_sdhost = {
         VMSTATE_UINT32(response_crc, AwSdHostState),
         VMSTATE_UINT32_ARRAY(data_crc, AwSdHostState, 8),
         VMSTATE_UINT32(status_crc, AwSdHostState),
-        VMSTATE_UINT32(sample_delay, AwSdHostState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -842,7 +794,6 @@ static void allwinner_sdhost_realize(DeviceState *dev, Error **errp)
 static void allwinner_sdhost_reset(DeviceState *dev)
 {
     AwSdHostState *s = AW_SDHOST(dev);
-    AwSdHostClass *sc = AW_SDHOST_GET_CLASS(s);
 
     s->global_ctl = REG_SD_GCTL_RST;
     s->clock_ctl = REG_SD_CKCR_RST;
@@ -883,10 +834,6 @@ static void allwinner_sdhost_reset(DeviceState *dev)
     }
 
     s->status_crc = REG_SD_CRC_STA_RST;
-
-    if (sc->can_calibrate) {
-        s->sample_delay = REG_SD_SAMPLE_DL_RST;
-    }
 }
 
 static void allwinner_sdhost_bus_class_init(ObjectClass *klass, void *data)
@@ -900,7 +847,7 @@ static void allwinner_sdhost_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, allwinner_sdhost_reset);
+    dc->reset = allwinner_sdhost_reset;
     dc->vmsd = &vmstate_allwinner_sdhost;
     dc->realize = allwinner_sdhost_realize;
     device_class_set_props(dc, allwinner_sdhost_properties);
@@ -911,7 +858,6 @@ static void allwinner_sdhost_sun4i_class_init(ObjectClass *klass, void *data)
     AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
     sc->max_desc_size = 8 * KiB;
     sc->is_sun4i = true;
-    sc->can_calibrate = false;
 }
 
 static void allwinner_sdhost_sun5i_class_init(ObjectClass *klass, void *data)
@@ -919,25 +865,6 @@ static void allwinner_sdhost_sun5i_class_init(ObjectClass *klass, void *data)
     AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
     sc->max_desc_size = 64 * KiB;
     sc->is_sun4i = false;
-    sc->can_calibrate = false;
-}
-
-static void allwinner_sdhost_sun50i_a64_class_init(ObjectClass *klass,
-                                                   void *data)
-{
-    AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
-    sc->max_desc_size = 64 * KiB;
-    sc->is_sun4i = false;
-    sc->can_calibrate = true;
-}
-
-static void allwinner_sdhost_sun50i_a64_emmc_class_init(ObjectClass *klass,
-                                                        void *data)
-{
-    AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
-    sc->max_desc_size = 8 * KiB;
-    sc->is_sun4i = false;
-    sc->can_calibrate = true;
 }
 
 static const TypeInfo allwinner_sdhost_info = {
@@ -962,18 +889,6 @@ static const TypeInfo allwinner_sdhost_sun5i_info = {
     .class_init    = allwinner_sdhost_sun5i_class_init,
 };
 
-static const TypeInfo allwinner_sdhost_sun50i_a64_info = {
-    .name          = TYPE_AW_SDHOST_SUN50I_A64,
-    .parent        = TYPE_AW_SDHOST,
-    .class_init    = allwinner_sdhost_sun50i_a64_class_init,
-};
-
-static const TypeInfo allwinner_sdhost_sun50i_a64_emmc_info = {
-    .name          = TYPE_AW_SDHOST_SUN50I_A64_EMMC,
-    .parent        = TYPE_AW_SDHOST,
-    .class_init    = allwinner_sdhost_sun50i_a64_emmc_class_init,
-};
-
 static const TypeInfo allwinner_sdhost_bus_info = {
     .name = TYPE_AW_SDHOST_BUS,
     .parent = TYPE_SD_BUS,
@@ -986,8 +901,6 @@ static void allwinner_sdhost_register_types(void)
     type_register_static(&allwinner_sdhost_info);
     type_register_static(&allwinner_sdhost_sun4i_info);
     type_register_static(&allwinner_sdhost_sun5i_info);
-    type_register_static(&allwinner_sdhost_sun50i_a64_info);
-    type_register_static(&allwinner_sdhost_sun50i_a64_emmc_info);
     type_register_static(&allwinner_sdhost_bus_info);
 }
 

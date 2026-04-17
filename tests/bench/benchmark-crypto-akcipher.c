@@ -16,20 +16,22 @@
 #include "crypto/akcipher.h"
 #include "standard-headers/linux/virtio_crypto.h"
 
-#include "test_akcipher_keys.c.inc"
+#include "test_akcipher_keys.inc"
 
 static QCryptoAkCipher *create_rsa_akcipher(const uint8_t *priv_key,
                                             size_t keylen,
-                                            QCryptoRSAPaddingAlgo padding,
-                                            QCryptoHashAlgo hash)
+                                            QCryptoRSAPaddingAlgorithm padding,
+                                            QCryptoHashAlgorithm hash)
 {
     QCryptoAkCipherOptions opt;
+    QCryptoAkCipher *rsa;
 
-    opt.alg = QCRYPTO_AK_CIPHER_ALGO_RSA;
+    opt.alg = QCRYPTO_AKCIPHER_ALG_RSA;
     opt.u.rsa.padding_alg = padding;
     opt.u.rsa.hash_alg = hash;
-    return qcrypto_akcipher_new(&opt, QCRYPTO_AK_CIPHER_KEY_TYPE_PRIVATE,
-                                priv_key, keylen, &error_abort);
+    rsa = qcrypto_akcipher_new(&opt, QCRYPTO_AKCIPHER_KEY_TYPE_PRIVATE,
+                               priv_key, keylen, &error_abort);
+    return rsa;
 }
 
 static void test_rsa_speed(const uint8_t *priv_key, size_t keylen,
@@ -39,8 +41,8 @@ static void test_rsa_speed(const uint8_t *priv_key, size_t keylen,
 #define SHA1_DGST_LEN 20
 #define SIGN_TIMES 10000
 #define VERIFY_TIMES 100000
-#define PADDING QCRYPTO_RSA_PADDING_ALGO_PKCS1
-#define HASH QCRYPTO_HASH_ALGO_SHA1
+#define PADDING QCRYPTO_RSA_PADDING_ALG_PKCS1
+#define HASH QCRYPTO_HASH_ALG_SHA1
 
     g_autoptr(QCryptoAkCipher) rsa =
         create_rsa_akcipher(priv_key, keylen, PADDING, HASH);
@@ -53,8 +55,8 @@ static void test_rsa_speed(const uint8_t *priv_key, size_t keylen,
     signature = g_new0(uint8_t, key_size / BYTE);
 
     g_test_message("benchmark rsa%zu (%s-%s) sign...", key_size,
-                   QCryptoRSAPaddingAlgo_str(PADDING),
-                   QCryptoHashAlgo_str(HASH));
+                   QCryptoRSAPaddingAlgorithm_str(PADDING),
+                   QCryptoHashAlgorithm_str(HASH));
     g_test_timer_start();
     for (count = 0; count < SIGN_TIMES; ++count) {
         g_assert(qcrypto_akcipher_sign(rsa, dgst, SHA1_DGST_LEN,
@@ -64,14 +66,14 @@ static void test_rsa_speed(const uint8_t *priv_key, size_t keylen,
     g_test_timer_elapsed();
     g_test_message("rsa%zu (%s-%s) sign %zu times in %.2f seconds,"
                    " %.2f times/sec ",
-                   key_size,  QCryptoRSAPaddingAlgo_str(PADDING),
-                   QCryptoHashAlgo_str(HASH),
+                   key_size,  QCryptoRSAPaddingAlgorithm_str(PADDING),
+                   QCryptoHashAlgorithm_str(HASH),
                    count, g_test_timer_last(),
                    (double)count / g_test_timer_last());
 
     g_test_message("benchmark rsa%zu (%s-%s) verification...", key_size,
-                   QCryptoRSAPaddingAlgo_str(PADDING),
-                   QCryptoHashAlgo_str(HASH));
+                   QCryptoRSAPaddingAlgorithm_str(PADDING),
+                   QCryptoHashAlgorithm_str(HASH));
     g_test_timer_start();
     for (count = 0; count < VERIFY_TIMES; ++count) {
         g_assert(qcrypto_akcipher_verify(rsa, signature, key_size / BYTE,
@@ -81,8 +83,8 @@ static void test_rsa_speed(const uint8_t *priv_key, size_t keylen,
     g_test_timer_elapsed();
     g_test_message("rsa%zu (%s-%s) verify %zu times in %.2f seconds,"
                    " %.2f times/sec ",
-                   key_size, QCryptoRSAPaddingAlgo_str(PADDING),
-                   QCryptoHashAlgo_str(HASH),
+                   key_size, QCryptoRSAPaddingAlgorithm_str(PADDING),
+                   QCryptoHashAlgorithm_str(HASH),
                    count, g_test_timer_last(),
                    (double)count / g_test_timer_last());
 }

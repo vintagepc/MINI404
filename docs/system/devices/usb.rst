@@ -1,3 +1,5 @@
+.. _pcsys_005fusb:
+
 USB emulation
 -------------
 
@@ -18,7 +20,7 @@ emulation uses less resources (especially CPU).  So if your guest
 supports XHCI (which should be the case for any operating system
 released around 2010 or later) we recommend using it:
 
-    |qemu_system| -device qemu-xhci
+    qemu -device qemu-xhci
 
 XHCI supports USB 1.1, USB 2.0 and USB 3.0 devices, so this is the
 only controller you need.  With only a single USB controller (and
@@ -207,7 +209,7 @@ option or the ``device_add`` monitor command. Available devices are:
    USB audio device
 
 ``u2f-{emulated,passthru}``
-   :doc:`usb-u2f`
+   Universal Second Factor device
 
 ``canokey``
    An Open-source Secure Key implementing FIDO2, OpenPGP, PIV and more.

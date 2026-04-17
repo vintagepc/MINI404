@@ -36,8 +36,7 @@ The QEMU PC System emulator simulates the following peripherals:
 -  PCI UHCI, OHCI, EHCI or XHCI USB controller and a virtual USB-1.1
    hub.
 
-SMP is supported with a large number of virtual CPUs (upper limit is
-configuration dependent).
+SMP is supported with up to 255 CPUs.
 
 QEMU uses the PC BIOS from the Seabios project and the Plex86/Bochs LGPL
 VGA BIOS.
@@ -72,11 +71,3 @@ machine property, i.e.
    |qemu_system_x86| some.img \
    -audiodev <backend>,id=<name> \
    -machine pcspk-audiodev=<name>
-
-Machine-specific options
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-It supports the following machine-specific options:
-
-- ``x-south-bridge=PIIX3|piix4-isa`` (Experimental option to select a particular
-  south bridge. Default: ``PIIX3``)

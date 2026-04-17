@@ -31,6 +31,10 @@
 #include "qemu/sys_membarrier.h"
 #include "qemu/coroutine-tls.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Important !
  *
@@ -87,10 +91,7 @@ static inline void rcu_read_lock(void)
     ctr = qatomic_read(&rcu_gp_ctr);
     qatomic_set(&p_rcu_reader->ctr, ctr);
 
-    /*
-     * Read rcu_gp_ptr and write p_rcu_reader->ctr before reading
-     * RCU-protected pointers.
-     */
+    /* Write p_rcu_reader->ctr before reading RCU-protected pointers.  */
     smp_mb_placeholder();
 }
 
@@ -118,19 +119,19 @@ static inline void rcu_read_unlock(void)
     }
 }
 
-void synchronize_rcu(void);
+extern void synchronize_rcu(void);
 
 /*
  * Reader thread registration.
  */
-void rcu_register_thread(void);
-void rcu_unregister_thread(void);
+extern void rcu_register_thread(void);
+extern void rcu_unregister_thread(void);
 
 /*
  * Support for fork().  fork() support is enabled at startup.
  */
-void rcu_enable_atfork(void);
-void rcu_disable_atfork(void);
+extern void rcu_enable_atfork(void);
+extern void rcu_disable_atfork(void);
 
 struct rcu_head;
 typedef void RCUCBFunc(struct rcu_head *head);
@@ -140,8 +141,8 @@ struct rcu_head {
     RCUCBFunc *func;
 };
 
-void call_rcu1(struct rcu_head *head, RCUCBFunc *func);
-void drain_call_rcu(void);
+extern void call_rcu1(struct rcu_head *head, RCUCBFunc *func);
+extern void drain_call_rcu(void);
 
 /* The operands of the minus operator must have the same type,
  * which must be the one that we specify in the cast.
@@ -194,5 +195,9 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(RCUReadAuto, rcu_read_auto_unlock)
  */
 void rcu_add_force_rcu_notifier(Notifier *n);
 void rcu_remove_force_rcu_notifier(Notifier *n);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* QEMU_RCU_H */

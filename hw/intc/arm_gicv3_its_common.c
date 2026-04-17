@@ -24,7 +24,6 @@
 #include "hw/intc/arm_gicv3_its_common.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "sysemu/kvm.h"
 
 static int gicv3_its_pre_save(void *opaque)
 {
@@ -54,7 +53,7 @@ static const VMStateDescription vmstate_its = {
     .pre_save = gicv3_its_pre_save,
     .post_load = gicv3_its_post_load,
     .priority = MIG_PRI_GICV3_ITS,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(ctlr, GICv3ITSState),
         VMSTATE_UINT32(iidr, GICv3ITSState),
         VMSTATE_UINT64(cbaser, GICv3ITSState),
@@ -123,9 +122,9 @@ void gicv3_its_init_mmio(GICv3ITSState *s, const MemoryRegionOps *ops,
     msi_nonbroken = true;
 }
 
-static void gicv3_its_common_reset_hold(Object *obj, ResetType type)
+static void gicv3_its_common_reset(DeviceState *dev)
 {
-    GICv3ITSState *s = ARM_GICV3_ITS_COMMON(obj);
+    GICv3ITSState *s = ARM_GICV3_ITS_COMMON(dev);
 
     s->ctlr = 0;
     s->cbaser = 0;
@@ -138,9 +137,8 @@ static void gicv3_its_common_reset_hold(Object *obj, ResetType type)
 static void gicv3_its_common_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    ResettableClass *rc = RESETTABLE_CLASS(klass);
 
-    rc->phases.hold = gicv3_its_common_reset_hold;
+    dc->reset = gicv3_its_common_reset;
     dc->vmsd = &vmstate_its;
 }
 
@@ -159,13 +157,3 @@ static void gicv3_its_common_register_types(void)
 }
 
 type_init(gicv3_its_common_register_types)
-
-const char *its_class_name(void)
-{
-    if (kvm_irqchip_in_kernel()) {
-        return "arm-its-kvm";
-    } else {
-        /* Software emulation based model */
-        return "arm-gicv3-its";
-    }
-}

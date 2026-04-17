@@ -13,6 +13,8 @@
 #ifndef BLOCK_WRITE_THRESHOLD_H
 #define BLOCK_WRITE_THRESHOLD_H
 
+#include "qemu/typedefs.h"
+
 /*
  * bdrv_write_threshold_set:
  *

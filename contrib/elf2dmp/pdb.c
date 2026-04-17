@@ -19,17 +19,12 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/bswap.h"
 
 #include "pdb.h"
 #include "err.h"
 
 static uint32_t pdb_get_file_size(const struct pdb_reader *r, unsigned idx)
 {
-    if (idx >= r->ds.toc->num_files) {
-        return 0;
-    }
-
     return r->ds.toc->file_size[idx];
 }
 
@@ -95,18 +90,18 @@ uint64_t pdb_resolve(uint64_t img_base, struct pdb_reader *r, const char *name)
 
 static void pdb_reader_ds_exit(struct pdb_reader *r)
 {
-    g_free(r->ds.toc);
+    free(r->ds.toc);
 }
 
 static void pdb_exit_symbols(struct pdb_reader *r)
 {
-    g_free(r->modimage);
-    g_free(r->symbols);
+    free(r->modimage);
+    free(r->symbols);
 }
 
 static void pdb_exit_segments(struct pdb_reader *r)
 {
-    g_free(r->segs);
+    free(r->segs);
 }
 
 static void *pdb_ds_read(const PDB_DS_HEADER *header,
@@ -121,7 +116,10 @@ static void *pdb_ds_read(const PDB_DS_HEADER *header,
 
     nBlocks = (size + header->block_size - 1) / header->block_size;
 
-    buffer = g_malloc(nBlocks * header->block_size);
+    buffer = malloc(nBlocks * header->block_size);
+    if (!buffer) {
+        return NULL;
+    }
 
     for (i = 0; i < nBlocks; i++) {
         memcpy(buffer + i * header->block_size, (const char *)header +
@@ -159,58 +157,66 @@ static void *pdb_ds_read_file(struct pdb_reader* r, uint32_t file_number)
     return pdb_ds_read(r->ds.header, block_list, file_size[file_number]);
 }
 
-static bool pdb_init_segments(struct pdb_reader *r)
+static int pdb_init_segments(struct pdb_reader *r)
 {
-    unsigned stream_idx = r->segments;
+    char *segs;
+    unsigned stream_idx = r->sidx.segments;
 
-    r->segs = pdb_ds_read_file(r, stream_idx);
-    if (!r->segs) {
-        return false;
+    segs = pdb_ds_read_file(r, stream_idx);
+    if (!segs) {
+        return 1;
     }
 
+    r->segs = segs;
     r->segs_size = pdb_get_file_size(r, stream_idx);
-    if (!r->segs_size) {
-        return false;
-    }
 
-    return true;
+    return 0;
 }
 
-static bool pdb_init_symbols(struct pdb_reader *r)
+static int pdb_init_symbols(struct pdb_reader *r)
 {
+    int err = 0;
     PDB_SYMBOLS *symbols;
+    PDB_STREAM_INDEXES *sidx = &r->sidx;
+
+    memset(sidx, -1, sizeof(*sidx));
 
     symbols = pdb_ds_read_file(r, 3);
     if (!symbols) {
-        return false;
+        return 1;
     }
 
     r->symbols = symbols;
 
-    r->segments = lduw_le_p((const char *)symbols + sizeof(PDB_SYMBOLS) +
+    if (symbols->stream_index_size != sizeof(PDB_STREAM_INDEXES)) {
+        err = 1;
+        goto out_symbols;
+    }
+
+    memcpy(sidx, (const char *)symbols + sizeof(PDB_SYMBOLS) +
             symbols->module_size + symbols->offset_size +
             symbols->hash_size + symbols->srcmodule_size +
-            symbols->pdbimport_size + symbols->unknown2_size +
-            offsetof(PDB_STREAM_INDEXES, segments));
+            symbols->pdbimport_size + symbols->unknown2_size, sizeof(*sidx));
 
     /* Read global symbol table */
     r->modimage = pdb_ds_read_file(r, symbols->gsym_file);
     if (!r->modimage) {
+        err = 1;
         goto out_symbols;
     }
 
-    return true;
+    return 0;
 
 out_symbols:
-    g_free(symbols);
+    free(symbols);
 
-    return false;
+    return err;
 }
 
-static bool pdb_reader_ds_init(struct pdb_reader *r, PDB_DS_HEADER *hdr)
+static int pdb_reader_ds_init(struct pdb_reader *r, PDB_DS_HEADER *hdr)
 {
     if (hdr->block_size == 0) {
-        return false;
+        return 1;
     }
 
     memset(r->file_used, 0, sizeof(r->file_used));
@@ -219,81 +225,87 @@ static bool pdb_reader_ds_init(struct pdb_reader *r, PDB_DS_HEADER *hdr)
                 hdr->toc_page * hdr->block_size), hdr->toc_size);
 
     if (!r->ds.toc) {
-        return false;
+        return 1;
     }
 
-    return true;
+    return 0;
 }
 
-static bool pdb_reader_init(struct pdb_reader *r, void *data)
+static int pdb_reader_init(struct pdb_reader *r, void *data)
 {
+    int err = 0;
     const char pdb7[] = "Microsoft C/C++ MSF 7.00";
 
     if (memcmp(data, pdb7, sizeof(pdb7) - 1)) {
-        return false;
+        return 1;
     }
 
-    if (!pdb_reader_ds_init(r, data)) {
-        return false;
+    if (pdb_reader_ds_init(r, data)) {
+        return 1;
     }
 
     r->ds.root = pdb_ds_read_file(r, 1);
     if (!r->ds.root) {
+        err = 1;
         goto out_ds;
     }
 
-    if (!pdb_init_symbols(r)) {
+    if (pdb_init_symbols(r)) {
+        err = 1;
         goto out_root;
     }
 
-    if (!pdb_init_segments(r)) {
+    if (pdb_init_segments(r)) {
+        err = 1;
         goto out_sym;
     }
 
-    return true;
+    return 0;
 
 out_sym:
     pdb_exit_symbols(r);
 out_root:
-    g_free(r->ds.root);
+    free(r->ds.root);
 out_ds:
     pdb_reader_ds_exit(r);
 
-    return false;
+    return err;
 }
 
 static void pdb_reader_exit(struct pdb_reader *r)
 {
     pdb_exit_segments(r);
     pdb_exit_symbols(r);
-    g_free(r->ds.root);
+    free(r->ds.root);
     pdb_reader_ds_exit(r);
 }
 
-bool pdb_init_from_file(const char *name, struct pdb_reader *reader)
+int pdb_init_from_file(const char *name, struct pdb_reader *reader)
 {
     GError *gerr = NULL;
+    int err = 0;
     void *map;
 
     reader->gmf = g_mapped_file_new(name, TRUE, &gerr);
     if (gerr) {
         eprintf("Failed to map PDB file \'%s\'\n", name);
         g_error_free(gerr);
-        return false;
+        return 1;
     }
 
     reader->file_size = g_mapped_file_get_length(reader->gmf);
     map = g_mapped_file_get_contents(reader->gmf);
-    if (!pdb_reader_init(reader, map)) {
+    if (pdb_reader_init(reader, map)) {
+        err = 1;
         goto out_unmap;
     }
 
-    return true;
+    return 0;
 
 out_unmap:
     g_mapped_file_unref(reader->gmf);
 
-    return false;
+    return err;
 }
 
 void pdb_exit(struct pdb_reader *reader)

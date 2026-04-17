@@ -2,7 +2,7 @@
  * RISC-V cpu parameters for qemu.
  *
  * Copyright (c) 2017-2018 SiFive, Inc.
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #ifndef RISCV_CPU_PARAM_H
@@ -27,7 +27,6 @@
  *  - S mode HLV/HLVX/HSV 0b101
  *  - M mode HLV/HLVX/HSV 0b111
  */
-
-#define TCG_GUEST_DEFAULT_MO 0
+#define NB_MMU_MODES 8
 
 #endif

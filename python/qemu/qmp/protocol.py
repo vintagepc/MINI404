@@ -18,7 +18,6 @@ from asyncio import StreamReader, StreamWriter
 from enum import Enum
 from functools import wraps
 import logging
-import socket
 from ssl import SSLContext
 from typing import (
     Any,
@@ -207,7 +206,7 @@ class AsyncProtocol(Generic[T]):
     logger = logging.getLogger(__name__)
 
     # Maximum allowable size of read buffer
-    _limit = 64 * 1024
+    _limit = (64 * 1024)
 
     # -------------------------
     # Section: Public interface
@@ -356,7 +355,7 @@ class AsyncProtocol(Generic[T]):
 
     @upper_half
     @require(Runstate.IDLE)
-    async def connect(self, address: Union[SocketAddrT, socket.socket],
+    async def connect(self, address: SocketAddrT,
                       ssl: Optional[SSLContext] = None) -> None:
         """
         Connect to the server and begin processing message queues.
@@ -495,6 +494,7 @@ class AsyncProtocol(Generic[T]):
         try:
             self.logger.debug("Stopping server.")
             self._server.close()
+            await self._server.wait_closed()
             self.logger.debug("Server stopped.")
         finally:
             self._server = None
@@ -600,7 +600,7 @@ class AsyncProtocol(Generic[T]):
         self.logger.debug("Connection accepted.")
 
     @upper_half
-    async def _do_connect(self, address: Union[SocketAddrT, socket.socket],
+    async def _do_connect(self, address: SocketAddrT,
                           ssl: Optional[SSLContext] = None) -> None:
         """
         Acting as the transport client, initiate a connection to a server.
@@ -619,17 +619,9 @@ class AsyncProtocol(Generic[T]):
         # otherwise yield.
         await asyncio.sleep(0)
 
-        if isinstance(address, socket.socket):
-            self.logger.debug("Connecting with existing socket: "
-                              "fd=%d, family=%r, type=%r",
-                              address.fileno(), address.family, address.type)
-            connect = asyncio.open_connection(
-                limit=self._limit,
-                ssl=ssl,
-                sock=address,
-            )
-        elif isinstance(address, tuple):
-            self.logger.debug("Connecting to %s ...", address)
+        self.logger.debug("Connecting to %s ...", address)
+
+        if isinstance(address, tuple):
             connect = asyncio.open_connection(
                 address[0],
                 address[1],
@@ -637,14 +629,13 @@ class AsyncProtocol(Generic[T]):
                 limit=self._limit,
             )
         else:
-            self.logger.debug("Connecting to file://%s ...", address)
             connect = asyncio.open_unix_connection(
                 path=address,
                 ssl=ssl,
                 limit=self._limit,
             )
-
         self._reader, self._writer = await connect
+
         self.logger.debug("Connected.")
 
     @upper_half
@@ -821,7 +812,7 @@ class AsyncProtocol(Generic[T]):
 
     @bottom_half
     async def _bh_close_stream(self, error_pathway: bool = False) -> None:
-        # NB: Closing the writer also implicitly closes the reader.
+        # NB: Closing the writer also implcitly closes the reader.
         if not self._writer:
             return
 

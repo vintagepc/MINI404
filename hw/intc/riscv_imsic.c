@@ -32,7 +32,6 @@
 #include "target/riscv/cpu.h"
 #include "target/riscv/cpu_bits.h"
 #include "sysemu/sysemu.h"
-#include "sysemu/kvm.h"
 #include "migration/vmstate.h"
 
 #define IMSIC_MMIO_PAGE_LE             0x00
@@ -55,7 +54,7 @@ static uint32_t riscv_imsic_topei(RISCVIMSICState *imsic, uint32_t page)
                (imsic->eithreshold[page] <= imsic->num_irqs)) ?
                imsic->eithreshold[page] : imsic->num_irqs;
     for (i = 1; i < max_irq; i++) {
-        if ((qatomic_read(&imsic->eistate[base + i]) & IMSIC_EISTATE_ENPEND) ==
+        if ((imsic->eistate[base + i] & IMSIC_EISTATE_ENPEND) ==
                 IMSIC_EISTATE_ENPEND) {
             return (i << IMSIC_TOPEI_IID_SHIFT) | i;
         }
@@ -66,24 +65,10 @@ static uint32_t riscv_imsic_topei(RISCVIMSICState *imsic, uint32_t page)
 
 static void riscv_imsic_update(RISCVIMSICState *imsic, uint32_t page)
 {
-    uint32_t base = page * imsic->num_irqs;
-
-    /*
-     * Lower the interrupt line if necessary, then evaluate the current
-     * IMSIC state.
-     * This sequence ensures that any race between evaluating the eistate and
-     * updating the interrupt line will not result in an incorrectly
-     * deactivated connected CPU IRQ line.
-     * If multiple interrupts are pending, this sequence functions identically
-     * to qemu_irq_pulse.
-     */
-
-    if (qatomic_fetch_and(&imsic->eistate[base], ~IMSIC_EISTATE_ENPEND)) {
-        qemu_irq_lower(imsic->external_irqs[page]);
-    }
     if (imsic->eidelivery[page] && riscv_imsic_topei(imsic, page)) {
         qemu_irq_raise(imsic->external_irqs[page]);
-        qatomic_or(&imsic->eistate[base], IMSIC_EISTATE_ENPEND);
+    } else {
+        qemu_irq_lower(imsic->external_irqs[page]);
     }
 }
 
@@ -139,11 +124,12 @@ static int riscv_imsic_topei_rmw(RISCVIMSICState *imsic, uint32_t page,
         topei >>= IMSIC_TOPEI_IID_SHIFT;
         base = page * imsic->num_irqs;
         if (topei) {
-            qatomic_and(&imsic->eistate[base + topei], ~IMSIC_EISTATE_PENDING);
+            imsic->eistate[base + topei] &= ~IMSIC_EISTATE_PENDING;
         }
+
+        riscv_imsic_update(imsic, page);
     }
 
-    riscv_imsic_update(imsic, page);
     return 0;
 }
 
@@ -152,7 +138,7 @@ static int riscv_imsic_eix_rmw(RISCVIMSICState *imsic,
                                uint32_t num, bool pend, target_ulong *val,
                                target_ulong new_val, target_ulong wr_mask)
 {
-    uint32_t i, base, prev;
+    uint32_t i, base;
     target_ulong mask;
     uint32_t state = (pend) ? IMSIC_EISTATE_PENDING : IMSIC_EISTATE_ENABLED;
 
@@ -170,6 +156,10 @@ static int riscv_imsic_eix_rmw(RISCVIMSICState *imsic,
 
     if (val) {
         *val = 0;
+        for (i = 0; i < xlen; i++) {
+            mask = (target_ulong)1 << i;
+            *val |= (imsic->eistate[base + i] & state) ? mask : 0;
+        }
     }
 
     for (i = 0; i < xlen; i++) {
@@ -181,15 +171,10 @@ static int riscv_imsic_eix_rmw(RISCVIMSICState *imsic,
         mask = (target_ulong)1 << i;
         if (wr_mask & mask) {
             if (new_val & mask) {
-                prev = qatomic_fetch_or(&imsic->eistate[base + i], state);
+                imsic->eistate[base + i] |= state;
             } else {
-                prev = qatomic_fetch_and(&imsic->eistate[base + i], ~state);
+                imsic->eistate[base + i] &= ~state;
             }
-        } else {
-            prev = qatomic_read(&imsic->eistate[base + i]);
-        }
-        if (val && (prev & state)) {
-            *val |= mask;
         }
     }
 
@@ -298,31 +283,17 @@ static void riscv_imsic_write(void *opaque, hwaddr addr, uint64_t value,
         goto err;
     }
 
-#if defined(CONFIG_KVM)
-    if (kvm_irqchip_in_kernel()) {
-        struct kvm_msi msi;
-
-        msi.address_lo = extract64(imsic->mmio.addr + addr, 0, 32);
-        msi.address_hi = extract64(imsic->mmio.addr + addr, 32, 32);
-        msi.data = le32_to_cpu(value);
-
-        kvm_vm_ioctl(kvm_state, KVM_SIGNAL_MSI, &msi);
-
-        return;
-    }
-#endif
-
     /* Writes only supported for MSI little-endian registers */
     page = addr >> IMSIC_MMIO_PAGE_SHIFT;
     if ((addr & (IMSIC_MMIO_PAGE_SZ - 1)) == IMSIC_MMIO_PAGE_LE) {
         if (value && (value < imsic->num_irqs)) {
-            qatomic_or(&imsic->eistate[(page * imsic->num_irqs) + value],
-                       IMSIC_EISTATE_PENDING);
-
-            /* Update CPU external interrupt status */
-            riscv_imsic_update(imsic, page);
+            imsic->eistate[(page * imsic->num_irqs) + value] |=
+                                                    IMSIC_EISTATE_PENDING;
         }
     }
+
+    /* Update CPU external interrupt status */
+    riscv_imsic_update(imsic, page);
 
     return;
 
@@ -345,16 +316,14 @@ static const MemoryRegionOps riscv_imsic_ops = {
 static void riscv_imsic_realize(DeviceState *dev, Error **errp)
 {
     RISCVIMSICState *imsic = RISCV_IMSIC(dev);
-    RISCVCPU *rcpu = RISCV_CPU(cpu_by_arch_id(imsic->hartid));
-    CPUState *cpu = cpu_by_arch_id(imsic->hartid);
-    CPURISCVState *env = cpu ? cpu_env(cpu) : NULL;
+    RISCVCPU *rcpu = RISCV_CPU(qemu_get_cpu(imsic->hartid));
+    CPUState *cpu = qemu_get_cpu(imsic->hartid);
+    CPURISCVState *env = cpu ? cpu->env_ptr : NULL;
 
-    if (!kvm_irqchip_in_kernel()) {
-        imsic->num_eistate = imsic->num_pages * imsic->num_irqs;
-        imsic->eidelivery = g_new0(uint32_t, imsic->num_pages);
-        imsic->eithreshold = g_new0(uint32_t, imsic->num_pages);
-        imsic->eistate = g_new0(uint32_t, imsic->num_eistate);
-    }
+    imsic->num_eistate = imsic->num_pages * imsic->num_irqs;
+    imsic->eidelivery = g_new0(uint32_t, imsic->num_pages);
+    imsic->eithreshold = g_new0(uint32_t, imsic->num_pages);
+    imsic->eistate = g_new0(uint32_t, imsic->num_eistate);
 
     memory_region_init_io(&imsic->mmio, OBJECT(dev), &riscv_imsic_ops,
                           imsic, TYPE_RISCV_IMSIC,
@@ -400,7 +369,7 @@ static const VMStateDescription vmstate_riscv_imsic = {
     .name = "riscv_imsic",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
             VMSTATE_VARRAY_UINT32(eidelivery, RISCVIMSICState,
                                   num_pages, 0,
                                   vmstate_info_uint32, uint32_t),
@@ -444,7 +413,7 @@ DeviceState *riscv_imsic_create(hwaddr addr, uint32_t hartid, bool mmode,
                                 uint32_t num_pages, uint32_t num_ids)
 {
     DeviceState *dev = qdev_new(TYPE_RISCV_IMSIC);
-    CPUState *cpu = cpu_by_arch_id(hartid);
+    CPUState *cpu = qemu_get_cpu(hartid);
     uint32_t i;
 
     assert(!(addr & (IMSIC_MMIO_PAGE_SZ - 1)));

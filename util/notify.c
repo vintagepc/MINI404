@@ -61,14 +61,13 @@ void notifier_with_return_remove(NotifierWithReturn *notifier)
     QLIST_REMOVE(notifier, node);
 }
 
-int notifier_with_return_list_notify(NotifierWithReturnList *list, void *data,
-                                     Error **errp)
+int notifier_with_return_list_notify(NotifierWithReturnList *list, void *data)
 {
     NotifierWithReturn *notifier, *next;
     int ret = 0;
 
     QLIST_FOREACH_SAFE(notifier, &list->notifiers, node, next) {
-        ret = notifier->notify(notifier, data, errp);
+        ret = notifier->notify(notifier, data);
         if (ret != 0) {
             break;
         }

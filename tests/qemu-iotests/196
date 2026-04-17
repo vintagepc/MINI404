@@ -45,7 +45,8 @@ class TestInvalidateAutoclear(iotests.QMPTestCase):
         self.vm_b.add_incoming("exec: cat '" + migfile + "'")
 
     def test_migration(self):
-        self.vm_a.cmd('migrate', uri='exec:cat>' + migfile)
+        result = self.vm_a.qmp('migrate', uri='exec:cat>' + migfile)
+        self.assert_qmp(result, 'return', {});
         self.assertNotEqual(self.vm_a.event_wait("STOP"), None)
 
         with open(disk, 'r+b') as f:

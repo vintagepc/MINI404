@@ -41,13 +41,11 @@ from .source import QAPISourceInfo
 def gen_command_decl(name: str,
                      arg_type: Optional[QAPISchemaObjectType],
                      boxed: bool,
-                     ret_type: Optional[QAPISchemaType],
-                     coroutine: bool) -> str:
+                     ret_type: Optional[QAPISchemaType]) -> str:
     return mcgen('''
-%(c_type)s %(coroutine_fn)sqmp_%(c_name)s(%(params)s);
+%(c_type)s qmp_%(c_name)s(%(params)s);
 ''',
                  c_type=(ret_type and ret_type.c_type()) or 'void',
-                 coroutine_fn='coroutine_fn ' if coroutine else '',
                  c_name=c_name(name),
                  params=build_params(arg_type, boxed, 'Error **errp'))
 
@@ -64,10 +62,9 @@ def gen_call(name: str,
         assert arg_type
         argstr = '&arg, '
     elif arg_type:
-        assert not arg_type.branches
+        assert not arg_type.variants
         for memb in arg_type.members:
-            assert not memb.ifcond.is_present()
-            if memb.need_has():
+            if memb.optional:
                 argstr += 'arg.has_%s, ' % c_name(memb.name)
             argstr += 'arg.%s, ' % c_name(memb.name)
 
@@ -86,7 +83,7 @@ def gen_call(name: str,
 
         trace_qmp_enter_%(name)s(req_json->str);
     }
-''',
+    ''',
                      upper=upper, name=name)
 
     ret += mcgen('''
@@ -127,13 +124,13 @@ def gen_call(name: str,
 
         trace_qmp_exit_%(name)s(ret_json->str, true);
     }
-''',
+    ''',
                          upper=upper, name=name)
         else:
             ret += mcgen('''
 
     trace_qmp_exit_%(name)s("{}", true);
-''',
+    ''',
                          name=name)
 
     return ret
@@ -160,21 +157,16 @@ static void qmp_marshal_output_%(c_name)s(%(c_type)s ret_in,
                  c_type=ret_type.c_type(), c_name=ret_type.c_name())
 
 
-def build_marshal_proto(name: str,
-                        coroutine: bool) -> str:
-    return ('void %(coroutine_fn)sqmp_marshal_%(c_name)s(%(params)s)' % {
-        'coroutine_fn': 'coroutine_fn ' if coroutine else '',
-        'c_name': c_name(name),
-        'params': 'QDict *args, QObject **ret, Error **errp',
-    })
+def build_marshal_proto(name: str) -> str:
+    return ('void qmp_marshal_%s(QDict *args, QObject **ret, Error **errp)'
+            % c_name(name))
 
 
-def gen_marshal_decl(name: str,
-                     coroutine: bool) -> str:
+def gen_marshal_decl(name: str) -> str:
     return mcgen('''
 %(proto)s;
 ''',
-                 proto=build_marshal_proto(name, coroutine))
+                 proto=build_marshal_proto(name))
 
 
 def gen_trace(name: str) -> str:
@@ -189,8 +181,7 @@ def gen_marshal(name: str,
                 arg_type: Optional[QAPISchemaObjectType],
                 boxed: bool,
                 ret_type: Optional[QAPISchemaType],
-                gen_tracing: bool,
-                coroutine: bool) -> str:
+                gen_tracing: bool) -> str:
     have_args = boxed or (arg_type and not arg_type.is_empty())
     if have_args:
         assert arg_type is not None
@@ -204,7 +195,7 @@ def gen_marshal(name: str,
     bool ok = false;
     Visitor *v;
 ''',
-                proto=build_marshal_proto(name, coroutine))
+                proto=build_marshal_proto(name))
 
     if ret_type:
         ret += mcgen('''
@@ -325,6 +316,7 @@ class QAPISchemaGenCommandVisitor(QAPISchemaModularCVisitor):
 #include "qapi/error.h"
 #include "%(visit)s.h"
 #include "%(commands)s.h"
+
 ''',
                              commands=commands, visit=visit))
 
@@ -396,11 +388,10 @@ void %(c_prefix)sqmp_init_marshal(QmpCommandList *cmds)
                            self._genh, self._genc):
                 self._genc.add(gen_marshal_output(ret_type))
         with ifcontext(ifcond, self._genh, self._genc):
-            self._genh.add(gen_command_decl(name, arg_type, boxed,
-                                            ret_type, coroutine))
-            self._genh.add(gen_marshal_decl(name, coroutine))
+            self._genh.add(gen_command_decl(name, arg_type, boxed, ret_type))
+            self._genh.add(gen_marshal_decl(name))
             self._genc.add(gen_marshal(name, arg_type, boxed, ret_type,
-                                       self._gen_tracing, coroutine))
+                                       self._gen_tracing))
             if self._gen_tracing:
                 self._gen_trace_events.add(gen_trace(name))
         with self._temp_module('./init'):

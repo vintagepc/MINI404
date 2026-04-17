@@ -64,6 +64,7 @@ static void gen_clzw(TCGv ret, TCGv arg1)
     TCGv t = tcg_temp_new();
     tcg_gen_shli_tl(t, arg1, 32);
     tcg_gen_clzi_tl(ret, t, 32);
+    tcg_temp_free(t);
 }
 
 static bool trans_clz(DisasContext *ctx, arg_clz *a)
@@ -160,6 +161,8 @@ static void gen_bset(TCGv ret, TCGv arg1, TCGv shamt)
 
     gen_sbop_mask(t, shamt);
     tcg_gen_or_tl(ret, arg1, t);
+
+    tcg_temp_free(t);
 }
 
 static bool trans_bset(DisasContext *ctx, arg_bset *a)
@@ -180,6 +183,8 @@ static void gen_bclr(TCGv ret, TCGv arg1, TCGv shamt)
 
     gen_sbop_mask(t, shamt);
     tcg_gen_andc_tl(ret, arg1, t);
+
+    tcg_temp_free(t);
 }
 
 static bool trans_bclr(DisasContext *ctx, arg_bclr *a)
@@ -200,6 +205,8 @@ static void gen_binv(TCGv ret, TCGv arg1, TCGv shamt)
 
     gen_sbop_mask(t, shamt);
     tcg_gen_xor_tl(ret, arg1, t);
+
+    tcg_temp_free(t);
 }
 
 static bool trans_binv(DisasContext *ctx, arg_binv *a)
@@ -245,6 +252,9 @@ static void gen_rorw(TCGv ret, TCGv arg1, TCGv arg2)
 
     /* sign-extend 64-bits */
     tcg_gen_ext_i32_tl(ret, t1);
+
+    tcg_temp_free_i32(t1);
+    tcg_temp_free_i32(t2);
 }
 
 static bool trans_ror(DisasContext *ctx, arg_ror *a)
@@ -260,6 +270,8 @@ static void gen_roriw(TCGv ret, TCGv arg1, target_long shamt)
     tcg_gen_trunc_tl_i32(t1, arg1);
     tcg_gen_rotri_i32(t1, t1, shamt);
     tcg_gen_ext_i32_tl(ret, t1);
+
+    tcg_temp_free_i32(t1);
 }
 
 static bool trans_rori(DisasContext *ctx, arg_rori *a)
@@ -282,6 +294,9 @@ static void gen_rolw(TCGv ret, TCGv arg1, TCGv arg2)
 
     /* sign-extend 64-bits */
     tcg_gen_ext_i32_tl(ret, t1);
+
+    tcg_temp_free_i32(t1);
+    tcg_temp_free_i32(t2);
 }
 
 static bool trans_rol(DisasContext *ctx, arg_rol *a)
@@ -325,6 +340,8 @@ static void gen_orc_b(TCGv ret, TCGv source1)
 
     /* Replicate the lsb of each byte across the byte. */
     tcg_gen_muli_tl(ret, tmp, 0xff);
+
+    tcg_temp_free(tmp);
 }
 
 static bool trans_orc_b(DisasContext *ctx, arg_orc_b *a)
@@ -340,6 +357,8 @@ static void gen_sh##SHAMT##add(TCGv ret, TCGv arg1, TCGv arg2) \
                                                                \
     tcg_gen_shli_tl(t, arg1, SHAMT);                           \
     tcg_gen_add_tl(ret, t, arg2);                              \
+                                                               \
+    tcg_temp_free(t);                                          \
 }
 
 GEN_SHADD(1)
@@ -382,7 +401,6 @@ static bool trans_ctzw(DisasContext *ctx, arg_ctzw *a)
 {
     REQUIRE_64BIT(ctx);
     REQUIRE_ZBB(ctx);
-    ctx->ol = MXL_RV32;
     return gen_unary(ctx, a, EXT_ZERO, gen_ctzw);
 }
 
@@ -427,6 +445,8 @@ static void gen_sh##SHAMT##add_uw(TCGv ret, TCGv arg1, TCGv arg2) \
                                                                   \
     tcg_gen_shli_tl(t, t, SHAMT);                                 \
     tcg_gen_add_tl(ret, t, arg2);                                 \
+                                                                  \
+    tcg_temp_free(t);                                             \
 }
 
 GEN_SHADD_UW(1)
@@ -451,6 +471,7 @@ static void gen_add_uw(TCGv ret, TCGv arg1, TCGv arg2)
     TCGv t = tcg_temp_new();
     tcg_gen_ext32u_tl(t, arg1);
     tcg_gen_add_tl(ret, t, arg2);
+    tcg_temp_free(t);
 }
 
 static bool trans_add_uw(DisasContext *ctx, arg_add_uw *a)
@@ -509,6 +530,7 @@ static void gen_packh(TCGv ret, TCGv src1, TCGv src2)
 
     tcg_gen_ext8u_tl(t, src2);
     tcg_gen_deposit_tl(ret, src1, t, 8, TARGET_LONG_BITS - 8);
+    tcg_temp_free(t);
 }
 
 static void gen_packw(TCGv ret, TCGv src1, TCGv src2)
@@ -517,6 +539,7 @@ static void gen_packw(TCGv ret, TCGv src1, TCGv src2)
 
     tcg_gen_ext16s_tl(t, src2);
     tcg_gen_deposit_tl(ret, src1, t, 16, TARGET_LONG_BITS - 16);
+    tcg_temp_free(t);
 }
 
 static bool trans_brev8(DisasContext *ctx, arg_brev8 *a)

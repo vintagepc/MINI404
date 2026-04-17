@@ -1,1 +1,1 @@
-#include "../mips/target_mman.h"
+#include "../generic/target_mman.h"

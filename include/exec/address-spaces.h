@@ -19,6 +19,8 @@
  * you're one of them.
  */
 
+#include "exec/memory.h"
+
 #ifndef CONFIG_USER_ONLY
 
 /* Get the root memory region.  This interface should only be used temporarily

@@ -20,9 +20,7 @@
 enum IMX7SNVSRegisters {
     SNVS_LPCR = 0x38,
     SNVS_LPCR_TOP   = BIT(6),
-    SNVS_LPCR_DP_EN = BIT(5),
-    SNVS_LPSRTCMR = 0x050, /* Secure Real Time Counter MSB Register */
-    SNVS_LPSRTCLR = 0x054, /* Secure Real Time Counter LSB Register */
+    SNVS_LPCR_DP_EN = BIT(5)
 };
 
 #define TYPE_IMX7_SNVS "imx7.snvs"
@@ -33,9 +31,6 @@ struct IMX7SNVSState {
     SysBusDevice parent_obj;
 
     MemoryRegion mmio;
-
-    uint64_t tick_offset;
-    uint64_t lpcr;
 };
 
 #endif /* IMX7_SNVS_H */

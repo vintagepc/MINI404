@@ -21,12 +21,11 @@
 #include "user-internals.h"
 #include "signal-common.h"
 #include "linux-user/trace.h"
-#include "vdso-asmoffset.h"
 
 struct target_sigcontext {
     abi_ulong sc_flags;
     abi_ulong sc_gr[32];
-    abi_ullong sc_fr[32];
+    uint64_t sc_fr[32];
     abi_ulong sc_iasq[2];
     abi_ulong sc_iaoq[2];
     abi_ulong sc_sar;
@@ -47,19 +46,6 @@ struct target_rt_sigframe {
     struct target_ucontext uc;
     /* hidden location of upper halves of pa2.0 64-bit gregs */
 };
-
-QEMU_BUILD_BUG_ON(sizeof(struct target_rt_sigframe) != sizeof_rt_sigframe);
-QEMU_BUILD_BUG_ON(offsetof(struct target_rt_sigframe, uc.tuc_mcontext)
-                  != offsetof_sigcontext);
-QEMU_BUILD_BUG_ON(offsetof(struct target_sigcontext, sc_gr)
-                  != offsetof_sigcontext_gr);
-QEMU_BUILD_BUG_ON(offsetof(struct target_sigcontext, sc_fr)
-                  != offsetof_sigcontext_fr);
-QEMU_BUILD_BUG_ON(offsetof(struct target_sigcontext, sc_iaoq)
-                  != offsetof_sigcontext_iaoq);
-QEMU_BUILD_BUG_ON(offsetof(struct target_sigcontext, sc_sar)
-                  != offsetof_sigcontext_sar);
-
 
 static void setup_sigcontext(struct target_sigcontext *sc, CPUArchState *env)
 {
@@ -86,7 +72,7 @@ static void setup_sigcontext(struct target_sigcontext *sc, CPUArchState *env)
 
 static void restore_sigcontext(CPUArchState *env, struct target_sigcontext *sc)
 {
-    abi_ulong psw;
+    target_ulong psw;
     int i;
 
     __get_user(psw, &sc->sc_gr[0]);
@@ -101,11 +87,19 @@ static void restore_sigcontext(CPUArchState *env, struct target_sigcontext *sc)
     cpu_hppa_loaded_fr0(env);
 
     __get_user(env->iaoq_f, &sc->sc_iaoq[0]);
-    env->iaoq_f |= PRIV_USER;
     __get_user(env->iaoq_b, &sc->sc_iaoq[1]);
-    env->iaoq_b |= PRIV_USER;
     __get_user(env->cr[CR_SAR], &sc->sc_sar);
 }
+
+#if TARGET_ABI_BITS == 32
+#define SIGFRAME                64
+#define FUNCTIONCALLFRAME       48
+#else
+#define SIGFRAME                128
+#define FUNCTIONCALLFRAME       96
+#endif
+#define PARISC_RT_SIGFRAME_SIZE32 \
+    ((sizeof(struct target_rt_sigframe) + FUNCTIONCALLFRAME + SIGFRAME) & -SIGFRAME)
 
 void setup_rt_frame(int sig, struct target_sigaction *ka,
                     target_siginfo_t *info,
@@ -114,7 +108,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
     abi_ulong frame_addr, sp, haddr;
     struct target_rt_sigframe *frame;
     int i;
-    TaskState *ts = get_task_state(thread_cpu);
+    TaskState *ts = (TaskState *)thread_cpu->opaque;
 
     sp = get_sp_from_cpustate(env);
     if ((ka->sa_flags & TARGET_SA_ONSTACK) && !sas_ss_flags(sp)) {
@@ -129,7 +123,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
         goto give_sigsegv;
     }
 
-    frame->info = *info;
+    tswap_siginfo(&frame->info, info);
     frame->uc.tuc_flags = 0;
     frame->uc.tuc_link = 0;
 
@@ -152,21 +146,19 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
     haddr = ka->_sa_handler;
     if (haddr & 2) {
         /* Function descriptor.  */
-        abi_ptr *fdesc, dest;
+        target_ulong *fdesc, dest;
 
         haddr &= -4;
-        fdesc = lock_user(VERIFY_READ, haddr, 2 * sizeof(abi_ptr), 1);
-        if (!fdesc) {
+        if (!lock_user_struct(VERIFY_READ, fdesc, haddr, 1)) {
             goto give_sigsegv;
         }
         __get_user(dest, fdesc);
         __get_user(env->gr[19], fdesc + 1);
-        unlock_user(fdesc, haddr, 0);
+        unlock_user_struct(fdesc, haddr, 1);
         haddr = dest;
     }
-    env->iaoq_f = haddr | PRIV_USER;
-    env->iaoq_b = env->iaoq_f + 4;
-    env->psw_n = 0;
+    env->iaoq_f = haddr;
+    env->iaoq_b = haddr + 4;
     return;
 
  give_sigsegv:

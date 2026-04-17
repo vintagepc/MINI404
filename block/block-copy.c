@@ -17,14 +17,10 @@
 #include "trace.h"
 #include "qapi/error.h"
 #include "block/block-copy.h"
-#include "block/block_int-io.h"
-#include "block/dirty-bitmap.h"
 #include "block/reqlist.h"
 #include "sysemu/block-backend.h"
 #include "qemu/units.h"
-#include "qemu/co-shared-resource.h"
 #include "qemu/coroutine.h"
-#include "qemu/ratelimit.h"
 #include "block/aio_task.h"
 #include "qemu/error-report.h"
 #include "qemu/memalign.h"
@@ -67,7 +63,7 @@ typedef struct BlockCopyCallState {
     QLIST_ENTRY(BlockCopyCallState) list;
 
     /*
-     * Fields that report information about return values and errors.
+     * Fields that report information about return values and erros.
      * Protected by lock in BlockCopyState.
      */
     bool error_is_read;
@@ -137,7 +133,6 @@ typedef struct BlockCopyState {
     CoMutex lock;
     int64_t in_flight_bytes;
     BlockCopyMethod method;
-    bool discard_source;
     BlockReqList reqs;
     QLIST_HEAD(, BlockCopyCallState) calls;
     /*
@@ -310,20 +305,11 @@ void block_copy_set_copy_opts(BlockCopyState *s, bool use_copy_range,
 }
 
 static int64_t block_copy_calculate_cluster_size(BlockDriverState *target,
-                                                 int64_t min_cluster_size,
                                                  Error **errp)
 {
     int ret;
     BlockDriverInfo bdi;
-    bool target_does_cow;
-
-    GLOBAL_STATE_CODE();
-    GRAPH_RDLOCK_GUARD_MAINLOOP();
-
-    min_cluster_size = MAX(min_cluster_size,
-                           (int64_t)BLOCK_COPY_CLUSTER_SIZE_DEFAULT);
-
-    target_does_cow = bdrv_backing_chain_next(target);
+    bool target_does_cow = bdrv_backing_chain_next(target);
 
     /*
      * If there is no backing file on the target, we cannot rely on COW if our
@@ -333,13 +319,13 @@ static int64_t block_copy_calculate_cluster_size(BlockDriverState *target,
     ret = bdrv_get_info(target, &bdi);
     if (ret == -ENOTSUP && !target_does_cow) {
         /* Cluster size is not defined */
-        warn_report("The target block device doesn't provide information about "
-                    "the block size and it doesn't have a backing file. The "
-                    "(default) block size of %" PRIi64 " bytes is used. If the "
-                    "actual block size of the target exceeds this value, the "
-                    "backup may be unusable",
-                    min_cluster_size);
-        return min_cluster_size;
+        warn_report("The target block device doesn't provide "
+                    "information about the block size and it doesn't have a "
+                    "backing file. The default block size of %u bytes is "
+                    "used. If the actual block size of the target exceeds "
+                    "this default, the backup may be unusable",
+                    BLOCK_COPY_CLUSTER_SIZE_DEFAULT);
+        return BLOCK_COPY_CLUSTER_SIZE_DEFAULT;
     } else if (ret < 0 && !target_does_cow) {
         error_setg_errno(errp, -ret,
             "Couldn't determine the cluster size of the target image, "
@@ -349,17 +335,14 @@ static int64_t block_copy_calculate_cluster_size(BlockDriverState *target,
         return ret;
     } else if (ret < 0 && target_does_cow) {
         /* Not fatal; just trudge on ahead. */
-        return min_cluster_size;
+        return BLOCK_COPY_CLUSTER_SIZE_DEFAULT;
     }
 
-    return MAX(min_cluster_size, bdi.cluster_size);
+    return MAX(BLOCK_COPY_CLUSTER_SIZE_DEFAULT, bdi.cluster_size);
 }
 
 BlockCopyState *block_copy_state_new(BdrvChild *source, BdrvChild *target,
-                                     BlockDriverState *copy_bitmap_bs,
                                      const BdrvDirtyBitmap *bitmap,
-                                     bool discard_source,
-                                     uint64_t min_cluster_size,
                                      Error **errp)
 {
     ERRP_GUARD();
@@ -368,25 +351,12 @@ BlockCopyState *block_copy_state_new(BdrvChild *source, BdrvChild *target,
     BdrvDirtyBitmap *copy_bitmap;
     bool is_fleecing;
 
-    GLOBAL_STATE_CODE();
-
-    if (min_cluster_size > INT64_MAX) {
-        error_setg(errp, "min-cluster-size too large: %" PRIu64 " > %" PRIi64,
-                   min_cluster_size, INT64_MAX);
-        return NULL;
-    } else if (min_cluster_size && !is_power_of_2(min_cluster_size)) {
-        error_setg(errp, "min-cluster-size needs to be a power of 2");
-        return NULL;
-    }
-
-    cluster_size = block_copy_calculate_cluster_size(target->bs,
-                                                     (int64_t)min_cluster_size,
-                                                     errp);
+    cluster_size = block_copy_calculate_cluster_size(target->bs, errp);
     if (cluster_size < 0) {
         return NULL;
     }
 
-    copy_bitmap = bdrv_create_dirty_bitmap(copy_bitmap_bs, cluster_size, NULL,
+    copy_bitmap = bdrv_create_dirty_bitmap(source->bs, cluster_size, NULL,
                                            errp);
     if (!copy_bitmap) {
         return NULL;
@@ -418,9 +388,7 @@ BlockCopyState *block_copy_state_new(BdrvChild *source, BdrvChild *target,
      * For more information see commit f8d59dfb40bb and test
      * tests/qemu-iotests/222
      */
-    bdrv_graph_rdlock_main_loop();
     is_fleecing = bdrv_chain_contains(target->bs, source->bs);
-    bdrv_graph_rdunlock_main_loop();
 
     s = g_new(BlockCopyState, 1);
     *s = (BlockCopyState) {
@@ -436,7 +404,6 @@ BlockCopyState *block_copy_state_new(BdrvChild *source, BdrvChild *target,
                                     cluster_size),
     };
 
-    s->discard_source = discard_source;
     block_copy_set_copy_opts(s, false, false);
 
     ratelimit_init(&s->rate_limit);
@@ -491,16 +458,17 @@ static coroutine_fn int block_copy_task_run(AioTaskPool *pool,
  * Do copy of cluster-aligned chunk. Requested region is allowed to exceed
  * s->len only to cover last cluster when s->len is not aligned to clusters.
  *
- * No sync here: neither bitmap nor intersecting requests handling, only copy.
+ * No sync here: nor bitmap neighter intersecting requests handling, only copy.
  *
  * @method is an in-out argument, so that copy_range can be either extended to
  * a full-size buffer or disabled if the copy_range attempt fails.  The output
  * value of @method should be used for subsequent tasks.
  * Returns 0 on success.
  */
-static int coroutine_fn GRAPH_RDLOCK
-block_copy_do_copy(BlockCopyState *s, int64_t offset, int64_t bytes,
-                   BlockCopyMethod *method, bool *error_is_read)
+static int coroutine_fn block_copy_do_copy(BlockCopyState *s,
+                                           int64_t offset, int64_t bytes,
+                                           BlockCopyMethod *method,
+                                           bool *error_is_read)
 {
     int ret;
     int64_t nbytes = MIN(offset + bytes, s->len) - offset;
@@ -584,12 +552,10 @@ static coroutine_fn int block_copy_task_entry(AioTask *task)
     BlockCopyState *s = t->s;
     bool error_is_read = false;
     BlockCopyMethod method = t->method;
-    int ret = -1;
+    int ret;
 
-    WITH_GRAPH_RDLOCK_GUARD() {
-        ret = block_copy_do_copy(s, t->req.offset, t->req.bytes, &method,
-                                 &error_is_read);
-    }
+    ret = block_copy_do_copy(s, t->req.offset, t->req.bytes, &method,
+                             &error_is_read);
 
     WITH_QEMU_LOCK_GUARD(&s->lock) {
         if (s->method == t->method) {
@@ -608,20 +574,11 @@ static coroutine_fn int block_copy_task_entry(AioTask *task)
     co_put_to_shres(s->mem, t->req.bytes);
     block_copy_task_end(t, ret);
 
-    if (s->discard_source && ret == 0) {
-        int64_t nbytes =
-            MIN(t->req.offset + t->req.bytes, s->len) - t->req.offset;
-        WITH_GRAPH_RDLOCK_GUARD() {
-            bdrv_co_pdiscard(s->source, t->req.offset, nbytes);
-        }
-    }
-
     return ret;
 }
 
-static coroutine_fn GRAPH_RDLOCK
-int block_copy_block_status(BlockCopyState *s, int64_t offset, int64_t bytes,
-                            int64_t *pnum)
+static int block_copy_block_status(BlockCopyState *s, int64_t offset,
+                                   int64_t bytes, int64_t *pnum)
 {
     int64_t num;
     BlockDriverState *base;
@@ -633,8 +590,8 @@ int block_copy_block_status(BlockCopyState *s, int64_t offset, int64_t bytes,
         base = NULL;
     }
 
-    ret = bdrv_co_block_status_above(s->source->bs, base, offset, bytes, &num,
-                                     NULL, NULL);
+    ret = bdrv_block_status_above(s->source->bs, base, offset, bytes, &num,
+                                  NULL, NULL);
     if (ret < 0 || num < s->cluster_size) {
         /*
          * On error or if failed to obtain large enough chunk just fallback to
@@ -656,9 +613,8 @@ int block_copy_block_status(BlockCopyState *s, int64_t offset, int64_t bytes,
  * Check if the cluster starting at offset is allocated or not.
  * return via pnum the number of contiguous clusters sharing this allocation.
  */
-static int coroutine_fn GRAPH_RDLOCK
-block_copy_is_cluster_allocated(BlockCopyState *s, int64_t offset,
-                                int64_t *pnum)
+static int block_copy_is_cluster_allocated(BlockCopyState *s, int64_t offset,
+                                           int64_t *pnum)
 {
     BlockDriverState *bs = s->source->bs;
     int64_t count, total_count = 0;
@@ -668,8 +624,7 @@ block_copy_is_cluster_allocated(BlockCopyState *s, int64_t offset,
     assert(QEMU_IS_ALIGNED(offset, s->cluster_size));
 
     while (true) {
-        /* protected in backup_run() */
-        ret = bdrv_co_is_allocated(bs, offset, bytes, &count);
+        ret = bdrv_is_allocated(bs, offset, bytes, &count);
         if (ret < 0) {
             return ret;
         }
@@ -714,9 +669,8 @@ void block_copy_reset(BlockCopyState *s, int64_t offset, int64_t bytes)
  * @return 0 when the cluster at @offset was unallocated,
  *         1 otherwise, and -ret on error.
  */
-int64_t coroutine_fn block_copy_reset_unallocated(BlockCopyState *s,
-                                                  int64_t offset,
-                                                  int64_t *count)
+int64_t block_copy_reset_unallocated(BlockCopyState *s,
+                                     int64_t offset, int64_t *count)
 {
     int ret;
     int64_t clusters, bytes;
@@ -743,7 +697,7 @@ int64_t coroutine_fn block_copy_reset_unallocated(BlockCopyState *s,
  * Returns 1 if dirty clusters found and successfully copied, 0 if no dirty
  * clusters found and -errno on failure.
  */
-static int coroutine_fn GRAPH_RDLOCK
+static int coroutine_fn
 block_copy_dirty_clusters(BlockCopyCallState *call_state)
 {
     BlockCopyState *s = call_state->s;
@@ -866,8 +820,7 @@ void block_copy_kick(BlockCopyCallState *call_state)
  * it means that some I/O operation failed in context of _this_ block_copy call,
  * not some parallel operation.
  */
-static int coroutine_fn GRAPH_RDLOCK
-block_copy_common(BlockCopyCallState *call_state)
+static int coroutine_fn block_copy_common(BlockCopyCallState *call_state)
 {
     int ret;
     BlockCopyState *s = call_state->s;
@@ -932,7 +885,6 @@ block_copy_common(BlockCopyCallState *call_state)
 
 static void coroutine_fn block_copy_async_co_entry(void *opaque)
 {
-    GRAPH_RDLOCK_GUARD();
     block_copy_common(opaque);
 }
 

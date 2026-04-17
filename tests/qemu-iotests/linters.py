@@ -68,7 +68,7 @@ def run_linter(
     :raise CalledProcessError: If the linter process exits with failure.
     """
     subprocess.run(
-        (sys.executable, '-m', tool, *args),
+        ('python3', '-m', tool, *args),
         env=env,
         check=True,
         stdout=subprocess.PIPE if suppress_output else None,

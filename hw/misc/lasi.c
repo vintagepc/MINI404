@@ -36,13 +36,9 @@ static bool lasi_chip_mem_valid(void *opaque, hwaddr addr,
     case LASI_IAR:
 
     case LASI_LPT:
-    case LASI_AUDIO:
-    case LASI_AUDIO + 4:
     case LASI_UART:
     case LASI_LAN:
-    case LASI_LAN + 12: /* LASI LAN MAC */
     case LASI_RTC:
-    case LASI_FDC:
 
     case LASI_PCR ... LASI_AMR:
         ret = true;
@@ -82,8 +78,6 @@ static MemTxResult lasi_chip_read_with_attrs(void *opaque, hwaddr addr,
     case LASI_LPT:
     case LASI_UART:
     case LASI_LAN:
-    case LASI_LAN + 12:
-    case LASI_FDC:
         val = 0;
         break;
     case LASI_RTC:
@@ -149,18 +143,11 @@ static MemTxResult lasi_chip_write_with_attrs(void *opaque, hwaddr addr,
     case LASI_LPT:
         /* XXX: reset parallel port */
         break;
-    case LASI_AUDIO:
-    case LASI_AUDIO + 4:
-        /* XXX: reset audio port */
-        break;
     case LASI_UART:
         /* XXX: reset serial port */
         break;
     case LASI_LAN:
         /* XXX: reset LAN card */
-        break;
-    case LASI_FDC:
-        /* XXX: reset Floppy controller */
         break;
     case LASI_RTC:
         s->rtc_ref = val - time(NULL);
@@ -207,9 +194,9 @@ static const MemoryRegionOps lasi_chip_ops = {
 
 static const VMStateDescription vmstate_lasi = {
     .name = "Lasi",
-    .version_id = 2,
+    .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(irr, LasiState),
         VMSTATE_UINT32(imr, LasiState),
         VMSTATE_UINT32(ipr, LasiState),
@@ -217,7 +204,6 @@ static const VMStateDescription vmstate_lasi = {
         VMSTATE_UINT32(iar, LasiState),
         VMSTATE_UINT32(errlog, LasiState),
         VMSTATE_UINT32(amr, LasiState),
-        VMSTATE_UINT32_V(rtc_ref, LasiState, 2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -247,6 +233,7 @@ static void lasi_reset(DeviceState *dev)
     s->iar = 0xFFFB0000 + 3; /* CPU_HPA + 3 */
 
     /* Real time clock (RTC), it's only one 32-bit counter @9000 */
+    s->rtc = time(NULL);
     s->rtc_ref = 0;
 }
 
@@ -267,7 +254,7 @@ static void lasi_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, lasi_reset);
+    dc->reset = lasi_reset;
     dc->vmsd = &vmstate_lasi;
 }
 

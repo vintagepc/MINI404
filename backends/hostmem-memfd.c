@@ -18,6 +18,8 @@
 #include "qapi/error.h"
 #include "qom/object.h"
 
+#define TYPE_MEMORY_BACKEND_MEMFD "memory-backend-memfd"
+
 OBJECT_DECLARE_SIMPLE_TYPE(HostMemoryBackendMemfd, MEMORY_BACKEND_MEMFD)
 
 
@@ -29,17 +31,17 @@ struct HostMemoryBackendMemfd {
     bool seal;
 };
 
-static bool
+static void
 memfd_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
 {
     HostMemoryBackendMemfd *m = MEMORY_BACKEND_MEMFD(backend);
-    g_autofree char *name = NULL;
     uint32_t ram_flags;
+    char *name;
     int fd;
 
     if (!backend->size) {
         error_setg(errp, "can't create backend with size 0");
-        return false;
+        return;
     }
 
     fd = qemu_memfd_create(TYPE_MEMORY_BACKEND_MEMFD, backend->size,
@@ -47,16 +49,15 @@ memfd_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
                            F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL : 0,
                            errp);
     if (fd == -1) {
-        return false;
+        return;
     }
 
-    backend->aligned = true;
     name = host_memory_backend_get_name(backend);
     ram_flags = backend->share ? RAM_SHARED : 0;
     ram_flags |= backend->reserve ? 0 : RAM_NORESERVE;
-    ram_flags |= backend->guest_memfd ? RAM_GUEST_MEMFD : 0;
-    return memory_region_init_ram_from_fd(&backend->mr, OBJECT(backend), name,
-                                          backend->size, ram_flags, fd, 0, errp);
+    memory_region_init_ram_from_fd(&backend->mr, OBJECT(backend), name,
+                                   backend->size, ram_flags, fd, 0, errp);
+    g_free(name);
 }
 
 static bool

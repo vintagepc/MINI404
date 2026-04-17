@@ -3,7 +3,6 @@
 
 #include "qom/object.h"
 #include "hw/acpi/aml-build.h"
-#include "hw/qdev-core.h"
 
 #define TYPE_ACPI_DEV_AML_IF "acpi-dev-aml-interface"
 typedef struct AcpiDevAmlIfClass AcpiDevAmlIfClass;
@@ -46,7 +45,5 @@ static inline void call_dev_aml_func(DeviceState *dev, Aml *scope)
         fn(ACPI_DEV_AML_IF(dev), scope);
     }
 }
-
-void qbus_build_aml(BusState *bus, Aml *scope);
 
 #endif

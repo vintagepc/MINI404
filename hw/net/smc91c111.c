@@ -17,7 +17,8 @@
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include <zlib.h> /* for crc32 */
+/* For crc32 */
+#include <zlib.h>
 #include "qom/object.h"
 
 /* Number of 2k memory pages available.  */
@@ -61,7 +62,7 @@ static const VMStateDescription vmstate_smc91c111 = {
     .name = "smc91c111",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT16(tcr, smc91c111_state),
         VMSTATE_UINT16(rcr, smc91c111_state),
         VMSTATE_UINT16(cr, smc91c111_state),
@@ -360,7 +361,7 @@ static void smc91c111_writeb(void *opaque, hwaddr offset,
         case 4: case 5: case 6: case 7: case 8: case 9: /* IA */
             /* Not implemented.  */
             return;
-        case 10: /* General Purpose */
+        case 10: /* Genral Purpose */
             SET_LOW(gpr, value);
             return;
         case 11:
@@ -782,8 +783,7 @@ static void smc91c111_realize(DeviceState *dev, Error **errp)
     sysbus_init_irq(sbd, &s->irq);
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
     s->nic = qemu_new_nic(&net_smc91c111_info, &s->conf,
-                          object_get_typename(OBJECT(dev)), dev->id,
-                          &dev->mem_reentrancy_guard, s);
+                          object_get_typename(OBJECT(dev)), dev->id, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
     /* ??? Save/restore.  */
 }
@@ -798,7 +798,7 @@ static void smc91c111_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = smc91c111_realize;
-    device_class_set_legacy_reset(dc, smc91c111_reset);
+    dc->reset = smc91c111_reset;
     dc->vmsd = &vmstate_smc91c111;
     device_class_set_props(dc, smc91c111_properties);
 }
@@ -817,13 +817,14 @@ static void smc91c111_register_types(void)
 
 /* Legacy helper function.  Should go away when machine config files are
    implemented.  */
-void smc91c111_init(uint32_t base, qemu_irq irq)
+void smc91c111_init(NICInfo *nd, uint32_t base, qemu_irq irq)
 {
     DeviceState *dev;
     SysBusDevice *s;
 
+    qemu_check_nic_model(nd, "smc91c111");
     dev = qdev_new(TYPE_SMC91C111);
-    qemu_configure_nic_device(dev, true, NULL);
+    qdev_set_nic_properties(dev, nd);
     s = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, base);

@@ -37,13 +37,11 @@
  * the I/O API.
  */
 
-int coroutine_fn GRAPH_RDLOCK
-bdrv_co_check(BlockDriverState *bs, BdrvCheckResult *res, BdrvCheckMode fix);
+int coroutine_fn bdrv_co_check(BlockDriverState *bs,
+                               BdrvCheckResult *res, BdrvCheckMode fix);
+int coroutine_fn bdrv_co_invalidate_cache(BlockDriverState *bs, Error **errp);
 
-int coroutine_fn GRAPH_RDLOCK
-bdrv_co_invalidate_cache(BlockDriverState *bs, Error **errp);
-
-int coroutine_fn GRAPH_RDLOCK
+int coroutine_fn
 bdrv_co_common_block_status_above(BlockDriverState *bs,
                                   BlockDriverState *base,
                                   bool include_base,
@@ -55,13 +53,12 @@ bdrv_co_common_block_status_above(BlockDriverState *bs,
                                   BlockDriverState **file,
                                   int *depth);
 
-int coroutine_fn GRAPH_RDLOCK
-bdrv_co_readv_vmstate(BlockDriverState *bs, QEMUIOVector *qiov, int64_t pos);
+int coroutine_fn bdrv_co_readv_vmstate(BlockDriverState *bs,
+                                       QEMUIOVector *qiov, int64_t pos);
+int coroutine_fn bdrv_co_writev_vmstate(BlockDriverState *bs,
+                                        QEMUIOVector *qiov, int64_t pos);
 
-int coroutine_fn GRAPH_RDLOCK
-bdrv_co_writev_vmstate(BlockDriverState *bs, QEMUIOVector *qiov, int64_t pos);
-
-int coroutine_fn GRAPH_RDLOCK
+int coroutine_fn
 nbd_co_do_establish_connection(BlockDriverState *bs, bool blocking,
                                Error **errp);
 
@@ -74,7 +71,7 @@ nbd_co_do_establish_connection(BlockDriverState *bs, bool blocking,
  * the "I/O or GS" API.
  */
 
-int co_wrapper_mixed_bdrv_rdlock
+int generated_co_wrapper
 bdrv_common_block_status_above(BlockDriverState *bs,
                                BlockDriverState *base,
                                bool include_base,
@@ -85,8 +82,7 @@ bdrv_common_block_status_above(BlockDriverState *bs,
                                int64_t *map,
                                BlockDriverState **file,
                                int *depth);
-
-int co_wrapper_mixed_bdrv_rdlock
+int generated_co_wrapper
 nbd_do_establish_connection(BlockDriverState *bs, bool blocking, Error **errp);
 
 #endif /* BLOCK_COROUTINES_H */

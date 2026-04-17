@@ -6,8 +6,7 @@
  * directory.
  */
 
-#include <string.h>
-#include <stdio.h>
+#include "libc.h"
 #include "s390-ccw.h"
 #include "s390-arch.h"
 
@@ -33,22 +32,16 @@ static void jump_to_IPL_addr(void)
     /* should not return */
 }
 
-int jump_to_IPL_code(uint64_t address)
+void jump_to_IPL_code(uint64_t address)
 {
     /* store the subsystem information _after_ the bootmap was loaded */
     write_subsystem_identification();
     write_iplb_location();
 
-    /*
-     * The IPLB for QEMU SCSI type devices must be rebuilt during re-ipl. The
-     * iplb.devno is set to the boot position of the target SCSI device.
-     */
+    /* prevent unknown IPL types in the guest */
     if (iplb.pbt == S390_IPL_TYPE_QEMU_SCSI) {
-        iplb.devno = qipl.index;
-    }
-
-    if (have_iplb && !set_iplb(&iplb)) {
-        panic("Failed to set IPLB");
+        iplb.pbt = S390_IPL_TYPE_CCW;
+        set_iplb(&iplb);
     }
 
     /*
@@ -64,7 +57,7 @@ int jump_to_IPL_code(uint64_t address)
     debug_print_int("set IPL addr to", address ?: *reset_psw & PSW_MASK_SHORT_ADDR);
 
     /* Ensure the guest output starts fresh */
-    printf("\n");
+    sclp_print("\n");
 
     /*
      * HACK ALERT.
@@ -74,8 +67,7 @@ int jump_to_IPL_code(uint64_t address)
     asm volatile("lghi %%r1,1\n\t"
                  "diag %%r1,%%r1,0x308\n\t"
                  : : : "1", "memory");
-    puts("IPL code jump failed");
-    return -1;
+    panic("\n! IPL returns !\n");
 }
 
 void jump_to_low_kernel(void)

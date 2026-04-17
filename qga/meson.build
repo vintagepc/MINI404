@@ -7,9 +7,9 @@ if not have_ga
 endif
 
 have_qga_vss = get_option('qga_vss') \
-  .require(host_os == 'windows',
+  .require(targetos == 'windows',
            error_message: 'VSS support requires Windows') \
-  .require('cpp' in all_languages,
+  .require(link_language == 'cpp',
            error_message: 'VSS support requires a C++ compiler') \
   .require(have_vss, error_message: '''VSS support requires VSS headers.
     If your Visual Studio installation doesn't have the VSS headers,
@@ -22,7 +22,7 @@ have_qga_vss = get_option('qga_vss') \
     Then run configure with: --extra-cxxflags="-isystem /path/to/vss/inc/win2003"''') \
   .require(midl.found() or widl.found(),
            error_message: 'VSS support requires midl or widl') \
-  .require(not get_option('prefer_static'),
+  .require(not enable_static,
            error_message: 'VSS support requires dynamic linking with GLib') \
   .allowed()
 
@@ -66,66 +66,45 @@ qga_ss.add(files(
   'guest-agent-command-state.c',
   'main.c',
   'cutils.c',
-  'commands-common-ssh.c'
 ))
-if host_os == 'windows'
-  qga_ss.add(files(
-    'channel-win32.c',
-    'commands-win32.c',
-    'service-win32.c',
-    'vss-win32.c',
-    'commands-windows-ssh.c'
-  ))
-else
-  qga_ss.add(files(
-    'channel-posix.c',
-    'commands-posix.c',
-    'commands-posix-ssh.c',
-  ))
-  if host_os == 'linux'
-    qga_ss.add(files('commands-linux.c'))
-  elif host_os in bsd_oses
-    qga_ss.add(files('commands-bsd.c'))
-  endif
-endif
+qga_ss.add(when: 'CONFIG_POSIX', if_true: files(
+  'channel-posix.c',
+  'commands-posix.c',
+  'commands-posix-ssh.c',
+))
+qga_ss.add(when: 'CONFIG_LINUX', if_true: files(
+  'commands-linux.c',
+))
+qga_ss.add(when: 'CONFIG_BSD', if_true: files(
+  'commands-bsd.c',
+))
+qga_ss.add(when: 'CONFIG_WIN32', if_true: files(
+  'channel-win32.c',
+  'commands-win32.c',
+  'service-win32.c',
+  'vss-win32.c'
+))
 
-qga_ss = qga_ss.apply({})
+qga_ss = qga_ss.apply(config_host, strict: false)
 
 gen_tlb = []
 qga_libs = []
-if host_os == 'windows'
+if targetos == 'windows'
   qga_libs += ['-lws2_32', '-lwinmm', '-lpowrprof', '-lwtsapi32', '-lwininet', '-liphlpapi', '-lnetapi32',
-               '-lsetupapi', '-lcfgmgr32', '-luserenv']
+               '-lsetupapi', '-lcfgmgr32']
   if have_qga_vss
     qga_libs += ['-lole32', '-loleaut32', '-lshlwapi', '-lstdc++', '-Wl,--enable-stdcall-fixup']
     subdir('vss-win32')
   endif
 endif
 
-qga_objs = []
-if host_os == 'windows'
-  windmc = find_program('windmc', required: true)
-  windres = find_program('windres', required: true)
-
-  msgrc = custom_target('messages-win32.rc',
-                        input: 'messages-win32.mc',
-                        output: ['messages-win32.rc', 'MSG00409.bin', 'messages-win32.h'],
-                        command: [windmc, '-h', '@OUTDIR@', '-r', '@OUTDIR@', '@INPUT@'])
-  msgobj = custom_target('messages-win32.o',
-                         input: msgrc[0],
-                         output: 'messages-win32.o',
-                         command: [windres, '-I', '@OUTDIR@', '-o', '@OUTPUT@', '@INPUT@'])
-
-  qga_objs = [msgobj]
-endif
-
-qga = executable('qemu-ga', qga_ss.sources() + qga_objs,
+qga = executable('qemu-ga', qga_ss.sources(),
                  link_args: qga_libs,
                  dependencies: [qemuutil, libudev],
                  install: true)
 all_qga += qga
 
-if host_os == 'windows'
+if targetos == 'windows'
   qemu_ga_msi_arch = {
     'x86': ['-D', 'Arch=32'],
     'x86_64': ['-a', 'x64', '-D', 'Arch=64']
@@ -144,14 +123,6 @@ if host_os == 'windows'
       qemu_ga_msi_vss = ['-D', 'InstallVss']
       deps += qga_vss
     endif
-    if glib.version().version_compare('<2.73.2')
-      libpcre = 'libpcre1'
-    else
-      libpcre = 'libpcre2'
-    endif
-    qga_msi_version = get_option('qemu_ga_version') == '' \
-      ? meson.project_version() \
-      : get_option('qemu_ga_version')
     qga_msi = custom_target('QGA MSI',
                             input: files('installer/qemu-ga.wxs'),
                             output: 'qemu-ga-@0@.msi'.format(host_arch),
@@ -161,11 +132,10 @@ if host_os == 'windows'
                               qemu_ga_msi_arch[cpu],
                               qemu_ga_msi_vss,
                               '-D', 'BUILD_DIR=' + meson.project_build_root(),
-                              '-D', 'BIN_DIR=' + glib_pc.get_variable('bindir'),
-                              '-D', 'QEMU_GA_VERSION=' + qga_msi_version,
-                              '-D', 'QEMU_GA_MANUFACTURER=' + get_option('qemu_ga_manufacturer'),
-                              '-D', 'QEMU_GA_DISTRO=' + get_option('qemu_ga_distro'),
-                              '-D', 'LIBPCRE=' + libpcre,
+                              '-D', 'BIN_DIR=' + glib.get_variable('bindir'),
+                              '-D', 'QEMU_GA_VERSION=' + config_host['QEMU_GA_VERSION'],
+                              '-D', 'QEMU_GA_MANUFACTURER=' + config_host['QEMU_GA_MANUFACTURER'],
+                              '-D', 'QEMU_GA_DISTRO=' + config_host['QEMU_GA_DISTRO'],
                             ])
     all_qga += [qga_msi]
     alias_target('msi', qga_msi)
@@ -183,12 +153,13 @@ test_env = environment()
 test_env.set('G_TEST_SRCDIR', meson.current_source_dir())
 test_env.set('G_TEST_BUILDDIR', meson.current_build_dir())
 
-# disable qga-ssh-test with fuzzing: glib's G_TEST_OPTION_ISOLATE_DIRS triggers
+# disable qga-ssh-test for now. glib's G_TEST_OPTION_ISOLATE_DIRS triggers
 # the leak detector in build-oss-fuzz Gitlab CI test. we should re-enable
 # this when an alternative is implemented or when the underlying glib
 # issue is identified/fix
-if host_os != 'windows' and not get_option('fuzzing')
-  srcs = [files('commands-common-ssh.c', 'commands-posix-ssh.c')]
+#if 'CONFIG_POSIX' in config_host
+if false
+  srcs = [files('commands-posix-ssh.c')]
   i = 0
   foreach output: qga_qapi_outputs
     if output.startswith('qga-qapi-types') or output.startswith('qga-qapi-visit')

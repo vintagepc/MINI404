@@ -14,8 +14,6 @@
 #include "qemu/cutils.h"
 #include "libqtest.h"
 
-static int verbosity_level;
-
 static void test_properties(QTestState *qts, const char *path, bool recurse)
 {
     char *child_path;
@@ -24,9 +22,7 @@ static void test_properties(QTestState *qts, const char *path, bool recurse)
     QListEntry *entry;
     GSList *children = NULL, *links = NULL;
 
-    if (verbosity_level >= 2) {
-        g_test_message("Obtaining properties of %s", path);
-    }
+    g_test_message("Obtaining properties of %s", path);
     response = qtest_qmp(qts, "{ 'execute': 'qom-list',"
                               "  'arguments': { 'path': %s } }", path);
     g_assert(response);
@@ -53,9 +49,7 @@ static void test_properties(QTestState *qts, const char *path, bool recurse)
             }
         } else {
             const char *prop = qdict_get_str(tuple, "name");
-            if (verbosity_level >= 3) {
-                g_test_message("-> %s", prop);
-            }
+            g_test_message("-> %s", prop);
             tmp = qtest_qmp(qts,
                             "{ 'execute': 'qom-get',"
                             "  'arguments': { 'path': %s, 'property': %s } }",
@@ -109,12 +103,6 @@ static void add_machine_test_case(const char *mname)
 
 int main(int argc, char **argv)
 {
-    char *v_env = getenv("V");
-
-    if (v_env) {
-        verbosity_level = atoi(v_env);
-    }
-
     g_test_init(&argc, &argv, NULL);
 
     qtest_cb_for_every_machine(add_machine_test_case, g_test_quick());

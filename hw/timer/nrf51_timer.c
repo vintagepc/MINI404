@@ -45,12 +45,7 @@ static uint32_t update_counter(NRF51TimerState *s, int64_t now)
     uint32_t ticks = ns_to_ticks(s, now - s->update_counter_ns);
 
     s->counter = (s->counter + ticks) % BIT(bitwidths[s->bitmode]);
-    /*
-     * Only advance the sync time to the timestamp of the last tick,
-     * not all the way to 'now', so we don't lose time if we do
-     * multiple resyncs in a single tick.
-     */
-    s->update_counter_ns += ticks_to_ns(s, ticks);
+    s->update_counter_ns = now;
     return ticks;
 }
 
@@ -361,7 +356,7 @@ static const VMStateDescription vmstate_nrf51_timer = {
     .name = TYPE_NRF51_TIMER,
     .version_id = 1,
     .post_load = nrf51_timer_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_TIMER(timer, NRF51TimerState),
         VMSTATE_INT64(timer_start_ns, NRF51TimerState),
         VMSTATE_INT64(update_counter_ns, NRF51TimerState),
@@ -388,7 +383,7 @@ static void nrf51_timer_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, nrf51_timer_reset);
+    dc->reset = nrf51_timer_reset;
     dc->vmsd = &vmstate_nrf51_timer;
     device_class_set_props(dc, nrf51_timer_properties);
 }

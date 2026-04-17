@@ -1,6 +1,7 @@
 module ./builtin
 object q_empty
 enum QType
+    prefix QTYPE
     member none
     member qnull
     member qnum
@@ -103,7 +104,7 @@ doc symbol=Enum
     body=
 
     arg=one
-The _one_ {and only}, description on the same line
+The _one_ {and only}
     arg=two
 
     feature=enum-feat
@@ -116,15 +117,12 @@ doc symbol=Base
     body=
 
     arg=base1
- description starts on a new line,
- minimally indented
+the first member
 doc symbol=Variant1
     body=
 A paragraph
 
-Another paragraph
-
-@var1 is undocumented
+Another paragraph (but no @var: line)
     arg=var1
 
     feature=variant1-feat
@@ -143,9 +141,8 @@ doc symbol=Alternate
     body=
 
     arg=i
-description starts on the same line
-    remainder indented the same
-    @b is undocumented
+an integer
+@b is undocumented
     arg=b
 
     feature=alt-feat
@@ -157,49 +154,33 @@ doc symbol=cmd
     body=
 
     arg=arg1
-    description starts on a new line,
-    indented
+the first argument
     arg=arg2
-description starts on the same line
-    remainder indented differently
+the second
+argument
     arg=arg3
 
     feature=cmd-feat1
 a feature
     feature=cmd-feat2
 another feature
-    section=None
-.. note:: @arg3 is undocumented
+    section=Note
+@arg3 is undocumented
     section=Returns
 @Object
-    section=Errors
-some
     section=TODO
 frobnicate
-    section=None
-.. admonition:: Notes
+    section=Notes
+- Lorem ipsum dolor sit amet
+- Ut enim ad minim veniam
 
- - Lorem ipsum dolor sit amet
- - Ut enim ad minim veniam
-
- Duis aute irure dolor
-
-.. qmp-example::
-   :title: Ideal fast-food burger situation
-
-   -> "in"
-   <- "out"
-
-Examples::
-
- - Not a QMP code block
- - Merely a preformatted code block literal
- It isn't even an rST list.
- - *verbatim*
- - {braces}
-
-Note::
-    Ceci n'est pas une note
+Duis aute irure dolor
+    section=Example
+-> in
+<- out
+    section=Examples
+- *verbatim*
+- {braces}
     section=Since
 2.10
 doc symbol=cmd-boxed
@@ -209,12 +190,10 @@ If you're bored enough to read this, go see a video of boxed cats
 a feature
     feature=cmd-feat2
 another feature
-    section=None
-.. qmp-example::
+    section=Example
+-> in
 
-   -> "this example"
-
-   <- "has no title"
+<- out
 doc symbol=EVT_BOXED
     body=
 

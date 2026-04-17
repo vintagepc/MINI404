@@ -275,15 +275,15 @@ GSource *qio_channel_create_fd_watch(QIOChannel *ioc,
 
 #ifdef CONFIG_WIN32
 GSource *qio_channel_create_socket_watch(QIOChannel *ioc,
-                                         int sockfd,
+                                         int socket,
                                          GIOCondition condition)
 {
     GSource *source;
     QIOChannelSocketSource *ssource;
 
-    qemu_socket_select(sockfd, ioc->event,
-                       FD_READ | FD_ACCEPT | FD_CLOSE |
-                       FD_CONNECT | FD_WRITE | FD_OOB, NULL);
+    WSAEventSelect(socket, ioc->event,
+                   FD_READ | FD_ACCEPT | FD_CLOSE |
+                   FD_CONNECT | FD_WRITE | FD_OOB);
 
     source = g_source_new(&qio_channel_socket_source_funcs,
                           sizeof(QIOChannelSocketSource));
@@ -293,7 +293,7 @@ GSource *qio_channel_create_socket_watch(QIOChannel *ioc,
     object_ref(OBJECT(ioc));
 
     ssource->condition = condition;
-    ssource->socket = _get_osfhandle(sockfd);
+    ssource->socket = socket;
     ssource->revents = 0;
 
     ssource->fd.fd = (gintptr)ioc->event;

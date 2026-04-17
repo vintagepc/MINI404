@@ -164,10 +164,6 @@ static inline void target_cpu_loop(CPUX86State *env)
             }
             break;
 
-        case EXCP_SYSCALL:
-            /* doesn't do anything */
-            break;
-
         case EXCP_INTERRUPT:
             /* just indicate that signals should be handled asap */
             break;

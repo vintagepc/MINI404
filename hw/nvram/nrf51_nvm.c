@@ -336,9 +336,12 @@ static void nrf51_nvm_init(Object *obj)
 static void nrf51_nvm_realize(DeviceState *dev, Error **errp)
 {
     NRF51NVMState *s = NRF51_NVM(dev);
+    Error *err = NULL;
 
-    if (!memory_region_init_rom_device(&s->flash, OBJECT(dev), &flash_ops, s,
-                                       "nrf51_soc.flash", s->flash_size, errp)) {
+    memory_region_init_rom_device(&s->flash, OBJECT(dev), &flash_ops, s,
+        "nrf51_soc.flash", s->flash_size, &err);
+    if (err) {
+        error_propagate(errp, err);
         return;
     }
 
@@ -363,7 +366,7 @@ static const VMStateDescription vmstate_nvm = {
     .name = "nrf51_soc.nvm",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(uicr_content, NRF51NVMState,
                 NRF51_UICR_FIXTURE_SIZE),
         VMSTATE_UINT32(config, NRF51NVMState),
@@ -378,7 +381,7 @@ static void nrf51_nvm_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, nrf51_nvm_properties);
     dc->vmsd = &vmstate_nvm;
     dc->realize = nrf51_nvm_realize;
-    device_class_set_legacy_reset(dc, nrf51_nvm_reset);
+    dc->reset = nrf51_nvm_reset;
 }
 
 static const TypeInfo nrf51_nvm_info = {

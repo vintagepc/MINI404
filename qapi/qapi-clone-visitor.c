@@ -149,7 +149,7 @@ static void qapi_clone_free(Visitor *v)
     g_free(v);
 }
 
-Visitor *qapi_clone_visitor_new(void)
+static Visitor *qapi_clone_visitor_new(void)
 {
     QapiCloneVisitor *v;
 
@@ -174,9 +174,31 @@ Visitor *qapi_clone_visitor_new(void)
     return &v->visitor;
 }
 
-Visitor *qapi_clone_members_visitor_new(void)
+void *qapi_clone(const void *src, bool (*visit_type)(Visitor *, const char *,
+                                                     void **, Error **))
 {
-    Visitor *v = qapi_clone_visitor_new();
+    Visitor *v;
+    void *dst = (void *) src; /* Cast away const */
+
+    if (!src) {
+        return NULL;
+    }
+
+    v = qapi_clone_visitor_new();
+    visit_type(v, NULL, &dst, &error_abort);
+    visit_free(v);
+    return dst;
+}
+
+void qapi_clone_members(void *dst, const void *src, size_t sz,
+                        bool (*visit_type_members)(Visitor *, void *,
+                                                   Error **))
+{
+    Visitor *v;
+
+    v = qapi_clone_visitor_new();
+    memcpy(dst, src, sz);
     to_qcv(v)->depth++;
-    return v;
+    visit_type_members(v, dst, &error_abort);
+    visit_free(v);
 }

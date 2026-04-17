@@ -64,7 +64,7 @@ from qemu.qmp.legacy import QEMUMonitorProtocol
 class QemuGuestAgent(QEMUMonitorProtocol):
     def __getattr__(self, name: str) -> Callable[..., Any]:
         def wrapper(**kwds: object) -> object:
-            return self.cmd('guest-' + name.replace('_', '-'), **kwds)
+            return self.command('guest-' + name.replace('_', '-'), **kwds)
         return wrapper
 
 
@@ -155,7 +155,7 @@ class QemuGuestAgentClient:
 
     def fsfreeze(self, cmd: str) -> object:
         if cmd not in ['status', 'freeze', 'thaw']:
-            raise ValueError('Invalid command: ' + cmd)
+            raise Exception('Invalid command: ' + cmd)
         # Can be int (freeze, thaw) or GuestFsfreezeStatus (status)
         return getattr(self.qga, 'fsfreeze' + '_' + cmd)()
 
@@ -167,18 +167,18 @@ class QemuGuestAgentClient:
 
     def suspend(self, mode: str) -> None:
         if mode not in ['disk', 'ram', 'hybrid']:
-            raise ValueError('Invalid mode: ' + mode)
+            raise Exception('Invalid mode: ' + mode)
 
         try:
             getattr(self.qga, 'suspend' + '_' + mode)()
             # On error exception will raise
         except asyncio.TimeoutError:
             # On success command will timed out
-            pass
+            return
 
     def shutdown(self, mode: str = 'powerdown') -> None:
         if mode not in ['powerdown', 'halt', 'reboot']:
-            raise ValueError('Invalid mode: ' + mode)
+            raise Exception('Invalid mode: ' + mode)
 
         try:
             self.qga.shutdown(mode=mode)

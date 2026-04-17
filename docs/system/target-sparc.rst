@@ -27,11 +27,6 @@ architecture machines:
 The emulation is somewhat complete. SMP up to 16 CPUs is supported, but
 Linux limits the number of usable CPUs to 4.
 
-The list of available CPUs can be viewed by starting QEMU with ``-cpu help``.
-Optional boolean features can be added with a "+" in front of the feature name,
-or disabled with a "-" in front of the name, for example
-``-cpu TI-SuperSparc-II,+float128``.
-
 QEMU emulates the following sun4m peripherals:
 
 -  IOMMU
@@ -43,7 +38,7 @@ QEMU emulates the following sun4m peripherals:
 -  Non Volatile RAM M48T02/M48T08
 
 -  Slave I/O: timers, interrupt controllers, Zilog serial ports,
-   :ref:`keyboard` and power/reset logic
+   keyboard and power/reset logic
 
 -  ESP SCSI controller with hard disk and CD-ROM support
 
@@ -60,5 +55,8 @@ OpenBIOS is a free (GPL v2) portable firmware implementation. The goal
 is to implement a 100% IEEE 1275-1994 (referred to as Open Firmware)
 compliant firmware.
 
-Please note that currently older Solaris kernels don't work; this is probably
-due to interface issues between OpenBIOS and Solaris.
+A sample Linux 2.6 series kernel and ram disk image are available on the
+QEMU web site. There are still issues with NetBSD and OpenBSD, but most
+kernel versions work. Please note that currently older Solaris kernels
+don't work probably due to interface issues between OpenBIOS and
+Solaris.

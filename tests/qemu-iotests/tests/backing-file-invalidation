@@ -129,11 +129,12 @@ class TestPostMigrateFilename(iotests.QMPTestCase):
 
         # For good measure, try creating an overlay and check its backing
         # chain below.  This is how the issue was originally found.
-        self.vm_d.cmd('blockdev-snapshot-sync',
-                      format=iotests.imgfmt,
-                      snapshot_file=imgs[3],
-                      node_name='node0',
-                      snapshot_node_name='node0-overlay')
+        result = self.vm_d.qmp('blockdev-snapshot-sync',
+                               format=iotests.imgfmt,
+                               snapshot_file=imgs[3],
+                               node_name='node0',
+                               snapshot_node_name='node0-overlay')
+        self.assert_qmp(result, 'return', {})
 
         self.vm_d.shutdown()
         self.vm_d = None

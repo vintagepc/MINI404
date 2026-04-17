@@ -18,8 +18,13 @@
  * member in your target-specific DisasContext.
  */
 
+
 #include "qemu/bswap.h"
-#include "exec/vaddr.h"
+#include "exec/exec-all.h"
+#include "exec/cpu_ldst.h"
+#include "exec/plugin-gen.h"
+#include "exec/translate-all.h"
+#include "tcg/tcg.h"
 
 /**
  * gen_intermediate_code
@@ -32,8 +37,8 @@
  * This function must be provided by the target, which should create
  * the target-specific DisasContext, and then invoke translator_loop.
  */
-void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int *max_insns,
-                           vaddr pc, void *host_pc);
+void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int max_insns,
+                           target_ulong pc, void *host_pc);
 
 /**
  * DisasJumpType:
@@ -71,37 +76,20 @@ typedef enum DisasJumpType {
  * @is_jmp: What instruction to disassemble next.
  * @num_insns: Number of translated instructions (including current).
  * @max_insns: Maximum number of instructions to be translated in this TB.
- * @plugin_enabled: TCG plugin enabled in this TB.
- * @fake_insn: True if translator_fake_ldb used.
- * @insn_start: The last op emitted by the insn_start hook,
- *              which is expected to be INDEX_op_insn_start.
+ * @singlestep_enabled: "Hardware" single stepping enabled.
  *
  * Architecture-agnostic disassembly context.
  */
-struct DisasContextBase {
+typedef struct DisasContextBase {
     TranslationBlock *tb;
-    vaddr pc_first;
-    vaddr pc_next;
+    target_ulong pc_first;
+    target_ulong pc_next;
     DisasJumpType is_jmp;
     int num_insns;
     int max_insns;
-    bool plugin_enabled;
-    bool fake_insn;
-    struct TCGOp *insn_start;
+    bool singlestep_enabled;
     void *host_addr[2];
-
-    /*
-     * Record insn data that we cannot read directly from host memory.
-     * There are only two reasons we cannot use host memory:
-     * (1) We are executing from I/O,
-     * (2) We are executing a synthetic instruction (s390x EX).
-     * In both cases we need record exactly one instruction,
-     * and thus the maximum amount of data we record is limited.
-     */
-    int record_start;
-    int record_len;
-    uint8_t record[32];
-};
+} DisasContextBase;
 
 /**
  * TranslatorOps:
@@ -133,7 +121,7 @@ typedef struct TranslatorOps {
     void (*insn_start)(DisasContextBase *db, CPUState *cpu);
     void (*translate_insn)(DisasContextBase *db, CPUState *cpu);
     void (*tb_stop)(DisasContextBase *db, CPUState *cpu);
-    bool (*disas_log)(const DisasContextBase *db, CPUState *cpu, FILE *f);
+    void (*disas_log)(const DisasContextBase *db, CPUState *cpu, FILE *f);
 } TranslatorOps;
 
 /**
@@ -158,9 +146,11 @@ typedef struct TranslatorOps {
  * - When single-stepping is enabled (system-wide or on the current vCPU).
  * - When too many instructions have been translated.
  */
-void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
-                     vaddr pc, void *host_pc, const TranslatorOps *ops,
-                     DisasContextBase *db);
+void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
+                     target_ulong pc, void *host_pc,
+                     const TranslatorOps *ops, DisasContextBase *db);
+
+void translator_loop_temp_check(DisasContextBase *db);
 
 /**
  * translator_use_goto_tb
@@ -170,17 +160,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
  * Return true if goto_tb is allowed between the current TB
  * and the destination PC.
  */
-bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
-
-/**
- * translator_io_start
- * @db: Disassembly context
- *
- * If icount is enabled, set cpu->can_do_io, adjust db->is_jmp to
- * DISAS_TOO_MANY if it is still DISAS_NEXT, and return true.
- * Otherwise return false.
- */
-bool translator_io_start(DisasContextBase *db);
+bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest);
 
 /*
  * Translator Load Functions
@@ -193,14 +173,14 @@ bool translator_io_start(DisasContextBase *db);
  * the relevant information at translation time.
  */
 
-uint8_t translator_ldub(CPUArchState *env, DisasContextBase *db, vaddr pc);
-uint16_t translator_lduw(CPUArchState *env, DisasContextBase *db, vaddr pc);
-uint32_t translator_ldl(CPUArchState *env, DisasContextBase *db, vaddr pc);
-uint64_t translator_ldq(CPUArchState *env, DisasContextBase *db, vaddr pc);
+uint8_t translator_ldub(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+uint16_t translator_lduw(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+uint32_t translator_ldl(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+uint64_t translator_ldq(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
 
 static inline uint16_t
 translator_lduw_swap(CPUArchState *env, DisasContextBase *db,
-                     vaddr pc, bool do_swap)
+                     abi_ptr pc, bool do_swap)
 {
     uint16_t ret = translator_lduw(env, db, pc);
     if (do_swap) {
@@ -211,7 +191,7 @@ translator_lduw_swap(CPUArchState *env, DisasContextBase *db,
 
 static inline uint32_t
 translator_ldl_swap(CPUArchState *env, DisasContextBase *db,
-                    vaddr pc, bool do_swap)
+                    abi_ptr pc, bool do_swap)
 {
     uint32_t ret = translator_ldl(env, db, pc);
     if (do_swap) {
@@ -222,7 +202,7 @@ translator_ldl_swap(CPUArchState *env, DisasContextBase *db,
 
 static inline uint64_t
 translator_ldq_swap(CPUArchState *env, DisasContextBase *db,
-                    vaddr pc, bool do_swap)
+                    abi_ptr pc, bool do_swap)
 {
     uint64_t ret = translator_ldq(env, db, pc);
     if (do_swap) {
@@ -232,51 +212,30 @@ translator_ldq_swap(CPUArchState *env, DisasContextBase *db,
 }
 
 /**
- * translator_fake_ld - fake instruction load
- * @db: Disassembly context
- * @data: bytes of instruction
- * @len: number of bytes
+ * translator_fake_ldb - fake instruction load
+ * @insn8: byte of instruction
+ * @pc: program counter of instruction
  *
  * This is a special case helper used where the instruction we are
  * about to translate comes from somewhere else (e.g. being
  * re-synthesised for s390x "ex"). It ensures we update other areas of
  * the translator with details of the executed instruction.
  */
-void translator_fake_ld(DisasContextBase *db, const void *data, size_t len);
 
-/**
- * translator_st
- * @db: disassembly context
- * @dest: address to copy into
- * @addr: virtual address within TB
- * @len: length
- *
- * Copy @len bytes from @addr into @dest.
- * All bytes must have been read during translation.
- * Return true on success or false on failure.
- */
-bool translator_st(const DisasContextBase *db, void *dest,
-                   vaddr addr, size_t len);
+static inline void translator_fake_ldb(uint8_t insn8, abi_ptr pc)
+{
+    plugin_insn_append(pc, &insn8, sizeof(insn8));
+}
 
-/**
- * translator_st_len
- * @db: disassembly context
- *
- * Return the number of bytes available to copy from the
- * current translation block with translator_st.
- */
-size_t translator_st_len(const DisasContextBase *db);
 
-#ifdef COMPILING_PER_TARGET
 /*
  * Return whether addr is on the same page as where disassembly started.
  * Translators can use this to enforce the rule that only single-insn
  * translation blocks are allowed to cross page boundaries.
  */
-static inline bool is_same_page(const DisasContextBase *db, vaddr addr)
+static inline bool is_same_page(const DisasContextBase *db, target_ulong addr)
 {
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
 }
-#endif
 
 #endif /* EXEC__TRANSLATOR_H */

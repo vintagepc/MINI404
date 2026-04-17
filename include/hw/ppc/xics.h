@@ -95,7 +95,7 @@ struct ICSStateClass {
     DeviceClass parent_class;
 
     DeviceRealize parent_realize;
-    ResettablePhases parent_phases;
+    DeviceReset parent_reset;
 
     void (*reject)(ICSState *s, uint32_t irq);
     void (*resend)(ICSState *s);
@@ -171,8 +171,8 @@ static inline bool ics_irq_free(ICSState *ics, uint32_t srcno)
 }
 
 void ics_set_irq_type(ICSState *ics, int srcno, bool lsi);
-void icp_pic_print_info(ICPState *icp, GString *buf);
-void ics_pic_print_info(ICSState *ics, GString *buf);
+void icp_pic_print_info(ICPState *icp, Monitor *mon);
+void ics_pic_print_info(ICSState *ics, Monitor *mon);
 
 void ics_resend(ICSState *ics);
 void icp_resend(ICPState *ss);

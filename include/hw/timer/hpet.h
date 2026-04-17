@@ -78,8 +78,6 @@ extern struct hpet_fw_config hpet_cfg;
 
 #define TYPE_HPET "hpet"
 
-#define HPET_INTCAP "hpet-intcap"
-
 static inline bool hpet_find(void)
 {
     return object_resolve_path_type("", TYPE_HPET, NULL);

@@ -18,7 +18,7 @@ struct AspeedRtcState {
     qemu_irq irq;
 
     uint32_t reg[0x18];
-    int64_t offset;
+    int offset;
 
 };
 

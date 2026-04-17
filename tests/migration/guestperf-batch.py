@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Migration test batch comparison invocation
+# Migration test batch comparison invokation
 #
 # Copyright (c) 2016 Red Hat, Inc.
 #

@@ -102,8 +102,7 @@ let data_size="8 * $cluster_size"
 $QEMU_IO -c "write -P 0xaa 0 $data_size" "$TEST_IMG" \
          2>&1 | _filter_qemu_io | _filter_testdir
 sizeA=$($QEMU_IMG info --output=json "$TEST_IMG" |
-        sed -n '/"actual-size":/ s/[^0-9]//gp' |
-        head -n 1)
+        sed -n '/"actual-size":/ s/[^0-9]//gp')
 
 _make_test_img 2M -o cluster_size=$cluster_size
 echo "Write compressed data:"
@@ -125,8 +124,7 @@ $QEMU_IO -c "write -P 0xcc $offset $data_size" "json:{\
                           _filter_qemu_io | _filter_testdir
 
 sizeB=$($QEMU_IMG info --output=json "$TEST_IMG" |
-        sed -n '/"actual-size":/ s/[^0-9]//gp' |
-        head -n 1)
+        sed -n '/"actual-size":/ s/[^0-9]//gp')
 
 if [ $sizeA -lt $sizeB ]
 then

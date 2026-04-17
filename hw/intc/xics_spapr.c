@@ -395,7 +395,7 @@ static void xics_spapr_set_irq(SpaprInterruptController *intc, int irq, int val)
     ics_set_irq(ics, srcno, val);
 }
 
-static void xics_spapr_print_info(SpaprInterruptController *intc, GString *buf)
+static void xics_spapr_print_info(SpaprInterruptController *intc, Monitor *mon)
 {
     ICSState *ics = ICS_SPAPR(intc);
     CPUState *cs;
@@ -403,9 +403,10 @@ static void xics_spapr_print_info(SpaprInterruptController *intc, GString *buf)
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
 
-        icp_pic_print_info(spapr_cpu_state(cpu)->icp, buf);
+        icp_pic_print_info(spapr_cpu_state(cpu)->icp, mon);
     }
-    ics_pic_print_info(ics, buf);
+
+    ics_pic_print_info(ics, mon);
 }
 
 static int xics_spapr_post_load(SpaprInterruptController *intc, int version_id)

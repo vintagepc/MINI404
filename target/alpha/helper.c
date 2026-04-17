@@ -21,7 +21,6 @@
 #include "qemu/log.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
-#include "exec/page-protection.h"
 #include "fpu/softfloat-types.h"
 #include "exec/helper-proto.h"
 #include "qemu/qemu-print.h"
@@ -125,7 +124,7 @@ void alpha_cpu_record_sigsegv(CPUState *cs, vaddr address,
                               MMUAccessType access_type,
                               bool maperr, uintptr_t retaddr)
 {
-    CPUAlphaState *env = cpu_env(cs);
+    AlphaCPU *cpu = ALPHA_CPU(cs);
     target_ulong mmcsr, cause;
 
     /* Assuming !maperr, infer the missing protection. */
@@ -156,9 +155,9 @@ void alpha_cpu_record_sigsegv(CPUState *cs, vaddr address,
     }
 
     /* Record the arguments that PALcode would give to the kernel. */
-    env->trap_arg0 = address;
-    env->trap_arg1 = mmcsr;
-    env->trap_arg2 = cause;
+    cpu->env.trap_arg0 = address;
+    cpu->env.trap_arg1 = mmcsr;
+    cpu->env.trap_arg2 = cause;
 }
 #else
 /* Returns the OSF/1 entMM failure indication, or -1 on success.  */
@@ -287,10 +286,11 @@ static int get_physical_address(CPUAlphaState *env, target_ulong addr,
 
 hwaddr alpha_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
 {
+    AlphaCPU *cpu = ALPHA_CPU(cs);
     target_ulong phys;
     int prot, fail;
 
-    fail = get_physical_address(cpu_env(cs), addr, 0, 0, &phys, &prot);
+    fail = get_physical_address(&cpu->env, addr, 0, 0, &phys, &prot);
     return (fail >= 0 ? -1 : phys);
 }
 
@@ -298,7 +298,8 @@ bool alpha_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
                         MMUAccessType access_type, int mmu_idx,
                         bool probe, uintptr_t retaddr)
 {
-    CPUAlphaState *env = cpu_env(cs);
+    AlphaCPU *cpu = ALPHA_CPU(cs);
+    CPUAlphaState *env = &cpu->env;
     target_ulong phys;
     int prot, fail;
 
@@ -324,7 +325,8 @@ bool alpha_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
 
 void alpha_cpu_do_interrupt(CPUState *cs)
 {
-    CPUAlphaState *env = cpu_env(cs);
+    AlphaCPU *cpu = ALPHA_CPU(cs);
+    CPUAlphaState *env = &cpu->env;
     int i = cs->exception_index;
 
     if (qemu_loglevel_mask(CPU_LOG_INT)) {
@@ -433,7 +435,8 @@ void alpha_cpu_do_interrupt(CPUState *cs)
 
 bool alpha_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
-    CPUAlphaState *env = cpu_env(cs);
+    AlphaCPU *cpu = ALPHA_CPU(cs);
+    CPUAlphaState *env = &cpu->env;
     int idx = -1;
 
     /* We never take interrupts while in PALmode.  */
@@ -484,7 +487,8 @@ void alpha_cpu_dump_state(CPUState *cs, FILE *f, int flags)
         "a0",  "a1",  "a2", "a3",  "a4", "a5", "t8", "t9",
         "t10", "t11", "ra", "t12", "at", "gp", "sp"
     };
-    CPUAlphaState *env = cpu_env(cs);
+    AlphaCPU *cpu = ALPHA_CPU(cs);
+    CPUAlphaState *env = &cpu->env;
     int i;
 
     qemu_fprintf(f, "PC      " TARGET_FMT_lx " PS      %02x\n",
