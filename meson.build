@@ -3627,6 +3627,7 @@ if have_system
     'hw/adc',
     'hw/alpha',
     'hw/arm',
+    'hw/arm/prusa/parts',
     'hw/arm/prusa/stm32f407',
     'hw/audio',
     'hw/block',
