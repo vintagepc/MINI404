@@ -16,9 +16,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "migration/vmstate.h"
 #include "hw/pci/msix.h"
 #include "net/net.h"
@@ -132,11 +132,6 @@ RockerPortList *qmp_query_rocker_ports(const char *name, Error **errp)
     }
 
     return list;
-}
-
-uint32_t rocker_fp_ports(Rocker *r)
-{
-    return r->fp_ports;
 }
 
 static uint32_t rocker_get_pport_by_tx_ring(Rocker *r,
@@ -815,7 +810,7 @@ static void rocker_io_writel(void *opaque, hwaddr addr, uint32_t val)
             }
             break;
         default:
-            DPRINTF("not implemented dma reg write(l) addr=0x" TARGET_FMT_plx
+            DPRINTF("not implemented dma reg write(l) addr=0x" HWADDR_FMT_plx
                     " val=0x%08x (ring %d, addr=0x%02x)\n",
                     addr, val, index, offset);
             break;
@@ -857,7 +852,7 @@ static void rocker_io_writel(void *opaque, hwaddr addr, uint32_t val)
         r->lower32 = 0;
         break;
     default:
-        DPRINTF("not implemented write(l) addr=0x" TARGET_FMT_plx
+        DPRINTF("not implemented write(l) addr=0x" HWADDR_FMT_plx
                 " val=0x%08x\n", addr, val);
         break;
     }
@@ -876,8 +871,8 @@ static void rocker_io_writeq(void *opaque, hwaddr addr, uint64_t val)
             desc_ring_set_base_addr(r->rings[index], val);
             break;
         default:
-            DPRINTF("not implemented dma reg write(q) addr=0x" TARGET_FMT_plx
-                    " val=0x" TARGET_FMT_plx " (ring %d, offset=0x%02x)\n",
+            DPRINTF("not implemented dma reg write(q) addr=0x" HWADDR_FMT_plx
+                    " val=0x" HWADDR_FMT_plx " (ring %d, offset=0x%02x)\n",
                     addr, val, index, offset);
             break;
         }
@@ -895,8 +890,8 @@ static void rocker_io_writeq(void *opaque, hwaddr addr, uint64_t val)
         rocker_port_phys_enable_write(r, val);
         break;
     default:
-        DPRINTF("not implemented write(q) addr=0x" TARGET_FMT_plx
-                " val=0x" TARGET_FMT_plx "\n", addr, val);
+        DPRINTF("not implemented write(q) addr=0x" HWADDR_FMT_plx
+                " val=0x" HWADDR_FMT_plx "\n", addr, val);
         break;
     }
 }
@@ -987,8 +982,8 @@ static const char *rocker_reg_name(void *opaque, hwaddr addr)
 static void rocker_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                               unsigned size)
 {
-    DPRINTF("Write %s addr " TARGET_FMT_plx
-            ", size %u, val " TARGET_FMT_plx "\n",
+    DPRINTF("Write %s addr " HWADDR_FMT_plx
+            ", size %u, val " HWADDR_FMT_plx "\n",
             rocker_reg_name(opaque, addr), addr, size, val);
 
     switch (size) {
@@ -1060,7 +1055,7 @@ static uint32_t rocker_io_readl(void *opaque, hwaddr addr)
             ret = desc_ring_get_credits(r->rings[index]);
             break;
         default:
-            DPRINTF("not implemented dma reg read(l) addr=0x" TARGET_FMT_plx
+            DPRINTF("not implemented dma reg read(l) addr=0x" HWADDR_FMT_plx
                     " (ring %d, addr=0x%02x)\n", addr, index, offset);
             ret = 0;
             break;
@@ -1115,7 +1110,7 @@ static uint32_t rocker_io_readl(void *opaque, hwaddr addr)
         ret = (uint32_t)(r->switch_id >> 32);
         break;
     default:
-        DPRINTF("not implemented read(l) addr=0x" TARGET_FMT_plx "\n", addr);
+        DPRINTF("not implemented read(l) addr=0x" HWADDR_FMT_plx "\n", addr);
         ret = 0;
         break;
     }
@@ -1136,7 +1131,7 @@ static uint64_t rocker_io_readq(void *opaque, hwaddr addr)
             ret = desc_ring_get_base_addr(r->rings[index]);
             break;
         default:
-            DPRINTF("not implemented dma reg read(q) addr=0x" TARGET_FMT_plx
+            DPRINTF("not implemented dma reg read(q) addr=0x" HWADDR_FMT_plx
                     " (ring %d, addr=0x%02x)\n", addr, index, offset);
             ret = 0;
             break;
@@ -1165,7 +1160,7 @@ static uint64_t rocker_io_readq(void *opaque, hwaddr addr)
         ret = r->switch_id;
         break;
     default:
-        DPRINTF("not implemented read(q) addr=0x" TARGET_FMT_plx "\n", addr);
+        DPRINTF("not implemented read(q) addr=0x" HWADDR_FMT_plx "\n", addr);
         ret = 0;
         break;
     }
@@ -1174,7 +1169,7 @@ static uint64_t rocker_io_readq(void *opaque, hwaddr addr)
 
 static uint64_t rocker_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
-    DPRINTF("Read %s addr " TARGET_FMT_plx ", size %u\n",
+    DPRINTF("Read %s addr " HWADDR_FMT_plx ", size %u\n",
             rocker_reg_name(opaque, addr), addr, size);
 
     switch (size) {
@@ -1233,7 +1228,7 @@ static int rocker_msix_init(Rocker *r, Error **errp)
                     &r->msix_bar,
                     ROCKER_PCI_MSIX_BAR_IDX, ROCKER_PCI_MSIX_PBA_OFFSET,
                     0, errp);
-    if (err) {
+    if (err < 0) {
         return err;
     }
 
@@ -1434,7 +1429,6 @@ static void pci_rocker_uninit(PCIDevice *dev)
             world_free(r->worlds[i]);
         }
     }
-    g_free(r->fp_ports_peers);
 }
 
 static void rocker_reset(DeviceState *dev)
@@ -1464,7 +1458,7 @@ static void rocker_reset(DeviceState *dev)
     DPRINTF("Reset done\n");
 }
 
-static Property rocker_properties[] = {
+static const Property rocker_properties[] = {
     DEFINE_PROP_STRING("name", Rocker, name),
     DEFINE_PROP_STRING("world", Rocker, world_name),
     DEFINE_PROP_MACADDR("fp_start_macaddr", Rocker,
@@ -1473,7 +1467,6 @@ static Property rocker_properties[] = {
                        switch_id, 0),
     DEFINE_PROP_ARRAY("ports", Rocker, fp_ports,
                       fp_ports_peers, qdev_prop_netdev, NICPeers),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription rocker_vmsd = {
@@ -1481,7 +1474,7 @@ static const VMStateDescription rocker_vmsd = {
     .unmigratable = 1,
 };
 
-static void rocker_class_init(ObjectClass *klass, void *data)
+static void rocker_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -1494,7 +1487,7 @@ static void rocker_class_init(ObjectClass *klass, void *data)
     k->class_id = PCI_CLASS_NETWORK_OTHER;
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
     dc->desc = "Rocker Switch";
-    dc->reset = rocker_reset;
+    device_class_set_legacy_reset(dc, rocker_reset);
     device_class_set_props(dc, rocker_properties);
     dc->vmsd = &rocker_vmsd;
 }
@@ -1504,7 +1497,7 @@ static const TypeInfo rocker_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(Rocker),
     .class_init    = rocker_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

@@ -14,12 +14,12 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "trace.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/registerfields.h"
-#include "hw/irq.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/irq.h"
 #include "hw/misc/tz-mpc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 /* Our IOMMU has two IOMMU indexes, one for secure transactions and one for
  * non-secure transactions.
@@ -574,7 +574,7 @@ static const VMStateDescription tz_mpc_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = tz_mpc_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(ctrl, TZMPC),
         VMSTATE_UINT32(blk_idx, TZMPC),
         VMSTATE_UINT32(int_stat, TZMPC),
@@ -587,19 +587,18 @@ static const VMStateDescription tz_mpc_vmstate = {
     }
 };
 
-static Property tz_mpc_properties[] = {
+static const Property tz_mpc_properties[] = {
     DEFINE_PROP_LINK("downstream", TZMPC, downstream,
                      TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void tz_mpc_class_init(ObjectClass *klass, void *data)
+static void tz_mpc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = tz_mpc_realize;
     dc->vmsd = &tz_mpc_vmstate;
-    dc->reset = tz_mpc_reset;
+    device_class_set_legacy_reset(dc, tz_mpc_reset);
     device_class_set_props(dc, tz_mpc_properties);
 }
 
@@ -612,7 +611,7 @@ static const TypeInfo tz_mpc_info = {
 };
 
 static void tz_mpc_iommu_memory_region_class_init(ObjectClass *klass,
-                                                  void *data)
+                                                  const void *data)
 {
     IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
 

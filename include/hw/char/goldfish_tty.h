@@ -12,6 +12,7 @@
 
 #include "qemu/fifo8.h"
 #include "chardev/char-fe.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_GOLDFISH_TTY "goldfish_tty"
 OBJECT_DECLARE_SIMPLE_TYPE(GoldfishTTYState, GOLDFISH_TTY)
@@ -23,7 +24,7 @@ struct GoldfishTTYState {
 
     MemoryRegion iomem;
     qemu_irq irq;
-    CharBackend chr;
+    CharFrontend chr;
 
     uint32_t data_len;
     uint64_t data_ptr;

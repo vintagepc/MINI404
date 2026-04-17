@@ -21,7 +21,7 @@
 #ifndef HW_SIFIVE_PLIC_H
 #define HW_SIFIVE_PLIC_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 
 #define TYPE_SIFIVE_PLIC "riscv.sifive.plic"
@@ -33,7 +33,6 @@ DECLARE_INSTANCE_CHECKER(SiFivePLICState, SIFIVE_PLIC,
 typedef enum PLICMode {
     PLICMode_U,
     PLICMode_S,
-    PLICMode_H,
     PLICMode_M
 } PLICMode;
 

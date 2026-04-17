@@ -27,70 +27,72 @@
 /***********************************************************/
 /* x86 debug */
 
-static const char *cc_op_str[CC_OP_NB] = {
-    "DYNAMIC",
-    "EFLAGS",
+static const char * const cc_op_str[] = {
+    [CC_OP_DYNAMIC] = "DYNAMIC",
 
-    "MULB",
-    "MULW",
-    "MULL",
-    "MULQ",
+    [CC_OP_EFLAGS] = "EFLAGS",
+    [CC_OP_ADCX] = "ADCX",
+    [CC_OP_ADOX] = "ADOX",
+    [CC_OP_ADCOX] = "ADCOX",
 
-    "ADDB",
-    "ADDW",
-    "ADDL",
-    "ADDQ",
+    [CC_OP_MULB] = "MULB",
+    [CC_OP_MULW] = "MULW",
+    [CC_OP_MULL] = "MULL",
+    [CC_OP_MULQ] = "MULQ",
 
-    "ADCB",
-    "ADCW",
-    "ADCL",
-    "ADCQ",
+    [CC_OP_ADDB] = "ADDB",
+    [CC_OP_ADDW] = "ADDW",
+    [CC_OP_ADDL] = "ADDL",
+    [CC_OP_ADDQ] = "ADDQ",
 
-    "SUBB",
-    "SUBW",
-    "SUBL",
-    "SUBQ",
+    [CC_OP_ADCB] = "ADCB",
+    [CC_OP_ADCW] = "ADCW",
+    [CC_OP_ADCL] = "ADCL",
+    [CC_OP_ADCQ] = "ADCQ",
 
-    "SBBB",
-    "SBBW",
-    "SBBL",
-    "SBBQ",
+    [CC_OP_SUBB] = "SUBB",
+    [CC_OP_SUBW] = "SUBW",
+    [CC_OP_SUBL] = "SUBL",
+    [CC_OP_SUBQ] = "SUBQ",
 
-    "LOGICB",
-    "LOGICW",
-    "LOGICL",
-    "LOGICQ",
+    [CC_OP_SBBB] = "SBBB",
+    [CC_OP_SBBW] = "SBBW",
+    [CC_OP_SBBL] = "SBBL",
+    [CC_OP_SBBQ] = "SBBQ",
 
-    "INCB",
-    "INCW",
-    "INCL",
-    "INCQ",
+    [CC_OP_LOGICB] = "LOGICB",
+    [CC_OP_LOGICW] = "LOGICW",
+    [CC_OP_LOGICL] = "LOGICL",
+    [CC_OP_LOGICQ] = "LOGICQ",
 
-    "DECB",
-    "DECW",
-    "DECL",
-    "DECQ",
+    [CC_OP_INCB] = "INCB",
+    [CC_OP_INCW] = "INCW",
+    [CC_OP_INCL] = "INCL",
+    [CC_OP_INCQ] = "INCQ",
 
-    "SHLB",
-    "SHLW",
-    "SHLL",
-    "SHLQ",
+    [CC_OP_DECB] = "DECB",
+    [CC_OP_DECW] = "DECW",
+    [CC_OP_DECL] = "DECL",
+    [CC_OP_DECQ] = "DECQ",
 
-    "SARB",
-    "SARW",
-    "SARL",
-    "SARQ",
+    [CC_OP_SHLB] = "SHLB",
+    [CC_OP_SHLW] = "SHLW",
+    [CC_OP_SHLL] = "SHLL",
+    [CC_OP_SHLQ] = "SHLQ",
 
-    "BMILGB",
-    "BMILGW",
-    "BMILGL",
-    "BMILGQ",
+    [CC_OP_SARB] = "SARB",
+    [CC_OP_SARW] = "SARW",
+    [CC_OP_SARL] = "SARL",
+    [CC_OP_SARQ] = "SARQ",
 
-    "ADCX",
-    "ADOX",
-    "ADCOX",
+    [CC_OP_BMILGB] = "BMILGB",
+    [CC_OP_BMILGW] = "BMILGW",
+    [CC_OP_BMILGL] = "BMILGL",
+    [CC_OP_BMILGQ] = "BMILGQ",
 
-    "CLR",
+    [CC_OP_POPCNT] = "POPCNT",
+
+    [CC_OP_SBB_SELF] = "SBBx,x",
 };
 
 static void
@@ -291,7 +293,7 @@ static void dump_apic_interrupt(const char *name, uint32_t *ireg_tab,
 void x86_cpu_dump_local_apic_state(CPUState *cs, int flags)
 {
     X86CPU *cpu = X86_CPU(cs);
-    APICCommonState *s = APIC_COMMON(cpu->apic_state);
+    APICCommonState *s = cpu->apic_state;
     if (!s) {
         qemu_printf("local apic state not available\n");
         return;
@@ -335,10 +337,7 @@ void x86_cpu_dump_local_apic_state(CPUState *cs, int flags)
     }
     qemu_printf(" PPR 0x%02x\n", apic_get_ppr(s));
 }
-#else
-void x86_cpu_dump_local_apic_state(CPUState *cs, int flags)
-{
-}
+
 #endif /* !CONFIG_USER_ONLY */
 
 #define DUMP_CODE_BYTES_TOTAL    50
@@ -349,7 +348,6 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env = &cpu->env;
     int eflags, i, nb;
-    char cc_op_name[32];
     static const char *seg_name[6] = { "ES", "CS", "SS", "DS", "FS", "GS" };
 
     eflags = cpu_compute_eflags(env);
@@ -358,8 +356,7 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
         qemu_fprintf(f, "RAX=%016" PRIx64 " RBX=%016" PRIx64 " RCX=%016" PRIx64 " RDX=%016" PRIx64 "\n"
                      "RSI=%016" PRIx64 " RDI=%016" PRIx64 " RBP=%016" PRIx64 " RSP=%016" PRIx64 "\n"
                      "R8 =%016" PRIx64 " R9 =%016" PRIx64 " R10=%016" PRIx64 " R11=%016" PRIx64 "\n"
-                     "R12=%016" PRIx64 " R13=%016" PRIx64 " R14=%016" PRIx64 " R15=%016" PRIx64 "\n"
-                     "RIP=%016" PRIx64 " RFL=%08x [%c%c%c%c%c%c%c] CPL=%d II=%d A20=%d SMM=%d HLT=%d\n",
+                     "R12=%016" PRIx64 " R13=%016" PRIx64 " R14=%016" PRIx64 " R15=%016" PRIx64 "\n",
                      env->regs[R_EAX],
                      env->regs[R_EBX],
                      env->regs[R_ECX],
@@ -375,7 +372,32 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
                      env->regs[12],
                      env->regs[13],
                      env->regs[14],
-                     env->regs[15],
+                     env->regs[15]);
+
+        if (env->features[FEAT_7_1_EDX] & CPUID_7_1_EDX_APXF) {
+            qemu_fprintf(f, "R16=%016" PRIx64 " R17=%016" PRIx64 " R18=%016" PRIx64 " R19=%016" PRIx64 "\n"
+                         "R20=%016" PRIx64 " R21=%016" PRIx64 " R22=%016" PRIx64 " R23=%016" PRIx64 "\n"
+                         "R24=%016" PRIx64 " R25=%016" PRIx64 " R26=%016" PRIx64 " R27=%016" PRIx64 "\n"
+                         "R28=%016" PRIx64 " R29=%016" PRIx64 " R30=%016" PRIx64 " R31=%016" PRIx64 "\n",
+                         env->regs[16],
+                         env->regs[17],
+                         env->regs[18],
+                         env->regs[19],
+                         env->regs[20],
+                         env->regs[21],
+                         env->regs[22],
+                         env->regs[23],
+                         env->regs[24],
+                         env->regs[25],
+                         env->regs[26],
+                         env->regs[27],
+                         env->regs[28],
+                         env->regs[29],
+                         env->regs[30],
+                         env->regs[31]);
+        }
+
+        qemu_fprintf(f, "RIP=%016" PRIx64 " RFL=%08x [%c%c%c%c%c%c%c] CPL=%d II=%d A20=%d SMM=%d HLT=%d\n",
                      env->eip, eflags,
                      eflags & DF_MASK ? 'D' : '-',
                      eflags & CC_O ? 'O' : '-',
@@ -458,10 +480,16 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
                      env->dr[6], env->dr[7]);
     }
     if (flags & CPU_DUMP_CCOP) {
-        if ((unsigned)env->cc_op < CC_OP_NB)
-            snprintf(cc_op_name, sizeof(cc_op_name), "%s", cc_op_str[env->cc_op]);
-        else
-            snprintf(cc_op_name, sizeof(cc_op_name), "[%d]", env->cc_op);
+        const char *cc_op_name = NULL;
+        char cc_op_buf[32];
+
+        if ((unsigned)env->cc_op < ARRAY_SIZE(cc_op_str)) {
+            cc_op_name = cc_op_str[env->cc_op];
+        }
+        if (cc_op_name == NULL) {
+            snprintf(cc_op_buf, sizeof(cc_op_buf), "[%d]", env->cc_op);
+            cc_op_name = cc_op_buf;
+        }
 #ifdef TARGET_X86_64
         if (env->hflags & HF_CS64_MASK) {
             qemu_fprintf(f, "CCS=%016" PRIx64 " CCD=%016" PRIx64 " CCO=%s\n",

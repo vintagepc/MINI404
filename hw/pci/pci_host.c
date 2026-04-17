@@ -22,7 +22,7 @@
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/pci_host.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "hw/pci/pci_bus.h"
 #include "migration/vmstate.h"
@@ -62,6 +62,17 @@ static void pci_adjust_config_limit(PCIBus *bus, uint32_t *limit)
     }
 }
 
+static bool is_pci_dev_ejected(PCIDevice *pci_dev)
+{
+    /*
+     * device unplug was requested and the guest acked it,
+     * so we stop responding config accesses even if the
+     * device is not deleted (failover flow)
+     */
+    return pci_dev && pci_dev->partially_hotplugged &&
+           !pci_dev->qdev.pending_deleted_event;
+}
+
 void pci_host_config_write_common(PCIDevice *pci_dev, uint32_t addr,
                                   uint32_t limit, uint32_t val, uint32_t len)
 {
@@ -75,7 +86,7 @@ void pci_host_config_write_common(PCIDevice *pci_dev, uint32_t addr,
      * allowing direct removal of unexposed functions.
      */
     if ((pci_dev->qdev.hotplugged && !pci_get_function_0(pci_dev)) ||
-        !pci_dev->has_power) {
+        !pci_dev->enabled || is_pci_dev_ejected(pci_dev)) {
         return;
     }
 
@@ -100,7 +111,7 @@ uint32_t pci_host_config_read_common(PCIDevice *pci_dev, uint32_t addr,
      * allowing direct removal of unexposed functions.
      */
     if ((pci_dev->qdev.hotplugged && !pci_get_function_0(pci_dev)) ||
-        !pci_dev->has_power) {
+        !pci_dev->enabled || is_pci_dev_ejected(pci_dev)) {
         return ~0x0;
     }
 
@@ -118,6 +129,9 @@ void pci_data_write(PCIBus *s, uint32_t addr, uint32_t val, unsigned len)
     uint32_t config_addr = addr & (PCI_CONFIG_SPACE_SIZE - 1);
 
     if (!pci_dev) {
+        trace_pci_cfg_write("empty", extract32(addr, 16, 8),
+                            extract32(addr, 11, 5), extract32(addr, 8, 3),
+                            config_addr, val);
         return;
     }
 
@@ -131,6 +145,9 @@ uint32_t pci_data_read(PCIBus *s, uint32_t addr, unsigned len)
     uint32_t config_addr = addr & (PCI_CONFIG_SPACE_SIZE - 1);
 
     if (!pci_dev) {
+        trace_pci_cfg_read("empty", extract32(addr, 16, 8),
+                           extract32(addr, 11, 5), extract32(addr, 8, 3),
+                           config_addr, ~0x0);
         return ~0x0;
     }
 
@@ -143,7 +160,7 @@ static void pci_host_config_write(void *opaque, hwaddr addr,
 {
     PCIHostState *s = opaque;
 
-    PCI_DPRINTF("%s addr " TARGET_FMT_plx " len %d val %"PRIx64"\n",
+    PCI_DPRINTF("%s addr " HWADDR_FMT_plx " len %d val %"PRIx64"\n",
                 __func__, addr, len, val);
     if (addr != 0 || len != 4) {
         return;
@@ -157,7 +174,7 @@ static uint64_t pci_host_config_read(void *opaque, hwaddr addr,
     PCIHostState *s = opaque;
     uint32_t val = s->config_reg;
 
-    PCI_DPRINTF("%s addr " TARGET_FMT_plx " len %d val %"PRIx32"\n",
+    PCI_DPRINTF("%s addr " HWADDR_FMT_plx " len %d val %"PRIx32"\n",
                 __func__, addr, len, val);
     return val;
 }
@@ -200,12 +217,6 @@ const MemoryRegionOps pci_host_data_le_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
-const MemoryRegionOps pci_host_data_be_ops = {
-    .read = pci_host_data_read,
-    .write = pci_host_data_write,
-    .endianness = DEVICE_BIG_ENDIAN,
-};
-
 static bool pci_host_needed(void *opaque)
 {
     PCIHostState *s = opaque;
@@ -217,24 +228,24 @@ const VMStateDescription vmstate_pcihost = {
     .needed = pci_host_needed,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(config_reg, PCIHostState),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property pci_host_properties_common[] = {
+static const Property pci_host_properties_common[] = {
     DEFINE_PROP_BOOL("x-config-reg-migration-enabled", PCIHostState,
                      mig_enabled, true),
-    DEFINE_PROP_BOOL("bypass-iommu", PCIHostState, bypass_iommu, false),
-    DEFINE_PROP_END_OF_LIST(),
+    DEFINE_PROP_BOOL(PCI_HOST_BYPASS_IOMMU, PCIHostState, bypass_iommu, false),
 };
 
-static void pci_host_class_init(ObjectClass *klass, void *data)
+static void pci_host_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, pci_host_properties_common);
     dc->vmsd = &vmstate_pcihost;
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
 }
 
 static const TypeInfo pci_host_type_info = {

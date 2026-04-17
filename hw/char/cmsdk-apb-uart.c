@@ -20,14 +20,14 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "trace.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 #include "chardev/char-fe.h"
 #include "chardev/char-serial.h"
 #include "hw/char/cmsdk-apb-uart.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties-system.h"
 
 REG32(DATA, 0)
 REG32(STATE, 4)
@@ -159,6 +159,10 @@ static uint64_t uart_read(void *opaque, hwaddr offset, unsigned size)
     switch (offset) {
     case A_DATA:
         r = s->rxbuf;
+        if (!(s->ctrl & R_CTRL_RX_EN_MASK)) {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "CMSDK APB UART: receive data read with Rx disabled\n");
+        }
         s->state &= ~R_STATE_RXFULL_MASK;
         cmsdk_apb_uart_update(s);
         qemu_chr_fe_accept_input(&s->chr);
@@ -199,7 +203,7 @@ static gboolean uart_transmit(void *do_not_use, GIOCondition cond, void *opaque)
     s->watch_tag = 0;
 
     if (!(s->ctrl & R_CTRL_TX_EN_MASK) || !(s->state & R_STATE_TXFULL_MASK)) {
-        return FALSE;
+        return G_SOURCE_REMOVE;
     }
 
     ret = qemu_chr_fe_write(&s->chr, &s->txbuf, 1);
@@ -215,7 +219,7 @@ static gboolean uart_transmit(void *do_not_use, GIOCondition cond, void *opaque)
         }
         /* Transmit pending */
         trace_cmsdk_apb_uart_tx_pending();
-        return FALSE;
+        return G_SOURCE_REMOVE;
     }
 
 buffer_drained:
@@ -227,7 +231,7 @@ buffer_drained:
         s->intstatus |= R_INTSTATUS_TX_MASK;
     }
     cmsdk_apb_uart_update(s);
-    return FALSE;
+    return G_SOURCE_REMOVE;
 }
 
 static void uart_cancel_transmit(CMSDKAPBUART *s)
@@ -248,6 +252,10 @@ static void uart_write(void *opaque, hwaddr offset, uint64_t value,
     switch (offset) {
     case A_DATA:
         s->txbuf = value;
+        if (!(s->ctrl & R_CTRL_TX_EN_MASK)) {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "CMSDK APB UART: transmit data write with Tx disabled\n");
+        }
         if (s->state & R_STATE_TXFULL_MASK) {
             /* Buffer already full -- note the overrun and let the
              * existing pending transmit callback handle the new char.
@@ -366,7 +374,7 @@ static const VMStateDescription cmsdk_apb_uart_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = cmsdk_apb_uart_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(state, CMSDKAPBUART),
         VMSTATE_UINT32(ctrl, CMSDKAPBUART),
         VMSTATE_UINT32(intstatus, CMSDKAPBUART),
@@ -377,19 +385,18 @@ static const VMStateDescription cmsdk_apb_uart_vmstate = {
     }
 };
 
-static Property cmsdk_apb_uart_properties[] = {
+static const Property cmsdk_apb_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", CMSDKAPBUART, chr),
     DEFINE_PROP_UINT32("pclk-frq", CMSDKAPBUART, pclk_frq, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void cmsdk_apb_uart_class_init(ObjectClass *klass, void *data)
+static void cmsdk_apb_uart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = cmsdk_apb_uart_realize;
     dc->vmsd = &cmsdk_apb_uart_vmstate;
-    dc->reset = cmsdk_apb_uart_reset;
+    device_class_set_legacy_reset(dc, cmsdk_apb_uart_reset);
     device_class_set_props(dc, cmsdk_apb_uart_properties);
 }
 

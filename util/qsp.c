@@ -83,8 +83,8 @@ typedef struct QSPCallSite QSPCallSite;
 struct QSPEntry {
     void *thread_ptr;
     const QSPCallSite *callsite;
-    aligned_uint64_t n_acqs;
-    aligned_uint64_t ns;
+    uint64_t n_acqs;
+    uint64_t ns;
     unsigned int n_objs; /* count of coalesced objs; only used for reporting */
 };
 typedef struct QSPEntry QSPEntry;
@@ -124,7 +124,7 @@ static const char * const qsp_typenames[] = {
     [QSP_CONDVAR]   = "condvar",
 };
 
-QemuMutexLockFunc qemu_bql_mutex_lock_func = qemu_mutex_lock_impl;
+QemuMutexLockFunc bql_mutex_lock_func = qemu_mutex_lock_impl;
 QemuMutexLockFunc qemu_mutex_lock_func = qemu_mutex_lock_impl;
 QemuMutexTrylockFunc qemu_mutex_trylock_func = qemu_mutex_trylock_impl;
 QemuRecMutexLockFunc qemu_rec_mutex_lock_func = qemu_rec_mutex_lock_impl;
@@ -144,7 +144,7 @@ uint32_t do_qsp_callsite_hash(const QSPCallSite *callsite, uint64_t ab)
     uint32_t e = callsite->line;
     uint32_t f = callsite->type;
 
-    return qemu_xxhash6(ab, cd, e, f);
+    return qemu_xxhash8(ab, cd, 0, e, f);
 }
 
 static inline
@@ -346,9 +346,9 @@ static QSPEntry *qsp_entry_get(const void *obj, const char *file, int line,
  */
 static inline void do_qsp_entry_record(QSPEntry *e, int64_t delta, bool acq)
 {
-    qatomic_set_u64(&e->ns, e->ns + delta);
+    qatomic_set(&e->ns, e->ns + delta);
     if (acq) {
-        qatomic_set_u64(&e->n_acqs, e->n_acqs + 1);
+        qatomic_set(&e->n_acqs, e->n_acqs + 1);
     }
 }
 
@@ -439,7 +439,7 @@ void qsp_enable(void)
 {
     qatomic_set(&qemu_mutex_lock_func, qsp_mutex_lock);
     qatomic_set(&qemu_mutex_trylock_func, qsp_mutex_trylock);
-    qatomic_set(&qemu_bql_mutex_lock_func, qsp_bql_mutex_lock);
+    qatomic_set(&bql_mutex_lock_func, qsp_bql_mutex_lock);
     qatomic_set(&qemu_rec_mutex_lock_func, qsp_rec_mutex_lock);
     qatomic_set(&qemu_rec_mutex_trylock_func, qsp_rec_mutex_trylock);
     qatomic_set(&qemu_cond_wait_func, qsp_cond_wait);
@@ -450,7 +450,7 @@ void qsp_disable(void)
 {
     qatomic_set(&qemu_mutex_lock_func, qemu_mutex_lock_impl);
     qatomic_set(&qemu_mutex_trylock_func, qemu_mutex_trylock_impl);
-    qatomic_set(&qemu_bql_mutex_lock_func, qemu_mutex_lock_impl);
+    qatomic_set(&bql_mutex_lock_func, qemu_mutex_lock_impl);
     qatomic_set(&qemu_rec_mutex_lock_func, qemu_rec_mutex_lock_impl);
     qatomic_set(&qemu_rec_mutex_trylock_func, qemu_rec_mutex_trylock_impl);
     qatomic_set(&qemu_cond_wait_func, qemu_cond_wait_impl);
@@ -538,8 +538,8 @@ static void qsp_aggregate(void *p, uint32_t h, void *up)
      * The entry is in the global hash table; read from it atomically (as in
      * "read once").
      */
-    agg->ns += qatomic_read_u64(&e->ns);
-    agg->n_acqs += qatomic_read_u64(&e->n_acqs);
+    agg->ns += qatomic_read(&e->ns);
+    agg->n_acqs += qatomic_read(&e->n_acqs);
 }
 
 static void qsp_iter_diff(void *p, uint32_t hash, void *htp)

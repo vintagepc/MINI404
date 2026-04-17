@@ -15,9 +15,9 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/arm/nrf51.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/timer/nrf51_timer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "trace.h"
 
@@ -45,7 +45,12 @@ static uint32_t update_counter(NRF51TimerState *s, int64_t now)
     uint32_t ticks = ns_to_ticks(s, now - s->update_counter_ns);
 
     s->counter = (s->counter + ticks) % BIT(bitwidths[s->bitmode]);
-    s->update_counter_ns = now;
+    /*
+     * Only advance the sync time to the timestamp of the last tick,
+     * not all the way to 'now', so we don't lose time if we do
+     * multiple resyncs in a single tick.
+     */
+    s->update_counter_ns += ticks_to_ns(s, ticks);
     return ticks;
 }
 
@@ -356,7 +361,7 @@ static const VMStateDescription vmstate_nrf51_timer = {
     .name = TYPE_NRF51_TIMER,
     .version_id = 1,
     .post_load = nrf51_timer_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER(timer, NRF51TimerState),
         VMSTATE_INT64(timer_start_ns, NRF51TimerState),
         VMSTATE_INT64(update_counter_ns, NRF51TimerState),
@@ -374,16 +379,15 @@ static const VMStateDescription vmstate_nrf51_timer = {
     }
 };
 
-static Property nrf51_timer_properties[] = {
+static const Property nrf51_timer_properties[] = {
     DEFINE_PROP_UINT8("id", NRF51TimerState, id, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void nrf51_timer_class_init(ObjectClass *klass, void *data)
+static void nrf51_timer_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = nrf51_timer_reset;
+    device_class_set_legacy_reset(dc, nrf51_timer_reset);
     dc->vmsd = &vmstate_nrf51_timer;
     device_class_set_props(dc, nrf51_timer_properties);
 }

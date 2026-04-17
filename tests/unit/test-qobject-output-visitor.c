@@ -15,12 +15,12 @@
 #include "qapi/error.h"
 #include "qapi/qobject-output-visitor.h"
 #include "test-qapi-visit.h"
-#include "qapi/qmp/qbool.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qlist.h"
-#include "qapi/qmp/qnull.h"
-#include "qapi/qmp/qnum.h"
-#include "qapi/qmp/qstring.h"
+#include "qobject/qbool.h"
+#include "qobject/qdict.h"
+#include "qobject/qlist.h"
+#include "qobject/qnull.h"
+#include "qobject/qnum.h"
+#include "qobject/qstring.h"
 
 typedef struct TestOutputVisitorData {
     Visitor *ov;
@@ -182,7 +182,6 @@ static void test_visitor_out_struct_nested(TestOutputVisitorData *data,
     ud2->dict1->dict2->string = g_strdup(strings[2]);
 
     ud2->dict1->dict3 = g_malloc0(sizeof(*ud2->dict1->dict3));
-    ud2->dict1->has_dict3 = true;
     ud2->dict1->dict3->userdef = g_new0(UserDefOne, 1);
     ud2->dict1->dict3->userdef->string = g_strdup(string);
     ud2->dict1->dict3->userdef->integer = value;
@@ -284,7 +283,6 @@ static void test_visitor_out_list_qapi_free(TestOutputVisitorData *data,
         value->dict1->dict2->userdef->string = g_strdup(string);
         value->dict1->dict2->userdef->integer = 42;
         value->dict1->dict2->string = g_strdup(string);
-        value->dict1->has_dict3 = false;
 
         QAPI_LIST_PREPEND(head, value);
     }
@@ -352,6 +350,62 @@ static void test_visitor_out_union_flat(TestOutputVisitorData *data,
     g_assert_cmpint(qdict_get_bool(qdict, "boolean"), ==, true);
 
     qapi_free_UserDefFlatUnion(tmp);
+}
+
+static void test_visitor_out_union_in_union(TestOutputVisitorData *data,
+                                            const void *unused)
+{
+    QDict *qdict;
+
+    TestUnionInUnion *tmp = g_new0(TestUnionInUnion, 1);
+    tmp->type = TEST_UNION_ENUM_VALUE_A;
+    tmp->u.value_a.type_a = TEST_UNION_ENUM_A_VALUE_A1;
+    tmp->u.value_a.u.value_a1.integer = 42;
+    tmp->u.value_a.u.value_a1.name = g_strdup("fish");
+
+    visit_type_TestUnionInUnion(data->ov, NULL, &tmp, &error_abort);
+    qdict = qobject_to(QDict, visitor_get(data));
+    g_assert(qdict);
+    g_assert_cmpstr(qdict_get_str(qdict, "type"), ==, "value-a");
+    g_assert_cmpstr(qdict_get_str(qdict, "type-a"), ==, "value-a1");
+    g_assert_cmpint(qdict_get_int(qdict, "integer"), ==, 42);
+    g_assert_cmpstr(qdict_get_str(qdict, "name"), ==, "fish");
+
+    qapi_free_TestUnionInUnion(tmp);
+
+
+    visitor_reset(data);
+    tmp = g_new0(TestUnionInUnion, 1);
+    tmp->type = TEST_UNION_ENUM_VALUE_A;
+    tmp->u.value_a.type_a = TEST_UNION_ENUM_A_VALUE_A2;
+    tmp->u.value_a.u.value_a2.integer = 1729;
+    tmp->u.value_a.u.value_a2.size = 87539319;
+
+    visit_type_TestUnionInUnion(data->ov, NULL, &tmp, &error_abort);
+    qdict = qobject_to(QDict, visitor_get(data));
+    g_assert(qdict);
+    g_assert_cmpstr(qdict_get_str(qdict, "type"), ==, "value-a");
+    g_assert_cmpstr(qdict_get_str(qdict, "type-a"), ==, "value-a2");
+    g_assert_cmpint(qdict_get_int(qdict, "integer"), ==, 1729);
+    g_assert_cmpint(qdict_get_int(qdict, "size"), ==, 87539319);
+
+    qapi_free_TestUnionInUnion(tmp);
+
+
+    visitor_reset(data);
+    tmp = g_new0(TestUnionInUnion, 1);
+    tmp->type = TEST_UNION_ENUM_VALUE_B;
+    tmp->u.value_b.integer = 1729;
+    tmp->u.value_b.onoff = true;
+
+    visit_type_TestUnionInUnion(data->ov, NULL, &tmp, &error_abort);
+    qdict = qobject_to(QDict, visitor_get(data));
+    g_assert(qdict);
+    g_assert_cmpstr(qdict_get_str(qdict, "type"), ==, "value-b");
+    g_assert_cmpint(qdict_get_int(qdict, "integer"), ==, 1729);
+    g_assert_cmpint(qdict_get_bool(qdict, "onoff"), ==, true);
+
+    qapi_free_TestUnionInUnion(tmp);
 }
 
 static void test_visitor_out_alternate(TestOutputVisitorData *data,
@@ -484,7 +538,7 @@ static void test_visitor_out_list_struct(TestOutputVisitorData *data,
     }
 
     for (i = 31; i >= 0; i--) {
-        QAPI_LIST_PREPEND(arrs->number, (double)i / 3);
+        QAPI_LIST_PREPEND(arrs->number, (double)i / FLT_RADIX);
     }
 
     for (i = 31; i >= 0; i--) {
@@ -517,12 +571,9 @@ static void test_visitor_out_list_struct(TestOutputVisitorData *data,
     i = 0;
     QLIST_FOREACH_ENTRY(qlist, e) {
         QNum *qvalue = qobject_to(QNum, qlist_entry_obj(e));
-        char expected[32], actual[32];
 
         g_assert(qvalue);
-        sprintf(expected, "%.6f", (double)i / 3);
-        sprintf(actual, "%.6f", qnum_get_double(qvalue));
-        g_assert_cmpstr(actual, ==, expected);
+        g_assert_cmpfloat(qnum_get_double(qvalue), ==, (double)i / FLT_RADIX);
         i++;
     }
 
@@ -588,6 +639,8 @@ int main(int argc, char **argv)
                             &out_visitor_data, test_visitor_out_list_qapi_free);
     output_visitor_test_add("/visitor/output/union-flat",
                             &out_visitor_data, test_visitor_out_union_flat);
+    output_visitor_test_add("/visitor/output/union-in-union",
+                            &out_visitor_data, test_visitor_out_union_in_union);
     output_visitor_test_add("/visitor/output/alternate",
                             &out_visitor_data, test_visitor_out_alternate);
     output_visitor_test_add("/visitor/output/null",

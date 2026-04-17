@@ -24,11 +24,12 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
-#include "qemu/error-report.h"
-#include "audio.h"
+#include "qemu/audio.h"
 
-#define AUDIO_CAP "mixeng"
 #include "audio_int.h"
+#ifdef FLOAT_MIXENG
+#include "qemu/error-report.h"
+#endif
 
 /* 8 bit */
 #define ENDIAN_CONVERSION natural
@@ -283,10 +284,15 @@ static const float float_scale_reciprocal = 1.f / ((int64_t)INT32_MAX + 1);
 #endif
 #endif
 
+#define F32_TO_F32S(v) \
+    bswap32((union { uint32_t i; float f; }){ .f = (v) }.i)
+#define F32S_TO_F32(v) \
+    ((union { uint32_t i; float f; }){ .i = bswap32(v) }.f)
+
 static void conv_natural_float_to_mono(struct st_sample *dst, const void *src,
                                        int samples)
 {
-    float *in = (float *)src;
+    const float *in = src;
 
     while (samples--) {
         dst->r = dst->l = CONV_NATURAL_FLOAT(*in++);
@@ -294,10 +300,21 @@ static void conv_natural_float_to_mono(struct st_sample *dst, const void *src,
     }
 }
 
+static void conv_swap_float_to_mono(struct st_sample *dst, const void *src,
+                                    int samples)
+{
+    const uint32_t *in_f32s = src;
+
+    while (samples--) {
+        dst->r = dst->l = CONV_NATURAL_FLOAT(F32S_TO_F32(*in_f32s++));
+        dst++;
+    }
+}
+
 static void conv_natural_float_to_stereo(struct st_sample *dst, const void *src,
                                          int samples)
 {
-    float *in = (float *)src;
+    const float *in = src;
 
     while (samples--) {
         dst->l = CONV_NATURAL_FLOAT(*in++);
@@ -306,15 +323,33 @@ static void conv_natural_float_to_stereo(struct st_sample *dst, const void *src,
     }
 }
 
-t_sample *mixeng_conv_float[2] = {
-    conv_natural_float_to_mono,
-    conv_natural_float_to_stereo,
+static void conv_swap_float_to_stereo(struct st_sample *dst, const void *src,
+                                      int samples)
+{
+    const uint32_t *in_f32s = src;
+
+    while (samples--) {
+        dst->l = CONV_NATURAL_FLOAT(F32S_TO_F32(*in_f32s++));
+        dst->r = CONV_NATURAL_FLOAT(F32S_TO_F32(*in_f32s++));
+        dst++;
+    }
+}
+
+t_sample *mixeng_conv_float[2][2] = {
+    {
+        conv_natural_float_to_mono,
+        conv_swap_float_to_mono,
+    },
+    {
+        conv_natural_float_to_stereo,
+        conv_swap_float_to_stereo,
+    }
 };
 
 static void clip_natural_float_from_mono(void *dst, const struct st_sample *src,
                                          int samples)
 {
-    float *out = (float *)dst;
+    float *out = dst;
 
     while (samples--) {
         *out++ = CLIP_NATURAL_FLOAT(src->l + src->r);
@@ -322,10 +357,21 @@ static void clip_natural_float_from_mono(void *dst, const struct st_sample *src,
     }
 }
 
+static void clip_swap_float_from_mono(void *dst, const struct st_sample *src,
+                                      int samples)
+{
+    uint32_t *out_f32s = dst;
+
+    while (samples--) {
+        *out_f32s++ = F32_TO_F32S(CLIP_NATURAL_FLOAT(src->l + src->r));
+        src++;
+    }
+}
+
 static void clip_natural_float_from_stereo(
     void *dst, const struct st_sample *src, int samples)
 {
-    float *out = (float *)dst;
+    float *out = dst;
 
     while (samples--) {
         *out++ = CLIP_NATURAL_FLOAT(src->l);
@@ -334,12 +380,30 @@ static void clip_natural_float_from_stereo(
     }
 }
 
-f_sample *mixeng_clip_float[2] = {
-    clip_natural_float_from_mono,
-    clip_natural_float_from_stereo,
+static void clip_swap_float_from_stereo(
+    void *dst, const struct st_sample *src, int samples)
+{
+    uint32_t *out_f32s = dst;
+
+    while (samples--) {
+        *out_f32s++ = F32_TO_F32S(CLIP_NATURAL_FLOAT(src->l));
+        *out_f32s++ = F32_TO_F32S(CLIP_NATURAL_FLOAT(src->r));
+        src++;
+    }
+}
+
+f_sample *mixeng_clip_float[2][2] = {
+    {
+        clip_natural_float_from_mono,
+        clip_swap_float_from_mono,
+    },
+    {
+        clip_natural_float_from_stereo,
+        clip_swap_float_from_stereo,
+    }
 };
 
-void audio_sample_to_uint64(const void *samples, int pos,
+void audio_sample_to_uint64(const st_sample *sample, int pos,
                             uint64_t *left, uint64_t *right)
 {
 #ifdef FLOAT_MIXENG
@@ -347,14 +411,13 @@ void audio_sample_to_uint64(const void *samples, int pos,
         "Coreaudio and floating point samples are not supported by replay yet");
     abort();
 #else
-    const struct st_sample *sample = samples;
     sample += pos;
     *left = sample->l;
     *right = sample->r;
 #endif
 }
 
-void audio_sample_from_uint64(void *samples, int pos,
+void audio_sample_from_uint64(st_sample *sample, int pos,
                             uint64_t left, uint64_t right)
 {
 #ifdef FLOAT_MIXENG
@@ -362,7 +425,6 @@ void audio_sample_from_uint64(void *samples, int pos,
         "Coreaudio and floating point samples are not supported by replay yet");
     abort();
 #else
-    struct st_sample *sample = samples;
     sample += pos;
     sample->l = left;
     sample->r = right;
@@ -414,12 +476,7 @@ struct rate {
  */
 void *st_rate_start (int inrate, int outrate)
 {
-    struct rate *rate = audio_calloc(__func__, 1, sizeof(*rate));
-
-    if (!rate) {
-        dolog ("Could not allocate resampler (%zu bytes)\n", sizeof (*rate));
-        return NULL;
-    }
+    struct rate *rate = g_new0(struct rate, 1);
 
     rate->opos = 0;
 
@@ -443,6 +500,86 @@ void *st_rate_start (int inrate, int outrate)
 void st_rate_stop (void *opaque)
 {
     g_free (opaque);
+}
+
+/**
+ * st_rate_frames_out() - returns the number of frames the resampling code
+ * generates from frames_in frames
+ *
+ * @opaque: pointer to struct rate
+ * @frames_in: number of frames
+ *
+ * When upsampling, there may be more than one correct result. In this case,
+ * the function returns the maximum number of output frames the resampling
+ * code can generate.
+ */
+uint32_t st_rate_frames_out(void *opaque, uint32_t frames_in)
+{
+    struct rate *rate = opaque;
+    uint64_t opos_end, opos_delta;
+    uint32_t ipos_end;
+    uint32_t frames_out;
+
+    if (rate->opos_inc == 1ULL << 32) {
+        return frames_in;
+    }
+
+    /* no output frame without at least one input frame */
+    if (!frames_in) {
+        return 0;
+    }
+
+    /* last frame read was at rate->ipos - 1 */
+    ipos_end = rate->ipos - 1 + frames_in;
+    opos_end = (uint64_t)ipos_end << 32;
+
+    /* last frame written was at rate->opos - rate->opos_inc */
+    if (opos_end + rate->opos_inc <= rate->opos) {
+        return 0;
+    }
+    opos_delta = opos_end - rate->opos + rate->opos_inc;
+    frames_out = opos_delta / rate->opos_inc;
+
+    return opos_delta % rate->opos_inc ? frames_out : frames_out - 1;
+}
+
+/**
+ * st_rate_frames_in() - returns the number of frames needed to
+ * get frames_out frames after resampling
+ *
+ * @opaque: pointer to struct rate
+ * @frames_out: number of frames
+ *
+ * When downsampling, there may be more than one correct result. In this
+ * case, the function returns the maximum number of input frames needed.
+ */
+uint32_t st_rate_frames_in(void *opaque, uint32_t frames_out)
+{
+    struct rate *rate = opaque;
+    uint64_t opos_start, opos_end;
+    uint32_t ipos_start, ipos_end;
+
+    if (rate->opos_inc == 1ULL << 32) {
+        return frames_out;
+    }
+
+    if (frames_out) {
+        opos_start = rate->opos;
+        ipos_start = rate->ipos;
+    } else {
+        uint64_t offset;
+
+        /* add offset = ceil(opos_inc) to opos and ipos to avoid an underflow */
+        offset = (rate->opos_inc + (1ULL << 32) - 1) & ~((1ULL << 32) - 1);
+        opos_start = rate->opos + offset;
+        ipos_start = rate->ipos + (offset >> 32);
+    }
+    /* last frame written was at opos_start - rate->opos_inc */
+    opos_end = opos_start - rate->opos_inc + rate->opos_inc * frames_out;
+    ipos_end = (opos_end >> 32) + 1;
+
+    /* last frame read was at ipos_start - 1 */
+    return ipos_end + 1 > ipos_start ? ipos_end + 1 - ipos_start : 0;
 }
 
 void mixeng_clear (struct st_sample *buf, int len)

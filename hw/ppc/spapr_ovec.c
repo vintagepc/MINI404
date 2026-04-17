@@ -15,7 +15,8 @@
 #include "hw/ppc/spapr_ovec.h"
 #include "migration/vmstate.h"
 #include "qemu/bitmap.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
+#include "system/memory.h"
 #include "qemu/error-report.h"
 #include "trace.h"
 #include <libfdt.h>
@@ -36,7 +37,7 @@ const VMStateDescription vmstate_spapr_ovec = {
     .name = "spapr_option_vector",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BITMAP(bitmap, SpaprOptionVector, 1, bitmap_size),
         VMSTATE_END_OF_LIST()
     }

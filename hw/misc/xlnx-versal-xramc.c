@@ -10,10 +10,10 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "migration/vmstate.h"
-#include "hw/sysbus.h"
-#include "hw/register.h"
-#include "hw/qdev-properties.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/register.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/irq.h"
 #include "hw/misc/xlnx-versal-xramc.h"
 
 #ifndef XLNX_XRAM_CTRL_ERR_DEBUG
@@ -137,7 +137,7 @@ static void xram_ctrl_reset_enter(Object *obj, ResetType type)
     ARRAY_FIELD_DP32(s->regs, XRAM_IMP, SIZE, s->cfg.encoded_size);
 }
 
-static void xram_ctrl_reset_hold(Object *obj)
+static void xram_ctrl_reset_hold(Object *obj, ResetType type)
 {
     XlnxXramCtrl *s = XLNX_XRAM_CTRL(obj);
 
@@ -190,40 +190,34 @@ static void xram_ctrl_init(Object *obj)
 {
     XlnxXramCtrl *s = XLNX_XRAM_CTRL(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+    RegisterInfoArray *reg_array;
 
-    s->reg_array =
+    reg_array =
         register_init_block32(DEVICE(obj), xram_ctrl_regs_info,
                               ARRAY_SIZE(xram_ctrl_regs_info),
                               s->regs_info, s->regs,
                               &xram_ctrl_ops,
                               XLNX_XRAM_CTRL_ERR_DEBUG,
                               XRAM_CTRL_R_MAX * 4);
-    sysbus_init_mmio(sbd, &s->reg_array->mem);
+    sysbus_init_mmio(sbd, &reg_array->mem);
     sysbus_init_irq(sbd, &s->irq);
-}
-
-static void xram_ctrl_finalize(Object *obj)
-{
-    XlnxXramCtrl *s = XLNX_XRAM_CTRL(obj);
-    register_finalize_block(s->reg_array);
 }
 
 static const VMStateDescription vmstate_xram_ctrl = {
     .name = TYPE_XLNX_XRAM_CTRL,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, XlnxXramCtrl, XRAM_CTRL_R_MAX),
         VMSTATE_END_OF_LIST(),
     }
 };
 
-static Property xram_ctrl_properties[] = {
+static const Property xram_ctrl_properties[] = {
     DEFINE_PROP_UINT64("size", XlnxXramCtrl, cfg.size, 1 * MiB),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void xram_ctrl_class_init(ObjectClass *klass, void *data)
+static void xram_ctrl_class_init(ObjectClass *klass, const void *data)
 {
     ResettableClass *rc = RESETTABLE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -242,7 +236,6 @@ static const TypeInfo xram_ctrl_info = {
     .instance_size     = sizeof(XlnxXramCtrl),
     .class_init        = xram_ctrl_class_init,
     .instance_init     = xram_ctrl_init,
-    .instance_finalize = xram_ctrl_finalize,
 };
 
 static void xram_ctrl_register_types(void)

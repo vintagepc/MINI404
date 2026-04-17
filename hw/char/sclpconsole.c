@@ -19,8 +19,8 @@
 
 #include "hw/s390x/sclp.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/s390x/event-facility.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
@@ -35,7 +35,7 @@ typedef struct ASCIIConsoleData {
 
 struct SCLPConsole {
     SCLPEvent event;
-    CharBackend chr;
+    CharFrontend chr;
     uint8_t iov[SIZE_BUFFER_VT220];
     uint32_t iov_sclp;      /* offset in buf for SCLP read operation       */
     uint32_t iov_bs;        /* offset in buf for char layer read operation */
@@ -206,7 +206,7 @@ static const VMStateDescription vmstate_sclpconsole = {
     .name = "sclpconsole",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(event.event_pending, SCLPConsole),
         VMSTATE_UINT8_ARRAY(iov, SCLPConsole, SIZE_BUFFER_VT220),
         VMSTATE_UINT32(iov_sclp, SCLPConsole),
@@ -251,18 +251,17 @@ static void console_reset(DeviceState *dev)
    scon->notify = false;
 }
 
-static Property console_properties[] = {
+static const Property console_properties[] = {
     DEFINE_PROP_CHR("chardev", SCLPConsole, chr),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void console_class_init(ObjectClass *klass, void *data)
+static void console_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     SCLPEventClass *ec = SCLP_EVENT_CLASS(klass);
 
     device_class_set_props(dc, console_properties);
-    dc->reset = console_reset;
+    device_class_set_legacy_reset(dc, console_reset);
     dc->vmsd = &vmstate_sclpconsole;
     ec->init = console_init;
     ec->get_send_mask = send_mask;

@@ -11,17 +11,20 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "hw/boards.h"
+#include "exec/target_page.h"
+#include "hw/s390x/s390-virtio-ccw.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/s390x/storage-keys.h"
 #include "qapi/error.h"
-#include "qapi/qapi-commands-misc-target.h"
-#include "qapi/qmp/qdict.h"
+#include "qapi/qapi-commands-machine.h"
+#include "qobject/qdict.h"
 #include "qemu/error-report.h"
-#include "sysemu/memory_mapping.h"
-#include "exec/address-spaces.h"
-#include "sysemu/kvm.h"
+#include "system/memory_mapping.h"
+#include "system/address-spaces.h"
+#include "system/kvm.h"
 #include "migration/qemu-file-types.h"
 #include "migration/register.h"
+#include "trace.h"
 
 #define S390_SKEYS_BUFFER_SIZE (128 * KiB)  /* Room for 128k storage keys */
 #define S390_SKEYS_SAVE_FLAG_EOS 0x01
@@ -51,6 +54,32 @@ void s390_skeys_init(void)
     object_unref(obj);
 
     qdev_realize(DEVICE(obj), NULL, &error_fatal);
+}
+
+int s390_skeys_get(S390SKeysState *ks, uint64_t start_gfn,
+                   uint64_t count, uint8_t *keys)
+{
+    S390SKeysClass *kc = S390_SKEYS_GET_CLASS(ks);
+    int rc;
+
+    rc = kc->get_skeys(ks, start_gfn, count, keys);
+    if (rc) {
+        trace_s390_skeys_get_nonzero(rc);
+    }
+    return rc;
+}
+
+int s390_skeys_set(S390SKeysState *ks, uint64_t start_gfn,
+                   uint64_t count, uint8_t *keys)
+{
+    S390SKeysClass *kc = S390_SKEYS_GET_CLASS(ks);
+    int rc;
+
+    rc = kc->set_skeys(ks, start_gfn, count, keys);
+    if (rc) {
+        trace_s390_skeys_set_nonzero(rc);
+    }
+    return rc;
 }
 
 static void write_keys(FILE *f, uint8_t *keys, uint64_t startgfn,
@@ -114,7 +143,7 @@ void hmp_dump_skeys(Monitor *mon, const QDict *qdict)
     }
 }
 
-void qmp_dump_skeys(const char *filename, Error **errp)
+void s390_qmp_dump_skeys(const char *filename, Error **errp)
 {
     S390SKeysState *ss = s390_get_skeys_device();
     S390SKeysClass *skeyclass = S390_SKEYS_GET_CLASS(ss);
@@ -152,7 +181,7 @@ void qmp_dump_skeys(const char *filename, Error **errp)
         goto out;
     }
 
-    assert(qemu_mutex_iothread_locked());
+    assert(bql_locked());
     guest_phys_blocks_init(&guest_phys_blocks);
     guest_phys_blocks_append(&guest_phys_blocks);
 
@@ -223,9 +252,9 @@ static bool qemu_s390_enable_skeys(S390SKeysState *ss)
      *    g_once_init_enter() is good enough.
      */
     if (g_once_init_enter(&initialized)) {
-        MachineState *machine = MACHINE(qdev_get_machine());
+        S390CcwMachineState *s390ms = S390_CCW_MACHINE(qdev_get_machine());
 
-        skeys->key_count = machine->ram_size / TARGET_PAGE_SIZE;
+        skeys->key_count = s390_get_memory_limit(s390ms) / TARGET_PAGE_SIZE;
         skeys->keydata = g_malloc0(skeys->key_count);
         g_once_init_leave(&initialized, 1);
     }
@@ -274,7 +303,7 @@ static int qemu_s390_skeys_get(S390SKeysState *ss, uint64_t start_gfn,
     return 0;
 }
 
-static void qemu_s390_skeys_class_init(ObjectClass *oc, void *data)
+static void qemu_s390_skeys_class_init(ObjectClass *oc, const void *data)
 {
     S390SKeysClass *skeyclass = S390_SKEYS_CLASS(oc);
     DeviceClass *dc = DEVICE_CLASS(oc);
@@ -287,14 +316,6 @@ static void qemu_s390_skeys_class_init(ObjectClass *oc, void *data)
     /* Reason: Internal device (only one skeys device for the whole memory) */
     dc->user_creatable = false;
 }
-
-static const TypeInfo qemu_s390_skeys_info = {
-    .name          = TYPE_QEMU_S390_SKEYS,
-    .parent        = TYPE_S390_SKEYS,
-    .instance_size = sizeof(QEMUS390SKeysState),
-    .class_init    = qemu_s390_skeys_class_init,
-    .class_size    = sizeof(S390SKeysClass),
-};
 
 static void s390_storage_keys_save(QEMUFile *f, void *opaque)
 {
@@ -432,68 +453,48 @@ static int s390_storage_keys_load(QEMUFile *f, void *opaque, int version_id)
     return ret;
 }
 
-static inline bool s390_skeys_get_migration_enabled(Object *obj, Error **errp)
-{
-    S390SKeysState *ss = S390_SKEYS(obj);
-
-    return ss->migration_enabled;
-}
-
 static SaveVMHandlers savevm_s390_storage_keys = {
     .save_state = s390_storage_keys_save,
     .load_state = s390_storage_keys_load,
 };
 
-static inline void s390_skeys_set_migration_enabled(Object *obj, bool value,
-                                            Error **errp)
+static void s390_skeys_realize(DeviceState *dev, Error **errp)
 {
-    S390SKeysState *ss = S390_SKEYS(obj);
+    S390SKeysState *ss = S390_SKEYS(dev);
 
-    /* Prevent double registration of savevm handler */
-    if (ss->migration_enabled == value) {
-        return;
-    }
-
-    ss->migration_enabled = value;
-
-    if (ss->migration_enabled) {
-        register_savevm_live(TYPE_S390_SKEYS, 0, 1,
-                             &savevm_s390_storage_keys, ss);
-    } else {
-        unregister_savevm(VMSTATE_IF(ss), TYPE_S390_SKEYS, ss);
-    }
+    register_savevm_live(TYPE_S390_SKEYS, 0, 1, &savevm_s390_storage_keys, ss);
 }
 
-static void s390_skeys_instance_init(Object *obj)
-{
-    object_property_add_bool(obj, "migration-enabled",
-                             s390_skeys_get_migration_enabled,
-                             s390_skeys_set_migration_enabled);
-    object_property_set_bool(obj, "migration-enabled", true, NULL);
-}
-
-static void s390_skeys_class_init(ObjectClass *oc, void *data)
+static void s390_skeys_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     dc->hotpluggable = false;
+    dc->realize = s390_skeys_realize;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 
-static const TypeInfo s390_skeys_info = {
-    .name          = TYPE_S390_SKEYS,
-    .parent        = TYPE_DEVICE,
-    .instance_init = s390_skeys_instance_init,
-    .instance_size = sizeof(S390SKeysState),
-    .class_init    = s390_skeys_class_init,
-    .class_size    = sizeof(S390SKeysClass),
-    .abstract = true,
+static const TypeInfo s390_skeys_types[] = {
+    {
+        .name           = TYPE_DUMP_SKEYS_INTERFACE,
+        .parent         = TYPE_INTERFACE,
+        .class_size     = sizeof(DumpSKeysInterface),
+    },
+    {
+        .name           = TYPE_S390_SKEYS,
+        .parent         = TYPE_DEVICE,
+        .instance_size  = sizeof(S390SKeysState),
+        .class_init     = s390_skeys_class_init,
+        .class_size     = sizeof(S390SKeysClass),
+        .abstract       = true,
+    },
+    {
+        .name           = TYPE_QEMU_S390_SKEYS,
+        .parent         = TYPE_S390_SKEYS,
+        .instance_size  = sizeof(QEMUS390SKeysState),
+        .class_init     = qemu_s390_skeys_class_init,
+        .class_size     = sizeof(S390SKeysClass),
+    },
 };
 
-static void qemu_s390_skeys_register_types(void)
-{
-    type_register_static(&s390_skeys_info);
-    type_register_static(&qemu_s390_skeys_info);
-}
-
-type_init(qemu_s390_skeys_register_types)
+DEFINE_TYPES(s390_skeys_types)

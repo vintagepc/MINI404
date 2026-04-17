@@ -13,7 +13,7 @@
 #include <scsi/sg.h>
 
 #include "qapi/error.h"
-#include "block/aio.h"
+#include "qemu/aio.h"
 #include "block/thread-pool.h"
 #include "scsi/pr-manager.h"
 #include "trace.h"
@@ -21,7 +21,7 @@
 #include "qemu/module.h"
 #include "qapi/qapi-commands-block.h"
 
-#define PR_MANAGER_PATH     "/objects"
+#define PR_MANAGER_PATH     "objects"
 
 typedef struct PRManagerData {
     PRManager *pr_mgr;
@@ -51,7 +51,6 @@ static int pr_manager_worker(void *opaque)
 int coroutine_fn pr_manager_execute(PRManager *pr_mgr, AioContext *ctx, int fd,
                                     struct sg_io_hdr *hdr)
 {
-    ThreadPool *pool = aio_get_thread_pool(ctx);
     PRManagerData data = {
         .pr_mgr = pr_mgr,
         .fd     = fd,
@@ -62,7 +61,7 @@ int coroutine_fn pr_manager_execute(PRManager *pr_mgr, AioContext *ctx, int fd,
 
     /* The matching object_unref is in pr_manager_worker.  */
     object_ref(OBJECT(pr_mgr));
-    return thread_pool_submit_co(pool, pr_manager_worker, &data);
+    return thread_pool_submit_co(pr_manager_worker, &data);
 }
 
 bool pr_manager_is_connected(PRManager *pr_mgr)
@@ -78,7 +77,7 @@ static const TypeInfo pr_manager_info = {
     .name = TYPE_PR_MANAGER,
     .class_size = sizeof(PRManagerClass),
     .abstract = true,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_USER_CREATABLE },
         { }
     }
@@ -136,7 +135,7 @@ PRManagerInfoList *qmp_query_pr_managers(Error **errp)
 {
     PRManagerInfoList *head = NULL;
     PRManagerInfoList **prev = &head;
-    Object *container = container_get(object_get_root(), PR_MANAGER_PATH);
+    Object *container = object_get_container(PR_MANAGER_PATH);
 
     object_child_foreach(container, query_one_pr_manager, &prev);
     return head;

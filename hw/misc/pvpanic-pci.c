@@ -13,15 +13,15 @@
 
 #include "qemu/osdep.h"
 #include "qemu/module.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 
 #include "hw/nvram/fw_cfg.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/misc/pvpanic.h"
 #include "qom/object.h"
-#include "hw/pci/pci.h"
-#include "standard-headers/linux/pvpanic.h"
+#include "hw/pci/pci_device.h"
+#include "standard-headers/misc/pvpanic.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(PVPanicPCIState, PVPANIC_PCI_DEVICE)
 
@@ -37,7 +37,7 @@ static const VMStateDescription vmstate_pvpanic_pci = {
     .name = "pvpanic-pci",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(dev, PVPanicPCIState),
         VMSTATE_END_OF_LIST()
     }
@@ -48,18 +48,17 @@ static void pvpanic_pci_realizefn(PCIDevice *dev, Error **errp)
     PVPanicPCIState *s = PVPANIC_PCI_DEVICE(dev);
     PVPanicState *ps = &s->pvpanic;
 
-    pvpanic_setup_io(&s->pvpanic, DEVICE(s), 2);
+    pvpanic_setup_io(ps, DEVICE(s), 2);
 
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &ps->mr);
 }
 
-static Property pvpanic_pci_properties[] = {
+static const Property pvpanic_pci_properties[] = {
     DEFINE_PROP_UINT8("events", PVPanicPCIState, pvpanic.events,
-                      PVPANIC_PANICKED | PVPANIC_CRASH_LOADED),
-    DEFINE_PROP_END_OF_LIST(),
+                      PVPANIC_EVENTS),
 };
 
-static void pvpanic_pci_class_init(ObjectClass *klass, void *data)
+static void pvpanic_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(klass);
@@ -81,7 +80,7 @@ static const TypeInfo pvpanic_pci_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(PVPanicPCIState),
     .class_init    = pvpanic_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { }
     }

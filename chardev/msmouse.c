@@ -81,7 +81,7 @@ static void msmouse_chr_accept_input(Chardev *chr)
         const uint8_t *buf;
         uint32_t size;
 
-        buf = fifo8_pop_buf(&mouse->outbuf, MIN(len, avail), &size);
+        buf = fifo8_pop_bufptr(&mouse->outbuf, MIN(len, avail), &size);
         qemu_chr_be_write(chr, buf, size);
         len = qemu_chr_be_can_write(chr);
         avail -= size;
@@ -171,14 +171,14 @@ static int msmouse_chr_write(struct Chardev *s, const uint8_t *buf, int len)
     return len;
 }
 
-static QemuInputHandler msmouse_handler = {
+static const QemuInputHandler msmouse_handler = {
     .name  = "QEMU Microsoft Mouse",
     .mask  = INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_REL,
     .event = msmouse_input_event,
     .sync  = msmouse_input_sync,
 };
 
-static int msmouse_ioctl(Chardev *chr, int cmd, void *arg)
+static int msmouse_chr_ioctl(Chardev *chr, int cmd, void *arg)
 {
     MouseChardev *mouse = MOUSE_CHARDEV(chr);
     int c, i, j;
@@ -253,28 +253,29 @@ static void char_msmouse_finalize(Object *obj)
     fifo8_destroy(&mouse->outbuf);
 }
 
-static void msmouse_chr_open(Chardev *chr,
+static bool msmouse_chr_open(Chardev *chr,
                              ChardevBackend *backend,
-                             bool *be_opened,
                              Error **errp)
 {
     MouseChardev *mouse = MOUSE_CHARDEV(chr);
 
-    *be_opened = false;
     mouse->hs = qemu_input_handler_register((DeviceState *)mouse,
                                             &msmouse_handler);
     mouse->tiocm = 0;
     fifo8_create(&mouse->outbuf, MSMOUSE_BUF_SZ);
+
+    /* Never send CHR_EVENT_OPENED */
+    return true;
 }
 
-static void char_msmouse_class_init(ObjectClass *oc, void *data)
+static void char_msmouse_class_init(ObjectClass *oc, const void *data)
 {
     ChardevClass *cc = CHARDEV_CLASS(oc);
 
-    cc->open = msmouse_chr_open;
+    cc->chr_open = msmouse_chr_open;
     cc->chr_write = msmouse_chr_write;
     cc->chr_accept_input = msmouse_chr_accept_input;
-    cc->chr_ioctl = msmouse_ioctl;
+    cc->chr_ioctl = msmouse_chr_ioctl;
 }
 
 static const TypeInfo char_msmouse_type_info = {

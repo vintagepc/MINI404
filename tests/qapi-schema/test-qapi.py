@@ -48,7 +48,7 @@ class QAPISchemaTestVisitor(QAPISchemaVisitor):
         self._print_if(ifcond)
 
     def visit_object_type(self, name, info, ifcond, features,
-                          base, members, variants):
+                          base, members, branches):
         print('object %s' % name)
         if base:
             print('    base %s' % base.name)
@@ -57,13 +57,14 @@ class QAPISchemaTestVisitor(QAPISchemaVisitor):
                   % (m.name, m.type.name, m.optional))
             self._print_if(m.ifcond, 8)
             self._print_features(m.features, indent=8)
-        self._print_variants(variants)
+        self._print_variants(branches)
         self._print_if(ifcond)
         self._print_features(features)
 
-    def visit_alternate_type(self, name, info, ifcond, features, variants):
+    def visit_alternate_type(self, name, info, ifcond, features,
+                             alternatives):
         print('alternate %s' % name)
-        self._print_variants(variants)
+        self._print_variants(alternatives)
         self._print_if(ifcond)
         self._print_features(features)
 
@@ -95,17 +96,8 @@ class QAPISchemaTestVisitor(QAPISchemaVisitor):
 
     @staticmethod
     def _print_if(ifcond, indent=4):
-        # TODO Drop this hack after replacing OrderedDict by plain
-        # dict (requires Python 3.7)
-        def _massage(subcond):
-            if isinstance(subcond, str):
-                return subcond
-            if isinstance(subcond, list):
-                return [_massage(val) for val in subcond]
-            return {key: _massage(val) for key, val in subcond.items()}
-
         if ifcond.is_present():
-            print('%sif %s' % (' ' * indent, _massage(ifcond.ifcond)))
+            print('%sif %s' % (' ' * indent, ifcond.ifcond))
 
     @classmethod
     def _print_features(cls, features, indent=4):
@@ -130,18 +122,17 @@ def test_frontend(fname):
         for feat, section in doc.features.items():
             print('    feature=%s\n%s' % (feat, section.text))
         for section in doc.sections:
-            print('    section=%s\n%s' % (section.name, section.text))
+            print('    section=%s\n%s' % (section.kind, section.text))
 
 
 def open_test_result(dir_name, file_name, update):
     mode = 'r+' if update else 'r'
     try:
-        fp = open(os.path.join(dir_name, file_name), mode)
+        return open(os.path.join(dir_name, file_name), mode, encoding='utf-8')
     except FileNotFoundError:
         if not update:
             raise
-        fp = open(os.path.join(dir_name, file_name), 'w+')
-    return fp
+    return open(os.path.join(dir_name, file_name), 'w+', encoding='utf-8')
 
 
 def test_and_diff(test_name, dir_name, update):
@@ -174,7 +165,7 @@ def test_and_diff(test_name, dir_name, update):
     if actual_out == expected_out and actual_err == expected_err:
         return 0
 
-    print("%s %s" % (test_name, 'UPDATE' if update else 'FAIL'),
+    print("%s: %s" % (test_name, 'UPDATE' if update else 'FAIL'),
           file=sys.stderr)
     out_diff = difflib.unified_diff(expected_out, actual_out, outfp.name)
     err_diff = difflib.unified_diff(expected_err, actual_err, errfp.name)
@@ -182,6 +173,9 @@ def test_and_diff(test_name, dir_name, update):
     sys.stdout.writelines(err_diff)
 
     if not update:
+        print(("\n%s: set QEMU_TEST_REGENERATE=1 to recreate reference output" +
+               "if the QAPI schema generator was intentionally changed") % test_name,
+              file=sys.stderr)
         return 1
 
     try:
@@ -206,6 +200,7 @@ def main(argv):
     parser.add_argument('-d', '--dir', action='store', default='',
                         help="directory containing tests")
     parser.add_argument('-u', '--update', action='store_true',
+                        default='QEMU_TEST_REGENERATE' in os.environ,
                         help="update expected test results")
     parser.add_argument('tests', nargs='*', metavar='TEST', action='store')
     args = parser.parse_args()
@@ -217,9 +212,9 @@ def main(argv):
         test_name = os.path.splitext(base_name)[0]
         status |= test_and_diff(test_name, dir_name, args.update)
 
-    exit(status)
+    sys.exit(status)
 
 
 if __name__ == '__main__':
     main(sys.argv)
-    exit(0)
+    sys.exit(0)

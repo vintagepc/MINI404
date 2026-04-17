@@ -31,12 +31,14 @@
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
-#include "sysemu/device_tree.h"
-#include "sysemu/reset.h"
-#include "hw/boards.h"
-#include "hw/loader.h"
+#include "system/device_tree.h"
+#include "system/reset.h"
+#include "exec/cpu-common.h"
+#include "hw/core/boards.h"
+#include "hw/core/loader.h"
 #include "elf.h"
 #include "qemu/cutils.h"
+#include "qapi/error.h"
 
 #include "boot.h"
 
@@ -114,8 +116,8 @@ static uint64_t translate_kernel_address(void *opaque, uint64_t addr)
     return addr - 0x30000000LL;
 }
 
-void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
-                            uint32_t ramsize,
+void microblaze_load_kernel(MicroBlazeCPU *cpu, bool is_little_endian,
+                            hwaddr ddr_base, uint32_t ramsize,
                             const char *initrd_filename,
                             const char *dtb_filename,
                             void (*machine_cpu_reset)(MicroBlazeCPU *))
@@ -130,7 +132,7 @@ void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
     dtb_arg = current_machine->dtb;
     /* default to pcbios dtb as passed by machine_init */
     if (!dtb_arg && dtb_filename) {
-        filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, dtb_filename);
+        filename = qemu_find_file(QEMU_FILE_TYPE_DTB, dtb_filename);
     }
 
     boot_info.machine_cpu_reset = machine_cpu_reset;
@@ -140,22 +142,19 @@ void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
         int kernel_size;
         uint64_t entry, high;
         uint32_t base32;
-        int big_endian = 0;
-
-#if TARGET_BIG_ENDIAN
-        big_endian = 1;
-#endif
 
         /* Boots a kernel elf binary.  */
         kernel_size = load_elf(kernel_filename, NULL, NULL, NULL,
                                &entry, NULL, &high, NULL,
-                               big_endian, EM_MICROBLAZE, 0, 0);
+                               is_little_endian ? ELFDATA2LSB : ELFDATA2MSB,
+                               EM_MICROBLAZE, 0, 0);
         base32 = entry;
         if (base32 == 0xc0000000) {
             kernel_size = load_elf(kernel_filename, NULL,
                                    translate_kernel_address, NULL,
                                    &entry, NULL, NULL, NULL,
-                                   big_endian, EM_MICROBLAZE, 0, 0);
+                                   is_little_endian ? ELFDATA2LSB : ELFDATA2MSB,
+                                   EM_MICROBLAZE, 0, 0);
         }
         /* Always boot into physical ram.  */
         boot_info.bootstrap_pc = (uint32_t)entry;
@@ -173,7 +172,7 @@ void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
         /* Not an ELF image nor an u-boot image, try a RAW image.  */
         if (kernel_size < 0) {
             kernel_size = load_image_targphys(kernel_filename, ddr_base,
-                                              ramsize);
+                                              ramsize, &error_fatal);
             boot_info.bootstrap_pc = ddr_base;
             high = (ddr_base + kernel_size + 3) & ~3;
         }
@@ -192,7 +191,8 @@ void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
             if (initrd_size < 0) {
                 initrd_size = load_image_targphys(initrd_filename,
                                                   boot_info.initrd_start,
-                                                  ramsize - initrd_offset);
+                                                  ramsize - initrd_offset,
+                                                  NULL);
             }
             if (initrd_size < 0) {
                 error_report("could not load initrd '%s'",

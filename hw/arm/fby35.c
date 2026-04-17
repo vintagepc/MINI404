@@ -8,12 +8,13 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/block-backend.h"
-#include "hw/boards.h"
-#include "hw/qdev-clock.h"
+#include "system/system.h"
+#include "system/block-backend.h"
+#include "hw/core/boards.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/arm/aspeed_soc.h"
 #include "hw/arm/boot.h"
+#include "hw/arm/machines-qom.h"
 
 #define TYPE_FBY35 MACHINE_TYPE_NAME("fby35")
 OBJECT_DECLARE_SIMPLE_TYPE(Fby35State, FBY35);
@@ -27,8 +28,8 @@ struct Fby35State {
     MemoryRegion bic_memory;
     Clock *bic_sysclk;
 
-    AspeedSoCState bmc;
-    AspeedSoCState bic;
+    Aspeed2600SoCState bmc;
+    Aspeed10x0SoCState bic;
 
     bool mmio_exec;
 };
@@ -70,12 +71,16 @@ static void fby35_bmc_write_boot_rom(DriveInfo *dinfo, MemoryRegion *mr,
 
 static void fby35_bmc_init(Fby35State *s)
 {
-    DriveInfo *drive0 = drive_get(IF_MTD, 0, 0);
+    AspeedSoCState *soc;
+    AspeedSoCClass *sc;
 
     object_initialize_child(OBJECT(s), "bmc", &s->bmc, "ast2600-a3");
+    soc = ASPEED_SOC(&s->bmc);
+    sc = ASPEED_SOC_GET_CLASS(soc);
 
     memory_region_init(&s->bmc_memory, OBJECT(&s->bmc), "bmc-memory",
                        UINT64_MAX);
+    memory_region_add_subregion(get_system_memory(), 0, &s->bmc_memory);
     memory_region_init_ram(&s->bmc_dram, OBJECT(&s->bmc), "bmc-dram",
                            FBY35_BMC_RAM_SIZE, &error_abort);
 
@@ -89,40 +94,42 @@ static void fby35_bmc_init(Fby35State *s)
                             &error_abort);
     object_property_set_int(OBJECT(&s->bmc), "hw-strap2", 0x00000003,
                             &error_abort);
-    aspeed_soc_uart_set_chr(&s->bmc, ASPEED_DEV_UART5, serial_hd(0));
+    aspeed_soc_uart_set_chr(soc->uart, ASPEED_DEV_UART5, sc->uarts_base,
+                            sc->uarts_num, serial_hd(0));
     qdev_realize(DEVICE(&s->bmc), NULL, &error_abort);
 
-    aspeed_board_init_flashes(&s->bmc.fmc, "n25q00", 2, 0);
+    aspeed_board_init_flashes(&soc->fmc, "n25q00", 2, 0);
 
     /* Install first FMC flash content as a boot rom. */
-    if (drive0) {
-        AspeedSMCFlash *fl = &s->bmc.fmc.flashes[0];
-        MemoryRegion *boot_rom = g_new(MemoryRegion, 1);
-        uint64_t size = memory_region_size(&fl->mmio);
+    if (!s->mmio_exec) {
+        DriveInfo *mtd0 = drive_get(IF_MTD, 0, 0);
 
-        if (s->mmio_exec) {
-            memory_region_init_alias(boot_rom, NULL, "aspeed.boot_rom",
-                                     &fl->mmio, 0, size);
-            memory_region_add_subregion(&s->bmc_memory, FBY35_BMC_FIRMWARE_ADDR,
-                                        boot_rom);
-        } else {
+        if (mtd0) {
+            uint64_t rom_size = memory_region_size(&soc->spi_boot);
 
-            memory_region_init_rom(boot_rom, NULL, "aspeed.boot_rom",
-                                   size, &error_abort);
-            memory_region_add_subregion(&s->bmc_memory, FBY35_BMC_FIRMWARE_ADDR,
-                                        boot_rom);
-            fby35_bmc_write_boot_rom(drive0, boot_rom, FBY35_BMC_FIRMWARE_ADDR,
-                                     size, &error_abort);
+            memory_region_init_rom(&s->bmc_boot_rom, NULL, "aspeed.boot_rom",
+                                   rom_size, &error_abort);
+            memory_region_add_subregion_overlap(&soc->spi_boot_container, 0,
+                                                &s->bmc_boot_rom, 1);
+
+            fby35_bmc_write_boot_rom(mtd0, &s->bmc_boot_rom,
+                                     FBY35_BMC_FIRMWARE_ADDR,
+                                     rom_size, &error_abort);
         }
     }
 }
 
 static void fby35_bic_init(Fby35State *s)
 {
+    AspeedSoCState *soc;
+    AspeedSoCClass *sc;
+
     s->bic_sysclk = clock_new(OBJECT(s), "SYSCLK");
     clock_set_hz(s->bic_sysclk, 200000000ULL);
 
     object_initialize_child(OBJECT(s), "bic", &s->bic, "ast1030-a1");
+    soc = ASPEED_SOC(&s->bic);
+    sc = ASPEED_SOC_GET_CLASS(soc);
 
     memory_region_init(&s->bic_memory, OBJECT(&s->bic), "bic-memory",
                        UINT64_MAX);
@@ -130,12 +137,13 @@ static void fby35_bic_init(Fby35State *s)
     qdev_connect_clock_in(DEVICE(&s->bic), "sysclk", s->bic_sysclk);
     object_property_set_link(OBJECT(&s->bic), "memory", OBJECT(&s->bic_memory),
                              &error_abort);
-    aspeed_soc_uart_set_chr(&s->bic, ASPEED_DEV_UART5, serial_hd(1));
+    aspeed_soc_uart_set_chr(soc->uart, ASPEED_DEV_UART5, sc->uarts_base,
+                            sc->uarts_num, serial_hd(1));
     qdev_realize(DEVICE(&s->bic), NULL, &error_abort);
 
-    aspeed_board_init_flashes(&s->bic.fmc, "sst25vf032b", 2, 2);
-    aspeed_board_init_flashes(&s->bic.spi[0], "sst25vf032b", 2, 4);
-    aspeed_board_init_flashes(&s->bic.spi[1], "sst25vf032b", 2, 6);
+    aspeed_board_init_flashes(&soc->fmc, "sst25vf032b", 2, 2);
+    aspeed_board_init_flashes(&soc->spi[0], "sst25vf032b", 2, 4);
+    aspeed_board_init_flashes(&soc->spi[1], "sst25vf032b", 2, 6);
 }
 
 static void fby35_init(MachineState *machine)
@@ -162,14 +170,16 @@ static void fby35_instance_init(Object *obj)
     FBY35(obj)->mmio_exec = false;
 }
 
-static void fby35_class_init(ObjectClass *oc, void *data)
+static void fby35_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "Meta Platforms fby35";
+    mc->deprecation_reason = "For a multi-soc machine, use 'ast2700fc' instead";
     mc->init = fby35_init;
     mc->no_floppy = 1;
     mc->no_cdrom = 1;
+    mc->auto_create_sdcard = true;
     mc->min_cpus = mc->max_cpus = mc->default_cpus = 3;
 
     object_class_property_add_bool(oc, "execute-in-place",
@@ -186,6 +196,7 @@ static const TypeInfo fby35_types[] = {
         .class_init = fby35_class_init,
         .instance_size = sizeof(Fby35State),
         .instance_init = fby35_instance_init,
+        .interfaces = arm_machine_interfaces,
     },
 };
 

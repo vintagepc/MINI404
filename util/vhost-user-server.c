@@ -8,9 +8,10 @@
  * later.  See the COPYING file in the top-level directory.
  */
 #include "qemu/osdep.h"
+#include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qemu/vhost-user-server.h"
-#include "block/aio-wait.h"
+#include "qemu/aio-wait.h"
 
 /*
  * Theory of operation:
@@ -61,12 +62,28 @@ static void vmsg_close_fds(VhostUserMsg *vmsg)
     }
 }
 
-static void vmsg_unblock_fds(VhostUserMsg *vmsg)
+static bool vmsg_unblock_fds(VhostUserMsg *vmsg, Error **errp)
 {
     int i;
-    for (i = 0; i < vmsg->fd_num; i++) {
-        qemu_socket_set_nonblock(vmsg->fds[i]);
+
+    /*
+     * These messages carry fd used to map memory, not to send/receive messages,
+     * so this operation is useless. In addition, in some systems this
+     * operation can fail (e.g. in macOS setting an fd returned by shm_open()
+     * non-blocking fails with errno = ENOTTY)
+     */
+    if (vmsg->request == VHOST_USER_ADD_MEM_REG ||
+        vmsg->request == VHOST_USER_SET_MEM_TABLE) {
+        return true;
     }
+
+    for (i = 0; i < vmsg->fd_num; i++) {
+        if (!qemu_set_blocking(vmsg->fds[i], false, errp)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 static void panic_cb(VuDev *vu_dev, const char *buf)
@@ -74,18 +91,24 @@ static void panic_cb(VuDev *vu_dev, const char *buf)
     error_report("vu_panic: %s", buf);
 }
 
-void vhost_user_server_ref(VuServer *server)
+void vhost_user_server_inc_in_flight(VuServer *server)
 {
     assert(!server->wait_idle);
-    server->refcount++;
+    qatomic_inc(&server->in_flight);
 }
 
-void vhost_user_server_unref(VuServer *server)
+void vhost_user_server_dec_in_flight(VuServer *server)
 {
-    server->refcount--;
-    if (server->wait_idle && !server->refcount) {
-        aio_co_wake(server->co_trip);
+    if (qatomic_fetch_dec(&server->in_flight) == 1) {
+        if (server->wait_idle) {
+            aio_co_wake(server->co_trip);
+        }
     }
+}
+
+bool vhost_user_server_has_in_flight(VuServer *server)
+{
+    return qatomic_load_acquire(&server->in_flight) > 0;
 }
 
 static bool coroutine_fn
@@ -103,7 +126,6 @@ vu_message_read(VuDev *vu_dev, int conn_fd, VhostUserMsg *vmsg)
 
     vmsg->fd_num = 0;
     if (!ioc) {
-        error_report_err(local_err);
         goto fail;
     }
 
@@ -116,11 +138,17 @@ vu_message_read(VuDev *vu_dev, int conn_fd, VhostUserMsg *vmsg)
          * qio_channel_readv_full may have short reads, keeping calling it
          * until getting VHOST_USER_HDR_SIZE or 0 bytes in total
          */
-        rc = qio_channel_readv_full(ioc, &iov, 1, &fds, &nfds, &local_err);
+        rc = qio_channel_readv_full(ioc, &iov, 1, &fds, &nfds, 0, &local_err);
         if (rc < 0) {
             if (rc == QIO_CHANNEL_ERR_BLOCK) {
                 assert(local_err == NULL);
-                qio_channel_yield(ioc, G_IO_IN);
+                if (server->ctx) {
+                    server->in_qio_channel_yield = true;
+                    qio_channel_yield(ioc, G_IO_IN);
+                    server->in_qio_channel_yield = false;
+                } else {
+                    return false;
+                }
                 continue;
             } else {
                 error_report_err(local_err);
@@ -151,7 +179,10 @@ vu_message_read(VuDev *vu_dev, int conn_fd, VhostUserMsg *vmsg)
     } while (read_bytes != VHOST_USER_HDR_SIZE);
 
     /* qio_channel_readv_full will make socket fds blocking, unblock them */
-    vmsg_unblock_fds(vmsg);
+    if (!vmsg_unblock_fds(vmsg, &local_err)) {
+        error_report_err(local_err);
+        goto fail;
+    }
     if (vmsg->size > sizeof(vmsg->payload)) {
         error_report("Error: too big message request: %d, "
                      "size: vmsg->size: %u, "
@@ -187,17 +218,25 @@ static coroutine_fn void vu_client_trip(void *opaque)
     VuServer *server = opaque;
     VuDev *vu_dev = &server->vu_dev;
 
-    while (!vu_dev->broken && vu_dispatch(vu_dev)) {
-        /* Keep running */
+    while (!vu_dev->broken) {
+        if (server->quiescing) {
+            server->co_trip = NULL;
+            aio_wait_kick();
+            return;
+        }
+        /* vu_dispatch() returns false if server->ctx went away */
+        if (!vu_dispatch(vu_dev) && server->ctx) {
+            break;
+        }
     }
 
-    if (server->refcount) {
+    if (vhost_user_server_has_in_flight(server)) {
         /* Wait for requests to complete before we can unmap the memory */
         server->wait_idle = true;
         qemu_coroutine_yield();
         server->wait_idle = false;
     }
-    assert(server->refcount == 0);
+    assert(!vhost_user_server_has_in_flight(server));
 
     vu_deinit(vu_dev);
 
@@ -264,14 +303,15 @@ set_watch(VuDev *vu_dev, int fd, int vu_evt,
     VuFdWatch *vu_fd_watch = find_vu_fd_watch(server, fd);
 
     if (!vu_fd_watch) {
-        VuFdWatch *vu_fd_watch = g_new0(VuFdWatch, 1);
+        vu_fd_watch = g_new0(VuFdWatch, 1);
 
         QTAILQ_INSERT_TAIL(&server->vu_fd_watches, vu_fd_watch, next);
 
         vu_fd_watch->fd = fd;
         vu_fd_watch->cb = cb;
-        qemu_socket_set_nonblock(fd);
-        aio_set_fd_handler(server->ioc->ctx, fd, true, kick_handler,
+        /* TODO: handle error more gracefully than aborting */
+        qemu_set_blocking(fd, false, &error_abort);
+        aio_set_fd_handler(server->ctx, fd, kick_handler,
                            NULL, NULL, NULL, vu_fd_watch);
         vu_fd_watch->vu_dev = vu_dev;
         vu_fd_watch->pvt = pvt;
@@ -292,8 +332,7 @@ static void remove_watch(VuDev *vu_dev, int fd)
     if (!vu_fd_watch) {
         return;
     }
-    aio_set_fd_handler(server->ioc->ctx, fd, true,
-                       NULL, NULL, NULL, NULL, NULL);
+    aio_set_fd_handler(server->ctx, fd, NULL, NULL, NULL, NULL, NULL);
 
     QTAILQ_REMOVE(&server->vu_fd_watches, vu_fd_watch, next);
     g_free(vu_fd_watch);
@@ -304,6 +343,7 @@ static void vu_accept(QIONetListener *listener, QIOChannelSocket *sioc,
                       gpointer opaque)
 {
     VuServer *server = opaque;
+    Error *local_err = NULL;
 
     if (server->sioc) {
         warn_report("Only one vhost-user client is allowed to "
@@ -336,19 +376,20 @@ static void vu_accept(QIONetListener *listener, QIOChannelSocket *sioc,
     object_ref(OBJECT(server->ioc));
 
     /* TODO vu_message_write() spins if non-blocking! */
-    qio_channel_set_blocking(server->ioc, false, NULL);
+    if (!qio_channel_set_blocking(server->ioc, false, &local_err)) {
+        error_report_err(local_err);
+        vu_deinit(&server->vu_dev);
+        return;
+    }
 
-    server->co_trip = qemu_coroutine_create(vu_client_trip, server);
+    qio_channel_set_follow_coroutine_ctx(server->ioc, true);
 
-    aio_context_acquire(server->ctx);
     vhost_user_server_attach_aio_context(server, server->ctx);
-    aio_context_release(server->ctx);
 }
 
+/* server->ctx acquired by caller */
 void vhost_user_server_stop(VuServer *server)
 {
-    aio_context_acquire(server->ctx);
-
     qemu_bh_delete(server->restart_listener_bh);
     server->restart_listener_bh = NULL;
 
@@ -356,7 +397,7 @@ void vhost_user_server_stop(VuServer *server)
         VuFdWatch *vu_fd_watch;
 
         QTAILQ_FOREACH(vu_fd_watch, &server->vu_fd_watches, next) {
-            aio_set_fd_handler(server->ctx, vu_fd_watch->fd, true,
+            aio_set_fd_handler(server->ctx, vu_fd_watch->fd,
                                NULL, NULL, NULL, NULL, vu_fd_watch);
         }
 
@@ -364,8 +405,6 @@ void vhost_user_server_stop(VuServer *server)
 
         AIO_WAIT_WHILE(server->ctx, server->co_trip);
     }
-
-    aio_context_release(server->ctx);
 
     if (server->listener) {
         qio_net_listener_disconnect(server->listener);
@@ -396,14 +435,30 @@ void vhost_user_server_attach_aio_context(VuServer *server, AioContext *ctx)
         return;
     }
 
-    qio_channel_attach_aio_context(server->ioc, ctx);
-
     QTAILQ_FOREACH(vu_fd_watch, &server->vu_fd_watches, next) {
-        aio_set_fd_handler(ctx, vu_fd_watch->fd, true, kick_handler, NULL,
+        aio_set_fd_handler(ctx, vu_fd_watch->fd, kick_handler, NULL,
                            NULL, NULL, vu_fd_watch);
     }
 
-    aio_co_schedule(ctx, server->co_trip);
+    if (server->co_trip) {
+        /*
+         * The caller didn't fully shut down co_trip (this can happen on
+         * non-polling drains like in bdrv_graph_wrlock()). This is okay as long
+         * as it no longer tries to shut it down and we're guaranteed to still
+         * be in the same AioContext as before.
+         *
+         * co_ctx can still be NULL if we get multiple calls and only just
+         * scheduled a new coroutine in the else branch.
+         */
+        AioContext *co_ctx = qemu_coroutine_get_aio_context(server->co_trip);
+
+        assert(!server->quiescing);
+        assert(!co_ctx || co_ctx == ctx);
+    } else {
+        server->co_trip = qemu_coroutine_create(vu_client_trip, server);
+        assert(!server->in_qio_channel_yield);
+        aio_co_schedule(ctx, server->co_trip);
+    }
 }
 
 /* Called with server->ctx acquired */
@@ -413,14 +468,19 @@ void vhost_user_server_detach_aio_context(VuServer *server)
         VuFdWatch *vu_fd_watch;
 
         QTAILQ_FOREACH(vu_fd_watch, &server->vu_fd_watches, next) {
-            aio_set_fd_handler(server->ctx, vu_fd_watch->fd, true,
+            aio_set_fd_handler(server->ctx, vu_fd_watch->fd,
                                NULL, NULL, NULL, NULL, vu_fd_watch);
         }
-
-        qio_channel_detach_aio_context(server->ioc);
     }
 
     server->ctx = NULL;
+
+    if (server->ioc) {
+        if (server->in_qio_channel_yield) {
+            /* Stop receiving the next vhost-user message */
+            qio_channel_wake_read(server->ioc);
+        }
+    }
 }
 
 bool vhost_user_server_start(VuServer *server,

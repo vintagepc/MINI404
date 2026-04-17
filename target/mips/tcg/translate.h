@@ -8,8 +8,11 @@
 #ifndef TARGET_MIPS_TRANSLATE_H
 #define TARGET_MIPS_TRANSLATE_H
 
-#include "qemu/log.h"
+#include "cpu.h"
+#include "tcg/tcg-op.h"
 #include "exec/translator.h"
+#include "exec/helper-gen.h"
+#include "qemu/log.h"
 
 #define MIPS_DEBUG_DISAS 0
 
@@ -46,9 +49,9 @@ typedef struct DisasContext {
     bool mrp;
     bool nan2008;
     bool abs2008;
-    bool saar;
     bool mi;
     int gi;
+    bool crcp;
 } DisasContext;
 
 #define DISAS_STOP       DISAS_TARGET_0
@@ -120,15 +123,15 @@ enum {
 };
 
 #define gen_helper_0e1i(name, arg1, arg2) do { \
-    gen_helper_##name(cpu_env, arg1, tcg_constant_i32(arg2)); \
+    gen_helper_##name(tcg_env, arg1, tcg_constant_i32(arg2)); \
     } while (0)
 
 #define gen_helper_1e0i(name, ret, arg1) do { \
-    gen_helper_##name(ret, cpu_env, tcg_constant_i32(arg1)); \
+    gen_helper_##name(ret, tcg_env, tcg_constant_i32(arg1)); \
     } while (0)
 
 #define gen_helper_0e2i(name, arg1, arg2, arg3) do { \
-    gen_helper_##name(cpu_env, arg1, arg2, tcg_constant_i32(arg3));\
+    gen_helper_##name(tcg_env, arg1, arg2, tcg_constant_i32(arg3));\
     } while (0)
 
 void generate_exception(DisasContext *ctx, int excp);
@@ -151,6 +154,7 @@ void check_cp1_registers(DisasContext *ctx, int regs);
 void check_cop1x(DisasContext *ctx);
 
 void gen_base_offset_addr(DisasContext *ctx, TCGv addr, int base, int offset);
+void gen_base_index_addr(DisasContext *ctx, TCGv addr, int base, int index);
 void gen_move_low32(TCGv ret, TCGv_i64 arg);
 void gen_move_high32(TCGv ret, TCGv_i64 arg);
 void gen_load_gpr(TCGv t, int reg);
@@ -165,6 +169,7 @@ void gen_store_fpr32(DisasContext *ctx, TCGv_i32 t, int reg);
 void gen_store_fpr64(DisasContext *ctx, TCGv_i64 t, int reg);
 int get_fp_bit(int cc);
 
+void gen_lx(DisasContext *ctx, int rd, int base, int index, MemOp mop);
 void gen_ldxs(DisasContext *ctx, int base, int index, int rd);
 void gen_align(DisasContext *ctx, int wordsz, int rd, int rs, int rt, int bp);
 void gen_addiupc(DisasContext *ctx, int rx, int imm,
@@ -174,10 +179,12 @@ void gen_addiupc(DisasContext *ctx, int rx, int imm,
  * Address Computation and Large Constant Instructions
  */
 void gen_op_addr_add(DisasContext *ctx, TCGv ret, TCGv arg0, TCGv arg1);
+void gen_op_addr_addi(DisasContext *ctx, TCGv ret, TCGv base, target_long ofs);
 bool gen_lsa(DisasContext *ctx, int rd, int rt, int rs, int sa);
 bool gen_dlsa(DisasContext *ctx, int rd, int rt, int rs, int sa);
 
 void gen_rdhwr(DisasContext *ctx, int rt, int rd, int sel);
+void gen_crc32(DisasContext *ctx, int rd, int rs, int rt, int sz, int crc32c);
 
 extern TCGv cpu_gpr[32], cpu_PC;
 #if defined(TARGET_MIPS64)
@@ -199,7 +206,8 @@ extern TCGv bcond;
     do {                                                                      \
         if (MIPS_DEBUG_DISAS) {                                               \
             qemu_log_mask(CPU_LOG_TB_IN_ASM,                                  \
-                          TARGET_FMT_lx ": %08x Invalid %s %03x %03x %03x\n", \
+                          "%016" VADDR_PRIx                                   \
+                          ": %08x Invalid %s %03x %03x %03x\n",               \
                           ctx->base.pc_next, ctx->opcode, op,                 \
                           ctx->opcode >> 26, ctx->opcode & 0x3F,              \
                           ((ctx->opcode >> 16) & 0x1F));                      \
@@ -213,15 +221,24 @@ void msa_translate_init(void);
 void mxu_translate_init(void);
 bool decode_ase_mxu(DisasContext *ctx, uint32_t insn);
 
+bool decode_64bit_enabled(DisasContext *ctx);
+
 /* decodetree generated */
 bool decode_isa_rel6(DisasContext *ctx, uint32_t insn);
 bool decode_ase_msa(DisasContext *ctx, uint32_t insn);
 bool decode_ext_txx9(DisasContext *ctx, uint32_t insn);
+bool decode_ext_loongson(DisasContext *ctx, uint32_t insn);
 #if defined(TARGET_MIPS64)
+bool decode_ase_lcsr(DisasContext *ctx, uint32_t insn);
 bool decode_ext_tx79(DisasContext *ctx, uint32_t insn);
 bool decode_ext_octeon(DisasContext *ctx, uint32_t insn);
 #endif
 bool decode_ext_vr54xx(DisasContext *ctx, uint32_t insn);
+
+static inline bool disas_mt_available(DisasContext *ctx)
+{
+    return ctx->CP0_Config3 & (1 << CP0C3_MT);
+}
 
 /*
  * Helpers for implementing sets of trans_* functions.
@@ -231,9 +248,19 @@ bool decode_ext_vr54xx(DisasContext *ctx, uint32_t insn);
     static bool trans_##NAME(DisasContext *ctx, arg_##NAME *a) \
     { return FUNC(ctx, a, __VA_ARGS__); }
 
-static inline bool cpu_is_bigendian(DisasContext *ctx)
+static inline bool disas_is_bigendian(DisasContext *ctx)
 {
     return extract32(ctx->CP0_Config0, CP0C0_BE, 1);
+}
+
+static inline MemOp mo_endian(DisasContext *dc)
+{
+    return disas_is_bigendian(dc) ? MO_BE : MO_LE;
+}
+
+static inline MemOp mo_endian_rev(DisasContext *dc, bool reversed)
+{
+    return disas_is_bigendian(dc) ^ reversed ? MO_BE : MO_LE;
 }
 
 #endif

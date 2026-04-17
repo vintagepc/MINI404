@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2022 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -222,7 +222,7 @@ void arch_fpop_start(CPUHexagonState *env)
         } \
     } while (0)
 
-void arch_fpop_end(CPUHexagonState *env)
+void arch_fpop_end(CPUHexagonState *env, bool pkt_need_commit)
 {
     int flags = get_float_exception_flags(&env->fp_status);
     if (flags != 0) {

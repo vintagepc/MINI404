@@ -23,9 +23,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "trace.h"
@@ -232,7 +232,7 @@ static uint64_t ecc_mem_read(void *opaque, hwaddr addr,
 static const MemoryRegionOps ecc_mem_ops = {
     .read = ecc_mem_read,
     .write = ecc_mem_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_BIG_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -272,7 +272,7 @@ static const VMStateDescription vmstate_ecc = {
     .name ="ECC",
     .version_id = 3,
     .minimum_version_id = 3,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, ECCState, ECC_NREGS),
         VMSTATE_BUFFER(diag, ECCState),
         VMSTATE_UINT32(version, ECCState),
@@ -325,17 +325,16 @@ static void ecc_realize(DeviceState *dev, Error **errp)
     }
 }
 
-static Property ecc_properties[] = {
+static const Property ecc_properties[] = {
     DEFINE_PROP_UINT32("version", ECCState, version, -1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void ecc_class_init(ObjectClass *klass, void *data)
+static void ecc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = ecc_realize;
-    dc->reset = ecc_reset;
+    device_class_set_legacy_reset(dc, ecc_reset);
     dc->vmsd = &vmstate_ecc;
     device_class_set_props(dc, ecc_properties);
 }

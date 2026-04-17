@@ -1,97 +1,59 @@
 #ifndef BSWAP_H
 #define BSWAP_H
 
-#ifdef CONFIG_MACHINE_BSWAP_H
-# include <sys/endian.h>
-# include <machine/bswap.h>
-#elif defined(__FreeBSD__)
-# include <sys/endian.h>
-#elif defined(__HAIKU__)
-# include <endian.h>
-#elif defined(CONFIG_BYTESWAP_H)
-# include <byteswap.h>
-#define BSWAP_FROM_BYTESWAP
-# else
-#define BSWAP_FROM_FALLBACKS
-#endif /* ! CONFIG_MACHINE_BSWAP_H */
+#include "qemu/target-info.h"
+#include "exec/memop.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#undef  bswap16
+#define bswap16(_x) __builtin_bswap16(_x)
+#undef  bswap32
+#define bswap32(_x) __builtin_bswap32(_x)
+#undef  bswap64
+#define bswap64(_x) __builtin_bswap64(_x)
 
-#ifdef BSWAP_FROM_BYTESWAP
-static inline uint16_t bswap16(uint16_t x)
+static inline uint32_t bswap24(uint32_t x)
 {
-    return bswap_16(x);
+    return (((x & 0x000000ffU) << 16) |
+            ((x & 0x0000ff00U) <<  0) |
+            ((x & 0x00ff0000U) >> 16));
 }
-
-static inline uint32_t bswap32(uint32_t x)
-{
-    return bswap_32(x);
-}
-
-static inline uint64_t bswap64(uint64_t x)
-{
-    return bswap_64(x);
-}
-#endif
-
-#ifdef BSWAP_FROM_FALLBACKS
-static inline uint16_t bswap16(uint16_t x)
-{
-    return (((x & 0x00ff) << 8) |
-            ((x & 0xff00) >> 8));
-}
-
-static inline uint32_t bswap32(uint32_t x)
-{
-    return (((x & 0x000000ffU) << 24) |
-            ((x & 0x0000ff00U) <<  8) |
-            ((x & 0x00ff0000U) >>  8) |
-            ((x & 0xff000000U) >> 24));
-}
-
-static inline uint64_t bswap64(uint64_t x)
-{
-    return (((x & 0x00000000000000ffULL) << 56) |
-            ((x & 0x000000000000ff00ULL) << 40) |
-            ((x & 0x0000000000ff0000ULL) << 24) |
-            ((x & 0x00000000ff000000ULL) <<  8) |
-            ((x & 0x000000ff00000000ULL) >>  8) |
-            ((x & 0x0000ff0000000000ULL) >> 24) |
-            ((x & 0x00ff000000000000ULL) >> 40) |
-            ((x & 0xff00000000000000ULL) >> 56));
-}
-#endif
-
-#undef BSWAP_FROM_BYTESWAP
-#undef BSWAP_FROM_FALLBACKS
 
 static inline void bswap16s(uint16_t *s)
 {
-    *s = bswap16(*s);
+    *s = __builtin_bswap16(*s);
+}
+
+static inline void bswap24s(uint32_t *s)
+{
+    *s = bswap24(*s & 0x00ffffffU);
 }
 
 static inline void bswap32s(uint32_t *s)
 {
-    *s = bswap32(*s);
+    *s = __builtin_bswap32(*s);
 }
 
 static inline void bswap64s(uint64_t *s)
 {
-    *s = bswap64(*s);
+    *s = __builtin_bswap64(*s);
 }
 
 #if HOST_BIG_ENDIAN
 #define be_bswap(v, size) (v)
-#define le_bswap(v, size) glue(bswap, size)(v)
+#define le_bswap(v, size) glue(__builtin_bswap, size)(v)
+#define be_bswap24(v) (v)
+#define le_bswap24(v) bswap24(v)
 #define be_bswaps(v, size)
-#define le_bswaps(p, size) do { *p = glue(bswap, size)(*p); } while(0)
+#define le_bswaps(p, size) \
+            do { *p = glue(__builtin_bswap, size)(*p); } while (0)
 #else
 #define le_bswap(v, size) (v)
-#define be_bswap(v, size) glue(bswap, size)(v)
+#define be_bswap24(v) bswap24(v)
+#define le_bswap24(v) (v)
+#define be_bswap(v, size) glue(__builtin_bswap, size)(v)
 #define le_bswaps(v, size)
-#define be_bswaps(p, size) do { *p = glue(bswap, size)(*p); } while(0)
+#define be_bswaps(p, size) \
+            do { *p = glue(__builtin_bswap, size)(*p); } while (0)
 #endif
 
 /**
@@ -181,12 +143,23 @@ CPU_CONVERT(le, 16, uint16_t)
 CPU_CONVERT(le, 32, uint32_t)
 CPU_CONVERT(le, 64, uint64_t)
 
+#undef CPU_CONVERT
+
 /*
- * Same as cpu_to_le{16,32}, except that gcc will figure the result is
+ * Same as cpu_to_le{16,32,64}, except that gcc will figure the result is
  * a compile-time constant if you pass in a constant.  So this can be
  * used to initialize static variables.
  */
 #if HOST_BIG_ENDIAN
+# define const_le64(_x)                          \
+    ((((_x) & 0x00000000000000ffULL) << 56) |    \
+     (((_x) & 0x000000000000ff00ULL) << 40) |    \
+     (((_x) & 0x0000000000ff0000ULL) << 24) |    \
+     (((_x) & 0x00000000ff000000ULL) <<  8) |    \
+     (((_x) & 0x000000ff00000000ULL) >>  8) |    \
+     (((_x) & 0x0000ff0000000000ULL) >> 24) |    \
+     (((_x) & 0x00ff000000000000ULL) >> 40) |    \
+     (((_x) & 0xff00000000000000ULL) >> 56))
 # define const_le32(_x)                          \
     ((((_x) & 0x000000ffU) << 24) |              \
      (((_x) & 0x0000ff00U) <<  8) |              \
@@ -196,6 +169,7 @@ CPU_CONVERT(le, 64, uint64_t)
     ((((_x) & 0x00ff) << 8) |                    \
      (((_x) & 0xff00) >> 8))
 #else
+# define const_le64(_x) (_x)
 # define const_le32(_x) (_x)
 # define const_le16(_x) (_x)
 #endif
@@ -223,6 +197,7 @@ CPU_CONVERT(le, 64, uint64_t)
  * size is:
  *   b: 8 bits
  *   w: 16 bits
+ *   24: 24 bits
  *   l: 32 bits
  *   q: 64 bits
  *
@@ -232,9 +207,6 @@ CPU_CONVERT(le, 64, uint64_t)
  *   le   : little endian
  *   te   : target endian
  * (except for byte accesses, which have no endian infix).
- *
- * The target endian accessors are obviously only available to source
- * files which are built per-target; they are defined in cpu-all.h.
  *
  * In all cases these functions take a host pointer.
  * For accessors that take a guest address rather than a
@@ -295,6 +267,11 @@ static inline void stw_he_p(void *ptr, uint16_t v)
     __builtin_memcpy(ptr, &v, sizeof(v));
 }
 
+static inline void st24_he_p(void *ptr, uint32_t v)
+{
+    __builtin_memcpy(ptr, &v, 3);
+}
+
 static inline int ldl_he_p(const void *ptr)
 {
     int32_t r;
@@ -344,6 +321,11 @@ static inline void stw_le_p(void *ptr, uint16_t v)
     stw_he_p(ptr, le_bswap(v, 16));
 }
 
+static inline void st24_le_p(void *ptr, uint32_t v)
+{
+    st24_he_p(ptr, le_bswap24(v));
+}
+
 static inline void stl_le_p(void *ptr, uint32_t v)
 {
     stl_he_p(ptr, le_bswap(v, 32));
@@ -379,6 +361,11 @@ static inline void stw_be_p(void *ptr, uint16_t v)
     stw_he_p(ptr, be_bswap(v, 16));
 }
 
+static inline void st24_be_p(void *ptr, uint32_t v)
+{
+    st24_he_p(ptr, be_bswap24(v));
+}
+
 static inline void stl_be_p(void *ptr, uint32_t v)
 {
     stl_he_p(ptr, be_bswap(v, 32));
@@ -389,15 +376,75 @@ static inline void stq_be_p(void *ptr, uint64_t v)
     stq_he_p(ptr, be_bswap(v, 64));
 }
 
-static inline unsigned long leul_to_cpu(unsigned long v)
+
+/**
+ * ldm_p: Load value from host memory (byteswapping if necessary)
+ *
+ * @ptr: the host pointer to be accessed
+ * @mop: #MemOp mask containing access size and optional byteswapping
+ *
+ * Convert the value stored at @ptr in host memory and byteswap if necessary.
+ *
+ * Returns: the converted value.
+ */
+static inline uint64_t ldm_p(const void *ptr, MemOp mop)
 {
-#if HOST_LONG_BITS == 32
-    return le_bswap(v, 32);
-#elif HOST_LONG_BITS == 64
-    return le_bswap(v, 64);
-#else
-# error Unknown sizeof long
-#endif
+    switch (mop & (MO_SIZE | MO_BSWAP)) {
+    case MO_8:
+        return ldub_p(ptr);
+    case MO_16 | MO_LE:
+        return lduw_le_p(ptr);
+    case MO_16 | MO_BE:
+        return lduw_be_p(ptr);
+    case MO_32 | MO_LE:
+        return ldl_le_p(ptr);
+    case MO_32 | MO_BE:
+        return ldl_be_p(ptr);
+    case MO_64 | MO_LE:
+        return ldq_le_p(ptr);
+    case MO_64 | MO_BE:
+        return ldq_be_p(ptr);
+    default:
+        g_assert_not_reached();
+    }
+}
+
+/**
+ * stm_p: Store value to host memory (byteswapping if necessary)
+ *
+ * @ptr: the host pointer to be accessed
+ * @mop: #MemOp mask containing access size and optional byteswapping
+ * @val: the value to store
+ *
+ * Convert the value (byteswap if necessary) and store at @ptr in host memory.
+ */
+static inline void stm_p(void *ptr, MemOp mop, uint64_t val)
+{
+    switch (mop & (MO_SIZE | MO_BSWAP)) {
+    case MO_8:
+        stb_p(ptr, val);
+        break;
+    case MO_16 | MO_LE:
+        stw_le_p(ptr, val);
+        break;
+    case MO_16 | MO_BE:
+        stw_be_p(ptr, val);
+        break;
+    case MO_32 | MO_LE:
+        stl_le_p(ptr, val);
+        break;
+    case MO_32 | MO_BE:
+        stl_be_p(ptr, val);
+        break;
+    case MO_64 | MO_LE:
+        stq_le_p(ptr, val);
+        break;
+    case MO_64 | MO_BE:
+        stq_be_p(ptr, val);
+        break;
+    default:
+        g_assert_not_reached();
+    }
 }
 
 /* Store v to p as a sz byte value in host order */
@@ -448,8 +495,75 @@ DO_STN_LDN_P(be)
 #undef le_bswaps
 #undef be_bswaps
 
-#ifdef __cplusplus
+
+/* Return ld{word}_{le,be}_p following target endianness. */
+#define LOAD_IMPL(word, args...)                    \
+do {                                                \
+    if (target_big_endian()) {                      \
+        return glue(glue(ld, word), _be_p)(args);   \
+    } else {                                        \
+        return glue(glue(ld, word), _le_p)(args);   \
+    }                                               \
+} while (0)
+
+static inline int lduw_p(const void *ptr)
+{
+    LOAD_IMPL(uw, ptr);
 }
-#endif
+
+static inline int ldsw_p(const void *ptr)
+{
+    LOAD_IMPL(sw, ptr);
+}
+
+static inline int ldl_p(const void *ptr)
+{
+    LOAD_IMPL(l, ptr);
+}
+
+static inline uint64_t ldq_p(const void *ptr)
+{
+    LOAD_IMPL(q, ptr);
+}
+
+static inline uint64_t ldn_p(const void *ptr, int sz)
+{
+    LOAD_IMPL(n, ptr, sz);
+}
+
+#undef LOAD_IMPL
+
+/* Call st{word}_{le,be}_p following target endianness. */
+#define STORE_IMPL(word, args...)           \
+do {                                        \
+    if (target_big_endian()) {              \
+        glue(glue(st, word), _be_p)(args);  \
+    } else {                                \
+        glue(glue(st, word), _le_p)(args);  \
+    }                                       \
+} while (0)
+
+
+static inline void stw_p(void *ptr, uint16_t v)
+{
+    STORE_IMPL(w, ptr, v);
+}
+
+static inline void stl_p(void *ptr, uint32_t v)
+{
+    STORE_IMPL(l, ptr, v);
+}
+
+static inline void stq_p(void *ptr, uint64_t v)
+{
+    STORE_IMPL(q, ptr, v);
+}
+
+static inline void stn_p(void *ptr, int sz, uint64_t v)
+{
+    STORE_IMPL(n, ptr, sz, v);
+}
+
+#undef STORE_IMPL
 
 #endif /* BSWAP_H */

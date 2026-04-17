@@ -20,7 +20,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -30,9 +30,9 @@
 #include "chardev/char-serial.h"
 
 #include "hw/arm/exynos4210.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 
 #include "trace.h"
 #include "qom/object.h"
@@ -154,7 +154,7 @@ struct Exynos4210UartState {
     QEMUTimer *fifo_timeout_timer;
     uint64_t wordtime;        /* word time in ns */
 
-    CharBackend       chr;
+    CharFrontend       chr;
     qemu_irq          irq;
     qemu_irq          dmairq;
 
@@ -628,7 +628,7 @@ static const VMStateDescription vmstate_exynos4210_uart_fifo = {
     .name = "exynos4210.uart.fifo",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(sp, Exynos4210UartFIFO),
         VMSTATE_UINT32(rp, Exynos4210UartFIFO),
         VMSTATE_VBUFFER_UINT32(data, Exynos4210UartFIFO, 1, NULL, size),
@@ -641,7 +641,7 @@ static const VMStateDescription vmstate_exynos4210_uart = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = exynos4210_uart_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(rx, Exynos4210UartState, 1,
                        vmstate_exynos4210_uart_fifo, Exynos4210UartFIFO),
         VMSTATE_UINT32_ARRAY(reg, Exynos4210UartState,
@@ -704,20 +704,19 @@ static void exynos4210_uart_realize(DeviceState *dev, Error **errp)
                              NULL, s, NULL, true);
 }
 
-static Property exynos4210_uart_properties[] = {
+static const Property exynos4210_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", Exynos4210UartState, chr),
     DEFINE_PROP_UINT32("channel", Exynos4210UartState, channel, 0),
     DEFINE_PROP_UINT32("rx-size", Exynos4210UartState, rx.size, 16),
     DEFINE_PROP_UINT32("tx-size", Exynos4210UartState, tx.size, 16),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void exynos4210_uart_class_init(ObjectClass *klass, void *data)
+static void exynos4210_uart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = exynos4210_uart_realize;
-    dc->reset = exynos4210_uart_reset;
+    device_class_set_legacy_reset(dc, exynos4210_uart_reset);
     device_class_set_props(dc, exynos4210_uart_properties);
     dc->vmsd = &vmstate_exynos4210_uart;
 }

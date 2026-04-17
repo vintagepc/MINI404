@@ -22,9 +22,10 @@
 
 #include "crypto/init.h"
 #include "crypto/secret.h"
+#include "crypto/cipher.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
-#ifdef CONFIG_KEYUTILS
+#if defined(CONFIG_KEYUTILS) && defined(CONFIG_SECRET_KEYRING)
 #include "crypto/secret_keyring.h"
 #include <keyutils.h>
 #endif
@@ -128,7 +129,7 @@ static void test_secret_indirect_emptyfile(void)
     g_free(fname);
 }
 
-#ifdef CONFIG_KEYUTILS
+#if defined(CONFIG_KEYUTILS) && defined(CONFIG_SECRET_KEYRING)
 
 #define DESCRIPTION "qemu_test_secret"
 #define PAYLOAD "Test Payload"
@@ -244,7 +245,7 @@ static void test_secret_keyring_bad_key_access_right(void)
     char key_str[16];
     Object *sec;
 
-    g_test_skip("TODO: Need responce from Linux kernel maintainers");
+    g_test_skip("TODO: Need response from Linux kernel maintainers");
     return;
 
     int32_t key = add_key("user", DESCRIPTION, PAYLOAD,
@@ -268,7 +269,7 @@ static void test_secret_keyring_bad_key_access_right(void)
     keyctl_unlink(key, KEY_SPEC_PROCESS_KEYRING);
 }
 
-#endif /* CONFIG_KEYUTILS */
+#endif /* CONFIG_KEYUTILS && CONFIG_SECRET_KEYRING */
 
 static void test_secret_noconv_base64_good(void)
 {
@@ -571,7 +572,7 @@ int main(int argc, char **argv)
     g_test_add_func("/crypto/secret/indirect/emptyfile",
                     test_secret_indirect_emptyfile);
 
-#ifdef CONFIG_KEYUTILS
+#if defined(CONFIG_KEYUTILS) && defined(CONFIG_SECRET_KEYRING)
     g_test_add_func("/crypto/secret/keyring/good",
                     test_secret_keyring_good);
     g_test_add_func("/crypto/secret/keyring/revoked_key",
@@ -582,7 +583,7 @@ int main(int argc, char **argv)
                     test_secret_keyring_bad_serial_key);
     g_test_add_func("/crypto/secret/keyring/bad_key_access_right",
                     test_secret_keyring_bad_key_access_right);
-#endif /* CONFIG_KEYUTILS */
+#endif /* CONFIG_KEYUTILS && CONFIG_SECRET_KEYRING */
 
     g_test_add_func("/crypto/secret/noconv/base64/good",
                     test_secret_noconv_base64_good);
@@ -597,18 +598,21 @@ int main(int argc, char **argv)
     g_test_add_func("/crypto/secret/conv/utf8/base64",
                     test_secret_conv_utf8_base64);
 
-    g_test_add_func("/crypto/secret/crypt/raw",
-                    test_secret_crypt_raw);
-    g_test_add_func("/crypto/secret/crypt/base64",
-                    test_secret_crypt_base64);
-    g_test_add_func("/crypto/secret/crypt/shortkey",
-                    test_secret_crypt_short_key);
-    g_test_add_func("/crypto/secret/crypt/shortiv",
-                    test_secret_crypt_short_iv);
-    g_test_add_func("/crypto/secret/crypt/missingiv",
-                    test_secret_crypt_missing_iv);
-    g_test_add_func("/crypto/secret/crypt/badiv",
-                    test_secret_crypt_bad_iv);
+    if (qcrypto_cipher_supports(QCRYPTO_CIPHER_ALGO_AES_128,
+                                QCRYPTO_CIPHER_MODE_CBC)) {
+        g_test_add_func("/crypto/secret/crypt/raw",
+                        test_secret_crypt_raw);
+        g_test_add_func("/crypto/secret/crypt/base64",
+                        test_secret_crypt_base64);
+        g_test_add_func("/crypto/secret/crypt/shortkey",
+                        test_secret_crypt_short_key);
+        g_test_add_func("/crypto/secret/crypt/shortiv",
+                        test_secret_crypt_short_iv);
+        g_test_add_func("/crypto/secret/crypt/missingiv",
+                        test_secret_crypt_missing_iv);
+        g_test_add_func("/crypto/secret/crypt/badiv",
+                        test_secret_crypt_bad_iv);
+    }
 
     return g_test_run();
 }

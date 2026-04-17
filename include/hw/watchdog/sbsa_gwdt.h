@@ -13,8 +13,8 @@
 #define WDT_SBSA_GWDT_H
 
 #include "qemu/bitops.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 
 #define TYPE_WDT_SBSA "sbsa_gwdt"
 #define SBSA_GWDT(obj) \
@@ -55,8 +55,6 @@
 #define SBSA_GWDT_RMMIO_SIZE 0x1000
 #define SBSA_GWDT_CMMIO_SIZE 0x1000
 
-#define SBSA_TIMER_FREQ      62500000 /* Hz */
-
 typedef struct SBSA_GWDTState {
     /* <private> */
     SysBusDevice parent_obj;
@@ -67,6 +65,7 @@ typedef struct SBSA_GWDTState {
     qemu_irq irq;
 
     QEMUTimer *timer;
+    uint64_t freq;
 
     uint32_t id;
     uint32_t wcs;

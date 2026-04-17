@@ -21,12 +21,12 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
-#include "hw/usb.h"
+#include "hw/usb/usb.h"
 #include "migration/vmstate.h"
-#include "hw/pci/pci.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-dma.h"
-#include "hw/qdev-properties.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-dma.h"
+#include "hw/core/qdev-properties.h"
 #include "trace.h"
 #include "hcd-ohci.h"
 #include "qom/object.h"
@@ -109,25 +109,24 @@ static void usb_ohci_reset_pci(DeviceState *d)
     ohci_hard_reset(s);
 }
 
-static Property ohci_pci_properties[] = {
+static const Property ohci_pci_properties[] = {
     DEFINE_PROP_STRING("masterbus", OHCIPCIState, masterbus),
     DEFINE_PROP_UINT32("num-ports", OHCIPCIState, num_ports, 3),
     DEFINE_PROP_UINT32("firstport", OHCIPCIState, firstport, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_ohci = {
     .name = "ohci",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, OHCIPCIState),
         VMSTATE_STRUCT(state, OHCIPCIState, 1, vmstate_ohci_state, OHCIState),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void ohci_pci_class_init(ObjectClass *klass, void *data)
+static void ohci_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -142,7 +141,7 @@ static void ohci_pci_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, ohci_pci_properties);
     dc->hotpluggable = false;
     dc->vmsd = &vmstate_ohci;
-    dc->reset = usb_ohci_reset_pci;
+    device_class_set_legacy_reset(dc, usb_ohci_reset_pci);
 }
 
 static const TypeInfo ohci_pci_info = {
@@ -150,7 +149,7 @@ static const TypeInfo ohci_pci_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(OHCIPCIState),
     .class_init    = ohci_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

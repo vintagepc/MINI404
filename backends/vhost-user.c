@@ -13,19 +13,12 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qerror.h"
 #include "qemu/error-report.h"
 #include "qom/object_interfaces.h"
-#include "sysemu/vhost-user-backend.h"
-#include "sysemu/kvm.h"
+#include "system/vhost-user-backend.h"
+#include "system/kvm.h"
 #include "io/channel-command.h"
 #include "hw/virtio/virtio-bus.h"
-
-static bool
-ioeventfd_enabled(void)
-{
-    return kvm_enabled() && kvm_eventfds_enabled();
-}
 
 int
 vhost_user_backend_dev_init(VhostUserBackend *b, VirtIODevice *vdev,
@@ -34,11 +27,6 @@ vhost_user_backend_dev_init(VhostUserBackend *b, VirtIODevice *vdev,
     int ret;
 
     assert(!b->vdev && vdev);
-
-    if (!ioeventfd_enabled()) {
-        error_setg(errp, "vhost initialization failed: requires kvm");
-        return -1;
-    }
 
     if (!vhost_user_init(&b->vhost_user, &b->chr, errp)) {
         return -1;
@@ -109,30 +97,28 @@ err_host_notifiers:
     vhost_dev_disable_notifiers(&b->dev, b->vdev);
 }
 
-void
+int
 vhost_user_backend_stop(VhostUserBackend *b)
 {
     BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(b->vdev)));
     VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
-    int ret = 0;
+    int ret;
 
     if (!b->started) {
-        return;
+        return 0;
     }
 
-    vhost_dev_stop(&b->dev, b->vdev, true);
+    ret = vhost_dev_stop(&b->dev, b->vdev, true);
 
-    if (k->set_guest_notifiers) {
-        ret = k->set_guest_notifiers(qbus->parent,
-                                     b->dev.nvqs, false);
-        if (ret < 0) {
-            error_report("vhost guest notifier cleanup failed: %d", ret);
-        }
+    if (k->set_guest_notifiers &&
+        k->set_guest_notifiers(qbus->parent, b->dev.nvqs, false) < 0) {
+        error_report("vhost guest notifier cleanup failed: %d", ret);
+        return -1;
     }
-    assert(ret >= 0);
 
     vhost_dev_disable_notifiers(&b->dev, b->vdev);
     b->started = false;
+    return ret;
 }
 
 static void set_chardev(Object *obj, const char *value, Error **errp)
@@ -175,7 +161,7 @@ static char *get_chardev(Object *obj, Error **errp)
     return NULL;
 }
 
-static void vhost_user_backend_class_init(ObjectClass *oc, void *data)
+static void vhost_user_backend_class_init(ObjectClass *oc, const void *data)
 {
     object_class_property_add_str(oc, "chardev", get_chardev, set_chardev);
 }

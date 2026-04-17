@@ -21,10 +21,10 @@
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "sysemu/kvm.h"
+#include "system/kvm.h"
 #include "kvm_ppc.h"
 #include "migration/vmstate.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "trace.h"
 
 #include "hw/ppc/spapr.h"
@@ -248,7 +248,7 @@ static int spapr_tce_table_post_load(void *opaque, int version_id)
         memcpy(tcet->table, tcet->mig_table,
                tcet->nb_table * sizeof(tcet->table[0]));
 
-        free(tcet->mig_table);
+        g_free(tcet->mig_table);
         tcet->mig_table = NULL;
     }
 
@@ -270,7 +270,7 @@ static const VMStateDescription vmstate_spapr_tce_table_ex = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_tce_table_ex_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(bus_offset, SpaprTceTable),
         VMSTATE_UINT32(page_shift, SpaprTceTable),
         VMSTATE_END_OF_LIST()
@@ -283,7 +283,7 @@ static const VMStateDescription vmstate_spapr_tce_table = {
     .minimum_version_id = 2,
     .pre_save = spapr_tce_table_pre_save,
     .post_load = spapr_tce_table_post_load,
-    .fields      = (VMStateField []) {
+    .fields = (const VMStateField []) {
         /* Sanity check */
         VMSTATE_UINT32_EQUAL(liobn, SpaprTceTable, NULL),
 
@@ -296,7 +296,7 @@ static const VMStateDescription vmstate_spapr_tce_table = {
 
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_spapr_tce_table_ex,
         NULL
     }
@@ -668,11 +668,11 @@ int spapr_tcet_dma_dt(void *fdt, int node_off, const char *propname,
                         tcet->liobn, 0, tcet->nb_table << tcet->page_shift);
 }
 
-static void spapr_tce_table_class_init(ObjectClass *klass, void *data)
+static void spapr_tce_table_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = spapr_tce_table_realize;
-    dc->reset = spapr_tce_reset;
+    device_class_set_legacy_reset(dc, spapr_tce_reset);
     dc->unrealize = spapr_tce_table_unrealize;
     /* Reason: This is just an internal device for handling the hypercalls */
     dc->user_creatable = false;
@@ -693,7 +693,8 @@ static const TypeInfo spapr_tce_table_info = {
     .class_init = spapr_tce_table_class_init,
 };
 
-static void spapr_iommu_memory_region_class_init(ObjectClass *klass, void *data)
+static void spapr_iommu_memory_region_class_init(ObjectClass *klass,
+                                                 const void *data)
 {
     IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
 

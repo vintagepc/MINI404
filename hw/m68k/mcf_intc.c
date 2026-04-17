@@ -11,9 +11,10 @@
 #include "qemu/module.h"
 #include "qemu/log.h"
 #include "cpu.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
 #include "hw/m68k/mcf.h"
+#include "hw/core/qdev-properties.h"
 #include "qom/object.h"
 
 #define TYPE_MCF_INTC "mcf-intc"
@@ -165,7 +166,7 @@ static void mcf_intc_reset(DeviceState *dev)
 static const MemoryRegionOps mcf_intc_ops = {
     .read = mcf_intc_read,
     .write = mcf_intc_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_BIG_ENDIAN,
 };
 
 static void mcf_intc_instance_init(Object *obj)
@@ -173,14 +174,22 @@ static void mcf_intc_instance_init(Object *obj)
     mcf_intc_state *s = MCF_INTC(obj);
 
     memory_region_init_io(&s->iomem, obj, &mcf_intc_ops, s, "mcf", 0x100);
+    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
+    qdev_init_gpio_in(DEVICE(s), mcf_intc_set_irq, 64);
 }
 
-static void mcf_intc_class_init(ObjectClass *oc, void *data)
+static const Property mcf_intc_properties[] = {
+    DEFINE_PROP_LINK("m68k-cpu", mcf_intc_state, cpu,
+                     TYPE_M68K_CPU, M68kCPU *),
+};
+
+static void mcf_intc_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
+    device_class_set_props(dc, mcf_intc_properties);
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
-    dc->reset = mcf_intc_reset;
+    device_class_set_legacy_reset(dc, mcf_intc_reset);
 }
 
 static const TypeInfo mcf_intc_gate_info = {
@@ -198,20 +207,15 @@ static void mcf_intc_register_types(void)
 
 type_init(mcf_intc_register_types)
 
-qemu_irq *mcf_intc_init(MemoryRegion *sysmem,
-                        hwaddr base,
-                        M68kCPU *cpu)
+DeviceState *mcf_intc_init(MemoryRegion *sysmem, hwaddr base, M68kCPU *cpu)
 {
     DeviceState  *dev;
-    mcf_intc_state *s;
 
     dev = qdev_new(TYPE_MCF_INTC);
+    object_property_set_link(OBJECT(dev), "m68k-cpu",
+                             OBJECT(cpu), &error_abort);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-
-    s = MCF_INTC(dev);
-    s->cpu = cpu;
-
-    memory_region_add_subregion(sysmem, base, &s->iomem);
-
-    return qemu_allocate_irqs(mcf_intc_set_irq, s, 64);
+    memory_region_add_subregion(sysmem, base,
+                                sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
+    return dev;
 }

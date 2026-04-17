@@ -27,10 +27,10 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "trace.h"
-#include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 #include "ui/console.h"
@@ -336,8 +336,8 @@ static inline bool vmsvga_verify_rect(DisplaySurface *surface,
         return false;
     }
     if (h > SVGA_MAX_HEIGHT) {
-        trace_vmware_verify_rect_greater_than_bound(name, "y", SVGA_MAX_HEIGHT,
-                                                    y);
+        trace_vmware_verify_rect_greater_than_bound(name, "h", SVGA_MAX_HEIGHT,
+                                                    h);
         return false;
     }
     if (y + h > surface_height(surface)) {
@@ -550,12 +550,12 @@ static inline void vmsvga_cursor_define(struct vmsvga_state_s *s,
     default:
         fprintf(stderr, "%s: unhandled bpp %d, using fallback cursor\n",
                 __func__, c->bpp);
-        cursor_put(qc);
+        cursor_unref(qc);
         qc = cursor_builtin_left_ptr();
     }
 
     dpy_cursor_define(s->vga.con, qc);
-    cursor_put(qc);
+    cursor_unref(qc);
 }
 #endif
 
@@ -618,7 +618,7 @@ static void vmsvga_fifo_run(struct vmsvga_state_s *s)
     uint32_t cmd, colour;
     int args, len, maxloop = 1024;
     int x, y, dx, dy, width, height;
-    struct vmsvga_cursor_definition_s cursor;
+    QEMU_UNINITIALIZED struct vmsvga_cursor_definition_s cursor;
     uint32_t cmd_start;
 
     len = vmsvga_fifo_length(s);
@@ -904,10 +904,8 @@ static uint32_t vmsvga_value_read(void *opaque, uint32_t address)
         caps |= SVGA_CAP_RECT_FILL;
 #endif
 #ifdef HW_MOUSE_ACCEL
-        if (dpy_cursor_define_supported(s->vga.con)) {
-            caps |= SVGA_CAP_CURSOR | SVGA_CAP_CURSOR_BYPASS_2 |
-                    SVGA_CAP_CURSOR_BYPASS;
-        }
+        caps |= SVGA_CAP_CURSOR | SVGA_CAP_CURSOR_BYPASS_2 |
+                SVGA_CAP_CURSOR_BYPASS;
 #endif
         ret = caps;
         break;
@@ -1167,7 +1165,7 @@ static void vmsvga_reset(DeviceState *dev)
     s->enable = 0;
     s->config = 0;
     s->svgaid = SVGA_ID;
-    s->cursor.on = 0;
+    s->cursor.on = false;
     s->redraw_fifo_last = 0;
     s->syncing = 0;
 
@@ -1210,7 +1208,7 @@ static const VMStateDescription vmstate_vmware_vga_internal = {
     .version_id = 0,
     .minimum_version_id = 0,
     .post_load = vmsvga_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32_EQUAL(new_depth, struct vmsvga_state_s, NULL),
         VMSTATE_INT32(enable, struct vmsvga_state_s),
         VMSTATE_INT32(config, struct vmsvga_state_s),
@@ -1235,7 +1233,7 @@ static const VMStateDescription vmstate_vmware_vga = {
     .name = "vmware_vga",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, struct pci_vmsvga_state_s),
         VMSTATE_STRUCT(chip, struct pci_vmsvga_state_s, 0,
                        vmstate_vmware_vga_internal, struct vmsvga_state_s),
@@ -1264,7 +1262,7 @@ static void vmsvga_init(DeviceState *dev, struct vmsvga_state_s *s,
 
     vga_common_init(&s->vga, OBJECT(dev), &error_fatal);
     vga_init(&s->vga, OBJECT(dev), address_space, io, true);
-    vmstate_register(NULL, 0, &vmstate_vga_common, &s->vga);
+    vmstate_register_any(NULL, &vmstate_vga_common, &s->vga);
     s->new_depth = 32;
 }
 
@@ -1334,15 +1332,12 @@ static void pci_vmsvga_realize(PCIDevice *dev, Error **errp)
                      &s->chip.fifo_ram);
 }
 
-static Property vga_vmware_properties[] = {
+static const Property vga_vmware_properties[] = {
     DEFINE_PROP_UINT32("vgamem_mb", struct pci_vmsvga_state_s,
                        chip.vga.vram_size_mb, 16),
-    DEFINE_PROP_BOOL("global-vmstate", struct pci_vmsvga_state_s,
-                     chip.vga.global_vmstate, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void vmsvga_class_init(ObjectClass *klass, void *data)
+static void vmsvga_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -1354,7 +1349,7 @@ static void vmsvga_class_init(ObjectClass *klass, void *data)
     k->class_id = PCI_CLASS_DISPLAY_VGA;
     k->subsystem_vendor_id = PCI_VENDOR_ID_VMWARE;
     k->subsystem_id = SVGA_PCI_DEVICE_ID;
-    dc->reset = vmsvga_reset;
+    device_class_set_legacy_reset(dc, vmsvga_reset);
     dc->vmsd = &vmstate_vmware_vga;
     device_class_set_props(dc, vga_vmware_properties);
     dc->hotpluggable = false;
@@ -1366,7 +1361,7 @@ static const TypeInfo vmsvga_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(struct pci_vmsvga_state_s),
     .class_init    = vmsvga_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

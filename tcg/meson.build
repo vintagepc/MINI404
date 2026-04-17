@@ -1,3 +1,7 @@
+if not have_tcg
+   subdir_done()
+endif
+
 tcg_ss = ss.source_set()
 
 tcg_ss.add(files(
@@ -6,15 +10,22 @@ tcg_ss.add(files(
   'tcg.c',
   'tcg-common.c',
   'tcg-op.c',
+  'tcg-op-ldst.c',
   'tcg-op-gvec.c',
   'tcg-op-vec.c',
 ))
 
 if get_option('tcg_interpreter')
   libffi = dependency('libffi', version: '>=3.0', required: true,
-                      method: 'pkg-config', kwargs: static_kwargs)
-  specific_ss.add(libffi)
-  specific_ss.add(files('tci.c'))
+                      method: 'pkg-config')
+  tcg_ss.add(libffi)
+  tcg_ss.add(files('tci.c'))
 endif
 
-specific_ss.add_all(when: 'CONFIG_TCG', if_true: tcg_ss)
+tcg_ss.add(when: libdw, if_true: files('debuginfo.c'))
+if host_os == 'linux'
+  tcg_ss.add(files('perf.c'))
+endif
+
+user_ss.add_all(tcg_ss)
+system_ss.add_all(tcg_ss)

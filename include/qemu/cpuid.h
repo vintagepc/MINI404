@@ -25,6 +25,9 @@
 #endif
 
 /* Leaf 1, %ecx */
+#ifndef bit_PCLMUL
+#define bit_PCLMUL      (1 << 1)
+#endif
 #ifndef bit_SSE4_1
 #define bit_SSE4_1      (1 << 19)
 #endif
@@ -65,10 +68,38 @@
 #ifndef bit_AVX512VBMI2
 #define bit_AVX512VBMI2 (1 << 6)
 #endif
+#ifndef bit_GFNI
+#define bit_GFNI        (1 << 8)
+#endif
 
 /* Leaf 0x80000001, %ecx */
 #ifndef bit_LZCNT
 #define bit_LZCNT       (1 << 5)
 #endif
+
+/*
+ * Signatures for different CPU implementations as returned from Leaf 0.
+ */
+
+#ifndef signature_INTEL_ecx
+/* "Genu" "ineI" "ntel" */
+#define signature_INTEL_ebx     0x756e6547
+#define signature_INTEL_edx     0x49656e69
+#define signature_INTEL_ecx     0x6c65746e
+#endif
+
+#ifndef signature_AMD_ecx
+/* "Auth" "enti" "cAMD" */
+#define signature_AMD_ebx       0x68747541
+#define signature_AMD_edx       0x69746e65
+#define signature_AMD_ecx       0x444d4163
+#endif
+
+static inline unsigned xgetbv_low(unsigned c)
+{
+    unsigned a, d;
+    asm("xgetbv" : "=a"(a), "=d"(d) : "c"(c));
+    return a;
+}
 
 #endif /* QEMU_CPUID_H */

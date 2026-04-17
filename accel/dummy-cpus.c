@@ -13,10 +13,11 @@
 
 #include "qemu/osdep.h"
 #include "qemu/rcu.h"
-#include "sysemu/cpus.h"
+#include "system/cpus.h"
 #include "qemu/guest-random.h"
 #include "qemu/main-loop.h"
 #include "hw/core/cpu.h"
+#include "accel/dummy-cpus.h"
 
 static void *dummy_cpu_thread_fn(void *arg)
 {
@@ -24,10 +25,9 @@ static void *dummy_cpu_thread_fn(void *arg)
 
     rcu_register_thread();
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     qemu_thread_get_self(cpu->thread);
     cpu->thread_id = qemu_get_thread_id();
-    cpu->can_do_io = 1;
     current_cpu = cpu;
 
 #ifndef _WIN32
@@ -43,7 +43,8 @@ static void *dummy_cpu_thread_fn(void *arg)
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
     do {
-        qemu_mutex_unlock_iothread();
+        qemu_process_cpu_events(cpu);
+        bql_unlock();
 #ifndef _WIN32
         do {
             int sig;
@@ -56,11 +57,10 @@ static void *dummy_cpu_thread_fn(void *arg)
 #else
         qemu_sem_wait(&cpu->sem);
 #endif
-        qemu_mutex_lock_iothread();
-        qemu_wait_io_event(cpu);
+        bql_lock();
     } while (!cpu->unplug);
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     rcu_unregister_thread();
     return NULL;
 }
@@ -69,9 +69,6 @@ void dummy_start_vcpu_thread(CPUState *cpu)
 {
     char thread_name[VCPU_THREAD_NAME_SIZE];
 
-    cpu->thread = g_malloc0(sizeof(QemuThread));
-    cpu->halt_cond = g_malloc0(sizeof(QemuCond));
-    qemu_cond_init(cpu->halt_cond);
     snprintf(thread_name, VCPU_THREAD_NAME_SIZE, "CPU %d/DUMMY",
              cpu->cpu_index);
     qemu_thread_create(cpu->thread, thread_name, dummy_cpu_thread_fn, cpu,

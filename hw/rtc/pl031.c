@@ -14,12 +14,12 @@
 #include "qemu/osdep.h"
 #include "hw/rtc/pl031.h"
 #include "migration/vmstate.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/rtc.h"
+#include "system/system.h"
+#include "system/rtc.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -141,6 +141,7 @@ static void pl031_write(void * opaque, hwaddr offset,
         g_autofree const char *qom_path = object_get_canonical_path(opaque);
         struct tm tm;
 
+        s->lr = value;
         s->tick_offset += value - pl031_get_count(s);
 
         qemu_get_timedate(&tm, s->tick_offset);
@@ -277,20 +278,12 @@ static int pl031_tick_offset_post_load(void *opaque, int version_id)
     return 0;
 }
 
-static bool pl031_tick_offset_needed(void *opaque)
-{
-    PL031State *s = opaque;
-
-    return s->migrate_tick_offset;
-}
-
 static const VMStateDescription vmstate_pl031_tick_offset = {
     .name = "pl031/tick-offset",
     .version_id = 1,
     .minimum_version_id = 1,
-    .needed = pl031_tick_offset_needed,
     .post_load = pl031_tick_offset_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(tick_offset, PL031State),
         VMSTATE_END_OF_LIST()
     }
@@ -303,7 +296,7 @@ static const VMStateDescription vmstate_pl031 = {
     .pre_save = pl031_pre_save,
     .pre_load = pl031_pre_load,
     .post_load = pl031_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(tick_offset_vmstate, PL031State),
         VMSTATE_UINT32(mr, PL031State),
         VMSTATE_UINT32(lr, PL031State),
@@ -312,32 +305,17 @@ static const VMStateDescription vmstate_pl031 = {
         VMSTATE_UINT32(is, PL031State),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_pl031_tick_offset,
         NULL
     }
 };
 
-static Property pl031_properties[] = {
-    /*
-     * True to correctly migrate the tick offset of the RTC. False to
-     * obtain backward migration compatibility with older QEMU versions,
-     * at the expense of the guest RTC going backwards compared with the
-     * host RTC when the VM is saved/restored if using -rtc host.
-     * (Even if set to 'true' older QEMU can migrate forward to newer QEMU;
-     * 'false' also permits newer QEMU to migrate to older QEMU.)
-     */
-    DEFINE_PROP_BOOL("migrate-tick-offset",
-                     PL031State, migrate_tick_offset, true),
-    DEFINE_PROP_END_OF_LIST()
-};
-
-static void pl031_class_init(ObjectClass *klass, void *data)
+static void pl031_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_pl031;
-    device_class_set_props(dc, pl031_properties);
 }
 
 static const TypeInfo pl031_info = {

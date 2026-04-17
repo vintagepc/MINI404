@@ -16,13 +16,12 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 #include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "net/tap.h"
 #include "net/checksum.h"
-#include "sysemu/sysemu.h"
-#include "qemu/bswap.h"
+#include "system/system.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/pci/msix.h"
@@ -40,21 +39,10 @@
 
 #define PCI_DEVICE_ID_VMWARE_VMXNET3_REVISION 0x1
 #define VMXNET3_MSIX_BAR_SIZE 0x2000
-#define MIN_BUF_SIZE 60
-
-/* Compatibility flags for migration */
-#define VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS_BIT 0
-#define VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS \
-    (1 << VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS_BIT)
-#define VMXNET3_COMPAT_FLAG_DISABLE_PCIE_BIT 1
-#define VMXNET3_COMPAT_FLAG_DISABLE_PCIE \
-    (1 << VMXNET3_COMPAT_FLAG_DISABLE_PCIE_BIT)
 
 #define VMXNET3_EXP_EP_OFFSET (0x48)
-#define VMXNET3_MSI_OFFSET(s) \
-    ((s)->compat_flags & VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS ? 0x50 : 0x84)
-#define VMXNET3_MSIX_OFFSET(s) \
-    ((s)->compat_flags & VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS ? 0 : 0x9c)
+#define VMXNET3_MSI_OFFSET    (0x84)
+#define VMXNET3_MSIX_OFFSET   (0x9c)
 #define VMXNET3_DSN_OFFSET     (0x100)
 
 #define VMXNET3_BAR0_IDX      (0)
@@ -62,8 +50,7 @@
 #define VMXNET3_MSIX_BAR_IDX  (2)
 
 #define VMXNET3_OFF_MSIX_TABLE (0x000)
-#define VMXNET3_OFF_MSIX_PBA(s) \
-    ((s)->compat_flags & VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS ? 0x800 : 0x1000)
+#define VMXNET3_OFF_MSIX_PBA   (0x1000)
 
 /* Link speed in Mbps should be shifted by 16 */
 #define VMXNET3_LINK_SPEED      (1000 << 16)
@@ -440,24 +427,23 @@ vmxnet3_setup_tx_offloads(VMXNET3State *s)
 {
     switch (s->offload_mode) {
     case VMXNET3_OM_NONE:
-        net_tx_pkt_build_vheader(s->tx_pkt, false, false, 0);
-        break;
+        return net_tx_pkt_build_vheader(s->tx_pkt, false, false, 0);
 
     case VMXNET3_OM_CSUM:
-        net_tx_pkt_build_vheader(s->tx_pkt, false, true, 0);
         VMW_PKPRN("L4 CSO requested\n");
-        break;
+        return net_tx_pkt_build_vheader(s->tx_pkt, false, true, 0);
 
     case VMXNET3_OM_TSO:
-        net_tx_pkt_build_vheader(s->tx_pkt, true, true,
-            s->cso_or_gso_size);
-        net_tx_pkt_update_ip_checksums(s->tx_pkt);
         VMW_PKPRN("GSO offload requested.");
+        if (!net_tx_pkt_build_vheader(s->tx_pkt, true, true,
+            s->cso_or_gso_size)) {
+            return false;
+        }
+        net_tx_pkt_update_ip_checksums(s->tx_pkt);
         break;
 
     default:
         g_assert_not_reached();
-        return false;
     }
 
     return true;
@@ -651,9 +637,8 @@ static void vmxnet3_process_tx_queue(VMXNET3State *s, int qidx)
             data_len = (txd.len > 0) ? txd.len : VMXNET3_MAX_TX_BUF_SIZE;
             data_pa = txd.addr;
 
-            if (!net_tx_pkt_add_raw_fragment(s->tx_pkt,
-                                                data_pa,
-                                                data_len)) {
+            if (!net_tx_pkt_add_raw_fragment_pci(s->tx_pkt, PCI_DEVICE(s),
+                                                 data_pa, data_len)) {
                 s->skip_current_tx_pkt = true;
             }
         }
@@ -678,9 +663,12 @@ static void vmxnet3_process_tx_queue(VMXNET3State *s, int qidx)
             vmxnet3_complete_packet(s, qidx, txd_idx);
             s->tx_sop = true;
             s->skip_current_tx_pkt = false;
-            net_tx_pkt_reset(s->tx_pkt);
+            net_tx_pkt_reset(s->tx_pkt,
+                             net_tx_pkt_unmap_frag_pci, PCI_DEVICE(s));
         }
     }
+
+    net_tx_pkt_reset(s->tx_pkt, net_tx_pkt_unmap_frag_pci, PCI_DEVICE(s));
 }
 
 static inline void
@@ -847,21 +835,20 @@ static void vmxnet3_rx_need_csum_calculate(struct NetRxPkt *pkt,
                                            size_t pkt_len)
 {
     struct virtio_net_hdr *vhdr;
-    bool isip4, isip6, istcp, isudp;
+    bool hasip4, hasip6;
+    EthL4HdrProto l4hdr_proto;
     uint8_t *data;
     int len;
-
-    if (!net_rx_pkt_has_virt_hdr(pkt)) {
-        return;
-    }
 
     vhdr = net_rx_pkt_get_vhdr(pkt);
     if (!VMXNET_FLAG_IS_SET(vhdr->flags, VIRTIO_NET_HDR_F_NEEDS_CSUM)) {
         return;
     }
 
-    net_rx_pkt_get_protocols(pkt, &isip4, &isip6, &isudp, &istcp);
-    if (!(isip4 || isip6) || !(istcp || isudp)) {
+    net_rx_pkt_get_protocols(pkt, &hasip4, &hasip6, &l4hdr_proto);
+    if (!(hasip4 || hasip6) ||
+        (l4hdr_proto != ETH_L4_HDR_PROTO_TCP &&
+         l4hdr_proto != ETH_L4_HDR_PROTO_UDP)) {
         return;
     }
 
@@ -889,17 +876,14 @@ static void vmxnet3_rx_update_descr(struct NetRxPkt *pkt,
     struct Vmxnet3_RxCompDesc *rxcd)
 {
     int csum_ok, is_gso;
-    bool isip4, isip6, istcp, isudp;
+    bool hasip4, hasip6;
+    EthL4HdrProto l4hdr_proto;
     struct virtio_net_hdr *vhdr;
     uint8_t offload_type;
 
     if (net_rx_pkt_is_vlan_stripped(pkt)) {
         rxcd->ts = 1;
         rxcd->tci = net_rx_pkt_get_vlan_tag(pkt);
-    }
-
-    if (!net_rx_pkt_has_virt_hdr(pkt)) {
-        goto nocsum;
     }
 
     vhdr = net_rx_pkt_get_vhdr(pkt);
@@ -919,22 +903,23 @@ static void vmxnet3_rx_update_descr(struct NetRxPkt *pkt,
         goto nocsum;
     }
 
-    net_rx_pkt_get_protocols(pkt, &isip4, &isip6, &isudp, &istcp);
-    if ((!istcp && !isudp) || (!isip4 && !isip6)) {
+    net_rx_pkt_get_protocols(pkt, &hasip4, &hasip6, &l4hdr_proto);
+    if ((l4hdr_proto != ETH_L4_HDR_PROTO_TCP &&
+         l4hdr_proto != ETH_L4_HDR_PROTO_UDP) ||
+        (!hasip4 && !hasip6)) {
         goto nocsum;
     }
 
     rxcd->cnc = 0;
-    rxcd->v4 = isip4 ? 1 : 0;
-    rxcd->v6 = isip6 ? 1 : 0;
-    rxcd->tcp = istcp ? 1 : 0;
-    rxcd->udp = isudp ? 1 : 0;
+    rxcd->v4 = hasip4 ? 1 : 0;
+    rxcd->v6 = hasip6 ? 1 : 0;
+    rxcd->tcp = l4hdr_proto == ETH_L4_HDR_PROTO_TCP;
+    rxcd->udp = l4hdr_proto == ETH_L4_HDR_PROTO_UDP;
     rxcd->fcs = rxcd->tuc = rxcd->ipc = 1;
     return;
 
 nocsum:
     rxcd->cnc = 1;
-    return;
 }
 
 static void
@@ -1161,7 +1146,6 @@ static void vmxnet3_deactivate_device(VMXNET3State *s)
 {
     if (s->device_active) {
         VMW_CBPRN("Deactivating vmxnet3...");
-        net_tx_pkt_reset(s->tx_pkt);
         net_tx_pkt_uninit(s->tx_pkt);
         net_rx_pkt_uninit(s->rx_pkt);
         s->device_active = false;
@@ -1338,12 +1322,11 @@ static void vmxnet3_update_features(VMXNET3State *s)
               s->lro_supported, rxcso_supported,
               s->rx_vlan_stripping);
     if (s->peer_has_vhdr) {
-        qemu_set_offload(qemu_get_queue(s->nic)->peer,
-                         rxcso_supported,
-                         s->lro_supported,
-                         s->lro_supported,
-                         0,
-                         0);
+        NetOffloads ol = { .csum = rxcso_supported,
+                           .tso4 = s->lro_supported,
+                           .tso6 = s->lro_supported };
+
+        qemu_set_offload(qemu_get_queue(s->nic)->peer, &ol);
     }
 }
 
@@ -1441,7 +1424,10 @@ static void vmxnet3_activate_device(VMXNET3State *s)
     vmxnet3_setup_rx_filtering(s);
     /* Cache fields from shared memory */
     s->mtu = VMXNET3_READ_DRV_SHARED32(d, s->drv_shmem, devRead.misc.mtu);
-    assert(VMXNET3_MIN_MTU <= s->mtu && s->mtu < VMXNET3_MAX_MTU);
+    if (s->mtu < VMXNET3_MIN_MTU || s->mtu > VMXNET3_MAX_MTU) {
+        qemu_log_mask(LOG_GUEST_ERROR, "vmxnet3: Bad MTU size: %u\n", s->mtu);
+        return;
+    }
     VMW_CFPRN("MTU is %u", s->mtu);
 
     s->max_rx_frags =
@@ -1521,9 +1507,8 @@ static void vmxnet3_activate_device(VMXNET3State *s)
 
     /* Preallocate TX packet wrapper */
     VMW_CFPRN("Max TX fragments is %u", s->max_tx_frags);
-    net_tx_pkt_init(&s->tx_pkt, PCI_DEVICE(s),
-                    s->max_tx_frags, s->peer_has_vhdr);
-    net_rx_pkt_init(&s->rx_pkt, s->peer_has_vhdr);
+    net_tx_pkt_init(&s->tx_pkt, s->max_tx_frags);
+    net_rx_pkt_init(&s->rx_pkt);
 
     /* Read rings memory locations for RX queues */
     for (i = 0; i < s->rxq_num; i++) {
@@ -1887,7 +1872,7 @@ vmxnet3_io_bar1_read(void *opaque, hwaddr addr, unsigned size)
             break;
 
         default:
-            VMW_CBPRN("Unknow read BAR1[%" PRIx64 "], %d bytes", addr, size);
+            VMW_CBPRN("Unknown read BAR1[%" PRIx64 "], %d bytes", addr, size);
             break;
         }
 
@@ -1979,7 +1964,6 @@ vmxnet3_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 {
     VMXNET3State *s = qemu_get_nic_opaque(nc);
     size_t bytes_indicated;
-    uint8_t min_buf[MIN_BUF_SIZE];
 
     if (!vmxnet3_can_receive(nc)) {
         VMW_PKPRN("Cannot receive now");
@@ -1992,19 +1976,16 @@ vmxnet3_receive(NetClientState *nc, const uint8_t *buf, size_t size)
         size -= sizeof(struct virtio_net_hdr);
     }
 
-    /* Pad to minimum Ethernet frame length */
-    if (size < sizeof(min_buf)) {
-        memcpy(min_buf, buf, size);
-        memset(&min_buf[size], 0, sizeof(min_buf) - size);
-        buf = min_buf;
-        size = sizeof(min_buf);
-    }
-
     net_rx_pkt_set_packet_type(s->rx_pkt,
         get_eth_packet_type(PKT_GET_ETH_HDR(buf)));
 
     if (vmxnet3_rx_filter_may_indicate(s, buf, size)) {
-        net_rx_pkt_set_protocols(s->rx_pkt, buf, size);
+        struct iovec iov = {
+            .iov_base = (void *)buf,
+            .iov_len = size
+        };
+
+        net_rx_pkt_set_protocols(s->rx_pkt, &iov, 1, 0);
         vmxnet3_rx_need_csum_calculate(s->rx_pkt, buf, size);
         net_rx_pkt_attach_data(s->rx_pkt, buf, size, s->rx_vlan_stripping);
         bytes_indicated = vmxnet3_indicate_packet(s) ? size : -1;
@@ -2080,7 +2061,7 @@ static void vmxnet3_net_init(VMXNET3State *s)
 
     s->nic = qemu_new_nic(&net_vmxnet3_info, &s->conf,
                           object_get_typename(OBJECT(s)),
-                          d->id, s);
+                          d->id, &d->mem_reentrancy_guard, s);
 
     s->peer_has_vhdr = vmxnet3_peer_has_vnet_hdr(s);
     s->tx_sop = true;
@@ -2093,8 +2074,6 @@ static void vmxnet3_net_init(VMXNET3State *s)
     if (s->peer_has_vhdr) {
         qemu_set_vnet_hdr_len(qemu_get_queue(s->nic)->peer,
             sizeof(struct virtio_net_hdr));
-
-        qemu_using_vnet_hdr(qemu_get_queue(s->nic)->peer, 1);
     }
 
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
@@ -2128,8 +2107,8 @@ vmxnet3_init_msix(VMXNET3State *s)
                         &s->msix_bar,
                         VMXNET3_MSIX_BAR_IDX, VMXNET3_OFF_MSIX_TABLE,
                         &s->msix_bar,
-                        VMXNET3_MSIX_BAR_IDX, VMXNET3_OFF_MSIX_PBA(s),
-                        VMXNET3_MSIX_OFFSET(s), NULL);
+                        VMXNET3_MSIX_BAR_IDX, VMXNET3_OFF_MSIX_PBA,
+                        VMXNET3_MSIX_OFFSET, NULL);
 
     if (0 > res) {
         VMW_WRPRN("Failed to initialize MSI-X, error %d", res);
@@ -2227,7 +2206,7 @@ static void vmxnet3_pci_realize(PCIDevice *pci_dev, Error **errp)
     /* Interrupt pin A */
     pci_dev->config[PCI_INTERRUPT_PIN] = 0x01;
 
-    ret = msi_init(pci_dev, VMXNET3_MSI_OFFSET(s), VMXNET3_MAX_NMSIX_INTRS,
+    ret = msi_init(pci_dev, VMXNET3_MSI_OFFSET, VMXNET3_MAX_NMSIX_INTRS,
                    VMXNET3_USE_64BIT, VMXNET3_PER_VECTOR_MASK, NULL);
     /* Any error other than -ENOTSUP(board's MSI support is broken)
      * is a programming error. Fall back to INTx silently on -ENOTSUP */
@@ -2255,6 +2234,7 @@ static void vmxnet3_instance_init(Object *obj)
     device_add_bootindex_property(obj, &s->conf.bootindex,
                                   "bootindex", "/ethernet-phy@0",
                                   DEVICE(obj));
+    PCI_DEVICE(obj)->cap_present |= QEMU_PCI_CAP_EXPRESS;
 }
 
 static void vmxnet3_pci_uninit(PCIDevice *pci_dev)
@@ -2309,7 +2289,7 @@ static const VMStateDescription vmxstate_vmxnet3_mcast_list = {
     .minimum_version_id = 1,
     .pre_load = vmxnet3_mcast_list_pre_load,
     .needed = vmxnet3_mc_list_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_VBUFFER_UINT32(mcast_list, VMXNET3State, 0, NULL,
             mcast_list_buff_size),
         VMSTATE_END_OF_LIST()
@@ -2319,7 +2299,7 @@ static const VMStateDescription vmxstate_vmxnet3_mcast_list = {
 static const VMStateDescription vmstate_vmxnet3_ring = {
     .name = "vmxnet3-ring",
     .version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(pa, Vmxnet3Ring),
         VMSTATE_UINT32(size, Vmxnet3Ring),
         VMSTATE_UINT32(cell_size, Vmxnet3Ring),
@@ -2332,7 +2312,7 @@ static const VMStateDescription vmstate_vmxnet3_ring = {
 static const VMStateDescription vmstate_vmxnet3_tx_stats = {
     .name = "vmxnet3-tx-stats",
     .version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(TSOPktsTxOK, struct UPT1_TxStats),
         VMSTATE_UINT64(TSOBytesTxOK, struct UPT1_TxStats),
         VMSTATE_UINT64(ucastPktsTxOK, struct UPT1_TxStats),
@@ -2350,7 +2330,7 @@ static const VMStateDescription vmstate_vmxnet3_tx_stats = {
 static const VMStateDescription vmstate_vmxnet3_txq_descr = {
     .name = "vmxnet3-txq-descr",
     .version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(tx_ring, Vmxnet3TxqDescr, 0, vmstate_vmxnet3_ring,
                        Vmxnet3Ring),
         VMSTATE_STRUCT(comp_ring, Vmxnet3TxqDescr, 0, vmstate_vmxnet3_ring,
@@ -2366,7 +2346,7 @@ static const VMStateDescription vmstate_vmxnet3_txq_descr = {
 static const VMStateDescription vmstate_vmxnet3_rx_stats = {
     .name = "vmxnet3-rx-stats",
     .version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(LROPktsRxOK, struct UPT1_RxStats),
         VMSTATE_UINT64(LROBytesRxOK, struct UPT1_RxStats),
         VMSTATE_UINT64(ucastPktsRxOK, struct UPT1_RxStats),
@@ -2384,7 +2364,7 @@ static const VMStateDescription vmstate_vmxnet3_rx_stats = {
 static const VMStateDescription vmstate_vmxnet3_rxq_descr = {
     .name = "vmxnet3-rxq-descr",
     .version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT_ARRAY(rx_ring, Vmxnet3RxqDescr,
                              VMXNET3_RX_RINGS_PER_QUEUE, 0,
                              vmstate_vmxnet3_ring, Vmxnet3Ring),
@@ -2402,9 +2382,8 @@ static int vmxnet3_post_load(void *opaque, int version_id)
 {
     VMXNET3State *s = opaque;
 
-    net_tx_pkt_init(&s->tx_pkt, PCI_DEVICE(s),
-                    s->max_tx_frags, s->peer_has_vhdr);
-    net_rx_pkt_init(&s->rx_pkt, s->peer_has_vhdr);
+    net_tx_pkt_init(&s->tx_pkt, s->max_tx_frags);
+    net_rx_pkt_init(&s->rx_pkt);
 
     if (s->msix_used) {
         vmxnet3_use_msix_vectors(s, VMXNET3_MAX_INTRS);
@@ -2421,7 +2400,7 @@ static int vmxnet3_post_load(void *opaque, int version_id)
 static const VMStateDescription vmstate_vmxnet3_int_state = {
     .name = "vmxnet3-int-state",
     .version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(is_masked, Vmxnet3IntState),
         VMSTATE_BOOL(is_pending, Vmxnet3IntState),
         VMSTATE_BOOL(is_asserted, Vmxnet3IntState),
@@ -2435,7 +2414,7 @@ static const VMStateDescription vmstate_vmxnet3 = {
     .minimum_version_id = 1,
     .pre_save = vmxnet3_pre_save,
     .post_load = vmxnet3_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
             VMSTATE_PCI_DEVICE(parent_obj, VMXNET3State),
             VMSTATE_MSIX(parent_obj, VMXNET3State),
             VMSTATE_BOOL(rx_packets_compound, VMXNET3State),
@@ -2471,39 +2450,20 @@ static const VMStateDescription vmstate_vmxnet3 = {
 
             VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmxstate_vmxnet3_mcast_list,
         NULL
     }
 };
 
-static Property vmxnet3_properties[] = {
+static const Property vmxnet3_properties[] = {
     DEFINE_NIC_PROPERTIES(VMXNET3State, conf),
-    DEFINE_PROP_BIT("x-old-msi-offsets", VMXNET3State, compat_flags,
-                    VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS_BIT, false),
-    DEFINE_PROP_BIT("x-disable-pcie", VMXNET3State, compat_flags,
-                    VMXNET3_COMPAT_FLAG_DISABLE_PCIE_BIT, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void vmxnet3_realize(DeviceState *qdev, Error **errp)
-{
-    VMXNET3Class *vc = VMXNET3_DEVICE_GET_CLASS(qdev);
-    PCIDevice *pci_dev = PCI_DEVICE(qdev);
-    VMXNET3State *s = VMXNET3(qdev);
-
-    if (!(s->compat_flags & VMXNET3_COMPAT_FLAG_DISABLE_PCIE)) {
-        pci_dev->cap_present |= QEMU_PCI_CAP_EXPRESS;
-    }
-
-    vc->parent_dc_realize(qdev, errp);
-}
-
-static void vmxnet3_class_init(ObjectClass *class, void *data)
+static void vmxnet3_class_init(ObjectClass *class, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(class);
     PCIDeviceClass *c = PCI_DEVICE_CLASS(class);
-    VMXNET3Class *vc = VMXNET3_DEVICE_CLASS(class);
 
     c->realize = vmxnet3_pci_realize;
     c->exit = vmxnet3_pci_uninit;
@@ -2514,10 +2474,8 @@ static void vmxnet3_class_init(ObjectClass *class, void *data)
     c->class_id = PCI_CLASS_NETWORK_ETHERNET;
     c->subsystem_vendor_id = PCI_VENDOR_ID_VMWARE;
     c->subsystem_id = PCI_DEVICE_ID_VMWARE_VMXNET3;
-    device_class_set_parent_realize(dc, vmxnet3_realize,
-                                    &vc->parent_dc_realize);
     dc->desc = "VMWare Paravirtualized Ethernet v3";
-    dc->reset = vmxnet3_qdev_reset;
+    device_class_set_legacy_reset(dc, vmxnet3_qdev_reset);
     dc->vmsd = &vmstate_vmxnet3;
     device_class_set_props(dc, vmxnet3_properties);
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
@@ -2530,7 +2488,7 @@ static const TypeInfo vmxnet3_info = {
     .instance_size = sizeof(VMXNET3State),
     .class_init    = vmxnet3_class_init,
     .instance_init = vmxnet3_instance_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_PCIE_DEVICE },
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { }

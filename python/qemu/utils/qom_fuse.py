@@ -47,7 +47,6 @@ from typing import (
 
 import fuse
 from fuse import FUSE, FuseOSError, Operations
-
 from qemu.qmp import ExecuteError
 
 from .qom_common import QOMCommand
@@ -137,7 +136,7 @@ class QOMFuse(QOMCommand, Operations):
         if path == '':
             path = '/'
         try:
-            data = str(self.qmp.command('qom-get', path=path, property=prop))
+            data = str(self.qmp.cmd('qom-get', path=path, property=prop))
             data += '\n'  # make values shell friendly
         except ExecuteError as err:
             raise FuseOSError(EPERM) from err
@@ -152,8 +151,8 @@ class QOMFuse(QOMCommand, Operations):
             return False
         path, prop = path.rsplit('/', 1)
         prefix = '/'.join(['..'] * (len(path.split('/')) - 1))
-        return prefix + str(self.qmp.command('qom-get', path=path,
-                                             property=prop))
+        return prefix + str(self.qmp.cmd('qom-get', path=path,
+                                         property=prop))
 
     def getattr(self, path: str,
                 fh: Optional[IO[bytes]] = None) -> Mapping[str, object]:

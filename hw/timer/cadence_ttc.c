@@ -17,8 +17,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
@@ -425,7 +425,7 @@ static const VMStateDescription vmstate_cadence_timer = {
     .minimum_version_id = 1,
     .pre_save = cadence_timer_pre_save,
     .post_load = cadence_timer_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(reg_clock, CadenceTimerState),
         VMSTATE_UINT32(reg_count, CadenceTimerState),
         VMSTATE_UINT32(reg_value, CadenceTimerState),
@@ -443,7 +443,7 @@ static const VMStateDescription vmstate_cadence_ttc = {
     .name = "cadence_TTC",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT_ARRAY(timer, CadenceTTCState, 3, 0,
                             vmstate_cadence_timer,
                             CadenceTimerState),
@@ -451,7 +451,7 @@ static const VMStateDescription vmstate_cadence_ttc = {
     }
 };
 
-static void cadence_ttc_class_init(ObjectClass *klass, void *data)
+static void cadence_ttc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

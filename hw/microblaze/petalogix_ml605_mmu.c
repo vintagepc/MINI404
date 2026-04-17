@@ -29,19 +29,19 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "cpu.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "net/net.h"
 #include "hw/block/flash.h"
-#include "sysemu/sysemu.h"
-#include "hw/boards.h"
-#include "hw/char/serial.h"
-#include "hw/qdev-properties.h"
-#include "exec/address-spaces.h"
+#include "system/system.h"
+#include "hw/core/boards.h"
+#include "hw/char/serial-mm.h"
+#include "hw/core/qdev-properties.h"
+#include "system/address-spaces.h"
 #include "hw/ssi/ssi.h"
 
 #include "boot.h"
 
-#include "hw/stream.h"
+#include "hw/core/stream.h"
 
 #define LMB_BRAM_SIZE  (128 * KiB)
 #define FLASH_SIZE     (32 * MiB)
@@ -90,7 +90,7 @@ petalogix_ml605_init(MachineState *machine)
     object_property_set_int(OBJECT(cpu), "use-fpu", 1, &error_abort);
     object_property_set_bool(OBJECT(cpu), "dcache-writeback", true,
                              &error_abort);
-    object_property_set_bool(OBJECT(cpu), "endianness", true, &error_abort);
+    object_property_set_bool(OBJECT(cpu), "little-endian", true, &error_abort);
     qdev_realize(DEVICE(cpu), NULL, &error_abort);
 
     /* Attach emulated BRAM through the LMB.  */
@@ -104,13 +104,14 @@ petalogix_ml605_init(MachineState *machine)
 
     dinfo = drive_get(IF_PFLASH, 0, 0);
     /* 5th parameter 2 means bank-width
-     * 10th paremeter 0 means little-endian */
+     * 10th parameter 0 means little-endian */
     pflash_cfi01_register(FLASH_BASEADDR, "petalogix_ml605.flash", FLASH_SIZE,
                           dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
                           64 * KiB, 2, 0x89, 0x18, 0x0000, 0x0, 0);
 
 
     dev = qdev_new("xlnx.xps-intc");
+    qdev_prop_set_enum(dev, "endianness", ENDIAN_MODE_LITTLE);
     qdev_prop_set_uint32(dev, "kind-of-intr", 1 << TIMER_IRQ);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, INTC_BASEADDR);
@@ -126,6 +127,7 @@ petalogix_ml605_init(MachineState *machine)
 
     /* 2 timers at irq 2 @ 100 Mhz.  */
     dev = qdev_new("xlnx.xps-timer");
+    qdev_prop_set_enum(dev, "endianness", ENDIAN_MODE_LITTLE);
     qdev_prop_set_uint32(dev, "one-timer-only", 0);
     qdev_prop_set_uint32(dev, "clock-frequency", 100 * 1000000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -133,7 +135,6 @@ petalogix_ml605_init(MachineState *machine)
     sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, irq[TIMER_IRQ]);
 
     /* axi ethernet and dma initialization. */
-    qemu_check_nic_model(&nd_table[0], "xlnx.axi-ethernet");
     eth0 = qdev_new("xlnx.axi-ethernet");
     dma = qdev_new("xlnx.axi-dma");
 
@@ -145,7 +146,7 @@ petalogix_ml605_init(MachineState *machine)
                                   "axistream-connected-target", NULL);
     cs = object_property_get_link(OBJECT(dma),
                                   "axistream-control-connected-target", NULL);
-    qdev_set_nic_properties(eth0, &nd_table[0]);
+    qemu_configure_nic_device(eth0, true, NULL);
     qdev_prop_set_uint32(eth0, "rxmem", 0x1000);
     qdev_prop_set_uint32(eth0, "txmem", 0x1000);
     object_property_set_link(OBJECT(eth0), "axistream-connected", ds,
@@ -174,6 +175,7 @@ petalogix_ml605_init(MachineState *machine)
         SSIBus *spi;
 
         dev = qdev_new("xlnx.xps-spi");
+        qdev_prop_set_enum(dev, "endianness", ENDIAN_MODE_LITTLE);
         qdev_prop_set_uint8(dev, "num-ss-bits", NUM_SPI_FLASHES);
         busdev = SYS_BUS_DEVICE(dev);
         sysbus_realize_and_unref(busdev, &error_fatal);
@@ -183,7 +185,7 @@ petalogix_ml605_init(MachineState *machine)
         spi = (SSIBus *)qdev_get_child_bus(dev, "spi");
 
         for (i = 0; i < NUM_SPI_FLASHES; i++) {
-            DriveInfo *dinfo = drive_get(IF_MTD, 0, i);
+            dinfo = drive_get(IF_MTD, 0, i);
             qemu_irq cs_line;
 
             dev = qdev_new("n25q128");
@@ -192,6 +194,7 @@ petalogix_ml605_init(MachineState *machine)
                                         blk_by_legacy_dinfo(dinfo),
                                         &error_fatal);
             }
+            qdev_prop_set_uint8(dev, "cs", i);
             qdev_realize_and_unref(dev, BUS(spi), &error_fatal);
 
             cs_line = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
@@ -204,7 +207,7 @@ petalogix_ml605_init(MachineState *machine)
     cpu->cfg.pvr_regs[5] = 0xc56be000;
     cpu->cfg.pvr_regs[10] = 0x0e000000; /* virtex 6 */
 
-    microblaze_load_kernel(cpu, MEMORY_BASEADDR, ram_size,
+    microblaze_load_kernel(cpu, true, MEMORY_BASEADDR, ram_size,
                            machine->initrd_filename,
                            BINARY_DEVICE_TREE_FILE,
                            NULL);
@@ -213,7 +216,7 @@ petalogix_ml605_init(MachineState *machine)
 
 static void petalogix_ml605_machine_init(MachineClass *mc)
 {
-    mc->desc = "PetaLogix linux refdesign for xilinx ml605 little endian";
+    mc->desc = "PetaLogix linux refdesign for xilinx ml605 (little endian)";
     mc->init = petalogix_ml605_init;
 }
 

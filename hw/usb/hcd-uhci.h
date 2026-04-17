@@ -28,14 +28,14 @@
 #ifndef HW_USB_HCD_UHCI_H
 #define HW_USB_HCD_UHCI_H
 
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qemu/timer.h"
-#include "hw/pci/pci.h"
-#include "hw/usb.h"
+#include "hw/pci/pci_device.h"
+#include "hw/usb/usb.h"
 
 typedef struct UHCIQueue UHCIQueue;
 
-#define NB_PORTS 2
+#define UHCI_PORTS 2
 
 typedef struct UHCIPort {
     USBPort port;
@@ -59,7 +59,7 @@ typedef struct UHCIState {
     uint32_t frame_bytes;
     uint32_t frame_bandwidth;
     bool completions_only;
-    UHCIPort ports[NB_PORTS];
+    UHCIPort ports[UHCI_PORTS];
     qemu_irq irq;
     /* Interrupts that should be raised at the end of the current frame.  */
     uint32_t pending_int_mask;
@@ -75,7 +75,7 @@ typedef struct UHCIState {
 } UHCIState;
 
 #define TYPE_UHCI "pci-uhci-usb"
-DECLARE_INSTANCE_CHECKER(UHCIState, UHCI, TYPE_UHCI)
+OBJECT_DECLARE_TYPE(UHCIState, UHCIPCIDeviceClass, UHCI)
 
 typedef struct UHCIInfo {
     const char *name;
@@ -88,7 +88,11 @@ typedef struct UHCIInfo {
     bool       notuser; /* disallow user_creatable */
 } UHCIInfo;
 
-void uhci_data_class_init(ObjectClass *klass, void *data);
+void uhci_data_class_init(ObjectClass *klass, const void *data);
 void usb_uhci_common_realize(PCIDevice *dev, Error **errp);
+
+#define TYPE_PIIX3_USB_UHCI "piix3-usb-uhci"
+#define TYPE_PIIX4_USB_UHCI "piix4-usb-uhci"
+#define TYPE_ICH9_USB_UHCI(fn) "ich9-usb-uhci" #fn
 
 #endif

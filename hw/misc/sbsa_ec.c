@@ -12,16 +12,16 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "hw/sysbus.h"
-#include "sysemu/runstate.h"
+#include "hw/core/sysbus.h"
+#include "system/runstate.h"
 
-typedef struct {
+typedef struct SECUREECState {
     SysBusDevice parent_obj;
     MemoryRegion iomem;
 } SECUREECState;
 
-#define TYPE_SBSA_EC      "sbsa-ec"
-#define SECURE_EC(obj) OBJECT_CHECK(SECUREECState, (obj), TYPE_SBSA_EC)
+#define TYPE_SBSA_SECURE_EC "sbsa-ec"
+OBJECT_DECLARE_SIMPLE_TYPE(SECUREECState, SBSA_SECURE_EC)
 
 enum sbsa_ec_powerstates {
     SBSA_EC_CMD_POWEROFF = 0x01,
@@ -36,7 +36,7 @@ static uint64_t sbsa_ec_read(void *opaque, hwaddr offset, unsigned size)
 }
 
 static void sbsa_ec_write(void *opaque, hwaddr offset,
-                     uint64_t value, unsigned size)
+                          uint64_t value, unsigned size)
 {
     if (offset == 0) { /* PSCI machine power command register */
         switch (value) {
@@ -65,7 +65,7 @@ static const MemoryRegionOps sbsa_ec_ops = {
 
 static void sbsa_ec_init(Object *obj)
 {
-    SECUREECState *s = SECURE_EC(obj);
+    SECUREECState *s = SBSA_SECURE_EC(obj);
     SysBusDevice *dev = SYS_BUS_DEVICE(obj);
 
     memory_region_init_io(&s->iomem, obj, &sbsa_ec_ops, s, "sbsa-ec",
@@ -73,7 +73,7 @@ static void sbsa_ec_init(Object *obj)
     sysbus_init_mmio(dev, &s->iomem);
 }
 
-static void sbsa_ec_class_init(ObjectClass *klass, void *data)
+static void sbsa_ec_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -82,7 +82,7 @@ static void sbsa_ec_class_init(ObjectClass *klass, void *data)
 }
 
 static const TypeInfo sbsa_ec_info = {
-    .name          = TYPE_SBSA_EC,
+    .name          = TYPE_SBSA_SECURE_EC,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(SECUREECState),
     .instance_init = sbsa_ec_init,

@@ -10,15 +10,15 @@
 #include "panic.h"
 #include "qemu/error-report.h"
 
-#include "sysemu/hvf.h"
+#include "system/hvf.h"
 #include "hvf-i386.h"
 #include "vmcs.h"
 #include "vmx.h"
-#include "x86.h"
+#include "emulate/x86.h"
 #include "x86_descr.h"
-#include "x86_mmu.h"
-#include "x86_decode.h"
-#include "x86_emu.h"
+#include "emulate/x86_mmu.h"
+#include "emulate/x86_decode.h"
+#include "emulate/x86_emu.h"
 #include "x86_task.h"
 #include "x86hvf.h"
 
@@ -61,7 +61,7 @@ static void load_state_from_tss32(CPUState *cpu, struct x86_tss_segment32 *tss)
     X86CPU *x86_cpu = X86_CPU(cpu);
     CPUX86State *env = &x86_cpu->env;
 
-    wvmcs(cpu->hvf->fd, VMCS_GUEST_CR3, tss->cr3);
+    wvmcs(cpu->accel->fd, VMCS_GUEST_CR3, tss->cr3);
 
     env->eip = tss->eip;
     env->eflags = tss->eflags | 2;
@@ -76,16 +76,16 @@ static void load_state_from_tss32(CPUState *cpu, struct x86_tss_segment32 *tss)
     RSI(env) = tss->esi;
     RDI(env) = tss->edi;
 
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->ldt}}, R_LDTR);
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->es}}, R_ES);
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->cs}}, R_CS);
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->ss}}, R_SS);
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->ds}}, R_DS);
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->fs}}, R_FS);
-    vmx_write_segment_selector(cpu, (x68_segment_selector){{tss->gs}}, R_GS);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->ldt}}, R_LDTR);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->es}}, R_ES);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->cs}}, R_CS);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->ss}}, R_SS);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->ds}}, R_DS);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->fs}}, R_FS);
+    vmx_write_segment_selector(cpu, (x86_segment_selector){{tss->gs}}, R_GS);
 }
 
-static int task_switch_32(CPUState *cpu, x68_segment_selector tss_sel, x68_segment_selector old_tss_sel,
+static int task_switch_32(CPUState *cpu, x86_segment_selector tss_sel, x86_segment_selector old_tss_sel,
                           uint64_t old_tss_base, struct x86_segment_descriptor *new_desc)
 {
     struct x86_tss_segment32 tss_seg;
@@ -93,37 +93,36 @@ static int task_switch_32(CPUState *cpu, x68_segment_selector tss_sel, x68_segme
     uint32_t eip_offset = offsetof(struct x86_tss_segment32, eip);
     uint32_t ldt_sel_offset = offsetof(struct x86_tss_segment32, ldt);
 
-    vmx_read_mem(cpu, &tss_seg, old_tss_base, sizeof(tss_seg));
+    x86_read_mem_priv(cpu, &tss_seg, old_tss_base, sizeof(tss_seg));
     save_state_to_tss32(cpu, &tss_seg);
 
-    vmx_write_mem(cpu, old_tss_base + eip_offset, &tss_seg.eip, ldt_sel_offset - eip_offset);
-    vmx_read_mem(cpu, &tss_seg, new_tss_base, sizeof(tss_seg));
+    x86_write_mem_priv(cpu, &tss_seg.eip, old_tss_base + eip_offset, ldt_sel_offset - eip_offset);
+    x86_read_mem_priv(cpu, &tss_seg, new_tss_base, sizeof(tss_seg));
 
     if (old_tss_sel.sel != 0xffff) {
         tss_seg.prev_tss = old_tss_sel.sel;
 
-        vmx_write_mem(cpu, new_tss_base, &tss_seg.prev_tss, sizeof(tss_seg.prev_tss));
+        x86_write_mem_priv(cpu, &tss_seg.prev_tss, new_tss_base, sizeof(tss_seg.prev_tss));
     }
     load_state_from_tss32(cpu, &tss_seg);
     return 0;
 }
 
-void vmx_handle_task_switch(CPUState *cpu, x68_segment_selector tss_sel, int reason, bool gate_valid, uint8_t gate, uint64_t gate_type)
+void vmx_handle_task_switch(CPUState *cpu, x86_segment_selector tss_sel, int reason, bool gate_valid, uint8_t gate, uint64_t gate_type)
 {
-    uint64_t rip = rreg(cpu->hvf->fd, HV_X86_RIP);
+    uint64_t rip = rreg(cpu->accel->fd, HV_X86_RIP);
     if (!gate_valid || (gate_type != VMCS_INTR_T_HWEXCEPTION &&
                         gate_type != VMCS_INTR_T_HWINTR &&
                         gate_type != VMCS_INTR_T_NMI)) {
-        int ins_len = rvmcs(cpu->hvf->fd, VMCS_EXIT_INSTRUCTION_LENGTH);
+        int ins_len = rvmcs(cpu->accel->fd, VMCS_EXIT_INSTRUCTION_LENGTH);
         macvm_set_rip(cpu, rip + ins_len);
         return;
     }
 
-    load_regs(cpu);
+    hvf_load_regs(cpu);
 
     struct x86_segment_descriptor curr_tss_desc, next_tss_desc;
-    int ret;
-    x68_segment_selector old_tss_sel = vmx_read_segment_selector(cpu, R_TR);
+    x86_segment_selector old_tss_sel = vmx_read_segment_selector(cpu, R_TR);
     uint64_t old_tss_base = vmx_read_segment_base(cpu, R_TR);
     uint32_t desc_limit;
     struct x86_call_gate task_gate_desc;
@@ -138,10 +137,10 @@ void vmx_handle_task_switch(CPUState *cpu, x68_segment_selector tss_sel, int rea
     if (reason == TSR_IDT_GATE && gate_valid) {
         int dpl;
 
-        ret = x86_read_call_gate(cpu, &task_gate_desc, gate);
+        x86_read_call_gate(cpu, &task_gate_desc, gate);
 
         dpl = task_gate_desc.dpl;
-        x68_segment_selector cs = vmx_read_segment_selector(cpu, R_CS);
+        x86_segment_selector cs = vmx_read_segment_selector(cpu, R_CS);
         if (tss_sel.rpl > dpl || cs.rpl > dpl)
             ;//DPRINTF("emulate_gp");
     }
@@ -167,18 +166,19 @@ void vmx_handle_task_switch(CPUState *cpu, x68_segment_selector tss_sel, int rea
         x86_write_segment_descriptor(cpu, &next_tss_desc, tss_sel);
     }
 
-    if (next_tss_desc.type & 8)
-        ret = task_switch_32(cpu, tss_sel, old_tss_sel, old_tss_base, &next_tss_desc);
-    else
+    if (next_tss_desc.type & 8) {
+        task_switch_32(cpu, tss_sel, old_tss_sel, old_tss_base, &next_tss_desc);
+    } else {
         //ret = task_switch_16(cpu, tss_sel, old_tss_sel, old_tss_base, &next_tss_desc);
         VM_PANIC("task_switch_16");
+    }
 
-    macvm_set_cr0(cpu->hvf->fd, rvmcs(cpu->hvf->fd, VMCS_GUEST_CR0) |
+    macvm_set_cr0(cpu->accel->fd, rvmcs(cpu->accel->fd, VMCS_GUEST_CR0) |
                                 CR0_TS_MASK);
     x86_segment_descriptor_to_vmx(cpu, tss_sel, &next_tss_desc, &vmx_seg);
     vmx_write_segment_descriptor(cpu, &vmx_seg, R_TR);
 
-    store_regs(cpu);
+    hvf_store_regs(cpu);
 
-    hv_vcpu_invalidate_tlb(cpu->hvf->fd);
+    hv_vcpu_invalidate_tlb(cpu->accel->fd);
 }

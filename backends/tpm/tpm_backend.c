@@ -13,9 +13,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/tpm_backend.h"
+#include "system/tpm_backend.h"
 #include "qapi/error.h"
-#include "sysemu/tpm.h"
+#include "system/tpm.h"
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
@@ -100,8 +100,6 @@ bool tpm_backend_had_startup_error(TPMBackend *s)
 
 void tpm_backend_deliver_request(TPMBackend *s, TPMBackendCmd *cmd)
 {
-    ThreadPool *pool = aio_get_thread_pool(qemu_get_aio_context());
-
     if (s->cmd != NULL) {
         error_report("There is a TPM request pending");
         return;
@@ -109,7 +107,7 @@ void tpm_backend_deliver_request(TPMBackend *s, TPMBackendCmd *cmd)
 
     s->cmd = cmd;
     object_ref(OBJECT(s));
-    thread_pool_submit_aio(pool, tpm_backend_worker_thread, s,
+    thread_pool_submit_aio(tpm_backend_worker_thread, s,
                            tpm_backend_request_completed, s);
 }
 

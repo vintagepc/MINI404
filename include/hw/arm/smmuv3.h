@@ -20,8 +20,8 @@
 #define HW_ARM_SMMUV3_H
 
 #include "hw/arm/smmu-common.h"
-#include "hw/registerfields.h"
 #include "qom/object.h"
+#include "qapi/qapi-types-misc-arm.h"
 
 #define TYPE_SMMUV3_IOMMU_MEMORY_REGION "smmuv3-iommu-memory-region"
 
@@ -46,6 +46,7 @@ struct SMMUv3State {
     uint32_t cr[3];
     uint32_t cr0ack;
     uint32_t statusr;
+    uint32_t gbpa;
     uint32_t irq_ctrl;
     uint32_t gerror;
     uint32_t gerrorn;
@@ -62,6 +63,17 @@ struct SMMUv3State {
 
     qemu_irq     irq[4];
     QemuMutex mutex;
+    char *stage;
+
+    /* SMMU has HW accelerator support for nested S1 + s2 */
+    bool accel;
+    struct SMMUv3AccelState *s_accel;
+    uint64_t msi_gpa;
+    Error *migration_blocker;
+    OnOffAuto ril;
+    OnOffAuto ats;
+    OasMode oas;
+    SsidSizeMode ssidsize;
 };
 
 typedef enum {
@@ -77,10 +89,15 @@ struct SMMUv3Class {
     /*< public >*/
 
     DeviceRealize parent_realize;
-    DeviceReset   parent_reset;
+    ResettablePhases parent_phases;
 };
+
+bool smmuv3_ats_enabled(struct SMMUv3State *s);
 
 #define TYPE_ARM_SMMUV3   "arm-smmuv3"
 OBJECT_DECLARE_TYPE(SMMUv3State, SMMUv3Class, ARM_SMMUV3)
+
+#define STAGE1_SUPPORTED(s)      FIELD_EX32(s->idr[0], IDR0, S1P)
+#define STAGE2_SUPPORTED(s)      FIELD_EX32(s->idr[0], IDR0, S2P)
 
 #endif

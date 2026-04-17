@@ -13,6 +13,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/bswap.h"
 #include "qemu/error-report.h"
 #include "virtio-blk-handler.h"
 
@@ -22,8 +23,9 @@ struct virtio_blk_inhdr {
     unsigned char status;
 };
 
-static bool virtio_blk_sect_range_ok(BlockBackend *blk, uint32_t block_size,
-                                     uint64_t sector, size_t size)
+static bool coroutine_fn
+virtio_blk_sect_range_ok(BlockBackend *blk, uint32_t block_size,
+                         uint64_t sector, size_t size)
 {
     uint64_t nb_sectors;
     uint64_t total_sectors;
@@ -41,7 +43,7 @@ static bool virtio_blk_sect_range_ok(BlockBackend *blk, uint32_t block_size,
     if ((sector << VIRTIO_BLK_SECTOR_BITS) % block_size) {
         return false;
     }
-    blk_get_geometry(blk, &total_sectors);
+    blk_co_get_geometry(blk, &total_sectors);
     if (sector > total_sectors || nb_sectors > total_sectors - sector) {
         return false;
     }

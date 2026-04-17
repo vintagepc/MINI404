@@ -28,7 +28,7 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/display/xlnx_dp.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 
 #ifndef DEBUG_DP
@@ -262,7 +262,7 @@ typedef enum DPVideoFmt DPVideoFmt;
 static const VMStateDescription vmstate_dp = {
     .name = TYPE_XLNX_DP,
     .version_id = 2,
-    .fields = (VMStateField[]){
+    .fields = (const VMStateField[]){
         VMSTATE_UINT32_ARRAY(core_registers, XlnxDPState,
                              DP_CORE_REG_ARRAY_SIZE),
         VMSTATE_UINT32_ARRAY(avbufm_registers, XlnxDPState,
@@ -331,7 +331,7 @@ static inline void xlnx_dp_audio_activate(XlnxDPState *s)
 {
     bool activated = ((s->core_registers[DP_TX_AUDIO_CONTROL]
                    & DP_TX_AUD_CTRL) != 0);
-    AUD_set_active_out(s->amixer_output_stream, activated);
+    audio_be_set_active_out(s->audio_be, s->amixer_output_stream, activated);
     xlnx_dpdma_set_host_data_location(s->dpdma, DP_AUDIO_DMA_CHANNEL(0),
                                       &s->audio_buffer_0);
     xlnx_dpdma_set_host_data_location(s->dpdma, DP_AUDIO_DMA_CHANNEL(1),
@@ -380,13 +380,16 @@ static inline void xlnx_dp_audio_mix_buffer(XlnxDPState *s)
 static void xlnx_dp_audio_callback(void *opaque, int avail)
 {
     /*
-     * Get some data from the DPDMA and compute these datas.
-     * Then wait for QEMU's audio subsystem to call this callback.
+     * Get the individual left and right audio streams from the DPDMA,
+     * and fill the output buffer with the combined stereo audio data
+     * adjusted by the volume controls.
+     * QEMU's audio subsystem will call this callback repeatedly;
+     * we return the data from the output buffer until it is emptied,
+     * and then we will read data from the DPDMA again.
      */
     XlnxDPState *s = XLNX_DP(opaque);
     size_t written = 0;
 
-    /* If there are already some data don't get more data. */
     if (s->byte_left == 0) {
         s->audio_data_available[0] = xlnx_dpdma_start_operation(s->dpdma, 4,
                                                                   true);
@@ -398,7 +401,7 @@ static void xlnx_dp_audio_callback(void *opaque, int avail)
     /* Send the buffer through the audio. */
     if (s->byte_left <= MAX_QEMU_BUFFER_SIZE) {
         if (s->byte_left != 0) {
-            written = AUD_write(s->amixer_output_stream,
+            written = audio_be_write(s->audio_be, s->amixer_output_stream,
                                 &s->out_buffer[s->data_ptr], s->byte_left);
         } else {
              int len_to_copy;
@@ -410,12 +413,12 @@ static void xlnx_dp_audio_callback(void *opaque, int avail)
             while (avail) {
                 len_to_copy = MIN(AUD_CHBUF_MAX_DEPTH, avail);
                 memset(s->out_buffer, 0, len_to_copy);
-                avail -= AUD_write(s->amixer_output_stream, s->out_buffer,
-                                   len_to_copy);
+                avail -= audio_be_write(s->audio_be, s->amixer_output_stream,
+                                        s->out_buffer, len_to_copy);
             }
         }
     } else {
-        written = AUD_write(s->amixer_output_stream,
+        written = audio_be_write(s->audio_be, s->amixer_output_stream,
                             &s->out_buffer[s->data_ptr], MAX_QEMU_BUFFER_SIZE);
     }
     s->byte_left -= written;
@@ -432,7 +435,18 @@ static void xlnx_dp_aux_clear_rx_fifo(XlnxDPState *s)
 
 static void xlnx_dp_aux_push_rx_fifo(XlnxDPState *s, uint8_t *buf, size_t len)
 {
+    size_t avail = fifo8_num_free(&s->rx_fifo);
     DPRINTF("Push %u data in rx_fifo\n", (unsigned)len);
+    if (len > avail) {
+        /*
+         * Data sheet doesn't specify behaviour here: we choose to ignore
+         * the excess data.
+         */
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: ignoring %zu bytes pushed to full RX_FIFO\n",
+                      __func__, len - avail);
+        len = avail;
+    }
     fifo8_push_all(&s->rx_fifo, buf, len);
 }
 
@@ -463,7 +477,18 @@ static void xlnx_dp_aux_clear_tx_fifo(XlnxDPState *s)
 
 static void xlnx_dp_aux_push_tx_fifo(XlnxDPState *s, uint8_t *buf, size_t len)
 {
+    size_t avail = fifo8_num_free(&s->tx_fifo);
     DPRINTF("Push %u data in tx_fifo\n", (unsigned)len);
+    if (len > avail) {
+        /*
+         * Data sheet doesn't specify behaviour here: we choose to ignore
+         * the excess data.
+         */
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: ignoring %zu bytes pushed to full TX_FIFO\n",
+                      __func__, len - avail);
+        len = avail;
+    }
     fifo8_push_all(&s->tx_fifo, buf, len);
 }
 
@@ -472,8 +497,10 @@ static uint8_t xlnx_dp_aux_pop_tx_fifo(XlnxDPState *s)
     uint8_t ret;
 
     if (fifo8_is_empty(&s->tx_fifo)) {
-        error_report("%s: TX_FIFO underflow", __func__);
-        abort();
+        /* Data sheet doesn't specify behaviour here: we choose to return 0 */
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: attempt to read empty TX_FIFO\n",
+                      __func__);
+        return 0;
     }
     ret = fifo8_pop(&s->tx_fifo);
     DPRINTF("pop 0x%2.2X from tx_fifo.\n", ret);
@@ -638,14 +665,28 @@ static void xlnx_dp_change_graphic_fmt(XlnxDPState *s)
     case DP_GRAPHIC_BGR888:
         s->g_plane.format = PIXMAN_b8g8r8;
         break;
+    case DP_GRAPHIC_RGBA5551:
+    case DP_GRAPHIC_RGBA4444:
+    case DP_GRAPHIC_8BPP:
+    case DP_GRAPHIC_4BPP:
+    case DP_GRAPHIC_2BPP:
+    case DP_GRAPHIC_1BPP:
+        qemu_log_mask(LOG_UNIMP, "%s: unimplemented graphic format %u",
+                      __func__,
+                      s->avbufm_registers[AV_BUF_FORMAT] & DP_GRAPHIC_MASK);
+        s->g_plane.format = PIXMAN_r8g8b8a8;
+        break;
     default:
-        error_report("%s: unsupported graphic format %u", __func__,
-                     s->avbufm_registers[AV_BUF_FORMAT] & DP_GRAPHIC_MASK);
-        abort();
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid graphic format %u",
+                      __func__,
+                      s->avbufm_registers[AV_BUF_FORMAT] & DP_GRAPHIC_MASK);
+        s->g_plane.format = PIXMAN_r8g8b8a8;
+        break;
     }
 
     switch (s->avbufm_registers[AV_BUF_FORMAT] & DP_NL_VID_FMT_MASK) {
     case 0:
+        /* This is DP_NL_VID_CB_Y0_CR_Y1 ??? */
         s->v_plane.format = PIXMAN_x8b8g8r8;
         break;
     case DP_NL_VID_Y0_CB_Y1_CR:
@@ -654,10 +695,39 @@ static void xlnx_dp_change_graphic_fmt(XlnxDPState *s)
     case DP_NL_VID_RGBA8880:
         s->v_plane.format = PIXMAN_x8b8g8r8;
         break;
+    case DP_NL_VID_CR_Y0_CB_Y1:
+    case DP_NL_VID_Y0_CR_Y1_CB:
+    case DP_NL_VID_YV16:
+    case DP_NL_VID_YV24:
+    case DP_NL_VID_YV16CL:
+    case DP_NL_VID_MONO:
+    case DP_NL_VID_YV16CL2:
+    case DP_NL_VID_YUV444:
+    case DP_NL_VID_RGB888:
+    case DP_NL_VID_RGB888_10BPC:
+    case DP_NL_VID_YUV444_10BPC:
+    case DP_NL_VID_YV16CL2_10BPC:
+    case DP_NL_VID_YV16CL_10BPC:
+    case DP_NL_VID_YV16_10BPC:
+    case DP_NL_VID_YV24_10BPC:
+    case DP_NL_VID_Y_ONLY_10BPC:
+    case DP_NL_VID_YV16_420:
+    case DP_NL_VID_YV16CL_420:
+    case DP_NL_VID_YV16CL2_420:
+    case DP_NL_VID_YV16_420_10BPC:
+    case DP_NL_VID_YV16CL_420_10BPC:
+    case DP_NL_VID_YV16CL2_420_10BPC:
+        qemu_log_mask(LOG_UNIMP, "%s: unimplemented video format %u",
+                      __func__,
+                      s->avbufm_registers[AV_BUF_FORMAT] & DP_NL_VID_FMT_MASK);
+        s->v_plane.format = PIXMAN_x8b8g8r8;
+        break;
     default:
-        error_report("%s: unsupported video format %u", __func__,
-                     s->avbufm_registers[AV_BUF_FORMAT] & DP_NL_VID_FMT_MASK);
-        abort();
+        qemu_log_mask(LOG_UNIMP, "%s: invalid video format %u",
+                      __func__,
+                      s->avbufm_registers[AV_BUF_FORMAT] & DP_NL_VID_FMT_MASK);
+        s->v_plane.format = PIXMAN_x8b8g8r8;
+        break;
     }
 
     xlnx_dp_recreate_surface(s);
@@ -1264,14 +1334,18 @@ static void xlnx_dp_init(Object *obj)
     s->aux_bus = aux_bus_init(DEVICE(obj), "aux");
 
     /*
-     * Initialize DPCD and EDID..
+     * Initialize DPCD and EDID. Once we have added the objects as
+     * child properties of this device, we can drop the reference we
+     * hold to them, leaving the child-property as the only reference.
      */
     s->dpcd = DPCD(qdev_new("dpcd"));
     object_property_add_child(OBJECT(s), "dpcd", OBJECT(s->dpcd));
+    object_unref(s->dpcd);
 
     s->edid = I2CDDC(qdev_new("i2c-ddc"));
     i2c_slave_set_address(I2C_SLAVE(s->edid), 0x50);
     object_property_add_child(OBJECT(s), "edid", OBJECT(s->edid));
+    object_unref(s->edid);
 
     fifo8_create(&s->rx_fifo, 16);
     fifo8_create(&s->tx_fifo, 16);
@@ -1299,13 +1373,17 @@ static void xlnx_dp_realize(DeviceState *dev, Error **errp)
     DisplaySurface *surface;
     struct audsettings as;
 
+    if (!audio_be_check(&s->audio_be, errp)) {
+        return;
+    }
+
     aux_bus_realize(s->aux_bus);
 
     qdev_realize(DEVICE(s->dpcd), BUS(s->aux_bus), &error_fatal);
     aux_map_slave(AUX_SLAVE(s->dpcd), 0x0000);
 
-    qdev_realize_and_unref(DEVICE(s->edid), BUS(aux_get_i2c_bus(s->aux_bus)),
-                           &error_fatal);
+    qdev_realize(DEVICE(s->edid), BUS(aux_get_i2c_bus(s->aux_bus)),
+                 &error_fatal);
 
     s->console = graphic_console_init(dev, 0, &xlnx_dp_gfx_ops, s);
     surface = qemu_console_surface(s->console);
@@ -1315,17 +1393,15 @@ static void xlnx_dp_realize(DeviceState *dev, Error **errp)
     as.freq = 44100;
     as.nchannels = 2;
     as.fmt = AUDIO_FORMAT_S16;
-    as.endianness = 0;
+    as.big_endian = false;
 
-    AUD_register_card("xlnx_dp.audio", &s->aud_card);
-
-    s->amixer_output_stream = AUD_open_out(&s->aud_card,
+    s->amixer_output_stream = audio_be_open_out(s->audio_be,
                                            s->amixer_output_stream,
                                            "xlnx_dp.audio.out",
                                            s,
                                            xlnx_dp_audio_callback,
                                            &as);
-    AUD_set_volume_out(s->amixer_output_stream, 0, 255, 255);
+    audio_be_set_volume_out_lr(s->audio_be, s->amixer_output_stream, 0, 255, 255);
     xlnx_dp_audio_activate(s);
     s->vblank = ptimer_init(vblank_hit, s, DP_VBLANK_PTIMER_POLICY);
     ptimer_transaction_begin(s->vblank);
@@ -1382,13 +1458,18 @@ static void xlnx_dp_reset(DeviceState *dev)
     xlnx_dp_update_irq(s);
 }
 
-static void xlnx_dp_class_init(ObjectClass *oc, void *data)
+static const Property xlnx_dp_device_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(XlnxDPState, audio_be),
+};
+
+static void xlnx_dp_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     dc->realize = xlnx_dp_realize;
     dc->vmsd = &vmstate_dp;
-    dc->reset = xlnx_dp_reset;
+    device_class_set_legacy_reset(dc, xlnx_dp_reset);
+    device_class_set_props(dc, xlnx_dp_device_properties);
 }
 
 static const TypeInfo xlnx_dp_info = {

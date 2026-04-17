@@ -25,7 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "trace.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "hw/misc/stm32f4xx_exti.h"
 
@@ -164,7 +164,7 @@ static const VMStateDescription vmstate_stm32f4xx_exti = {
     .name = TYPE_STM32F4XX_EXTI,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(exti_imr, STM32F4xxExtiState),
         VMSTATE_UINT32(exti_emr, STM32F4xxExtiState),
         VMSTATE_UINT32(exti_rtsr, STM32F4xxExtiState),
@@ -175,11 +175,11 @@ static const VMStateDescription vmstate_stm32f4xx_exti = {
     }
 };
 
-static void stm32f4xx_exti_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_exti_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = stm32f4xx_exti_reset;
+    device_class_set_legacy_reset(dc, stm32f4xx_exti_reset);
     dc->vmsd = &vmstate_stm32f4xx_exti;
 }
 

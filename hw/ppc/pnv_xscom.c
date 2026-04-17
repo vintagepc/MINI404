@@ -20,12 +20,13 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "sysemu/hw_accel.h"
+#include "system/hw_accel.h"
 #include "target/ppc/cpu.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #include "hw/ppc/fdt.h"
 #include "hw/ppc/pnv.h"
+#include "hw/ppc/pnv_chip.h"
 #include "hw/ppc/pnv_xscom.h"
 
 #include <libfdt.h>
@@ -43,15 +44,12 @@ static void xscom_complete(CPUState *cs, uint64_t hmer_bits)
      * passed for the cpu, and no CPU completion is generated.
      */
     if (cs) {
-        PowerPCCPU *cpu = POWERPC_CPU(cs);
-        CPUPPCState *env = &cpu->env;
-
         /*
          * TODO: Need a CPU helper to set HMER, also handle generation
          * of HMIs
          */
         cpu_synchronize_state(cs);
-        env->spr[SPR_HMER] |= hmer_bits;
+        cpu_env(cs)->spr[SPR_HMER] |= hmer_bits;
     }
 }
 
@@ -63,6 +61,8 @@ static uint32_t pnv_xscom_pcba(PnvChip *chip, uint64_t addr)
 static uint64_t xscom_read_default(PnvChip *chip, uint32_t pcba)
 {
     switch (pcba) {
+    case 0x10005:       /* SECURITY SWITCH */
+        return 0;
     case 0xf000f:
         return PNV_CHIP_GET_CLASS(chip)->chip_cfam_id;
     case 0x18002:       /* ECID2 */
@@ -76,11 +76,6 @@ static uint64_t xscom_read_default(PnvChip *chip, uint32_t pcba)
     case PRD_P8_IPOLL_REG_STATUS:
     case PRD_P9_IPOLL_REG_MASK:
     case PRD_P9_IPOLL_REG_STATUS:
-
-        /* P9 xscom reset */
-    case 0x0090018:     /* Receive status reg */
-    case 0x0090012:     /* log register */
-    case 0x0090013:     /* error register */
 
         /* P8 xscom reset */
     case 0x2020007:     /* ADU stuff, log register */
@@ -121,10 +116,6 @@ static bool xscom_write_default(PnvChip *chip, uint32_t pcba, uint64_t val)
     case 0x1010c03:     /* PIBAM FIR MASK */
     case 0x1010c04:     /* PIBAM FIR MASK */
     case 0x1010c05:     /* PIBAM FIR MASK */
-        /* P9 xscom reset */
-    case 0x0090018:     /* Receive status reg */
-    case 0x0090012:     /* log register */
-    case 0x0090013:     /* error register */
 
         /* P8 xscom reset */
     case 0x2020007:     /* ADU stuff, log register */
@@ -220,15 +211,14 @@ const MemoryRegionOps pnv_xscom_ops = {
     .endianness = DEVICE_BIG_ENDIAN,
 };
 
-void pnv_xscom_realize(PnvChip *chip, uint64_t size, Error **errp)
+void pnv_xscom_init(PnvChip *chip, uint64_t size, hwaddr addr)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(chip);
     char *name;
 
     name = g_strdup_printf("xscom-%x", chip->chip_id);
     memory_region_init_io(&chip->xscom_mmio, OBJECT(chip), &pnv_xscom_ops,
                           chip, name, size);
-    sysbus_init_mmio(sbd, &chip->xscom_mmio);
+    memory_region_add_subregion(get_system_memory(), addr, &chip->xscom_mmio);
 
     memory_region_init(&chip->xscom, OBJECT(chip), name, size);
     address_space_init(&chip->xscom_as, &chip->xscom, name);

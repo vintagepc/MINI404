@@ -34,7 +34,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "ccid.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qom/object.h"
 
@@ -248,7 +248,7 @@ static void *handle_apdu_thread(void* arg)
         WITH_QEMU_LOCK_GUARD(&card->vreader_mutex) {
             while (!QSIMPLEQ_EMPTY(&card->guest_apdu_list)) {
                 event = QSIMPLEQ_FIRST(&card->guest_apdu_list);
-                assert((unsigned long)event > 1000);
+                assert(event != NULL);
                 QSIMPLEQ_REMOVE_HEAD(&card->guest_apdu_list, entry);
                 if (event->p.data.type != EMUL_GUEST_APDU) {
                     DPRINTF(card, 1, "unexpected message in handle_apdu_thread\n");
@@ -518,7 +518,7 @@ static void emulated_realize(CCIDCardState *base, Error **errp)
         goto out2;
     }
 
-    /* TODO: a passthru backened that works on local machine. third card type?*/
+    /* TODO: a passthru backend that works on local machine. third card type?*/
     if (card->backend == BACKEND_CERTIFICATES) {
         if (card->cert1 != NULL && card->cert2 != NULL && card->cert3 != NULL) {
             ret = emulated_initialize_vcard_from_certificates(card);
@@ -582,17 +582,16 @@ static void emulated_unrealize(CCIDCardState *base)
     qemu_mutex_destroy(&card->event_list_mutex);
 }
 
-static Property emulated_card_properties[] = {
+static const Property emulated_card_properties[] = {
     DEFINE_PROP_STRING("backend", EmulatedState, backend_str),
     DEFINE_PROP_STRING("cert1", EmulatedState, cert1),
     DEFINE_PROP_STRING("cert2", EmulatedState, cert2),
     DEFINE_PROP_STRING("cert3", EmulatedState, cert3),
     DEFINE_PROP_STRING("db", EmulatedState, db),
     DEFINE_PROP_UINT8("debug", EmulatedState, debug, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void emulated_class_initfn(ObjectClass *klass, void *data)
+static void emulated_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     CCIDCardClass *cc = CCID_CARD_CLASS(klass);

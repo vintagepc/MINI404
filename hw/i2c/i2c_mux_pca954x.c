@@ -19,8 +19,9 @@
 #include "hw/i2c/i2c.h"
 #include "hw/i2c/i2c_mux_pca954x.h"
 #include "hw/i2c/smbus_slave.h"
-#include "hw/qdev-core.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/queue.h"
@@ -43,6 +44,8 @@ typedef struct Pca954xState {
 
     bool enabled[PCA9548_CHANNEL_COUNT];
     I2CBus *bus[PCA9548_CHANNEL_COUNT];
+
+    char *name;
 } Pca954xState;
 
 /*
@@ -169,16 +172,27 @@ I2CBus *pca954x_i2c_get_bus(I2CSlave *mux, uint8_t channel)
     return pca954x->bus[channel];
 }
 
-static void pca9546_class_init(ObjectClass *klass, void *data)
+static void pca9546_class_init(ObjectClass *klass, const void *data)
 {
     Pca954xClass *s = PCA954X_CLASS(klass);
     s->nchans = PCA9546_CHANNEL_COUNT;
 }
 
-static void pca9548_class_init(ObjectClass *klass, void *data)
+static void pca9548_class_init(ObjectClass *klass, const void *data)
 {
     Pca954xClass *s = PCA954X_CLASS(klass);
     s->nchans = PCA9548_CHANNEL_COUNT;
+}
+
+static void pca954x_realize(DeviceState *dev, Error **errp)
+{
+    Pca954xState *s = PCA954X(dev);
+    DeviceState *d = DEVICE(s);
+    if (s->name) {
+        d->id = g_strdup(s->name);
+    } else {
+        d->id = g_strdup_printf("pca954x[%x]", s->parent.i2c.address);
+    }
 }
 
 static void pca954x_init(Object *obj)
@@ -197,7 +211,11 @@ static void pca954x_init(Object *obj)
     }
 }
 
-static void pca954x_class_init(ObjectClass *klass, void *data)
+static const Property pca954x_props[] = {
+    DEFINE_PROP_STRING("name", Pca954xState, name),
+};
+
+static void pca954x_class_init(ObjectClass *klass, const void *data)
 {
     I2CSlaveClass *sc = I2C_SLAVE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -209,9 +227,12 @@ static void pca954x_class_init(ObjectClass *klass, void *data)
     rc->phases.enter = pca954x_enter_reset;
 
     dc->desc = "Pca954x i2c-mux";
+    dc->realize = pca954x_realize;
 
     k->write_data = pca954x_write_data;
     k->receive_byte = pca954x_read_byte;
+
+    device_class_set_props(dc, pca954x_props);
 }
 
 static const TypeInfo pca954x_info[] = {

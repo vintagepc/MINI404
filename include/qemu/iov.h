@@ -1,6 +1,7 @@
 /*
  * Helpers for using (partial) iovecs.
  *
+ * Copyright (c) 2024 Seagate Technology LLC and/or its Affiliates
  * Copyright (C) 2010 Red Hat, Inc.
  *
  * Author(s):
@@ -30,7 +31,7 @@ size_t iov_size(const struct iovec *iov, const unsigned int iov_cnt);
  * only part of data will be copied, up to the end of the iovec.
  * Number of bytes actually copied will be returned, which is
  *  min(bytes, iov_size(iov)-offset)
- * `Offset' must point to the inside of iovec.
+ * Returns 0 when `offset' points to the outside of iovec.
  */
 size_t iov_from_buf_full(const struct iovec *iov, unsigned int iov_cnt,
                          size_t offset, const void *buf, size_t bytes);
@@ -66,14 +67,41 @@ iov_to_buf(const struct iovec *iov, const unsigned int iov_cnt,
 /**
  * Set data bytes pointed out by iovec `iov' of size `iov_cnt' elements,
  * starting at byte offset `start', to value `fillc', repeating it
- * `bytes' number of times.  `Offset' must point to the inside of iovec.
+ * `bytes' number of times.
  * If `bytes' is large enough, only last bytes portion of iovec,
  * up to the end of it, will be filled with the specified value.
  * Function return actual number of bytes processed, which is
  * min(size, iov_size(iov) - offset).
+ * Returns 0 when `offset' points to the outside of iovec.
  */
 size_t iov_memset(const struct iovec *iov, const unsigned int iov_cnt,
                   size_t offset, int fillc, size_t bytes);
+
+/*
+ * Send/recv data from/to iovec buffers directly, with the provided
+ * socket flags.
+ *
+ * `offset' bytes in the beginning of iovec buffer are skipped and
+ * next `bytes' bytes are used, which must be within data of iovec.
+ *
+ *   r = iov_send_recv_with_flags(sockfd, sockflags, iov, iovcnt,
+ *                                offset, bytes, true);
+ *
+ * is logically equivalent to
+ *
+ *   char *buf = malloc(bytes);
+ *   iov_to_buf(iov, iovcnt, offset, buf, bytes);
+ *   r = send(sockfd, buf, bytes, sockflags);
+ *   free(buf);
+ *
+ * For iov_send_recv_with_flags() _whole_ area being sent or received
+ * should be within the iovec, not only beginning of it.
+ */
+ssize_t iov_send_recv_with_flags(int sockfd, int sockflags,
+                                 const struct iovec *iov,
+                                 unsigned iov_cnt, size_t offset,
+                                 size_t bytes,
+                                 bool do_send);
 
 /*
  * Send/recv data from/to iovec buffers directly
@@ -222,13 +250,11 @@ static inline void *qemu_iovec_buf(QEMUIOVector *qiov)
 
 void qemu_iovec_init(QEMUIOVector *qiov, int alloc_hint);
 void qemu_iovec_init_external(QEMUIOVector *qiov, struct iovec *iov, int niov);
-int qemu_iovec_init_extended(
-        QEMUIOVector *qiov,
-        void *head_buf, size_t head_len,
-        QEMUIOVector *mid_qiov, size_t mid_offset, size_t mid_len,
-        void *tail_buf, size_t tail_len);
 void qemu_iovec_init_slice(QEMUIOVector *qiov, QEMUIOVector *source,
                            size_t offset, size_t len);
+struct iovec *qemu_iovec_slice(QEMUIOVector *qiov,
+                               size_t offset, size_t len,
+                               size_t *head, size_t *tail, int *niov);
 int qemu_iovec_subvec_niov(QEMUIOVector *qiov, size_t offset, size_t len);
 void qemu_iovec_add(QEMUIOVector *qiov, void *base, size_t len);
 void qemu_iovec_concat(QEMUIOVector *dst,

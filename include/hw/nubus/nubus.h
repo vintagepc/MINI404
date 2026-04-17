@@ -9,9 +9,9 @@
 #ifndef HW_NUBUS_NUBUS_H
 #define HW_NUBUS_NUBUS_H
 
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
-#include "exec/address-spaces.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "system/address-spaces.h"
 #include "qom/object.h"
 #include "qemu/units.h"
 
@@ -51,7 +51,7 @@ struct NubusBus {
     qemu_irq irqs[NUBUS_IRQS];
 };
 
-#define NUBUS_DECL_ROM_MAX_SIZE    (128 * KiB)
+#define NUBUS_DECL_ROM_MAX_SIZE    (1 * MiB)
 
 struct NubusDevice {
     DeviceState qdev;

@@ -20,9 +20,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/fifo8.h"
 #include "qemu/log.h"
@@ -267,7 +267,7 @@ static void sifive_spi_write(void *opaque, hwaddr addr,
     case R_RXDATA:
     case R_IP:
         qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: invalid write to read-only reigster 0x%"
+                      "%s: invalid write to read-only register 0x%"
                       HWADDR_PRIx " with 0x%x\n", __func__, addr << 2, value);
         break;
 
@@ -328,17 +328,16 @@ static void sifive_spi_realize(DeviceState *dev, Error **errp)
     fifo8_create(&s->rx_fifo, FIFO_CAPACITY);
 }
 
-static Property sifive_spi_properties[] = {
+static const Property sifive_spi_properties[] = {
     DEFINE_PROP_UINT32("num-cs", SiFiveSPIState, num_cs, 1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void sifive_spi_class_init(ObjectClass *klass, void *data)
+static void sifive_spi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_props(dc, sifive_spi_properties);
-    dc->reset = sifive_spi_reset;
+    device_class_set_legacy_reset(dc, sifive_spi_reset);
     dc->realize = sifive_spi_realize;
 }
 

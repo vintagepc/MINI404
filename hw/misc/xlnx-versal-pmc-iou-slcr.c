@@ -24,13 +24,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/register.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/register.h"
+#include "hw/core/irq.h"
 #include "qemu/bitops.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/misc/xlnx-versal-pmc-iou-slcr.h"
 
 #ifndef XILINX_VERSAL_PMC_IOU_SLCR_ERR_DEBUG
@@ -1350,7 +1350,7 @@ static void xlnx_versal_pmc_iou_slcr_reset_init(Object *obj, ResetType type)
     }
 }
 
-static void xlnx_versal_pmc_iou_slcr_reset_hold(Object *obj)
+static void xlnx_versal_pmc_iou_slcr_reset_hold(Object *obj, ResetType type)
 {
     XlnxVersalPmcIouSlcr *s = XILINX_VERSAL_PMC_IOU_SLCR(obj);
 
@@ -1412,14 +1412,15 @@ static const VMStateDescription vmstate_pmc_iou_slcr = {
     .name = TYPE_XILINX_VERSAL_PMC_IOU_SLCR,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, XlnxVersalPmcIouSlcr,
                              XILINX_VERSAL_PMC_IOU_SLCR_R_MAX),
         VMSTATE_END_OF_LIST(),
     }
 };
 
-static void xlnx_versal_pmc_iou_slcr_class_init(ObjectClass *klass, void *data)
+static void xlnx_versal_pmc_iou_slcr_class_init(ObjectClass *klass,
+                                                const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);

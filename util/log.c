@@ -44,8 +44,7 @@ static FILE *global_file;
 static __thread FILE *thread_file;
 static __thread Notifier qemu_log_thread_cleanup_notifier;
 
-int qemu_loglevel;
-static bool log_append;
+unsigned qemu_loglevel;
 static bool log_per_thread;
 static GArray *debug_regions;
 
@@ -80,13 +79,15 @@ static int log_thread_id(void)
 
 static void qemu_log_thread_cleanup(Notifier *n, void *unused)
 {
-    fclose(thread_file);
-    thread_file = NULL;
+    if (thread_file != stderr) {
+        fclose(thread_file);
+        thread_file = NULL;
+    }
 }
 
 /* Lock/unlock output. */
 
-FILE *qemu_log_trylock(void)
+static FILE *qemu_log_trylock_with_err(Error **errp)
 {
     FILE *logfile;
 
@@ -97,6 +98,9 @@ FILE *qemu_log_trylock(void)
                 = g_strdup_printf(global_filename, log_thread_id());
             logfile = fopen(filename, "w");
             if (!logfile) {
+                error_setg_errno(errp, errno,
+                                 "Error opening logfile %s for thread %d",
+                                 filename, log_thread_id());
                 return NULL;
             }
             thread_file = logfile;
@@ -114,6 +118,7 @@ FILE *qemu_log_trylock(void)
             logfile = qatomic_rcu_read((void **)&global_file);
             if (!logfile) {
                 rcu_read_unlock();
+                error_setg(errp, "Global log file output is not open");
                 return NULL;
             }
         }
@@ -123,8 +128,39 @@ FILE *qemu_log_trylock(void)
     return logfile;
 }
 
+/*
+ * Zero if there's been no opening qemu_log_trylock call,
+ * indicating the need for message context to be emitted
+ *
+ * Non-zero if we're in the middle of printing a message,
+ * possibly over multiple lines and must skip further
+ * message context
+ */
+static __thread unsigned int log_depth;
+
+FILE *qemu_log_trylock(void)
+{
+    FILE *f = qemu_log_trylock_with_err(NULL);
+    log_depth++;
+    return f;
+}
+
+FILE *qemu_log_trylock_with_context(void)
+{
+    FILE *f = qemu_log_trylock();
+    if (f && log_depth == 1 && message_with_timestamp) {
+        g_autofree const char *timestr = NULL;
+        g_autoptr(GDateTime) dt = g_date_time_new_now_utc();
+        timestr = g_date_time_format_iso8601(dt);
+        fprintf(f, "%s ", timestr);
+    }
+    return f;
+}
+
 void qemu_log_unlock(FILE *logfile)
 {
+    assert(log_depth);
+    log_depth--;
     if (logfile) {
         fflush(logfile);
         qemu_funlockfile(logfile);
@@ -136,10 +172,9 @@ void qemu_log_unlock(FILE *logfile)
 
 void qemu_log(const char *fmt, ...)
 {
-    FILE *f = qemu_log_trylock();
+    FILE *f = qemu_log_trylock_with_context();
     if (f) {
         va_list ap;
-
         va_start(ap, fmt);
         vfprintf(f, fmt, ap);
         va_end(ap);
@@ -176,7 +211,7 @@ static ValidFilenameTemplateResult
 valid_filename_template(const char *filename, bool per_thread, Error **errp)
 {
     if (filename) {
-        char *pidstr = strstr(filename, "%");
+        const char *pidstr = strstr(filename, "%");
 
         if (pidstr) {
             /* We only accept one %d, no other format strings */
@@ -266,40 +301,63 @@ static bool qemu_set_log_internal(const char *filename, bool changed_name,
 #endif
     qemu_loglevel = log_flags;
 
-    /*
-     * In all cases we only log if qemu_loglevel is set.
-     * Also:
-     *   If per-thread, open the file for each thread in qemu_log_lock.
-     *   If not daemonized we will always log either to stderr
-     *     or to a file (if there is a filename).
-     *   If we are daemonized, we will only log if there is a filename.
-     */
     daemonized = is_daemonized();
-    need_to_open_file = log_flags && !per_thread && (!daemonized || filename);
+    need_to_open_file = false;
+    if (!daemonized) {
+        /*
+         * If not daemonized we only log if qemu_loglevel is set, either to
+         * stderr or to a file (if there is a filename).
+         * If per-thread, open the file for each thread in qemu_log_trylock().
+         */
+        need_to_open_file = qemu_loglevel && !log_per_thread;
+    } else {
+        /*
+         * If we are daemonized, we will only log if there is a filename.
+         */
+        need_to_open_file = filename != NULL;
+    }
 
-    if (logfile && (!need_to_open_file || changed_name)) {
-        qatomic_rcu_set(&global_file, NULL);
-        if (logfile != stderr) {
+    if (logfile) {
+        fflush(logfile);
+        if (changed_name && logfile != stderr) {
             RCUCloseFILE *r = g_new0(RCUCloseFILE, 1);
             r->fd = logfile;
+            qatomic_rcu_set(&global_file, NULL);
             call_rcu(r, rcu_close_file, rcu);
         }
-        logfile = NULL;
+        if (changed_name) {
+            logfile = NULL;
+        }
+    }
+
+    if (log_per_thread && daemonized) {
+        logfile = thread_file;
     }
 
     if (!logfile && need_to_open_file) {
         if (filename) {
-            logfile = fopen(filename, log_append ? "a" : "w");
-            if (!logfile) {
-                error_setg_errno(errp, errno, "Error opening logfile %s",
-                                 filename);
-                return false;
+            if (log_per_thread) {
+                logfile = qemu_log_trylock_with_err(errp);
+                if (!logfile) {
+                    return false;
+                }
+                qemu_log_unlock(logfile);
+            } else {
+                logfile = fopen(filename, "w");
+                if (!logfile) {
+                    error_setg_errno(errp, errno, "Error opening logfile %s",
+                                     filename);
+                    return false;
+                }
             }
             /* In case we are a daemon redirect stderr to logfile */
             if (daemonized) {
                 dup2(fileno(logfile), STDERR_FILENO);
                 fclose(logfile);
-                /* This will skip closing logfile in rcu_close_file. */
+                /*
+                 * This will skip closing logfile in rcu_close_file()
+                 * or qemu_log_thread_cleanup().
+                 */
                 logfile = stderr;
             }
         } else {
@@ -308,9 +366,11 @@ static bool qemu_set_log_internal(const char *filename, bool changed_name,
             logfile = stderr;
         }
 
-        log_append = 1;
-
-        qatomic_rcu_set(&global_file, logfile);
+        if (log_per_thread && daemonized) {
+            thread_file = logfile;
+        } else {
+            qatomic_rcu_set(&global_file, logfile);
+        }
     }
     return true;
 }
@@ -432,6 +492,10 @@ const QEMULogItem qemu_log_items[] = {
       "show micro ops after optimization" },
     { CPU_LOG_TB_OP_IND, "op_ind",
       "show micro ops before indirect lowering" },
+#ifdef CONFIG_PLUGIN
+    { LOG_TB_OP_PLUGIN, "op_plugin",
+      "show micro ops before plugin injection" },
+#endif
     { CPU_LOG_INT, "int",
       "show interrupts/exceptions in short format" },
     { CPU_LOG_EXEC, "exec",
@@ -457,12 +521,16 @@ const QEMULogItem qemu_log_items[] = {
       "do not chain compiled TBs so that \"exec\" and \"cpu\" show\n"
       "complete traces" },
 #ifdef CONFIG_PLUGIN
-    { CPU_LOG_PLUGIN, "plugin", "output from TCG plugins\n"},
+    { CPU_LOG_PLUGIN, "plugin", "output from TCG plugins"},
 #endif
     { LOG_STRACE, "strace",
       "log every user-mode syscall, its input, and its result" },
     { LOG_PER_THREAD, "tid",
       "open a separate log file per thread; filename must contain '%d'" },
+    { CPU_LOG_TB_VPU, "vpu",
+      "include VPU registers in the 'cpu' logging" },
+    { LOG_INVALID_MEM, "invalid_mem",
+      "log invalid memory accesses" },
     { 0, NULL, NULL },
 };
 
@@ -516,3 +584,15 @@ void qemu_print_log_usage(FILE *f)
     fprintf(f, "\nUse \"-d trace:help\" to get a list of trace events.\n\n");
 #endif
 }
+
+#ifdef CONFIG_HAVE_RUST
+ssize_t rust_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    /*
+     * Same as fwrite, but return -errno because Rust libc does not provide
+     * portable access to errno. :(
+     */
+    int ret = fwrite(ptr, size, nmemb, stream);
+    return ret < 0 ? -errno : 0;
+}
+#endif

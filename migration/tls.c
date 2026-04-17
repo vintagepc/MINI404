@@ -22,31 +22,29 @@
 #include "channel.h"
 #include "migration.h"
 #include "tls.h"
+#include "options.h"
 #include "crypto/tlscreds.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "trace.h"
 
 static QCryptoTLSCreds *
-migration_tls_get_creds(MigrationState *s,
-                        QCryptoTLSCredsEndpoint endpoint,
-                        Error **errp)
+migration_tls_get_creds(QCryptoTLSCredsEndpoint endpoint, Error **errp)
 {
     Object *creds;
+    const char *tls_creds = migrate_tls_creds();
     QCryptoTLSCreds *ret;
 
-    creds = object_resolve_path_component(
-        object_get_objects_root(), s->parameters.tls_creds);
+    creds = object_resolve_path_component(object_get_objects_root(), tls_creds);
     if (!creds) {
-        error_setg(errp, "No TLS credentials with id '%s'",
-                   s->parameters.tls_creds);
+        error_setg(errp, "No TLS credentials with id '%s'", tls_creds);
         return NULL;
     }
     ret = (QCryptoTLSCreds *)object_dynamic_cast(
         creds, TYPE_QCRYPTO_TLS_CREDS);
     if (!ret) {
         error_setg(errp, "Object with id '%s' is not TLS credentials",
-                   s->parameters.tls_creds);
+                   tls_creds);
         return NULL;
     }
     if (!qcrypto_tls_creds_check_endpoint(ret, endpoint, errp)) {
@@ -73,29 +71,27 @@ static void migration_tls_incoming_handshake(QIOTask *task,
     object_unref(OBJECT(ioc));
 }
 
-void migration_tls_channel_process_incoming(MigrationState *s,
-                                            QIOChannel *ioc,
-                                            Error **errp)
+void migration_tls_channel_process_incoming(QIOChannel *ioc, Error **errp)
 {
     QCryptoTLSCreds *creds;
     QIOChannelTLS *tioc;
 
-    creds = migration_tls_get_creds(
-        s, QCRYPTO_TLS_CREDS_ENDPOINT_SERVER, errp);
+    creds = migration_tls_get_creds(QCRYPTO_TLS_CREDS_ENDPOINT_SERVER, errp);
     if (!creds) {
         return;
     }
 
-    tioc = qio_channel_tls_new_server(
-        ioc, creds,
-        s->parameters.tls_authz,
-        errp);
+    tioc = qio_channel_tls_new_server(ioc, creds, migrate_tls_authz(), errp);
     if (!tioc) {
         return;
     }
 
     trace_migration_tls_incoming_handshake_start();
     qio_channel_set_name(QIO_CHANNEL(tioc), "migration-tls-incoming");
+    if (migrate_postcopy_ram() || migrate_return_path()) {
+        qio_channel_set_feature(QIO_CHANNEL(tioc),
+                                QIO_CHANNEL_FEATURE_CONCURRENT_IO);
+    }
     qio_channel_tls_handshake(tioc,
                               migration_tls_incoming_handshake,
                               NULL,
@@ -108,58 +104,49 @@ static void migration_tls_outgoing_handshake(QIOTask *task,
                                              gpointer opaque)
 {
     MigrationState *s = opaque;
-    QIOChannel *ioc = QIO_CHANNEL(qio_task_get_source(task));
+    g_autoptr(QIOChannel) ioc = QIO_CHANNEL(qio_task_get_source(task));
     Error *err = NULL;
 
     if (qio_task_propagate_error(task, &err)) {
         trace_migration_tls_outgoing_handshake_error(error_get_pretty(err));
-    } else {
-        trace_migration_tls_outgoing_handshake_complete();
+        migration_connect_error_propagate(s, err);
+        return;
     }
-    migration_channel_connect(s, ioc, NULL, err);
-    object_unref(OBJECT(ioc));
+
+    trace_migration_tls_outgoing_handshake_complete();
+    migration_channel_connect_outgoing(s, ioc);
 }
 
-QIOChannelTLS *migration_tls_client_create(MigrationState *s,
-                                           QIOChannel *ioc,
-                                           const char *hostname,
+QIOChannelTLS *migration_tls_client_create(QIOChannel *ioc,
                                            Error **errp)
 {
     QCryptoTLSCreds *creds;
-    QIOChannelTLS *tioc;
 
-    creds = migration_tls_get_creds(
-        s, QCRYPTO_TLS_CREDS_ENDPOINT_CLIENT, errp);
+    creds = migration_tls_get_creds(QCRYPTO_TLS_CREDS_ENDPOINT_CLIENT, errp);
     if (!creds) {
         return NULL;
     }
 
-    if (s->parameters.tls_hostname && *s->parameters.tls_hostname) {
-        hostname = s->parameters.tls_hostname;
-    }
-
-    tioc = qio_channel_tls_new_client(
-        ioc, creds, hostname, errp);
-
-    return tioc;
+    return qio_channel_tls_new_client(ioc, creds, migrate_tls_hostname(), errp);
 }
 
-void migration_tls_channel_connect(MigrationState *s,
-                                   QIOChannel *ioc,
-                                   const char *hostname,
+void migration_tls_channel_connect(MigrationState *s, QIOChannel *ioc,
                                    Error **errp)
 {
     QIOChannelTLS *tioc;
 
-    tioc = migration_tls_client_create(s, ioc, hostname, errp);
+    tioc = migration_tls_client_create(ioc, errp);
     if (!tioc) {
         return;
     }
 
-    /* Save hostname into MigrationState for handshake */
-    s->hostname = g_strdup(hostname);
-    trace_migration_tls_outgoing_handshake_start(hostname);
+    trace_migration_tls_outgoing_handshake_start();
     qio_channel_set_name(QIO_CHANNEL(tioc), "migration-tls-outgoing");
+
+    if (migrate_postcopy_ram() || migrate_return_path()) {
+        qio_channel_set_feature(QIO_CHANNEL(tioc),
+                                QIO_CHANNEL_FEATURE_CONCURRENT_IO);
+    }
     qio_channel_tls_handshake(tioc,
                               migration_tls_outgoing_handshake,
                               s,
@@ -167,9 +154,14 @@ void migration_tls_channel_connect(MigrationState *s,
                               NULL);
 }
 
+void migration_tls_channel_end(QIOChannel *ioc, Error **errp)
+{
+    qio_channel_tls_bye(QIO_CHANNEL_TLS(ioc), errp);
+}
+
 bool migrate_channel_requires_tls_upgrade(QIOChannel *ioc)
 {
-    if (!migrate_use_tls()) {
+    if (!migrate_tls()) {
         return false;
     }
 

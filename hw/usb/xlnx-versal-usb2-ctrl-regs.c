@@ -28,9 +28,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/register.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/register.h"
 #include "qemu/bitops.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
@@ -153,7 +153,7 @@ static void usb2_ctrl_regs_reset_init(Object *obj, ResetType type)
     }
 }
 
-static void usb2_ctrl_regs_reset_hold(Object *obj)
+static void usb2_ctrl_regs_reset_hold(Object *obj, ResetType type)
 {
     VersalUsb2CtrlRegs *s = XILINX_VERSAL_USB2_CTRL_REGS(obj);
 
@@ -196,13 +196,13 @@ static const VMStateDescription vmstate_usb2_ctrl_regs = {
     .name = TYPE_XILINX_VERSAL_USB2_CTRL_REGS,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, VersalUsb2CtrlRegs, USB2_REGS_R_MAX),
         VMSTATE_END_OF_LIST(),
     }
 };
 
-static void usb2_ctrl_regs_class_init(ObjectClass *klass, void *data)
+static void usb2_ctrl_regs_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);

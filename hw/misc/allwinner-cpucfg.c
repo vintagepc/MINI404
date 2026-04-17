@@ -19,7 +19,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -84,7 +84,7 @@ static void allwinner_cpucfg_cpu_reset(AwCpuCfgState *s, uint8_t cpu_id)
 
     trace_allwinner_cpucfg_cpu_reset(cpu_id, s->entry_addr);
 
-    ARMCPU *target_cpu = ARM_CPU(arm_get_cpu_by_id(cpu_id));
+    CPUState *target_cpu = arm_get_cpu_by_id(cpu_id);
     if (!target_cpu) {
         /*
          * Called with a bogus value for cpu_id. Guest error will
@@ -92,7 +92,7 @@ static void allwinner_cpucfg_cpu_reset(AwCpuCfgState *s, uint8_t cpu_id)
          */
         return;
     }
-    bool target_aa64 = arm_feature(&target_cpu->env, ARM_FEATURE_AARCH64);
+    bool target_aa64 = arm_feature(cpu_env(target_cpu), ARM_FEATURE_AARCH64);
 
     ret = arm_set_cpu_on(cpu_id, s->entry_addr, 0,
                          CPU_EXCEPTION_LEVEL_ON_RESET, target_aa64);
@@ -217,7 +217,7 @@ static void allwinner_cpucfg_write(void *opaque, hwaddr offset,
 static const MemoryRegionOps allwinner_cpucfg_ops = {
     .read = allwinner_cpucfg_read,
     .write = allwinner_cpucfg_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -250,7 +250,7 @@ static const VMStateDescription allwinner_cpucfg_vmstate = {
     .name = "allwinner-cpucfg",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(gen_ctrl, AwCpuCfgState),
         VMSTATE_UINT32(super_standby, AwCpuCfgState),
         VMSTATE_UINT32(entry_addr, AwCpuCfgState),
@@ -258,11 +258,11 @@ static const VMStateDescription allwinner_cpucfg_vmstate = {
     }
 };
 
-static void allwinner_cpucfg_class_init(ObjectClass *klass, void *data)
+static void allwinner_cpucfg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = allwinner_cpucfg_reset;
+    device_class_set_legacy_reset(dc, allwinner_cpucfg_reset);
     dc->vmsd = &allwinner_cpucfg_vmstate;
 }
 

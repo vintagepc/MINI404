@@ -20,7 +20,8 @@
 #ifndef PPC_PNV_SBE_H
 #define PPC_PNV_SBE_H
 
-#include "qom/object.h"
+#include "system/memory.h"
+#include "hw/core/qdev.h"
 
 #define TYPE_PNV_SBE "pnv-sbe"
 OBJECT_DECLARE_TYPE(PnvSBE, PnvSBEClass, PNV_SBE)

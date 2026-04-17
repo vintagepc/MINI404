@@ -34,7 +34,7 @@
 #include "block/thread-pool.h"
 #include "migration/vmstate.h"
 #include "qemu/pmem.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 /* DIMM health bitmap bitmap indicators. Taken from kernel's papr_scm.c */
 /* SCM device is unable to persist memory contents */
@@ -235,8 +235,6 @@ void spapr_dt_persistent_memory(SpaprMachineState *spapr, void *fdt)
         spapr_dt_nvdimm(spapr, fdt, offset, nvdimm);
     }
     g_slist_free(nvdimms);
-
-    return;
 }
 
 static target_ulong h_scm_read_metadata(PowerPCCPU *cpu,
@@ -320,7 +318,8 @@ static target_ulong h_scm_write_metadata(PowerPCCPU *cpu,
 
     nvdimm = NVDIMM(drc->dev);
     if ((offset + len < offset) ||
-        (nvdimm->label_size < len + offset)) {
+        (nvdimm->label_size < len + offset) ||
+        nvdimm->readonly) {
         return H_P2;
     }
 
@@ -377,7 +376,7 @@ static target_ulong h_scm_bind_mem(PowerPCCPU *cpu, SpaprMachineState *spapr,
 
     /*
      * Currently continue token should be zero qemu has already bound
-     * everything and this hcall doesnt return H_BUSY.
+     * everything and this hcall doesn't return H_BUSY.
      */
     if (continue_token > 0) {
         return H_P5;
@@ -496,7 +495,6 @@ static int spapr_nvdimm_flush_post_load(void *opaque, int version_id)
 {
     SpaprNVDIMMDevice *s_nvdimm = (SpaprNVDIMMDevice *)opaque;
     SpaprNVDIMMDeviceFlushState *state;
-    ThreadPool *pool = aio_get_thread_pool(qemu_get_aio_context());
     HostMemoryBackend *backend = MEMORY_BACKEND(PC_DIMM(s_nvdimm)->hostmem);
     bool is_pmem = object_property_get_bool(OBJECT(backend), "pmem", NULL);
     bool pmem_override = object_property_get_bool(OBJECT(s_nvdimm),
@@ -517,7 +515,7 @@ static int spapr_nvdimm_flush_post_load(void *opaque, int version_id)
     }
 
     QLIST_FOREACH(state, &s_nvdimm->pending_nvdimm_flush_states, node) {
-        thread_pool_submit_aio(pool, flush_worker_cb, state,
+        thread_pool_submit_aio(flush_worker_cb, state,
                                spapr_nvdimm_flush_completion_cb, state);
     }
 
@@ -528,7 +526,7 @@ static const VMStateDescription vmstate_spapr_nvdimm_flush_state = {
      .name = "spapr_nvdimm_flush_state",
      .version_id = 1,
      .minimum_version_id = 1,
-     .fields = (VMStateField[]) {
+     .fields = (const VMStateField[]) {
          VMSTATE_UINT64(continue_token, SpaprNVDIMMDeviceFlushState),
          VMSTATE_INT64(hcall_ret, SpaprNVDIMMDeviceFlushState),
          VMSTATE_UINT32(drcidx, SpaprNVDIMMDeviceFlushState),
@@ -541,7 +539,7 @@ const VMStateDescription vmstate_spapr_nvdimm_states = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = spapr_nvdimm_flush_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(hcall_flush_required, SpaprNVDIMMDevice),
         VMSTATE_UINT64(nvdimm_flush_token, SpaprNVDIMMDevice),
         VMSTATE_QLIST_V(completed_nvdimm_flush_states, SpaprNVDIMMDevice, 1,
@@ -589,7 +587,7 @@ void spapr_nvdimm_finish_flushes(void)
      * Called on reset path, the main loop thread which calls
      * the pending BHs has gotten out running in the reset path,
      * finally reaching here. Other code path being guest
-     * h_client_architecture_support, thats early boot up.
+     * h_client_architecture_support, that's early boot up.
      */
     nvdimms = nvdimm_get_device_list();
     for (list = nvdimms; list; list = list->next) {
@@ -664,7 +662,6 @@ static target_ulong h_scm_flush(PowerPCCPU *cpu, SpaprMachineState *spapr,
     PCDIMMDevice *dimm;
     HostMemoryBackend *backend = NULL;
     SpaprNVDIMMDeviceFlushState *state;
-    ThreadPool *pool = aio_get_thread_pool(qemu_get_aio_context());
     int fd;
 
     if (!drc || !drc->dev ||
@@ -699,7 +696,7 @@ static target_ulong h_scm_flush(PowerPCCPU *cpu, SpaprMachineState *spapr,
 
         state->drcidx = drc_index;
 
-        thread_pool_submit_aio(pool, flush_worker_cb, state,
+        thread_pool_submit_aio(flush_worker_cb, state,
                                spapr_nvdimm_flush_completion_cb, state);
 
         continue_token = state->continue_token;
@@ -877,8 +874,7 @@ static void spapr_nvdimm_realize(NVDIMMDevice *dimm, Error **errp)
         s_nvdimm->hcall_flush_required = true;
     }
 
-    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY,
-                     &vmstate_spapr_nvdimm_states, dimm);
+    vmstate_register_any(NULL, &vmstate_spapr_nvdimm_states, dimm);
 }
 
 static void spapr_nvdimm_unrealize(NVDIMMDevice *dimm)
@@ -886,22 +882,22 @@ static void spapr_nvdimm_unrealize(NVDIMMDevice *dimm)
     vmstate_unregister(NULL, &vmstate_spapr_nvdimm_states, dimm);
 }
 
-static Property spapr_nvdimm_properties[] = {
 #ifdef CONFIG_LIBPMEM
+static const Property spapr_nvdimm_properties[] = {
     DEFINE_PROP_BOOL("pmem-override", SpaprNVDIMMDevice, pmem_override, false),
-#endif
-    DEFINE_PROP_END_OF_LIST(),
 };
+#endif
 
-static void spapr_nvdimm_class_init(ObjectClass *oc, void *data)
+static void spapr_nvdimm_class_init(ObjectClass *oc, const void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(oc);
     NVDIMMClass *nvc = NVDIMM_CLASS(oc);
 
     nvc->realize = spapr_nvdimm_realize;
     nvc->unrealize = spapr_nvdimm_unrealize;
 
-    device_class_set_props(dc, spapr_nvdimm_properties);
+#ifdef CONFIG_LIBPMEM
+    device_class_set_props(DEVICE_CLASS(oc), spapr_nvdimm_properties);
+#endif
 }
 
 static void spapr_nvdimm_init(Object *obj)

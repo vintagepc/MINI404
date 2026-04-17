@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2022 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,14 +26,6 @@
 
 #define fZXTN(N, M, VAL) ((VAL) & ((1LL << (N)) - 1))
 
-enum {
-    EXT_IDX_noext = 0,
-    EXT_IDX_noext_AFTER = 4,
-    EXT_IDX_mmvec = 4,
-    EXT_IDX_mmvec_AFTER = 8,
-    XX_LAST_EXT_IDX
-};
-
 /*
  *  Certain operand types represent a non-contiguous set of values.
  *  For example, the compound compare-and-jump instruction can only access
@@ -52,174 +44,41 @@ DEF_REGMAP(R_8,   8,  0, 1, 2, 3, 4, 5, 6, 7)
 #define DECODE_MAPPED_REG(OPNUM, NAME) \
     insn->regno[OPNUM] = DECODE_REGISTER_##NAME[insn->regno[OPNUM]];
 
-typedef struct {
-    const struct DectreeTable *table_link;
-    const struct DectreeTable *table_link_b;
-    Opcode opcode;
-    enum {
-        DECTREE_ENTRY_INVALID,
-        DECTREE_TABLE_LINK,
-        DECTREE_SUBINSNS,
-        DECTREE_EXTSPACE,
-        DECTREE_TERMINAL
-    } type;
-} DectreeEntry;
+/* Helper functions for decode_*_generated.c.inc */
+#define DECODE_MAPPED(NAME) \
+static int decode_mapped_reg_##NAME(DisasContext *ctx, int x) \
+{ \
+    return DECODE_REGISTER_##NAME[x]; \
+}
+DECODE_MAPPED(R_16)
+DECODE_MAPPED(R_8)
+DECODE_MAPPED(R__8)
 
-typedef struct DectreeTable {
-    unsigned int (*lookup_function)(int startbit, int width, uint32_t opcode);
-    unsigned int size;
-    unsigned int startbit;
-    unsigned int width;
-    const DectreeEntry table[];
-} DectreeTable;
-
-#define DECODE_NEW_TABLE(TAG, SIZE, WHATNOT) \
-    static const DectreeTable dectree_table_##TAG;
-#define TABLE_LINK(TABLE)                     /* NOTHING */
-#define TERMINAL(TAG, ENC)                    /* NOTHING */
-#define SUBINSNS(TAG, CLASSA, CLASSB, ENC)    /* NOTHING */
-#define EXTSPACE(TAG, ENC)                    /* NOTHING */
-#define INVALID()                             /* NOTHING */
-#define DECODE_END_TABLE(...)                 /* NOTHING */
-#define DECODE_MATCH_INFO(...)                /* NOTHING */
-#define DECODE_LEGACY_MATCH_INFO(...)         /* NOTHING */
-#define DECODE_OPINFO(...)                    /* NOTHING */
-
-#include "dectree_generated.h.inc"
-
-#undef DECODE_OPINFO
-#undef DECODE_MATCH_INFO
-#undef DECODE_LEGACY_MATCH_INFO
-#undef DECODE_END_TABLE
-#undef INVALID
-#undef TERMINAL
-#undef SUBINSNS
-#undef EXTSPACE
-#undef TABLE_LINK
-#undef DECODE_NEW_TABLE
-#undef DECODE_SEPARATOR_BITS
-
-#define DECODE_SEPARATOR_BITS(START, WIDTH) NULL, START, WIDTH
-#define DECODE_NEW_TABLE_HELPER(TAG, SIZE, FN, START, WIDTH) \
-    static const DectreeTable dectree_table_##TAG = { \
-        .size = SIZE, \
-        .lookup_function = FN, \
-        .startbit = START, \
-        .width = WIDTH, \
-        .table = {
-#define DECODE_NEW_TABLE(TAG, SIZE, WHATNOT) \
-    DECODE_NEW_TABLE_HELPER(TAG, SIZE, WHATNOT)
-
-#define TABLE_LINK(TABLE) \
-    { .type = DECTREE_TABLE_LINK, .table_link = &dectree_table_##TABLE },
-#define TERMINAL(TAG, ENC) \
-    { .type = DECTREE_TERMINAL, .opcode = TAG  },
-#define SUBINSNS(TAG, CLASSA, CLASSB, ENC) \
-    { \
-        .type = DECTREE_SUBINSNS, \
-        .table_link = &dectree_table_DECODE_SUBINSN_##CLASSA, \
-        .table_link_b = &dectree_table_DECODE_SUBINSN_##CLASSB \
-    },
-#define EXTSPACE(TAG, ENC) { .type = DECTREE_EXTSPACE },
-#define INVALID() { .type = DECTREE_ENTRY_INVALID, .opcode = XX_LAST_OPCODE },
-
-#define DECODE_END_TABLE(...) } };
-
-#define DECODE_MATCH_INFO(...)                /* NOTHING */
-#define DECODE_LEGACY_MATCH_INFO(...)         /* NOTHING */
-#define DECODE_OPINFO(...)                    /* NOTHING */
-
-#include "dectree_generated.h.inc"
-
-#undef DECODE_OPINFO
-#undef DECODE_MATCH_INFO
-#undef DECODE_LEGACY_MATCH_INFO
-#undef DECODE_END_TABLE
-#undef INVALID
-#undef TERMINAL
-#undef SUBINSNS
-#undef EXTSPACE
-#undef TABLE_LINK
-#undef DECODE_NEW_TABLE
-#undef DECODE_NEW_TABLE_HELPER
-#undef DECODE_SEPARATOR_BITS
-
-static const DectreeTable dectree_table_DECODE_EXT_EXT_noext = {
-    .size = 1, .lookup_function = NULL, .startbit = 0, .width = 0,
-    .table = {
-        { .type = DECTREE_ENTRY_INVALID, .opcode = XX_LAST_OPCODE },
-    }
-};
-
-static const DectreeTable *ext_trees[XX_LAST_EXT_IDX];
-
-static void decode_ext_init(void)
+/* Helper function for decodetree_trans_funcs_generated.c.inc */
+static int shift_left(DisasContext *ctx, int x, int n, int immno)
 {
-    int i;
-    for (i = EXT_IDX_noext; i < EXT_IDX_noext_AFTER; i++) {
-        ext_trees[i] = &dectree_table_DECODE_EXT_EXT_noext;
+    int ret = x;
+    Insn *insn = ctx->insn;
+    if (!insn->extension_valid ||
+        insn->which_extended != immno) {
+        ret <<= n;
     }
-    for (i = EXT_IDX_mmvec; i < EXT_IDX_mmvec_AFTER; i++) {
-        ext_trees[i] = &dectree_table_DECODE_EXT_EXT_mmvec;
-    }
+    return ret;
 }
 
-typedef struct {
-    uint32_t mask;
-    uint32_t match;
-} DecodeITableEntry;
+/* Include the generated decoder for 32 bit insn */
+#include "decode_normal_generated.c.inc"
+#include "decode_hvx_generated.c.inc"
 
-#define DECODE_NEW_TABLE(TAG, SIZE, WHATNOT)  /* NOTHING */
-#define TABLE_LINK(TABLE)                     /* NOTHING */
-#define TERMINAL(TAG, ENC)                    /* NOTHING */
-#define SUBINSNS(TAG, CLASSA, CLASSB, ENC)    /* NOTHING */
-#define EXTSPACE(TAG, ENC)                    /* NOTHING */
-#define INVALID()                             /* NOTHING */
-#define DECODE_END_TABLE(...)                 /* NOTHING */
-#define DECODE_OPINFO(...)                    /* NOTHING */
+/* Include the generated decoder for 16 bit insn */
+#include "decode_subinsn_a_generated.c.inc"
+#include "decode_subinsn_l1_generated.c.inc"
+#include "decode_subinsn_l2_generated.c.inc"
+#include "decode_subinsn_s1_generated.c.inc"
+#include "decode_subinsn_s2_generated.c.inc"
 
-#define DECODE_MATCH_INFO_NORMAL(TAG, MASK, MATCH) \
-    [TAG] = { \
-        .mask = MASK, \
-        .match = MATCH, \
-    },
-
-#define DECODE_MATCH_INFO_NULL(TAG, MASK, MATCH) \
-    [TAG] = { .match = ~0 },
-
-#define DECODE_MATCH_INFO(...) DECODE_MATCH_INFO_NORMAL(__VA_ARGS__)
-#define DECODE_LEGACY_MATCH_INFO(...) /* NOTHING */
-
-static const DecodeITableEntry decode_itable[XX_LAST_OPCODE] = {
-#include "dectree_generated.h.inc"
-};
-
-#undef DECODE_MATCH_INFO
-#define DECODE_MATCH_INFO(...) DECODE_MATCH_INFO_NULL(__VA_ARGS__)
-
-#undef DECODE_LEGACY_MATCH_INFO
-#define DECODE_LEGACY_MATCH_INFO(...) DECODE_MATCH_INFO_NORMAL(__VA_ARGS__)
-
-static const DecodeITableEntry decode_legacy_itable[XX_LAST_OPCODE] = {
-#include "dectree_generated.h.inc"
-};
-
-#undef DECODE_OPINFO
-#undef DECODE_MATCH_INFO
-#undef DECODE_LEGACY_MATCH_INFO
-#undef DECODE_END_TABLE
-#undef INVALID
-#undef TERMINAL
-#undef SUBINSNS
-#undef EXTSPACE
-#undef TABLE_LINK
-#undef DECODE_NEW_TABLE
-#undef DECODE_SEPARATOR_BITS
-
-void decode_init(void)
-{
-    decode_ext_init();
-}
+/* Include the generated helpers for the decoder */
+#include "decodetree_trans_funcs_generated.c.inc"
 
 void decode_send_insn_to(Packet *packet, int start, int newloc)
 {
@@ -248,22 +107,13 @@ static void
 decode_fill_newvalue_regno(Packet *packet)
 {
     int i, use_regidx, offset, def_idx, dst_idx;
-    uint16_t def_opcode, use_opcode;
-    char *dststr;
 
     for (i = 1; i < packet->num_insns; i++) {
         if (GET_ATTRIB(packet->insn[i].opcode, A_DOTNEWVALUE) &&
             !GET_ATTRIB(packet->insn[i].opcode, A_EXTENSION)) {
-            use_opcode = packet->insn[i].opcode;
 
-            /* It's a store, so we're adjusting the Nt field */
-            if (GET_ATTRIB(use_opcode, A_STORE)) {
-                use_regidx = strchr(opcode_reginfo[use_opcode], 't') -
-                    opcode_reginfo[use_opcode];
-            } else {    /* It's a Jump, so we're adjusting the Ns field */
-                use_regidx = strchr(opcode_reginfo[use_opcode], 's') -
-                    opcode_reginfo[use_opcode];
-            }
+            g_assert(packet->insn[i].new_read_idx != -1);
+            use_regidx = packet->insn[i].new_read_idx;
 
             /*
              * What's encoded at the N-field is the offset to who's producing
@@ -284,37 +134,9 @@ decode_fill_newvalue_regno(Packet *packet)
              */
             g_assert(!((def_idx < 0) || (def_idx > (packet->num_insns - 1))));
 
-            /*
-             * packet->insn[def_idx] is the producer
-             * Figure out which type of destination it produces
-             * and the corresponding index in the reginfo
-             */
-            def_opcode = packet->insn[def_idx].opcode;
-            dststr = strstr(opcode_wregs[def_opcode], "Rd");
-            if (dststr) {
-                dststr = strchr(opcode_reginfo[def_opcode], 'd');
-            } else {
-                dststr = strstr(opcode_wregs[def_opcode], "Rx");
-                if (dststr) {
-                    dststr = strchr(opcode_reginfo[def_opcode], 'x');
-                } else {
-                    dststr = strstr(opcode_wregs[def_opcode], "Re");
-                    if (dststr) {
-                        dststr = strchr(opcode_reginfo[def_opcode], 'e');
-                    } else {
-                        dststr = strstr(opcode_wregs[def_opcode], "Ry");
-                        if (dststr) {
-                            dststr = strchr(opcode_reginfo[def_opcode], 'y');
-                        } else {
-                            g_assert_not_reached();
-                        }
-                    }
-                }
-            }
-            g_assert(dststr != NULL);
-
             /* Now patch up the consumer with the register number */
-            dst_idx = dststr - opcode_reginfo[def_opcode];
+            g_assert(packet->insn[def_idx].dest_idx != -1);
+            dst_idx = packet->insn[def_idx].dest_idx;
             packet->insn[i].regno[use_regidx] =
                 packet->insn[def_idx].regno[dst_idx];
             /*
@@ -388,6 +210,7 @@ static void decode_set_insn_attr_fields(Packet *pkt)
     uint16_t opcode;
 
     pkt->pkt_has_cof = false;
+    pkt->pkt_has_multi_cof = false;
     pkt->pkt_has_endloop = false;
     pkt->pkt_has_dczeroa = false;
 
@@ -405,20 +228,30 @@ static void decode_set_insn_attr_fields(Packet *pkt)
             if (GET_ATTRIB(opcode, A_SCALAR_STORE) &&
                 !GET_ATTRIB(opcode, A_MEMSIZE_0B)) {
                 if (pkt->insn[i].slot == 0) {
-                    pkt->pkt_has_store_s0 = true;
+                    pkt->pkt_has_scalar_store_s0 = true;
                 } else {
-                    pkt->pkt_has_store_s1 = true;
+                    pkt->pkt_has_scalar_store_s1 = true;
                 }
             }
         }
 
-        pkt->pkt_has_cof |= decode_opcode_can_jump(opcode);
+        if (decode_opcode_can_jump(opcode)) {
+            if (pkt->pkt_has_cof) {
+                pkt->pkt_has_multi_cof = true;
+            }
+            pkt->pkt_has_cof = true;
+        }
 
         pkt->insn[i].is_endloop = decode_opcode_ends_loop(opcode);
 
         pkt->pkt_has_endloop |= pkt->insn[i].is_endloop;
 
-        pkt->pkt_has_cof |= pkt->pkt_has_endloop;
+        if (pkt->pkt_has_endloop) {
+            if (pkt->pkt_has_cof) {
+                pkt->pkt_has_multi_cof = true;
+            }
+            pkt->pkt_has_cof = true;
+        }
     }
 }
 
@@ -484,8 +317,7 @@ static void decode_shuffle_for_execution(Packet *packet)
         for (flag = false, i = 0; i < last_insn + 1; i++) {
             int opcode = packet->insn[i].opcode;
 
-            if ((strstr(opcode_wregs[opcode], "Pd4") ||
-                 strstr(opcode_wregs[opcode], "Pe4")) &&
+            if (packet->insn[i].has_pred_dest &&
                 GET_ATTRIB(opcode, A_STORE) == 0) {
                 /* This should be a compare (not a store conditional) */
                 if (flag) {
@@ -539,7 +371,7 @@ apply_extender(Packet *pkt, int i, uint32_t extender)
     int immed_num;
     uint32_t base_immed;
 
-    immed_num = opcode_which_immediate_is_extended(pkt->insn[i].opcode);
+    immed_num = pkt->insn[i].which_extended;
     base_immed = pkt->insn[i].immed[immed_num];
 
     pkt->insn[i].immed[immed_num] = extender | fZXTN(6, 32, base_immed);
@@ -582,186 +414,103 @@ static SlotMask get_valid_slots(const Packet *pkt, unsigned int slot)
     }
 }
 
-#define DECODE_NEW_TABLE(TAG, SIZE, WHATNOT)     /* NOTHING */
-#define TABLE_LINK(TABLE)                        /* NOTHING */
-#define TERMINAL(TAG, ENC)                       /* NOTHING */
-#define SUBINSNS(TAG, CLASSA, CLASSB, ENC)       /* NOTHING */
-#define EXTSPACE(TAG, ENC)                       /* NOTHING */
-#define INVALID()                                /* NOTHING */
-#define DECODE_END_TABLE(...)                    /* NOTHING */
-#define DECODE_MATCH_INFO(...)                   /* NOTHING */
-#define DECODE_LEGACY_MATCH_INFO(...)            /* NOTHING */
-
-#define DECODE_REG(REGNO, WIDTH, STARTBIT) \
-    insn->regno[REGNO] = ((encoding >> STARTBIT) & ((1 << WIDTH) - 1));
-
-#define DECODE_IMPL_REG(REGNO, VAL) \
-    insn->regno[REGNO] = VAL;
-
-#define DECODE_IMM(IMMNO, WIDTH, STARTBIT, VALSTART) \
-    insn->immed[IMMNO] |= (((encoding >> STARTBIT) & ((1 << WIDTH) - 1))) << \
-                          (VALSTART);
-
-#define DECODE_IMM_SXT(IMMNO, WIDTH) \
-    insn->immed[IMMNO] = ((((int32_t)insn->immed[IMMNO]) << (32 - WIDTH)) >> \
-                          (32 - WIDTH));
-
-#define DECODE_IMM_NEG(IMMNO, WIDTH) \
-    insn->immed[IMMNO] = -insn->immed[IMMNO];
-
-#define DECODE_IMM_SHIFT(IMMNO, SHAMT)                                 \
-    if ((!insn->extension_valid) || \
-        (insn->which_extended != IMMNO)) { \
-        insn->immed[IMMNO] <<= SHAMT; \
-    }
-
-#define DECODE_OPINFO(TAG, BEH) \
-    case TAG: \
-        { BEH  } \
-        break; \
+/*
+ * Section 10.3 of the Hexagon V73 Programmer's Reference Manual
+ *
+ * A duplex is encoded as a 32-bit instruction with bits [15:14] set to 00.
+ * The sub-instructions that comprise a duplex are encoded as 13-bit fields
+ * in the duplex.
+ *
+ * Per table 10-4, the 4-bit duplex iclass is encoded in bits 31:29, 13
+ */
+static uint32_t get_duplex_iclass(uint32_t encoding)
+{
+    uint32_t iclass = extract32(encoding, 13, 1);
+    iclass = deposit32(iclass, 1, 3, extract32(encoding, 29, 3));
+    return iclass;
+}
 
 /*
- * Fill in the operands of the instruction
- * dectree_generated.h.inc has a DECODE_OPINFO entry for each opcode
- * For example,
- *     DECODE_OPINFO(A2_addi,
- *          DECODE_REG(0,5,0)
- *          DECODE_REG(1,5,16)
- *          DECODE_IMM(0,7,21,9)
- *          DECODE_IMM(0,9,5,0)
- *          DECODE_IMM_SXT(0,16)
- * with the macros defined above, we'll fill in a switch statement
- * where each case is an opcode tag.
+ * Per table 10-5, the duplex ICLASS field values that specify the group of
+ * each sub-instruction in a duplex
+ *
+ * This table points to the decode instruction for each entry in the table
  */
-static void
-decode_op(Insn *insn, Opcode tag, uint32_t encoding)
-{
-    insn->immed[0] = 0;
-    insn->immed[1] = 0;
-    insn->opcode = tag;
-    if (insn->extension_valid) {
-        insn->which_extended = opcode_which_immediate_is_extended(tag);
-    }
+typedef bool (*subinsn_decode_func)(DisasContext *ctx, uint16_t insn);
+typedef struct {
+    subinsn_decode_func decode_slot0_subinsn;
+    subinsn_decode_func decode_slot1_subinsn;
+} subinsn_decode_groups;
 
-    switch (tag) {
-#include "dectree_generated.h.inc"
-    default:
-        break;
-    }
+static const subinsn_decode_groups decode_groups[16] = {
+    [0x0] = { decode_subinsn_l1, decode_subinsn_l1 },
+    [0x1] = { decode_subinsn_l2, decode_subinsn_l1 },
+    [0x2] = { decode_subinsn_l2, decode_subinsn_l2 },
+    [0x3] = { decode_subinsn_a,  decode_subinsn_a },
+    [0x4] = { decode_subinsn_l1, decode_subinsn_a },
+    [0x5] = { decode_subinsn_l2, decode_subinsn_a },
+    [0x6] = { decode_subinsn_s1, decode_subinsn_a },
+    [0x7] = { decode_subinsn_s2, decode_subinsn_a },
+    [0x8] = { decode_subinsn_s1, decode_subinsn_l1 },
+    [0x9] = { decode_subinsn_s1, decode_subinsn_l2 },
+    [0xa] = { decode_subinsn_s1, decode_subinsn_s1 },
+    [0xb] = { decode_subinsn_s2, decode_subinsn_s1 },
+    [0xc] = { decode_subinsn_s2, decode_subinsn_l1 },
+    [0xd] = { decode_subinsn_s2, decode_subinsn_l2 },
+    [0xe] = { decode_subinsn_s2, decode_subinsn_s2 },
+    [0xf] = { NULL,              NULL },              /* Reserved */
+};
 
-    insn->generate = opcode_genptr[tag];
-
-    insn->iclass = iclass_bits(encoding);
-}
-
-#undef DECODE_REG
-#undef DECODE_IMPL_REG
-#undef DECODE_IMM
-#undef DECODE_IMM_SHIFT
-#undef DECODE_OPINFO
-#undef DECODE_MATCH_INFO
-#undef DECODE_LEGACY_MATCH_INFO
-#undef DECODE_END_TABLE
-#undef INVALID
-#undef TERMINAL
-#undef SUBINSNS
-#undef EXTSPACE
-#undef TABLE_LINK
-#undef DECODE_NEW_TABLE
-#undef DECODE_SEPARATOR_BITS
-
-static unsigned int
-decode_subinsn_tablewalk(Insn *insn, const DectreeTable *table,
-                         uint32_t encoding)
-{
-    unsigned int i;
-    Opcode opc;
-    if (table->lookup_function) {
-        i = table->lookup_function(table->startbit, table->width, encoding);
-    } else {
-        i = extract32(encoding, table->startbit, table->width);
-    }
-    if (table->table[i].type == DECTREE_TABLE_LINK) {
-        return decode_subinsn_tablewalk(insn, table->table[i].table_link,
-                                        encoding);
-    } else if (table->table[i].type == DECTREE_TERMINAL) {
-        opc = table->table[i].opcode;
-        if ((encoding & decode_itable[opc].mask) != decode_itable[opc].match) {
-            return 0;
-        }
-        decode_op(insn, opc, encoding);
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-static unsigned int get_insn_a(uint32_t encoding)
+static uint16_t get_slot0_subinsn(uint32_t encoding)
 {
     return extract32(encoding, 0, 13);
 }
 
-static unsigned int get_insn_b(uint32_t encoding)
+static uint16_t get_slot1_subinsn(uint32_t encoding)
 {
     return extract32(encoding, 16, 13);
 }
 
 static unsigned int
-decode_insns_tablewalk(Insn *insn, const DectreeTable *table,
-                       uint32_t encoding)
+decode_insns(DisasContext *ctx, Insn *insn, uint32_t encoding)
 {
-    unsigned int i;
-    unsigned int a, b;
-    Opcode opc;
-    if (table->lookup_function) {
-        i = table->lookup_function(table->startbit, table->width, encoding);
-    } else {
-        i = extract32(encoding, table->startbit, table->width);
-    }
-    if (table->table[i].type == DECTREE_TABLE_LINK) {
-        return decode_insns_tablewalk(insn, table->table[i].table_link,
-                                      encoding);
-    } else if (table->table[i].type == DECTREE_SUBINSNS) {
-        a = get_insn_a(encoding);
-        b = get_insn_b(encoding);
-        b = decode_subinsn_tablewalk(insn, table->table[i].table_link_b, b);
-        a = decode_subinsn_tablewalk(insn + 1, table->table[i].table_link, a);
-        if ((a == 0) || (b == 0)) {
-            return 0;
+    if (parse_bits(encoding) != 0) {
+        if (decode_normal(ctx, encoding) ||
+            decode_hvx(ctx, encoding)) {
+            insn->generate = opcode_genptr[insn->opcode];
+            insn->iclass = iclass_bits(encoding);
+            return 1;
         }
-        return 2;
-    } else if (table->table[i].type == DECTREE_TERMINAL) {
-        opc = table->table[i].opcode;
-        if ((encoding & decode_itable[opc].mask) != decode_itable[opc].match) {
-            if ((encoding & decode_legacy_itable[opc].mask) !=
-                decode_legacy_itable[opc].match) {
-                return 0;
+        /* Invalid non-duplex encoding */
+        return 0;
+    } else {
+        uint32_t iclass = get_duplex_iclass(encoding);
+        unsigned int slot0_subinsn = get_slot0_subinsn(encoding);
+        unsigned int slot1_subinsn = get_slot1_subinsn(encoding);
+        subinsn_decode_func decode_slot0_subinsn =
+            decode_groups[iclass].decode_slot0_subinsn;
+        subinsn_decode_func decode_slot1_subinsn =
+            decode_groups[iclass].decode_slot1_subinsn;
+
+        /* The slot1 subinsn needs to be in the packet first */
+        if (decode_slot1_subinsn(ctx, slot1_subinsn)) {
+            insn->generate = opcode_genptr[insn->opcode];
+            insn->iclass = iclass_bits(encoding);
+            ctx->insn = ++insn;
+            if (decode_slot0_subinsn(ctx, slot0_subinsn)) {
+                insn->generate = opcode_genptr[insn->opcode];
+                insn->iclass = iclass_bits(encoding);
+                return 2;
             }
+            /*
+             * Slot0 decode failed after slot1 succeeded. This is an invalid
+             * duplex encoding (both sub-instructions must be valid).
+             */
+            ctx->insn = --insn;
         }
-        decode_op(insn, opc, encoding);
-        return 1;
-    } else if (table->table[i].type == DECTREE_EXTSPACE) {
-        /*
-         * For now, HVX will be the only coproc
-         */
-        return decode_insns_tablewalk(insn, ext_trees[EXT_IDX_mmvec], encoding);
-    } else {
+        /* Invalid duplex encoding - return 0 to signal failure */
         return 0;
     }
-}
-
-static unsigned int
-decode_insns(Insn *insn, uint32_t encoding)
-{
-    const DectreeTable *table;
-    if (parse_bits(encoding) != 0) {
-        /* Start with PP table - 32 bit instructions */
-        table = &dectree_table_DECODE_ROOT_32;
-    } else {
-        /* start with EE table - duplex instructions */
-        table = &dectree_table_DECODE_ROOT_EE;
-    }
-    return decode_insns_tablewalk(insn, table, encoding);
 }
 
 static void decode_add_endloop_insn(Insn *insn, int loopnum)
@@ -786,7 +535,26 @@ static bool decode_parsebits_is_loopend(uint32_t encoding32)
     return bits == 0x2;
 }
 
-static void
+static bool has_valid_slot_assignment(Packet *pkt)
+{
+    int used_slots = 0;
+    for (int i = 0; i < pkt->num_insns; i++) {
+        int slot_mask;
+        Insn *insn = &pkt->insn[i];
+        if (decode_opcode_ends_loop(insn->opcode)) {
+            /* We overload slot 0 for endloop. */
+            continue;
+        }
+        slot_mask = 1 << insn->slot;
+        if (used_slots & slot_mask) {
+            return false;
+        }
+        used_slots |= slot_mask;
+    }
+    return true;
+}
+
+static bool
 decode_set_slot_number(Packet *pkt)
 {
     int slot;
@@ -875,6 +643,57 @@ decode_set_slot_number(Packet *pkt)
         /* Then push it to slot0 */
         pkt->insn[slot1_iidx].slot = 0;
     }
+
+    return has_valid_slot_assignment(pkt);
+}
+
+/*
+ * Check for GPR write conflicts in the packet.
+ * A conflict exists when a register is written by more than one instruction
+ * and at least one of those writes is unconditional.
+ *
+ * TODO: handle the more general case of any
+ * packet w/multiple-register-write operands.
+ */
+static bool pkt_has_write_conflict(Packet *pkt)
+{
+    DECLARE_BITMAP(all_dest_gprs, 32) = { 0 };
+    DECLARE_BITMAP(wreg_mult_gprs, 32) = { 0 };
+    DECLARE_BITMAP(uncond_wreg_gprs, 32) = { 0 };
+    DECLARE_BITMAP(conflict, 32);
+
+    for (int i = 0; i < pkt->num_insns; i++) {
+        Insn *insn = &pkt->insn[i];
+        int dest = insn->dest_idx;
+
+        if (dest < 0 || !insn->dest_is_gpr) {
+            continue;
+        }
+
+        int rnum = insn->regno[dest];
+        bool is_uncond = !GET_ATTRIB(insn->opcode, A_CONDEXEC);
+
+        if (test_bit(rnum, all_dest_gprs)) {
+            set_bit(rnum, wreg_mult_gprs);
+        }
+        set_bit(rnum, all_dest_gprs);
+        if (is_uncond) {
+            set_bit(rnum, uncond_wreg_gprs);
+        }
+
+        if (insn->dest_is_pair) {
+            if (test_bit(rnum + 1, all_dest_gprs)) {
+                set_bit(rnum + 1, wreg_mult_gprs);
+            }
+            set_bit(rnum + 1, all_dest_gprs);
+            if (is_uncond) {
+                set_bit(rnum + 1, uncond_wreg_gprs);
+            }
+        }
+    }
+
+    bitmap_and(conflict, wreg_mult_gprs, uncond_wreg_gprs, 32);
+    return !bitmap_empty(conflict, 32);
 }
 
 /*
@@ -884,8 +703,8 @@ decode_set_slot_number(Packet *pkt)
  * or number of words used on success
  */
 
-int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
-                  bool disas_only)
+int decode_packet(DisasContext *ctx, int max_words, const uint32_t *words,
+                  Packet *pkt, bool disas_only)
 {
     int num_insns = 0;
     int words_read = 0;
@@ -896,12 +715,21 @@ int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
 
     /* Initialize */
     memset(pkt, 0, sizeof(*pkt));
+    for (i = 0; i < INSTRUCTIONS_MAX; i++) {
+        pkt->insn[i].dest_idx = -1;
+        pkt->insn[i].new_read_idx = -1;
+    }
     /* Try to build packet */
     while (!end_of_packet && (words_read < max_words)) {
+        Insn *insn = &pkt->insn[num_insns];
+        ctx->insn = insn;
         encoding32 = words[words_read];
         end_of_packet = is_packet_end(encoding32);
-        new_insns = decode_insns(&pkt->insn[num_insns], encoding32);
-        g_assert(new_insns > 0);
+        new_insns = decode_insns(ctx, insn, encoding32);
+        if (new_insns == 0) {
+            /* Invalid instruction encoding */
+            return 0;
+        }
         /*
          * If we saw an extender, mark next word extended so immediate
          * decode works
@@ -950,8 +778,12 @@ int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
     decode_apply_extenders(pkt);
     if (!disas_only) {
         decode_remove_extenders(pkt);
+        if (!decode_set_slot_number(pkt)) {
+            /* Invalid packet */
+            return 0;
+        }
+        pkt->pkt_has_write_conflict = pkt_has_write_conflict(pkt);
     }
-    decode_set_slot_number(pkt);
     decode_fill_newvalue_regno(pkt);
 
     if (pkt->pkt_has_hvx) {
@@ -971,9 +803,13 @@ int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
 int disassemble_hexagon(uint32_t *words, int nwords, bfd_vma pc,
                         GString *buf)
 {
+    DisasContext ctx;
     Packet pkt;
 
-    if (decode_packet(nwords, words, &pkt, true) > 0) {
+    memset(&ctx, 0, sizeof(DisasContext));
+    ctx.pkt = &pkt;
+
+    if (decode_packet(&ctx, nwords, words, &pkt, true) > 0) {
         snprint_a_pkt_disas(buf, &pkt, words, pc);
         return pkt.encod_pkt_size_in_bytes;
     } else {

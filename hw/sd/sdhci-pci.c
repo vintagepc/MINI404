@@ -18,13 +18,13 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/sd/sdhci.h"
 #include "sdhci-internal.h"
 
-static Property sdhci_pci_properties[] = {
+static const Property sdhci_pci_properties[] = {
     DEFINE_SDHCI_COMMON_PROPERTIES(SDHCIState),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void sdhci_pci_realize(PCIDevice *dev, Error **errp)
@@ -49,11 +49,12 @@ static void sdhci_pci_exit(PCIDevice *dev)
 {
     SDHCIState *s = PCI_SDHCI(dev);
 
+    qemu_free_irq(s->irq);
     sdhci_common_unrealize(s);
     sdhci_uninitfn(s);
 }
 
-static void sdhci_pci_class_init(ObjectClass *klass, void *data)
+static void sdhci_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -68,20 +69,17 @@ static void sdhci_pci_class_init(ObjectClass *klass, void *data)
     sdhci_common_class_init(klass, data);
 }
 
-static const TypeInfo sdhci_pci_info = {
-    .name = TYPE_PCI_SDHCI,
-    .parent = TYPE_PCI_DEVICE,
-    .instance_size = sizeof(SDHCIState),
-    .class_init = sdhci_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
-        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
-        { },
+static const TypeInfo sdhci_pci_types[] = {
+    {
+        .name           = TYPE_PCI_SDHCI,
+        .parent         = TYPE_PCI_DEVICE,
+        .instance_size  = sizeof(SDHCIState),
+        .class_init     = sdhci_pci_class_init,
+        .interfaces     = (const InterfaceInfo[]) {
+            { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+            { },
+        },
     },
 };
 
-static void sdhci_pci_register_type(void)
-{
-    type_register_static(&sdhci_pci_info);
-}
-
-type_init(sdhci_pci_register_type)
+DEFINE_TYPES(sdhci_pci_types)

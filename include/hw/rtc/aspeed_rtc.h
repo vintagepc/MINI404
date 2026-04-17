@@ -8,7 +8,7 @@
 #ifndef HW_RTC_ASPEED_RTC_H
 #define HW_RTC_ASPEED_RTC_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 
 struct AspeedRtcState {
@@ -18,7 +18,7 @@ struct AspeedRtcState {
     qemu_irq irq;
 
     uint32_t reg[0x18];
-    int offset;
+    int64_t offset;
 
 };
 

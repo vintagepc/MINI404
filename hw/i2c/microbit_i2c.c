@@ -80,7 +80,7 @@ static const VMStateDescription microbit_i2c_vmstate = {
     .name = TYPE_MICROBIT_I2C,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, MicrobitI2CState, MICROBIT_I2C_NREGS),
         VMSTATE_UINT32(read_idx, MicrobitI2CState),
         VMSTATE_END_OF_LIST()
@@ -105,12 +105,12 @@ static void microbit_i2c_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static void microbit_i2c_class_init(ObjectClass *klass, void *data)
+static void microbit_i2c_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &microbit_i2c_vmstate;
-    dc->reset = microbit_i2c_reset;
+    device_class_set_legacy_reset(dc, microbit_i2c_reset);
     dc->realize = microbit_i2c_realize;
     dc->desc = "Microbit I2C controller";
 }

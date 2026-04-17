@@ -150,7 +150,7 @@ static const VMStateDescription vmstate_npcm7xx_rng = {
     .name = "npcm7xx-rng",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(rngcs, NPCM7xxRNGState),
         VMSTATE_UINT8(rngd, NPCM7xxRNGState),
         VMSTATE_UINT8(rngmode, NPCM7xxRNGState),
@@ -158,7 +158,7 @@ static const VMStateDescription vmstate_npcm7xx_rng = {
     },
 };
 
-static void npcm7xx_rng_class_init(ObjectClass *klass, void *data)
+static void npcm7xx_rng_class_init(ObjectClass *klass, const void *data)
 {
     ResettableClass *rc = RESETTABLE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);

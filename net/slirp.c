@@ -40,12 +40,13 @@
 #include "qemu/sockets.h"
 #include <libslirp.h>
 #include "chardev/char-fe.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "qemu/cutils.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "util.h"
 #include "migration/register.h"
+#include "migration/vmstate.h"
 #include "migration/qemu-file-types.h"
 
 static int get_str_sep(char *buf, int buf_size, const char **pp, int sep)
@@ -79,7 +80,7 @@ struct slirp_config_str {
 };
 
 struct GuestFwd {
-    CharBackend hd;
+    CharFrontend hd;
     struct in_addr server;
     int port;
     Slirp *slirp;
@@ -246,14 +247,38 @@ static void net_slirp_timer_mod(void *timer, int64_t expire_timer,
     timer_mod(&t->timer, expire_timer);
 }
 
-static void net_slirp_register_poll_fd(int fd, void *opaque)
+#if !SLIRP_CHECK_VERSION(4, 9, 0)
+# define slirp_os_socket int
+# define slirp_pollfds_fill_socket slirp_pollfds_fill
+# define register_poll_socket register_poll_fd
+# define unregister_poll_socket unregister_poll_fd
+#endif
+
+static void net_slirp_register_poll_sock(slirp_os_socket fd, void *opaque)
 {
-    qemu_fd_register(fd);
+#ifdef WIN32
+    AioContext *ctxt = qemu_get_aio_context();
+    g_autofree char *msg = NULL;
+
+    if (WSAEventSelect(fd, event_notifier_get_handle(&ctxt->notifier),
+                       FD_READ | FD_ACCEPT | FD_CLOSE |
+                       FD_CONNECT | FD_WRITE | FD_OOB) != 0) {
+        msg = g_win32_error_message(WSAGetLastError());
+        warn_report("failed to WSAEventSelect(): %s", msg);
+    }
+#endif
 }
 
-static void net_slirp_unregister_poll_fd(int fd, void *opaque)
+static void net_slirp_unregister_poll_sock(slirp_os_socket fd, void *opaque)
 {
-    /* no qemu_fd_unregister */
+#ifdef WIN32
+    g_autofree char *msg = NULL;
+
+    if (WSAEventSelect(fd, NULL, 0) != 0) {
+        msg = g_win32_error_message(WSAGetLastError());
+        warn_report("failed to WSAEventSelect(): %s", msg);
+    }
+#endif
 }
 
 static void net_slirp_notify(void *opaque)
@@ -273,8 +298,8 @@ static const SlirpCb slirp_cb = {
 #endif
     .timer_free = net_slirp_timer_free,
     .timer_mod = net_slirp_timer_mod,
-    .register_poll_fd = net_slirp_register_poll_fd,
-    .unregister_poll_fd = net_slirp_unregister_poll_fd,
+    .register_poll_socket = net_slirp_register_poll_sock,
+    .unregister_poll_socket = net_slirp_unregister_poll_sock,
     .notify = net_slirp_notify,
 };
 
@@ -301,7 +326,7 @@ static int slirp_poll_to_gio(int events)
     return ret;
 }
 
-static int net_slirp_add_poll(int fd, int events, void *opaque)
+static int net_slirp_add_poll(slirp_os_socket fd, int events, void *opaque)
 {
     GArray *pollfds = opaque;
     GPollFD pfd = {
@@ -350,8 +375,8 @@ static void net_slirp_poll_notify(Notifier *notifier, void *data)
 
     switch (poll->state) {
     case MAIN_LOOP_POLL_FILL:
-        slirp_pollfds_fill(s->slirp, &poll->timeout,
-                           net_slirp_add_poll, poll->pollfds);
+        slirp_pollfds_fill_socket(s->slirp, &poll->timeout,
+                                  net_slirp_add_poll, poll->pollfds);
         break;
     case MAIN_LOOP_POLL_OK:
     case MAIN_LOOP_POLL_ERR:
@@ -616,7 +641,9 @@ static int net_slirp_init(NetClientState *peer, const char *model,
 
     s = DO_UPCAST(SlirpState, nc, nc);
 
-    cfg.version = SLIRP_CHECK_VERSION(4,7,0) ? 4 : 1;
+    cfg.version =
+         SLIRP_CHECK_VERSION(4, 9, 0) ? 6 :
+         SLIRP_CHECK_VERSION(4, 7, 0) ? 4 : 1;
     cfg.restricted = restricted;
     cfg.in_enabled = ipv4;
     cfg.vnetwork = net;
@@ -647,8 +674,8 @@ static int net_slirp_init(NetClientState *peer, const char *model,
      * specific version?
      */
     g_assert(slirp_state_version() == 4);
-    register_savevm_live("slirp", 0, slirp_state_version(),
-                         &savevm_slirp_state, s->slirp);
+    register_savevm_live("slirp", VMSTATE_INSTANCE_ID_ANY,
+                         slirp_state_version(), &savevm_slirp_state, s->slirp);
 
     s->poll_notifier.notify = net_slirp_poll_notify;
     main_loop_poll_add_notifier(&s->poll_notifier);
@@ -705,7 +732,13 @@ static SlirpState *slirp_lookup(Monitor *mon, const char *id)
 
 void hmp_hostfwd_remove(Monitor *mon, const QDict *qdict)
 {
-    struct in_addr host_addr = { .s_addr = INADDR_ANY };
+    /* TODO: support removing unix fwd */
+    struct sockaddr_in host_addr = {
+        .sin_family = AF_INET,
+        .sin_addr = {
+            .s_addr = INADDR_ANY,
+        },
+    };
     int host_port;
     char buf[256];
     const char *src_str, *p;
@@ -742,15 +775,21 @@ void hmp_hostfwd_remove(Monitor *mon, const QDict *qdict)
     if (get_str_sep(buf, sizeof(buf), &p, ':') < 0) {
         goto fail_syntax;
     }
-    if (buf[0] != '\0' && !inet_aton(buf, &host_addr)) {
+    if (buf[0] != '\0' && !inet_aton(buf, &host_addr.sin_addr)) {
         goto fail_syntax;
     }
 
     if (qemu_strtoi(p, NULL, 10, &host_port)) {
         goto fail_syntax;
     }
+    host_addr.sin_port = htons(host_port);
 
-    err = slirp_remove_hostfwd(s->slirp, is_udp, host_addr, host_port);
+#if SLIRP_CHECK_VERSION(4, 5, 0)
+    err = slirp_remove_hostxfwd(s->slirp, (struct sockaddr *) &host_addr,
+            sizeof(host_addr), is_udp ? SLIRP_HOSTFWD_UDP : 0);
+#else
+    err = slirp_remove_hostfwd(s->slirp, is_udp, host_addr.sin_addr, host_port);
+#endif
 
     monitor_printf(mon, "host forwarding rule for %s %s\n", src_str,
                    err ? "not found" : "removed");
@@ -762,14 +801,30 @@ void hmp_hostfwd_remove(Monitor *mon, const QDict *qdict)
 
 static int slirp_hostfwd(SlirpState *s, const char *redir_str, Error **errp)
 {
-    struct in_addr host_addr = { .s_addr = INADDR_ANY };
-    struct in_addr guest_addr = { .s_addr = 0 };
+    union {
+        struct sockaddr_in in;
+#if !defined(WIN32) && SLIRP_CHECK_VERSION(4, 7, 0)
+        struct sockaddr_un un;
+#endif
+    } host_addr = {0};
+
+    struct sockaddr_in guest_addr = {
+        .sin_family = AF_INET,
+        .sin_addr = {
+            .s_addr = 0,
+        },
+    };
+    int err;
     int host_port, guest_port;
     const char *p;
     char buf[256];
-    int is_udp;
-    char *end;
+    int is_udp = 0;
+#if !defined(WIN32) && SLIRP_CHECK_VERSION(4, 7, 0)
+    int is_unix = 0;
+#endif
+    const char *end;
     const char *fail_reason = "Unknown reason";
+    socklen_t host_addr_size;
 
     p = redir_str;
     if (!p || get_str_sep(buf, sizeof(buf), &p, ':') < 0) {
@@ -780,47 +835,113 @@ static int slirp_hostfwd(SlirpState *s, const char *redir_str, Error **errp)
         is_udp = 0;
     } else if (!strcmp(buf, "udp")) {
         is_udp = 1;
-    } else {
+    }
+#if !defined(WIN32) && SLIRP_CHECK_VERSION(4, 7, 0)
+    else if (!strcmp(buf, "unix")) {
+        is_unix = 1;
+    }
+#endif
+    else {
         fail_reason = "Bad protocol name";
         goto fail_syntax;
     }
 
-    if (get_str_sep(buf, sizeof(buf), &p, ':') < 0) {
-        fail_reason = "Missing : separator";
-        goto fail_syntax;
-    }
-    if (buf[0] != '\0' && !inet_aton(buf, &host_addr)) {
-        fail_reason = "Bad host address";
-        goto fail_syntax;
-    }
+#if !defined(WIN32) && SLIRP_CHECK_VERSION(4, 7, 0)
+    if (is_unix) {
+        if (get_str_sep(buf, sizeof(buf), &p, '-') < 0) {
+            fail_reason = "Missing - separator";
+            goto fail_syntax;
+        }
+        if (buf[0] == '\0') {
+            fail_reason = "Missing unix socket path";
+            goto fail_syntax;
+        }
+        if (buf[0] != '/') {
+            fail_reason = "unix socket path must be absolute";
+            goto fail_syntax;
+        }
 
-    if (get_str_sep(buf, sizeof(buf), &p, '-') < 0) {
-        fail_reason = "Bad host port separator";
-        goto fail_syntax;
-    }
-    host_port = strtol(buf, &end, 0);
-    if (*end != '\0' || host_port < 0 || host_port > 65535) {
-        fail_reason = "Bad host port";
-        goto fail_syntax;
+        size_t path_len = strlen(buf);
+        if (path_len > sizeof(host_addr.un.sun_path) - 1) {
+            fail_reason = "Unix socket path is too long";
+            goto fail_syntax;
+        }
+
+        struct stat st;
+        if (stat(buf, &st) == 0) {
+            if (!S_ISSOCK(st.st_mode)) {
+                fail_reason = "file exists and it's not unix socket";
+                goto fail_syntax;
+            }
+
+            if (unlink(buf) < 0) {
+                error_setg_errno(errp, errno, "Failed to unlink '%s'", buf);
+                goto fail_syntax;
+            }
+        }
+        host_addr.un.sun_family = AF_UNIX;
+        memcpy(host_addr.un.sun_path, buf, path_len);
+        host_addr_size = sizeof(host_addr.un);
+    } else
+#endif
+    {
+        host_addr.in.sin_family = AF_INET;
+        host_addr.in.sin_addr.s_addr = INADDR_ANY;
+
+        if (get_str_sep(buf, sizeof(buf), &p, ':') < 0) {
+            fail_reason = "Missing : separator";
+            goto fail_syntax;
+        }
+
+        if (buf[0] != '\0' && !inet_aton(buf, &host_addr.in.sin_addr)) {
+            fail_reason = "Bad host address";
+            goto fail_syntax;
+        }
+
+        if (get_str_sep(buf, sizeof(buf), &p, '-') < 0) {
+            fail_reason = "Bad host port separator";
+            goto fail_syntax;
+        }
+
+        err = qemu_strtoi(buf, &end, 0, &host_port);
+        if (err || host_port < 0 || host_port > 65535) {
+            fail_reason = "Bad host port";
+            goto fail_syntax;
+        }
+
+        host_addr.in.sin_port = htons(host_port);
+        host_addr_size = sizeof(host_addr.in);
     }
 
     if (get_str_sep(buf, sizeof(buf), &p, ':') < 0) {
         fail_reason = "Missing guest address";
         goto fail_syntax;
     }
-    if (buf[0] != '\0' && !inet_aton(buf, &guest_addr)) {
+    if (buf[0] != '\0' && !inet_aton(buf, &guest_addr.sin_addr)) {
         fail_reason = "Bad guest address";
         goto fail_syntax;
     }
 
-    guest_port = strtol(p, &end, 0);
-    if (*end != '\0' || guest_port < 1 || guest_port > 65535) {
+    err = qemu_strtoi(p, &end, 0, &guest_port);
+    if (err || guest_port < 1 || guest_port > 65535) {
         fail_reason = "Bad guest port";
         goto fail_syntax;
     }
+    guest_addr.sin_port = htons(guest_port);
 
-    if (slirp_add_hostfwd(s->slirp, is_udp, host_addr, host_port, guest_addr,
-                          guest_port) < 0) {
+#if SLIRP_CHECK_VERSION(4, 5, 0)
+    err = slirp_add_hostxfwd(s->slirp,
+            (struct sockaddr *) &host_addr, host_addr_size,
+            (struct sockaddr *) &guest_addr, sizeof(guest_addr),
+            is_udp ? SLIRP_HOSTFWD_UDP : 0);
+#else
+    (void) host_addr_size;
+    err = slirp_add_hostfwd(s->slirp, is_udp,
+            host_addr.in.sin_addr, host_port,
+            guest_addr.sin_addr, guest_port);
+#endif
+
+    if (err < 0) {
         error_setg(errp, "Could not set up host forwarding rule '%s'",
                    redir_str);
         return -1;
@@ -899,8 +1020,9 @@ static int slirp_smb(SlirpState* s, const char *exported_dir,
     }
 
     if (access(exported_dir, R_OK | X_OK)) {
-        error_setg(errp, "Error accessing shared directory '%s': %s",
-                   exported_dir, strerror(errno));
+        error_setg_errno(errp, errno,
+                         "Error accessing shared directory '%s'",
+                         exported_dir);
         return -1;
     }
 
@@ -913,8 +1035,10 @@ static int slirp_smb(SlirpState* s, const char *exported_dir,
 
     f = fopen(smb_conf, "w");
     if (!f) {
+        int eno = errno;
+
         slirp_smb_cleanup(s);
-        error_setg(errp,
+        error_setg_errno(errp, eno,
                    "Could not create samba server configuration file '%s'",
                     smb_conf);
         g_free(smb_conf);
@@ -1153,8 +1277,8 @@ int net_init_slirp(const Netdev *netdev, const char *name,
         ipv6 = 0;
     }
 
-    vnet = user->has_net ? g_strdup(user->net) :
-           user->has_ip  ? g_strdup_printf("%s/24", user->ip) :
+    vnet = user->net ? g_strdup(user->net) :
+           user->ip  ? g_strdup_printf("%s/24", user->ip) :
            NULL;
 
     dnssearch = slirp_dnssearch(user->dnssearch);

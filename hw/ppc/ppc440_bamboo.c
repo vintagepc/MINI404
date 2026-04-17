@@ -13,25 +13,24 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "qemu/error-report.h"
 #include "qemu/datadir.h"
 #include "qemu/error-report.h"
+#include "exec/page-protection.h"
 #include "net/net.h"
 #include "hw/pci/pci.h"
-#include "hw/boards.h"
-#include "sysemu/kvm.h"
-#include "kvm_ppc.h"
-#include "sysemu/device_tree.h"
-#include "hw/loader.h"
+#include "hw/core/boards.h"
+#include "system/kvm.h"
+#include "system/device_tree.h"
+#include "hw/core/loader.h"
 #include "elf.h"
-#include "hw/char/serial.h"
+#include "hw/char/serial-mm.h"
 #include "hw/ppc/ppc.h"
-#include "ppc405.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/reset.h"
-#include "hw/sysbus.h"
+#include "hw/pci-host/ppc4xx.h"
+#include "system/system.h"
+#include "system/reset.h"
+#include "hw/core/sysbus.h"
 #include "hw/intc/ppc-uic.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
 #include <libfdt.h>
@@ -65,7 +64,7 @@ static int bamboo_load_device_tree(MachineState *machine,
     uint32_t tb_freq = 400000000;
     uint32_t clock_freq = 400000000;
 
-    filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, BINARY_DEVICE_TREE_FILE);
+    filename = qemu_find_file(QEMU_FILE_TYPE_DTB, BINARY_DEVICE_TREE_FILE);
     if (!filename) {
         return -1;
     }
@@ -98,16 +97,6 @@ static int bamboo_load_device_tree(MachineState *machine,
         fprintf(stderr, "couldn't set /chosen/bootargs\n");
     }
 
-    /*
-     * Copy data from the host device tree into the guest. Since the guest can
-     * directly access the timebase without host involvement, we must expose
-     * the correct frequencies.
-     */
-    if (kvm_enabled()) {
-        tb_freq = kvmppc_get_tbfreq();
-        clock_freq = kvmppc_get_clockfreq();
-    }
-
     qemu_fdt_setprop_cell(fdt, "/cpus/cpu@0", "clock-frequency",
                           clock_freq);
     qemu_fdt_setprop_cell(fdt, "/cpus/cpu@0", "timebase-frequency",
@@ -121,29 +110,6 @@ static int bamboo_load_device_tree(MachineState *machine,
     return 0;
 }
 
-/* Create reset TLB entries for BookE, spanning the 32bit addr space.  */
-static void mmubooke_create_initial_mapping(CPUPPCState *env,
-                                     target_ulong va,
-                                     hwaddr pa)
-{
-    ppcemb_tlb_t *tlb = &env->tlb.tlbe[0];
-
-    tlb->attr = 0;
-    tlb->prot = PAGE_VALID | ((PAGE_READ | PAGE_WRITE | PAGE_EXEC) << 4);
-    tlb->size = 1U << 31; /* up to 0x80000000  */
-    tlb->EPN = va & TARGET_PAGE_MASK;
-    tlb->RPN = pa & TARGET_PAGE_MASK;
-    tlb->PID = 0;
-
-    tlb = &env->tlb.tlbe[1];
-    tlb->attr = 0;
-    tlb->prot = PAGE_VALID | ((PAGE_READ | PAGE_WRITE | PAGE_EXEC) << 4);
-    tlb->size = 1U << 31; /* up to 0xffffffff  */
-    tlb->EPN = 0x80000000 & TARGET_PAGE_MASK;
-    tlb->RPN = 0x80000000 & TARGET_PAGE_MASK;
-    tlb->PID = 0;
-}
-
 static void main_cpu_reset(void *opaque)
 {
     PowerPCCPU *cpu = opaque;
@@ -154,14 +120,16 @@ static void main_cpu_reset(void *opaque)
     env->gpr[3] = FDT_ADDR;
     env->nip = entry;
 
-    /* Create a mapping for the kernel.  */
-    mmubooke_create_initial_mapping(env, 0, 0);
+    /* Create a mapping spanning the 32bit addr space. */
+    booke_set_tlb(&env->tlb.tlbe[0], 0, 0, 1U << 31);
+    booke_set_tlb(&env->tlb.tlbe[1], 0x80000000, 0x80000000, 1U << 31);
 }
 
 static void bamboo_init(MachineState *machine)
 {
     const char *kernel_filename = machine->kernel_filename;
     const char *initrd_filename = machine->initrd_filename;
+    MachineClass *mc = MACHINE_GET_CLASS(machine);
     unsigned int pci_irq_nrs[4] = { 28, 27, 26, 25 };
     MemoryRegion *address_space_mem = get_system_memory();
     MemoryRegion *isa = g_new(MemoryRegion, 1);
@@ -173,7 +141,12 @@ static void bamboo_init(MachineState *machine)
     DeviceState *uicdev;
     SysBusDevice *uicsbd;
     int success;
-    int i;
+
+    if (kvm_enabled()) {
+        error_report("machine %s does not support the KVM accelerator",
+                     MACHINE_GET_CLASS(machine)->name);
+        exit(EXIT_FAILURE);
+    }
 
     cpu = POWERPC_CPU(cpu_create(machine->cpu_type));
     env = &cpu->env;
@@ -210,8 +183,7 @@ static void bamboo_init(MachineState *machine)
     ppc4xx_sdram_ddr_enable(PPC4xx_SDRAM_DDR(dev));
 
     /* PCI */
-    dev = sysbus_create_varargs(TYPE_PPC4xx_PCI_HOST_BRIDGE,
-                                PPC440EP_PCI_CONFIG,
+    dev = sysbus_create_varargs(TYPE_PPC4xx_PCI_HOST, PPC440EP_PCI_CONFIG,
                                 qdev_get_gpio_in(uicdev, pci_irq_nrs[0]),
                                 qdev_get_gpio_in(uicdev, pci_irq_nrs[1]),
                                 qdev_get_gpio_in(uicdev, pci_irq_nrs[2]),
@@ -241,14 +213,11 @@ static void bamboo_init(MachineState *machine)
     }
 
     if (pcibus) {
-        /* Register network interfaces. */
-        for (i = 0; i < nb_nics; i++) {
-            /*
-             * There are no PCI NICs on the Bamboo board, but there are
-             * PCI slots, so we can pick whatever default model we want.
-             */
-            pci_nic_init_nofail(&nd_table[i], pcibus, "e1000", NULL);
-        }
+        /*
+         * There are no PCI NICs on the Bamboo board, but there are
+         * PCI slots, so we can pick whatever default model we want.
+         */
+        pci_init_nic_devices(pcibus, mc->default_nic);
     }
 
     /* Load kernel. */
@@ -259,7 +228,8 @@ static void bamboo_init(MachineState *machine)
         if (success < 0) {
             uint64_t elf_entry;
             success = load_elf(kernel_filename, NULL, NULL, NULL, &elf_entry,
-                               NULL, NULL, NULL, 1, PPC_ELF_MACHINE, 0, 0);
+                               NULL, NULL, NULL,
+                               ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
             entry = elf_entry;
         }
         /* XXX try again as binary */
@@ -272,13 +242,8 @@ static void bamboo_init(MachineState *machine)
     /* Load initrd. */
     if (initrd_filename) {
         initrd_size = load_image_targphys(initrd_filename, RAMDISK_ADDR,
-                                          machine->ram_size - RAMDISK_ADDR);
-
-        if (initrd_size < 0) {
-            error_report("could not load ram disk '%s' at %x",
-                         initrd_filename, RAMDISK_ADDR);
-            exit(1);
-        }
+                                          machine->ram_size - RAMDISK_ADDR,
+                                          &error_fatal);
     }
 
     /* If we're loading a kernel directly, we must load the device tree too. */
@@ -297,6 +262,7 @@ static void bamboo_machine_init(MachineClass *mc)
     mc->init = bamboo_init;
     mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("440epb");
     mc->default_ram_id = "ppc4xx.sdram";
+    mc->default_nic = "e1000";
 }
 
 DEFINE_MACHINE("bamboo", bamboo_machine_init)

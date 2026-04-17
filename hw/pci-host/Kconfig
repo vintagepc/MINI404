@@ -6,6 +6,14 @@ config XEN_IGD_PASSTHROUGH
     default y
     depends on XEN && PCI_I440FX
 
+config PPC4XX_PCI
+    bool
+    select PCI
+
+config PPC440_PCIX
+    bool
+    select PCI
+
 config RAVEN_PCI
     bool
     select PCI
@@ -38,6 +46,10 @@ config PCI_I440FX
     select PCI
     select PAM
 
+config PCI_EXPRESS_ASPEED
+    bool
+    select PCI_EXPRESS
+
 config PCI_EXPRESS_Q35
     bool
     select PCI_EXPRESS
@@ -46,6 +58,7 @@ config PCI_EXPRESS_Q35
 config PCI_EXPRESS_GENERIC_BRIDGE
     bool
     select PCI_EXPRESS
+    imply ACPI_PCI
 
 config PCI_EXPRESS_XILINX
     bool
@@ -73,6 +86,11 @@ config SH_PCI
     bool
     select PCI
 
+config ARTICIA
+    bool
+    select PCI
+    select I8259
+
 config MV64361
     bool
     select PCI
@@ -81,3 +99,16 @@ config MV64361
 config DINO
     bool
     select PCI
+
+config ASTRO
+    bool
+    select PCI
+
+config PCI_EXPRESS_FSL_IMX8M_PHY
+    bool
+
+config GT64120
+    bool
+    select PCI
+    select EMPTY_SLOT
+    select I8259

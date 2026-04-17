@@ -14,14 +14,14 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "qemu/iov.h"
 #include "qemu/main-loop.h"
 #include "hw/virtio/virtio-pmem.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/virtio/virtio-access.h"
 #include "standard-headers/linux/virtio_ids.h"
 #include "standard-headers/linux/virtio_pmem.h"
-#include "sysemu/hostmem.h"
-#include "block/aio.h"
+#include "system/hostmem.h"
 #include "block/thread-pool.h"
 #include "trace.h"
 
@@ -69,12 +69,10 @@ static void virtio_pmem_flush(VirtIODevice *vdev, VirtQueue *vq)
     VirtIODeviceRequest *req_data;
     VirtIOPMEM *pmem = VIRTIO_PMEM(vdev);
     HostMemoryBackend *backend = MEMORY_BACKEND(pmem->memdev);
-    ThreadPool *pool = aio_get_thread_pool(qemu_get_aio_context());
 
     trace_virtio_pmem_flush_request();
     req_data = virtqueue_pop(vq, sizeof(VirtIODeviceRequest));
     if (!req_data) {
-        virtio_error(vdev, "virtio-pmem missing request data");
         return;
     }
 
@@ -87,7 +85,7 @@ static void virtio_pmem_flush(VirtIODevice *vdev, VirtQueue *vq)
     req_data->fd   = memory_region_get_fd(&backend->mr);
     req_data->pmem = pmem;
     req_data->vdev = vdev;
-    thread_pool_submit_aio(pool, worker_cb, req_data, done_cb, req_data);
+    thread_pool_submit_aio(worker_cb, req_data, done_cb, req_data);
 }
 
 static void virtio_pmem_get_config(VirtIODevice *vdev, uint8_t *config)
@@ -155,14 +153,13 @@ static MemoryRegion *virtio_pmem_get_memory_region(VirtIOPMEM *pmem,
     return &pmem->memdev->mr;
 }
 
-static Property virtio_pmem_properties[] = {
+static const Property virtio_pmem_properties[] = {
     DEFINE_PROP_UINT64(VIRTIO_PMEM_ADDR_PROP, VirtIOPMEM, start, 0),
     DEFINE_PROP_LINK(VIRTIO_PMEM_MEMDEV_PROP, VirtIOPMEM, memdev,
                      TYPE_MEMORY_BACKEND, HostMemoryBackend *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void virtio_pmem_class_init(ObjectClass *klass, void *data)
+static void virtio_pmem_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);

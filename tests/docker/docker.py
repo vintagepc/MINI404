@@ -23,10 +23,10 @@ import enum
 import tempfile
 import re
 import signal
+import getpass
 from tarfile import TarFile, TarInfo
 from io import StringIO, BytesIO
 from shutil import copy, rmtree
-from pwd import getpwuid
 from datetime import datetime, timedelta
 
 
@@ -76,14 +76,16 @@ def _guess_engine_command():
     commands = []
 
     if USE_ENGINE in [EngineEnum.AUTO, EngineEnum.PODMAN]:
-        commands += [["podman"]]
+        commands += [["podman"], ["podman-remote"], ["podman", "--remote"]]
     if USE_ENGINE in [EngineEnum.AUTO, EngineEnum.DOCKER]:
         commands += [["docker"], ["sudo", "-n", "docker"]]
     for cmd in commands:
         try:
-            # docker version will return the client details in stdout
-            # but still report a status of 1 if it can't contact the daemon
-            if subprocess.call(cmd + ["version"],
+            # 'version' is not sufficient to prove a working binary
+            # for podman. 'info' is a stronger check that is more
+            # likely to correlate with ability to create containers,
+            # and required to detect the need for podman remote
+            if subprocess.call(cmd + ["info"],
                                stdout=DEVNULL, stderr=DEVNULL) == 0:
                 return cmd
         except OSError:
@@ -186,7 +188,7 @@ def _check_binfmt_misc(executable):
               (binary))
         return None, True
 
-    m = re.search("interpreter (\S+)\n", entry)
+    m = re.search(r"interpreter (\S+)\n", entry)
     interp = m.group(1)
     if interp and interp != executable:
         print("binfmt_misc for %s does not point to %s, using %s" %
@@ -316,7 +318,7 @@ class Docker(object):
 
         if user:
             uid = os.getuid()
-            uname = getpwuid(uid).pw_name
+            uname = getpass.getuser()
             tmp_df.write("\n")
             tmp_df.write("RUN id %s 2>/dev/null || useradd -u %d -U %s" %
                          (uname, uid, uname))
@@ -570,7 +572,7 @@ class UpdateCommand(SubCommand):
 
         if args.user:
             uid = os.getuid()
-            uname = getpwuid(uid).pw_name
+            uname = getpass.getuser()
             df.write("\n")
             df.write("RUN id %s 2>/dev/null || useradd -u %d -U %s" %
                      (uname, uid, uname))
@@ -618,12 +620,7 @@ class ProbeCommand(SubCommand):
     def run(self, args, argv):
         try:
             docker = Docker()
-            if docker._command[0] == "docker":
-                print("docker")
-            elif docker._command[0] == "sudo":
-                print("sudo docker")
-            elif docker._command[0] == "podman":
-                print("podman")
+            print(" ".join(docker._command))
         except Exception:
             print("no")
 

@@ -19,10 +19,11 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "migration/cpu.h"
+#include "migration/qemu-file-types.h"
+#include "migration/vmstate.h"
 
 
-static VMStateField vmstate_mmu_fields[] = {
+static const VMStateField vmstate_mmu_fields[] = {
     VMSTATE_UINT64_2DARRAY(rams, MicroBlazeMMU, 2, TLB_ENTRIES),
     VMSTATE_UINT8_ARRAY(tids, MicroBlazeMMU, TLB_ENTRIES),
     VMSTATE_UINT32_ARRAY(regs, MicroBlazeMMU, 3),
@@ -60,7 +61,7 @@ static const VMStateInfo vmstate_msr = {
     .put = put_msr,
 };
 
-static VMStateField vmstate_env_fields[] = {
+static const VMStateField vmstate_env_fields[] = {
     VMSTATE_UINT32_ARRAY(regs, CPUMBState, 32),
 
     VMSTATE_UINT32(pc, CPUMBState),
@@ -78,7 +79,7 @@ static VMStateField vmstate_env_fields[] = {
     VMSTATE_UINT32(iflags, CPUMBState),
 
     VMSTATE_UINT32(res_val, CPUMBState),
-    VMSTATE_UINTTL(res_addr, CPUMBState),
+    VMSTATE_UINT32(res_addr, CPUMBState),
 
     VMSTATE_STRUCT(mmu, CPUMBState, 0, vmstate_mmu, MicroBlazeMMU),
 
@@ -87,13 +88,13 @@ static VMStateField vmstate_env_fields[] = {
 
 static const VMStateDescription vmstate_env = {
     .name = "env",
-    .version_id = 0,
-    .minimum_version_id = 0,
+    .version_id = 1,
+    .minimum_version_id = 1,
     .fields = vmstate_env_fields,
 };
 
-static VMStateField vmstate_cpu_fields[] = {
-    VMSTATE_CPU(),
+static const VMStateField vmstate_cpu_fields[] = {
+    VMSTATE_STRUCT(parent_obj, MicroBlazeCPU, 0, vmstate_cpu_common, CPUState),
     VMSTATE_STRUCT(env, MicroBlazeCPU, 1, vmstate_env, CPUMBState),
     VMSTATE_END_OF_LIST()
 };

@@ -25,8 +25,8 @@
 #include "qemu/cutils.h"
 #include "qemu/sockets.h"
 #include "qapi/error.h"
-#include "qapi/qmp/json-parser.h"
-#include "qapi/qmp/qjson.h"
+#include "qobject/json-parser.h"
+#include "qobject/qjson.h"
 
 #define SOCKET_MAX_FDS 16
 
@@ -134,7 +134,7 @@ static void socket_send_fds(int socket_fd, int *fds, size_t fds_num,
  * in the case that they choose to discard all replies up until
  * a particular EVENT is received.
  */
-static void
+static G_GNUC_PRINTF(4, 0) void
 _qmp_fd_vsend_fds(int fd, int *fds, size_t fds_num,
                   const char *fmt, va_list ap)
 {

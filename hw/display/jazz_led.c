@@ -27,7 +27,7 @@
 #include "ui/console.h"
 #include "ui/pixel_ops.h"
 #include "trace.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 
@@ -257,7 +257,7 @@ static const VMStateDescription vmstate_jazz_led = {
     .version_id = 0,
     .minimum_version_id = 0,
     .post_load = jazz_led_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(segments, LedState),
         VMSTATE_END_OF_LIST()
     }
@@ -294,13 +294,13 @@ static void jazz_led_reset(DeviceState *d)
     qemu_console_resize(s->con, 60, 80);
 }
 
-static void jazz_led_class_init(ObjectClass *klass, void *data)
+static void jazz_led_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->desc = "Jazz LED display",
     dc->vmsd = &vmstate_jazz_led;
-    dc->reset = jazz_led_reset;
+    device_class_set_legacy_reset(dc, jazz_led_reset);
     dc->realize = jazz_led_realize;
 }
 

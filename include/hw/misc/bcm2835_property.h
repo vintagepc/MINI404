@@ -8,9 +8,10 @@
 #ifndef BCM2835_PROPERTY_H
 #define BCM2835_PROPERTY_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "net/net.h"
 #include "hw/display/bcm2835_fb.h"
+#include "hw/nvram/bcm2835_otp.h"
 #include "qom/object.h"
 
 #define TYPE_BCM2835_PROPERTY "bcm2835-property"
@@ -26,10 +27,12 @@ struct BCM2835PropertyState {
     MemoryRegion iomem;
     qemu_irq mbox_irq;
     BCM2835FBState *fbdev;
+    BCM2835OTPState *otp;
 
     MACAddr macaddr;
     uint32_t board_rev;
     uint32_t addr;
+    char *command_line;
     bool pending;
 };
 

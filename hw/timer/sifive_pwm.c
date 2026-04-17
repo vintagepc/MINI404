@@ -26,10 +26,10 @@
 
 #include "qemu/osdep.h"
 #include "trace.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/timer/sifive_pwm.h"
-#include "hw/qdev-properties.h"
-#include "hw/registerfields.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/registerfields.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -388,14 +388,14 @@ static void sifive_pwm_reset(DeviceState *dev)
 static const MemoryRegionOps sifive_pwm_ops = {
     .read = sifive_pwm_read,
     .write = sifive_pwm_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
 static const VMStateDescription vmstate_sifive_pwm = {
     .name = TYPE_SIFIVE_PWM,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER_ARRAY(timer, SiFivePwmState, 4),
         VMSTATE_UINT64(tick_offset, SiFivePwmState),
         VMSTATE_UINT32(pwmcfg, SiFivePwmState),
@@ -404,11 +404,10 @@ static const VMStateDescription vmstate_sifive_pwm = {
     }
 };
 
-static Property sifive_pwm_properties[] = {
+static const Property sifive_pwm_properties[] = {
     /* 0.5Ghz per spec after FSBL */
     DEFINE_PROP_UINT64("clock-frequency", struct SiFivePwmState,
                        freq_hz, 500000000ULL),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void sifive_pwm_init(Object *obj)
@@ -442,11 +441,11 @@ static void sifive_pwm_realize(DeviceState *dev, Error **errp)
                   sifive_pwm_interrupt_3, s);
 }
 
-static void sifive_pwm_class_init(ObjectClass *klass, void *data)
+static void sifive_pwm_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = sifive_pwm_reset;
+    device_class_set_legacy_reset(dc, sifive_pwm_reset);
     device_class_set_props(dc, sifive_pwm_properties);
     dc->vmsd = &vmstate_sifive_pwm;
     dc->realize = sifive_pwm_realize;

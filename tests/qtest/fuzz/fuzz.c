@@ -17,9 +17,9 @@
 
 #include "qemu/cutils.h"
 #include "qemu/datadir.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/qtest.h"
-#include "sysemu/runstate.h"
+#include "system/system.h"
+#include "system/qtest.h"
+#include "system/runstate.h"
 #include "qemu/main-loop.h"
 #include "qemu/rcu.h"
 #include "tests/qtest/libqtest.h"
@@ -41,6 +41,7 @@ static FuzzTargetList *fuzz_target_list;
 static FuzzTarget *fuzz_target;
 static QTestState *fuzz_qts;
 
+int (*qemu_main)(void);
 
 
 void flush_events(QTestState *s)
@@ -49,6 +50,12 @@ void flush_events(QTestState *s)
     while (g_main_context_pending(NULL) && i-- > 0) {
         main_loop_wait(false);
     }
+}
+
+void fuzz_reset(QTestState *s)
+{
+    qemu_system_reset(SHUTDOWN_CAUSE_GUEST_RESET);
+    main_loop_wait(true);
 }
 
 static QTestState *qtest_setup(void)
@@ -201,7 +208,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv, char ***envp)
         fuzz_target->pre_vm_init();
     }
 
-    /* Run QEMU's softmmu main with the fuzz-target dependent arguments */
+    /* Run QEMU's system main with the fuzz-target dependent arguments */
     cmd_line = fuzz_target->get_init_cmdline(fuzz_target);
     g_string_append_printf(cmd_line, " %s -qtest /dev/null ",
                            getenv("QTEST_LOG") ? "" : "-qtest-log none");

@@ -66,21 +66,32 @@ undocumented; you can get a complete list by running
 .. toctree::
    :maxdepth: 1
 
+   riscv/microblaze-v-generic
    riscv/microchip-icicle-kit
+   riscv/mips
    riscv/shakti-c
    riscv/sifive_u
    riscv/virt
+   riscv/xiangshan-kunminghu
 
 RISC-V CPU firmware
 -------------------
 
 When using the ``sifive_u`` or ``virt`` machine there are three different
 firmware boot options:
-1. ``-bios default`` - This is the default behaviour if no -bios option
-is included. This option will load the default OpenSBI firmware automatically.
-The firmware is included with the QEMU release and no user interaction is
-required. All a user needs to do is specify the kernel they want to boot
-with the -kernel option
-2. ``-bios none`` - QEMU will not automatically load any firmware. It is up
-to the user to load all the images they need.
-3. ``-bios <file>`` - Tells QEMU to load the specified file as the firmware.
+
+* ``-bios default``
+
+This is the default behaviour if no ``-bios`` option is included. This option
+will load the default OpenSBI firmware automatically. The firmware is included
+with the QEMU release and no user interaction is required. All a user needs to
+do is specify the kernel they want to boot with the ``-kernel`` option
+
+* ``-bios none``
+
+QEMU will not automatically load any firmware. It is up to the user to load all
+the images they need.
+
+* ``-bios <file>``
+
+Tells QEMU to load the specified file as the firmware.

@@ -1,4 +1,7 @@
 STRUCT_SPECIAL(termios)
+#ifdef TARGET_TCGETS2
+STRUCT_SPECIAL(termios2)
+#endif
 
 STRUCT(winsize,
        TYPE_SHORT, TYPE_SHORT, TYPE_SHORT, TYPE_SHORT)
@@ -340,6 +343,11 @@ STRUCT(file_clone_range,
        TYPE_ULONGLONG, /* src_offset */
        TYPE_ULONGLONG, /* src_length */
        TYPE_ULONGLONG) /* dest_offset */
+
+STRUCT(fstrim_range,
+       TYPE_ULONGLONG, /* start */
+       TYPE_ULONGLONG, /* len */
+       TYPE_ULONGLONG) /* minlen */
 
 STRUCT(fiemap_extent,
        TYPE_ULONGLONG, /* fe_logical */

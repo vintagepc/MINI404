@@ -38,7 +38,7 @@ originated in the Linux kernel, though it was heavily simplified and
 the handling of dependencies is stricter in QEMU.
 
 Unlike Linux, there is no user interface to edit the configuration, which
-is instead specified in per-target files under the ``default-configs/``
+is instead specified in per-target files under the ``configs/``
 directory of the QEMU source tree.  This is because, unlike Linux,
 configuration and dependencies can be treated as a black box when building
 QEMU; the default configuration that QEMU ships with should be okay in
@@ -59,8 +59,6 @@ stanza like the following::
       config ARM_VIRT
          bool
          imply PCI_DEVICES
-         imply VFIO_AMD_XGBE
-         imply VFIO_XGMAC
          select A15MPCORE
          select ACPI
          select ARM_SMMUV3
@@ -103,7 +101,7 @@ directives can be included:
 **default value**: ``default <value> [if <expr>]``
 
   Default values are assigned to the config symbol if no other value was
-  set by the user via ``default-configs/*.mak`` files, and only if
+  set by the user via ``configs/*.mak`` files, and only if
   ``select`` or ``depends on`` directives do not force the value to true
   or false respectively.  ``<value>`` can be ``y`` or ``n``; it cannot
   be an arbitrary Boolean expression.  However, a condition for applying
@@ -119,7 +117,7 @@ directives can be included:
   This is similar to ``select`` as it applies a lower limit of ``y``
   to another symbol.  However, the lower limit is only a default
   and the "implied" symbol's value may still be set to ``n`` from a
-  ``default-configs/*.mak`` files.  The following two examples are
+  ``configs/*.mak`` files.  The following two examples are
   equivalent::
 
     config FOO
@@ -146,7 +144,7 @@ declares its dependencies in different ways:
       bool
 
   Subsystems always default to false (they have no ``default`` directive)
-  and are never visible in ``default-configs/*.mak`` files.  It's
+  and are never visible in ``configs/*.mak`` files.  It's
   up to other symbols to ``select`` whatever subsystems they require.
 
   They sometimes have ``select`` directives to bring in other required
@@ -211,6 +209,8 @@ declares its dependencies in different ways:
 
     config SUN4M
       bool
+      default y
+      depends on SPARC && !SPARC64
       imply TCX
       imply CG3
       select CS4231
@@ -228,8 +228,16 @@ declares its dependencies in different ways:
   directives.  A device should be listed under ``select`` if the board
   cannot be started at all without it.  It should be listed under
   ``imply`` if (depending on the QEMU command line) the board may or
-  may not be started without it.  Boards also default to false; they are
-  enabled by the ``default-configs/*.mak`` for the target they apply to.
+  may not be started without it.  Boards default to true, but also
+  have a ``depends on`` clause to limit them to the appropriate targets.
+  For some targets, not all boards may be supported by hardware
+  virtualization, in which case they also depend on the ``TCG`` symbol,
+  Other symbols that are commonly used as dependencies for boards
+  include libraries (such as ``FDT``) or ``TARGET_BIG_ENDIAN``
+  (possibly negated).
+
+  Boards are listed for convenience in the ``configs/*.mak``
+  for the target they apply to.
 
 **internal elements**
 
@@ -241,18 +249,18 @@ declares its dependencies in different ways:
 
   Internal elements group code that is useful in several boards or
   devices.  They are usually enabled with ``select`` and in turn select
-  other elements; they are never visible in ``default-configs/*.mak``
+  other elements; they are never visible in ``configs/*.mak``
   files, and often not even in the Makefile.
 
 Writing and modifying default configurations
 --------------------------------------------
 
 In addition to the Kconfig files under hw/, each target also includes
-a file called ``default-configs/TARGETNAME-softmmu.mak``.  These files
+a file called ``configs/TARGETNAME-softmmu.mak``.  These files
 initialize some Kconfig variables to non-default values and provide the
 starting point to turn on devices and subsystems.
 
-A file in ``default-configs/`` looks like the following example::
+A file in ``configs/`` looks like the following example::
 
     # Default configuration for alpha-softmmu
 
@@ -274,7 +282,7 @@ or commenting out lines in the second group.
 
 It is also possible to run QEMU's configure script with the
 ``--without-default-devices`` option.  When this is done, everything defaults
-to ``n`` unless it is ``select``ed or explicitly switched on in the
+to ``n`` unless it is ``select``\ ed or explicitly switched on in the
 ``.mak`` files.  In other words, ``default`` and ``imply`` directives
 are disabled.  When QEMU is built with this option, the user will probably
 want to change some lines in the first group, for example like this::
@@ -282,9 +290,19 @@ want to change some lines in the first group, for example like this::
    CONFIG_PCI_DEVICES=y
    #CONFIG_TEST_DEVICES=n
 
-and/or pick a subset of the devices in those device groups.  Right now
-there is no single place that lists all the optional devices for
-``CONFIG_PCI_DEVICES`` and ``CONFIG_TEST_DEVICES``.  In the future,
+and/or pick a subset of the devices in those device groups.  Without
+further modifications to ``configs/devices/``, a system emulator built
+without default devices might not do much more than start an empty
+machine, and even then only if ``--nodefaults`` is specified on the
+command line.  Starting a VM *without* ``--nodefaults`` is allowed to
+fail, but should never abort.  Failures in ``make check`` with
+``--without-default-devices`` are considered bugs in the test code:
+the tests should either use ``--nodefaults``, and should be skipped
+if a necessary device is not present in the build.  Such failures
+should not be worked around with ``select`` directives.
+
+Right now there is no single place that lists all the optional devices
+for ``CONFIG_PCI_DEVICES`` and ``CONFIG_TEST_DEVICES``.  In the future,
 we expect that ``.mak`` files will be automatically generated, so that
 they will include all these symbols and some help text on what they do.
 
@@ -306,6 +324,6 @@ variable::
 
     host_kconfig = \
       (have_tpm ? ['CONFIG_TPM=y'] : []) + \
-      ('CONFIG_SPICE' in config_host ? ['CONFIG_SPICE=y'] : []) + \
+      (host_os == 'linux' ? ['CONFIG_LINUX=y'] : []) + \
       (have_ivshmem ? ['CONFIG_IVSHMEM=y'] : []) + \
       ...

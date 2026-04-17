@@ -15,19 +15,19 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 
 #include "hw/nvram/fw_cfg.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/misc/pvpanic.h"
 #include "qom/object.h"
-#include "standard-headers/linux/pvpanic.h"
+#include "standard-headers/misc/pvpanic.h"
 
 static void handle_event(int event)
 {
     static bool logged;
 
-    if (event & ~(PVPANIC_PANICKED | PVPANIC_CRASH_LOADED) && !logged) {
+    if (event & ~PVPANIC_EVENTS && !logged) {
         qemu_log_mask(LOG_GUEST_ERROR, "pvpanic: unknown event %#x.\n", event);
         logged = true;
     }
@@ -39,6 +39,11 @@ static void handle_event(int event)
 
     if (event & PVPANIC_CRASH_LOADED) {
         qemu_system_guest_crashloaded(NULL);
+        return;
+    }
+
+    if (event & PVPANIC_SHUTDOWN) {
+        qemu_system_guest_pvshutdown();
         return;
     }
 }
@@ -57,6 +62,7 @@ static void pvpanic_write(void *opaque, hwaddr addr, uint64_t val,
 }
 
 static const MemoryRegionOps pvpanic_ops = {
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .read = pvpanic_read,
     .write = pvpanic_write,
     .impl = {

@@ -18,7 +18,36 @@
 #ifndef PPC_INTERNAL_H
 #define PPC_INTERNAL_H
 
-#include "hw/registerfields.h"
+#include "exec/breakpoint.h"
+#include "exec/memop.h"
+#include "hw/core/registerfields.h"
+#include "exec/page-protection.h"
+#include "accel/tcg/tb-cpu-state.h"
+
+static inline bool ppc_env_is_little_endian(const CPUPPCState *env)
+{
+    return FIELD_EX64(env->msr, MSR, LE);
+}
+
+/**
+ * ppc_data_endian_env:
+ * @env: the cpu context
+ *
+ * Return the MemOp endianness of the DATA path.
+ */
+static inline MemOp ppc_data_endian_env(const CPUPPCState *env)
+{
+    return ppc_env_is_little_endian(env) ? MO_LE : MO_BE;
+}
+
+/* PM instructions */
+typedef enum {
+    PPC_PM_DOZE,
+    PPC_PM_NAP,
+    PPC_PM_SLEEP,
+    PPC_PM_RVWINKLE,
+    PPC_PM_STOP,
+} powerpc_pm_insn_t;
 
 #define FUNC_MASK(name, ret_type, size, max_val)                  \
 static inline ret_type name(uint##size##_t start,                 \
@@ -221,50 +250,27 @@ void destroy_ppc_opcodes(PowerPCCPU *cpu);
 
 /* gdbstub.c */
 void ppc_gdb_init(CPUState *cs, PowerPCCPUClass *ppc);
-gchar *ppc_gdb_arch_name(CPUState *cs);
+const gchar *ppc_gdb_arch_name(CPUState *cs);
 
-/**
- * prot_for_access_type:
- * @access_type: Access type
- *
- * Return the protection bit required for the given access type.
- */
-static inline int prot_for_access_type(MMUAccessType access_type)
+#ifndef CONFIG_USER_ONLY
+
+/* Check if permission bit required for the access_type is set in prot */
+static inline int check_prot_access_type(int prot, MMUAccessType access_type)
 {
-    switch (access_type) {
-    case MMU_INST_FETCH:
-        return PAGE_EXEC;
-    case MMU_DATA_LOAD:
-        return PAGE_READ;
-    case MMU_DATA_STORE:
-        return PAGE_WRITE;
-    }
-    g_assert_not_reached();
+    return prot & (1 << access_type);
 }
 
 /* PowerPC MMU emulation */
 
-typedef struct mmu_ctx_t mmu_ctx_t;
 bool ppc_xlate(PowerPCCPU *cpu, vaddr eaddr, MMUAccessType access_type,
                       hwaddr *raddrp, int *psizep, int *protp,
                       int mmu_idx, bool guest_visible);
-int get_physical_address_wtlb(CPUPPCState *env, mmu_ctx_t *ctx,
-                                     target_ulong eaddr,
-                                     MMUAccessType access_type, int type,
-                                     int mmu_idx);
+
 /* Software driven TLB helpers */
 int ppc6xx_tlb_getnum(CPUPPCState *env, target_ulong eaddr,
                                     int way, int is_code);
-/* Context used internally during MMU translations */
-struct mmu_ctx_t {
-    hwaddr raddr;      /* Real address              */
-    hwaddr eaddr;      /* Effective address         */
-    int prot;                      /* Protection bits           */
-    hwaddr hash[2];    /* Pagetable hash values     */
-    target_ulong ptem;             /* Virtual segment ID | API  */
-    int key;                       /* Access key                */
-    int nx;                        /* Non-execute area          */
-};
+
+#endif /* !CONFIG_USER_ONLY */
 
 /* Common routines used by software and hardware TLBs emulation */
 static inline int pte_is_valid(target_ulong pte0)
@@ -280,6 +286,8 @@ static inline void pte_invalidate(target_ulong *pte0)
 #define PTE_PTEM_MASK 0x7FFFFFBF
 #define PTE_CHECK_MASK (TARGET_PAGE_MASK | 0x7B)
 
+uint32_t ppc_ldl_code(CPUArchState *env, target_ulong addr);
+
 #ifdef CONFIG_USER_ONLY
 void ppc_cpu_record_sigsegv(CPUState *cs, vaddr addr,
                             MMUAccessType access_type,
@@ -291,7 +299,19 @@ bool ppc_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 G_NORETURN void ppc_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
                                             MMUAccessType access_type, int mmu_idx,
                                             uintptr_t retaddr);
-#endif
+void ppc_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
+                                   vaddr addr, unsigned size,
+                                   MMUAccessType access_type,
+                                   int mmu_idx, MemTxAttrs attrs,
+                                   MemTxResult response, uintptr_t retaddr);
+void ppc_cpu_debug_excp_handler(CPUState *cs);
+bool ppc_cpu_debug_check_breakpoint(CPUState *cs);
+bool ppc_cpu_debug_check_watchpoint(CPUState *cs, CPUWatchpoint *wp);
+
+G_NORETURN void powerpc_checkstop(CPUPPCState *env, const char *reason);
+void powerpc_excp(PowerPCCPU *cpu, int excp);
+
+#endif /* !CONFIG_USER_ONLY */
 
 FIELD(GER_MSK, XMSK, 0, 4)
 FIELD(GER_MSK, YMSK, 4, 4)
@@ -305,5 +325,7 @@ static inline int ger_pack_masks(int pmsk, int ymsk, int xmsk)
     msk = FIELD_DP32(msk, GER_MSK, PMSK, pmsk);
     return msk;
 }
+
+TCGTBCPUState ppc_get_tb_cpu_state(CPUState *cs);
 
 #endif /* PPC_INTERNAL_H */

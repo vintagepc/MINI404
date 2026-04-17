@@ -14,17 +14,21 @@
 #include "qemu/osdep.h"
 #include <linux/vfio.h>
 #include "qapi/error.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qstring.h"
+#include "qobject/qdict.h"
+#include "qobject/qstring.h"
+#include "qemu/defer-call.h"
 #include "qemu/error-report.h"
+#include "qemu/host-pci-mmio.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/cutils.h"
 #include "qemu/option.h"
 #include "qemu/memalign.h"
 #include "qemu/vfio-helpers.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
-#include "sysemu/replay.h"
+#include "system/block-backend.h"
+#include "system/replay.h"
 #include "trace.h"
 
 #include "block/nvme.h"
@@ -57,10 +61,11 @@ typedef struct {
     uint8_t  *queue;
     uint64_t iova;
     /* Hardware MMIO register */
-    volatile uint32_t *doorbell;
+    uint32_t *doorbell;
 } NVMeQueue;
 
 typedef struct {
+    /* Called from nvme_process_completion() in the BDS's main AioContext */
     BlockCompletionFunc *cb;
     void *opaque;
     int cid;
@@ -80,6 +85,7 @@ typedef struct {
     uint8_t     *prp_list_pages;
 
     /* Fields protected by @lock */
+    /* Coroutines in this queue are woken in their own context */
     CoQueue     free_req_queue;
     NVMeQueue   sq, cq;
     int         cq_phase;
@@ -88,7 +94,7 @@ typedef struct {
     int         need_kick;
     int         inflight;
 
-    /* Thread-safe, no lock necessary */
+    /* Thread-safe, no lock necessary; runs in the BDS's main context */
     QEMUBH      *completion_bh;
 } NVMeQueuePair;
 
@@ -97,7 +103,7 @@ struct BDRVNVMeState {
     QEMUVFIOState *vfio;
     void *bar0_wo_map;
     /* Memory mapped registers */
-    volatile struct {
+    struct {
         uint32_t sq_tail;
         uint32_t cq_head;
     } *doorbells;
@@ -118,7 +124,6 @@ struct BDRVNVMeState {
     int blkshift;
 
     uint64_t max_transfer;
-    bool plugged;
 
     bool supports_write_zeroes;
     bool supports_discard;
@@ -166,6 +171,7 @@ static QemuOptsList runtime_opts = {
 static bool nvme_init_queue(BDRVNVMeState *s, NVMeQueue *q,
                             unsigned nentries, size_t entry_bytes, Error **errp)
 {
+    ERRP_GUARD();
     size_t bytes;
     int r;
 
@@ -202,11 +208,13 @@ static void nvme_free_queue_pair(NVMeQueuePair *q)
     g_free(q);
 }
 
+/* Runs in the BDS's main AioContext */
 static void nvme_free_req_queue_cb(void *opaque)
 {
     NVMeQueuePair *q = opaque;
 
     qemu_mutex_lock(&q->lock);
+    /* qemu_co_enter_next() wakes the coroutine in its own AioContext */
     while (q->free_req_head != -1 &&
            qemu_co_enter_next(&q->free_req_queue, &q->lock)) {
         /* Retry waiting requests */
@@ -219,6 +227,7 @@ static NVMeQueuePair *nvme_create_queue_pair(BDRVNVMeState *s,
                                              unsigned idx, size_t size,
                                              Error **errp)
 {
+    ERRP_GUARD();
     int i, r;
     NVMeQueuePair *q;
     uint64_t prp_list_iova;
@@ -276,19 +285,19 @@ fail:
     return NULL;
 }
 
-/* With q->lock */
+/* With q->lock, must be run in the BDS's main AioContext */
 static void nvme_kick(NVMeQueuePair *q)
 {
     BDRVNVMeState *s = q->s;
 
-    if (s->plugged || !q->need_kick) {
+    if (!q->need_kick) {
         return;
     }
     trace_nvme_kick(s, q->index);
     assert(!(q->sq.tail & 0xFF00));
     /* Fence the write to submission queue entry before notifying the device. */
     smp_wmb();
-    *q->sq.doorbell = cpu_to_le32(q->sq.tail);
+    host_pci_stl_le_p(q->sq.doorbell, q->sq.tail);
     q->inflight += q->need_kick;
     q->need_kick = 0;
 }
@@ -303,7 +312,10 @@ static NVMeRequest *nvme_get_free_req_nofail_locked(NVMeQueuePair *q)
     return req;
 }
 
-/* Return a free request element if any, otherwise return NULL.  */
+/*
+ * Return a free request element if any, otherwise return NULL.
+ * May be run from any AioContext.
+ */
 static NVMeRequest *nvme_get_free_req_nowait(NVMeQueuePair *q)
 {
     QEMU_LOCK_GUARD(&q->lock);
@@ -316,6 +328,7 @@ static NVMeRequest *nvme_get_free_req_nowait(NVMeQueuePair *q)
 /*
  * Wait for a free request to become available if necessary, then
  * return it.
+ * May be called in any AioContext.
  */
 static coroutine_fn NVMeRequest *nvme_get_free_req(NVMeQueuePair *q)
 {
@@ -323,20 +336,21 @@ static coroutine_fn NVMeRequest *nvme_get_free_req(NVMeQueuePair *q)
 
     while (q->free_req_head == -1) {
         trace_nvme_free_req_queue_wait(q->s, q->index);
+        /* nvme_free_req_queue_cb() wakes us in our own AioContext */
         qemu_co_queue_wait(&q->free_req_queue, &q->lock);
     }
 
     return nvme_get_free_req_nofail_locked(q);
 }
 
-/* With q->lock */
+/* With q->lock, may be called in any AioContext */
 static void nvme_put_free_req_locked(NVMeQueuePair *q, NVMeRequest *req)
 {
     req->free_req_next = q->free_req_head;
     q->free_req_head = req - q->reqs;
 }
 
-/* With q->lock */
+/* With q->lock, may be called in any AioContext */
 static void nvme_wake_free_req_locked(NVMeQueuePair *q)
 {
     if (!qemu_co_queue_empty(&q->free_req_queue)) {
@@ -345,7 +359,7 @@ static void nvme_wake_free_req_locked(NVMeQueuePair *q)
     }
 }
 
-/* Insert a request in the freelist and wake waiters */
+/* Insert a request in the freelist and wake waiters (from any AioContext) */
 static void nvme_put_free_req_and_wake(NVMeQueuePair *q, NVMeRequest *req)
 {
     qemu_mutex_lock(&q->lock);
@@ -376,7 +390,7 @@ static inline int nvme_translate_error(const NvmeCqe *c)
     }
 }
 
-/* With q->lock */
+/* With q->lock, must be run in the BDS's main AioContext */
 static bool nvme_process_completion(NVMeQueuePair *q)
 {
     BDRVNVMeState *s = q->s;
@@ -386,10 +400,6 @@ static bool nvme_process_completion(NVMeQueuePair *q)
     NvmeCqe *c;
 
     trace_nvme_process_completion(s, q->index, q->inflight);
-    if (s->plugged) {
-        trace_nvme_process_completion_queue_plugged(s, q->index);
-        return false;
-    }
 
     /*
      * Support re-entrancy when a request cb() function invokes aio_poll().
@@ -419,9 +429,10 @@ static bool nvme_process_completion(NVMeQueuePair *q)
             q->cq_phase = !q->cq_phase;
         }
         cid = le16_to_cpu(c->cid);
-        if (cid == 0 || cid > NVME_QUEUE_SIZE) {
-            warn_report("NVMe: Unexpected CID in completion queue: %"PRIu32", "
-                        "queue size: %u", cid, NVME_QUEUE_SIZE);
+        if (cid == 0 || cid > NVME_NUM_REQS) {
+            warn_report("NVMe: Unexpected CID in completion queue: %" PRIu32
+                        ", should be within: 1..%u inclusively", cid,
+                        NVME_NUM_REQS);
             continue;
         }
         trace_nvme_complete_command(s, q->index, cid);
@@ -440,7 +451,7 @@ static bool nvme_process_completion(NVMeQueuePair *q)
     if (progress) {
         /* Notify the device so it can post more completions. */
         smp_mb_release();
-        *q->cq.doorbell = cpu_to_le32(q->cq.head);
+        host_pci_stl_le_p(q->cq.doorbell, q->cq.head);
         nvme_wake_free_req_locked(q);
     }
 
@@ -449,6 +460,7 @@ static bool nvme_process_completion(NVMeQueuePair *q)
     return progress;
 }
 
+/* As q->completion_bh, runs in the BDS's main AioContext */
 static void nvme_process_completion_bh(void *opaque)
 {
     NVMeQueuePair *q = opaque;
@@ -459,7 +471,7 @@ static void nvme_process_completion_bh(void *opaque)
      * so notify the device that it has space to fill in more completions now.
      */
     smp_mb_release();
-    *q->cq.doorbell = cpu_to_le32(q->cq.head);
+    host_pci_stl_le_p(q->cq.doorbell, q->cq.head);
     nvme_wake_free_req_locked(q);
 
     nvme_process_completion(q);
@@ -479,6 +491,30 @@ static void nvme_trace_command(const NvmeCmd *cmd)
     }
 }
 
+/* Must be run in the BDS's main AioContext */
+static void nvme_kick_and_check_completions(void *opaque)
+{
+    NVMeQueuePair *q = opaque;
+
+    QEMU_LOCK_GUARD(&q->lock);
+    nvme_kick(q);
+    nvme_process_completion(q);
+}
+
+/* Runs in nvme_submit_command()'s AioContext */
+static void nvme_deferred_fn(void *opaque)
+{
+    NVMeQueuePair *q = opaque;
+
+    if (qemu_get_current_aio_context() == q->s->aio_context) {
+        nvme_kick_and_check_completions(q);
+    } else {
+        aio_bh_schedule_oneshot(q->s->aio_context,
+                                nvme_kick_and_check_completions, q);
+    }
+}
+
+/* May be run in any AioContext */
 static void nvme_submit_command(NVMeQueuePair *q, NVMeRequest *req,
                                 NvmeCmd *cmd, BlockCompletionFunc cb,
                                 void *opaque)
@@ -495,11 +531,12 @@ static void nvme_submit_command(NVMeQueuePair *q, NVMeRequest *req,
            q->sq.tail * NVME_SQ_ENTRY_BYTES, cmd, sizeof(*cmd));
     q->sq.tail = (q->sq.tail + 1) % NVME_QUEUE_SIZE;
     q->need_kick++;
-    nvme_kick(q);
-    nvme_process_completion(q);
     qemu_mutex_unlock(&q->lock);
+
+    defer_call(nvme_deferred_fn, q);
 }
 
+/* Put into NVMeRequest.cb, so runs in the BDS's main AioContext */
 static void nvme_admin_cmd_sync_cb(void *opaque, int ret)
 {
     int *pret = opaque;
@@ -507,6 +544,7 @@ static void nvme_admin_cmd_sync_cb(void *opaque, int ret)
     aio_wait_kick();
 }
 
+/* Must be run in the BDS's or qemu's main AioContext */
 static int nvme_admin_cmd_sync(BlockDriverState *bs, NvmeCmd *cmd)
 {
     BDRVNVMeState *s = bs->opaque;
@@ -527,6 +565,7 @@ static int nvme_admin_cmd_sync(BlockDriverState *bs, NvmeCmd *cmd)
 /* Returns true on success, false on failure. */
 static bool nvme_identify(BlockDriverState *bs, int namespace, Error **errp)
 {
+    ERRP_GUARD();
     BDRVNVMeState *s = bs->opaque;
     bool ret = false;
     QEMU_AUTO_VFREE union {
@@ -614,6 +653,7 @@ out:
     return ret;
 }
 
+/* Must be run in the BDS's main AioContext */
 static void nvme_poll_queue(NVMeQueuePair *q)
 {
     const size_t cqe_offset = q->cq.head * NVME_CQ_ENTRY_BYTES;
@@ -636,6 +676,7 @@ static void nvme_poll_queue(NVMeQueuePair *q)
     qemu_mutex_unlock(&q->lock);
 }
 
+/* Must be run in the BDS's main AioContext */
 static void nvme_poll_queues(BDRVNVMeState *s)
 {
     int i;
@@ -645,6 +686,7 @@ static void nvme_poll_queues(BDRVNVMeState *s)
     }
 }
 
+/* Run as an event notifier in the BDS's main AioContext */
 static void nvme_handle_event(EventNotifier *n)
 {
     BDRVNVMeState *s = container_of(n, BDRVNVMeState,
@@ -698,6 +740,7 @@ out_error:
     return false;
 }
 
+/* Run as an event notifier in the BDS's main AioContext */
 static bool nvme_poll_cb(void *opaque)
 {
     EventNotifier *e = opaque;
@@ -721,6 +764,7 @@ static bool nvme_poll_cb(void *opaque)
     return false;
 }
 
+/* Run as an event notifier in the BDS's main AioContext */
 static void nvme_poll_ready(EventNotifier *e)
 {
     BDRVNVMeState *s = container_of(e, BDRVNVMeState,
@@ -738,9 +782,10 @@ static int nvme_init(BlockDriverState *bs, const char *device, int namespace,
     int ret;
     uint64_t cap;
     uint32_t ver;
+    uint32_t cc;
     uint64_t timeout_ms;
     uint64_t deadline, now;
-    volatile NvmeBar *regs = NULL;
+    NvmeBar *regs = NULL;
 
     qemu_co_mutex_init(&s->dma_map_lock);
     qemu_co_queue_init(&s->dma_flush_queue);
@@ -768,7 +813,7 @@ static int nvme_init(BlockDriverState *bs, const char *device, int namespace,
     /* Perform initialize sequence as described in NVMe spec "7.6.1
      * Initialization". */
 
-    cap = le64_to_cpu(regs->cap);
+    cap = host_pci_ldq_le_p(&regs->cap);
     trace_nvme_controller_capability_raw(cap);
     trace_nvme_controller_capability("Maximum Queue Entries Supported",
                                      1 + NVME_CAP_MQES(cap));
@@ -794,16 +839,17 @@ static int nvme_init(BlockDriverState *bs, const char *device, int namespace,
     bs->bl.request_alignment = s->page_size;
     timeout_ms = MIN(500 * NVME_CAP_TO(cap), 30000);
 
-    ver = le32_to_cpu(regs->vs);
+    ver = host_pci_ldl_le_p(&regs->vs);
     trace_nvme_controller_spec_version(extract32(ver, 16, 16),
                                        extract32(ver, 8, 8),
                                        extract32(ver, 0, 8));
 
     /* Reset device to get a clean state. */
-    regs->cc = cpu_to_le32(le32_to_cpu(regs->cc) & 0xFE);
+    cc = host_pci_ldl_le_p(&regs->cc);
+    host_pci_stl_le_p(&regs->cc, cc & 0xFE);
     /* Wait for CSTS.RDY = 0. */
     deadline = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + timeout_ms * SCALE_MS;
-    while (NVME_CSTS_RDY(le32_to_cpu(regs->csts))) {
+    while (NVME_CSTS_RDY(host_pci_ldl_le_p(&regs->csts))) {
         if (qemu_clock_get_ns(QEMU_CLOCK_REALTIME) > deadline) {
             error_setg(errp, "Timeout while waiting for device to reset (%"
                              PRId64 " ms)",
@@ -832,19 +878,21 @@ static int nvme_init(BlockDriverState *bs, const char *device, int namespace,
     s->queues[INDEX_ADMIN] = q;
     s->queue_count = 1;
     QEMU_BUILD_BUG_ON((NVME_QUEUE_SIZE - 1) & 0xF000);
-    regs->aqa = cpu_to_le32(((NVME_QUEUE_SIZE - 1) << AQA_ACQS_SHIFT) |
-                            ((NVME_QUEUE_SIZE - 1) << AQA_ASQS_SHIFT));
-    regs->asq = cpu_to_le64(q->sq.iova);
-    regs->acq = cpu_to_le64(q->cq.iova);
+    host_pci_stl_le_p(&regs->aqa,
+                        ((NVME_QUEUE_SIZE - 1) << AQA_ACQS_SHIFT) |
+                        ((NVME_QUEUE_SIZE - 1) << AQA_ASQS_SHIFT));
+    host_pci_stq_le_p(&regs->asq, q->sq.iova);
+    host_pci_stq_le_p(&regs->acq, q->cq.iova);
 
     /* After setting up all control registers we can enable device now. */
-    regs->cc = cpu_to_le32((ctz32(NVME_CQ_ENTRY_BYTES) << CC_IOCQES_SHIFT) |
-                           (ctz32(NVME_SQ_ENTRY_BYTES) << CC_IOSQES_SHIFT) |
-                           CC_EN_MASK);
+    host_pci_stl_le_p(&regs->cc,
+                      (ctz32(NVME_CQ_ENTRY_BYTES) << CC_IOCQES_SHIFT) |
+                      (ctz32(NVME_SQ_ENTRY_BYTES) << CC_IOSQES_SHIFT) |
+                      CC_EN_MASK);
     /* Wait for CSTS.RDY = 1. */
     now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     deadline = now + timeout_ms * SCALE_MS;
-    while (!NVME_CSTS_RDY(le32_to_cpu(regs->csts))) {
+    while (!NVME_CSTS_RDY(host_pci_ldl_le_p(&regs->csts))) {
         if (qemu_clock_get_ns(QEMU_CLOCK_REALTIME) > deadline) {
             error_setg(errp, "Timeout while waiting for device to start (%"
                              PRId64 " ms)",
@@ -861,7 +909,7 @@ static int nvme_init(BlockDriverState *bs, const char *device, int namespace,
     }
     aio_set_event_notifier(bdrv_get_aio_context(bs),
                            &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           false, nvme_handle_event, nvme_poll_cb,
+                           nvme_handle_event, nvme_poll_cb,
                            nvme_poll_ready);
 
     if (!nvme_identify(bs, namespace, errp)) {
@@ -878,7 +926,7 @@ out:
         qemu_vfio_pci_unmap_bar(s->vfio, 0, (void *)regs, 0, sizeof(NvmeBar));
     }
 
-    /* Cleaning up is done in nvme_file_open() upon error. */
+    /* Cleaning up is done in nvme_open() upon error. */
     return ret;
 }
 
@@ -947,7 +995,7 @@ static void nvme_close(BlockDriverState *bs)
     g_free(s->queues);
     aio_set_event_notifier(bdrv_get_aio_context(bs),
                            &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           false, NULL, NULL, NULL);
+                           NULL, NULL, NULL);
     event_notifier_cleanup(&s->irq_notifier[MSIX_SHARED_IRQ_IDX]);
     qemu_vfio_pci_unmap_bar(s->vfio, 0, s->bar0_wo_map,
                             0, sizeof(NvmeBar) + NVME_DOORBELL_SIZE);
@@ -956,8 +1004,8 @@ static void nvme_close(BlockDriverState *bs)
     g_free(s->device);
 }
 
-static int nvme_file_open(BlockDriverState *bs, QDict *options, int flags,
-                          Error **errp)
+static int nvme_open(BlockDriverState *bs, QDict *options, int flags,
+                     Error **errp)
 {
     const char *device;
     QemuOpts *opts;
@@ -1001,7 +1049,7 @@ fail:
     return ret;
 }
 
-static int64_t nvme_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn nvme_co_getlength(BlockDriverState *bs)
 {
     BDRVNVMeState *s = bs->opaque;
     return s->nsze << s->blkshift;
@@ -1022,7 +1070,7 @@ static int nvme_probe_blocksizes(BlockDriverState *bs, BlockSizes *bsz)
     return 0;
 }
 
-/* Called with s->dma_map_lock */
+/* Called with s->dma_map_lock, may be run in any AioContext */
 static coroutine_fn int nvme_cmd_unmap_qiov(BlockDriverState *bs,
                                             QEMUIOVector *qiov)
 {
@@ -1033,13 +1081,17 @@ static coroutine_fn int nvme_cmd_unmap_qiov(BlockDriverState *bs,
     if (!s->dma_map_count && !qemu_co_queue_empty(&s->dma_flush_queue)) {
         r = qemu_vfio_dma_reset_temporary(s->vfio);
         if (!r) {
+            /*
+             * Queue access is protected by the dma_map_lock, and all
+             * coroutines are woken in their own AioContext
+             */
             qemu_co_queue_restart_all(&s->dma_flush_queue);
         }
     }
     return r;
 }
 
-/* Called with s->dma_map_lock */
+/* Called with s->dma_map_lock, may be run in any AioContext */
 static coroutine_fn int nvme_cmd_map_qiov(BlockDriverState *bs, NvmeCmd *cmd,
                                           NVMeRequest *req, QEMUIOVector *qiov)
 {
@@ -1158,6 +1210,7 @@ static void nvme_rw_cb_bh(void *opaque)
     qemu_coroutine_enter(data->co);
 }
 
+/* Put into NVMeRequest.cb, so runs in the BDS's main AioContext */
 static void nvme_rw_cb(void *opaque, int ret)
 {
     NVMeCoData *data = opaque;
@@ -1485,7 +1538,7 @@ static int coroutine_fn nvme_co_truncate(BlockDriverState *bs, int64_t offset,
         return -ENOTSUP;
     }
 
-    cur_length = nvme_getlength(bs);
+    cur_length = nvme_co_getlength(bs);
     if (offset != cur_length && exact) {
         error_setg(errp, "Cannot resize NVMe devices");
         return -ENOTSUP;
@@ -1545,7 +1598,7 @@ static void nvme_detach_aio_context(BlockDriverState *bs)
 
     aio_set_event_notifier(bdrv_get_aio_context(bs),
                            &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           false, NULL, NULL, NULL);
+                           NULL, NULL, NULL);
 }
 
 static void nvme_attach_aio_context(BlockDriverState *bs,
@@ -1555,7 +1608,7 @@ static void nvme_attach_aio_context(BlockDriverState *bs,
 
     s->aio_context = new_context;
     aio_set_event_notifier(new_context, &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           false, nvme_handle_event, nvme_poll_cb,
+                           nvme_handle_event, nvme_poll_cb,
                            nvme_poll_ready);
 
     for (unsigned i = 0; i < s->queue_count; i++) {
@@ -1563,27 +1616,6 @@ static void nvme_attach_aio_context(BlockDriverState *bs,
 
         q->completion_bh =
             aio_bh_new(new_context, nvme_process_completion_bh, q);
-    }
-}
-
-static void nvme_aio_plug(BlockDriverState *bs)
-{
-    BDRVNVMeState *s = bs->opaque;
-    assert(!s->plugged);
-    s->plugged = true;
-}
-
-static void nvme_aio_unplug(BlockDriverState *bs)
-{
-    BDRVNVMeState *s = bs->opaque;
-    assert(s->plugged);
-    s->plugged = false;
-    for (unsigned i = INDEX_IO(0); i < s->queue_count; i++) {
-        NVMeQueuePair *q = s->queues[i];
-        qemu_mutex_lock(&q->lock);
-        nvme_kick(q);
-        nvme_process_completion(q);
-        qemu_mutex_unlock(&q->lock);
     }
 }
 
@@ -1640,9 +1672,9 @@ static BlockDriver bdrv_nvme = {
     .create_opts              = &bdrv_create_opts_simple,
 
     .bdrv_parse_filename      = nvme_parse_filename,
-    .bdrv_file_open           = nvme_file_open,
+    .bdrv_open                = nvme_open,
     .bdrv_close               = nvme_close,
-    .bdrv_getlength           = nvme_getlength,
+    .bdrv_co_getlength        = nvme_co_getlength,
     .bdrv_probe_blocksizes    = nvme_probe_blocksizes,
     .bdrv_co_truncate         = nvme_co_truncate,
 
@@ -1662,9 +1694,6 @@ static BlockDriver bdrv_nvme = {
 
     .bdrv_detach_aio_context  = nvme_detach_aio_context,
     .bdrv_attach_aio_context  = nvme_attach_aio_context,
-
-    .bdrv_io_plug             = nvme_aio_plug,
-    .bdrv_io_unplug           = nvme_aio_unplug,
 
     .bdrv_register_buf        = nvme_register_buf,
     .bdrv_unregister_buf      = nvme_unregister_buf,

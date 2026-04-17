@@ -15,9 +15,9 @@
 #include "hw/pci-host/pnv_phb3.h"
 #include "hw/pci-host/pnv_phb4.h"
 #include "hw/ppc/pnv.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qom/object.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 
 
 /*
@@ -25,7 +25,7 @@
  * state associated with the child has an id, use it as QOM id.
  * Otherwise use object_typename[index] as QOM id.
  *
- * This helper does both operations at the same time because seting
+ * This helper does both operations at the same time because setting
  * a new QOM child will erase the bus parent of the device. This happens
  * because object_unparent() will call object_property_del_child(),
  * which in turn calls the property release callback prop->release if
@@ -62,6 +62,15 @@ static bool pnv_parent_fixup(Object *parent, BusState *parent_bus,
     return true;
 }
 
+static Object *pnv_phb_user_get_parent(PnvChip *chip, PnvPHB *phb, Error **errp)
+{
+    if (phb->version == 3) {
+        return OBJECT(pnv_chip_add_phb(chip, phb));
+    } else {
+        return OBJECT(pnv_pec_add_phb(chip, phb, errp));
+    }
+}
+
 /*
  * User created devices won't have the initial setup that default
  * devices have. This setup consists of assigning a parent device
@@ -79,7 +88,7 @@ static bool pnv_phb_user_device_init(PnvPHB *phb, Error **errp)
         return false;
     }
 
-    parent = pnv_chip_add_phb(chip, phb, errp);
+    parent = pnv_phb_user_get_parent(chip, phb, errp);
     if (!parent) {
         return false;
     }
@@ -174,7 +183,7 @@ static const char *pnv_phb_root_bus_path(PCIHostState *host_bridge,
     return phb->bus_path;
 }
 
-static Property pnv_phb_properties[] = {
+static const Property pnv_phb_properties[] = {
     DEFINE_PROP_UINT32("index", PnvPHB, phb_id, 0),
     DEFINE_PROP_UINT32("chip-id", PnvPHB, chip_id, 0),
     DEFINE_PROP_UINT32("version", PnvPHB, version, 0),
@@ -183,11 +192,9 @@ static Property pnv_phb_properties[] = {
 
     DEFINE_PROP_LINK("pec", PnvPHB, pec, TYPE_PNV_PHB4_PEC,
                      PnvPhb4PecState *),
-
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pnv_phb_class_init(ObjectClass *klass, void *data)
+static void pnv_phb_class_init(ObjectClass *klass, const void *data)
 {
     PCIHostBridgeClass *hc = PCI_HOST_BRIDGE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -195,18 +202,19 @@ static void pnv_phb_class_init(ObjectClass *klass, void *data)
     hc->root_bus_path = pnv_phb_root_bus_path;
     dc->realize = pnv_phb_realize;
     device_class_set_props(dc, pnv_phb_properties);
-    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->user_creatable = true;
 }
 
-static void pnv_phb_root_port_reset(DeviceState *dev)
+static void pnv_phb_root_port_reset_hold(Object *obj, ResetType type)
 {
-    PCIERootPortClass *rpc = PCIE_ROOT_PORT_GET_CLASS(dev);
-    PnvPHBRootPort *phb_rp = PNV_PHB_ROOT_PORT(dev);
-    PCIDevice *d = PCI_DEVICE(dev);
+    PCIERootPortClass *rpc = PCIE_ROOT_PORT_GET_CLASS(obj);
+    PnvPHBRootPort *phb_rp = PNV_PHB_ROOT_PORT(obj);
+    PCIDevice *d = PCI_DEVICE(obj);
     uint8_t *conf = d->config;
 
-    rpc->parent_reset(dev);
+    if (rpc->parent_phases.hold) {
+        rpc->parent_phases.hold(obj, type);
+    }
 
     if (phb_rp->version == 3) {
         return;
@@ -291,15 +299,14 @@ static void pnv_phb_root_port_realize(DeviceState *dev, Error **errp)
     pci_config_set_interrupt_pin(pci->config, 0);
 }
 
-static Property pnv_phb_root_port_properties[] = {
+static const Property pnv_phb_root_port_properties[] = {
     DEFINE_PROP_UINT32("version", PnvPHBRootPort, version, 0),
-
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pnv_phb_root_port_class_init(ObjectClass *klass, void *data)
+static void pnv_phb_root_port_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
     PCIERootPortClass *rpc = PCIE_ROOT_PORT_CLASS(klass);
 
@@ -308,9 +315,8 @@ static void pnv_phb_root_port_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, pnv_phb_root_port_properties);
     device_class_set_parent_realize(dc, pnv_phb_root_port_realize,
                                     &rpc->parent_realize);
-    device_class_set_parent_reset(dc, pnv_phb_root_port_reset,
-                                  &rpc->parent_reset);
-    dc->reset = &pnv_phb_root_port_reset;
+    resettable_class_set_parent_phases(rc, NULL, pnv_phb_root_port_reset_hold,
+                                       NULL, &rpc->parent_phases);
     dc->user_creatable = true;
 
     k->vendor_id = PCI_VENDOR_ID_IBM;

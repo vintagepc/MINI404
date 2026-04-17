@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/cutils.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
@@ -32,8 +33,8 @@
 #include "trace.h"
 #include "block/thread-pool.h"
 #include "qemu/iov.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qstring.h"
+#include "qobject/qdict.h"
+#include "qobject/qstring.h"
 #include <windows.h>
 #include <winioctl.h>
 
@@ -152,7 +153,6 @@ static BlockAIOCB *paio_submit(BlockDriverState *bs, HANDLE hfile,
         BlockCompletionFunc *cb, void *opaque, int type)
 {
     RawWin32AIOData *acb = g_new(RawWin32AIOData, 1);
-    ThreadPool *pool;
 
     acb->bs = bs;
     acb->hfile = hfile;
@@ -167,40 +167,7 @@ static BlockAIOCB *paio_submit(BlockDriverState *bs, HANDLE hfile,
     acb->aio_offset = offset;
 
     trace_file_paio_submit(acb, opaque, offset, count, type);
-    pool = aio_get_thread_pool(bdrv_get_aio_context(bs));
-    return thread_pool_submit_aio(pool, aio_worker, acb, cb, opaque);
-}
-
-int qemu_ftruncate64(int fd, int64_t length)
-{
-    LARGE_INTEGER li;
-    DWORD dw;
-    LONG high;
-    HANDLE h;
-    BOOL res;
-
-    if ((GetVersion() & 0x80000000UL) && (length >> 32) != 0)
-        return -1;
-
-    h = (HANDLE)_get_osfhandle(fd);
-
-    /* get current position, ftruncate do not change position */
-    li.HighPart = 0;
-    li.LowPart = SetFilePointer (h, 0, &li.HighPart, FILE_CURRENT);
-    if (li.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
-        return -1;
-    }
-
-    high = length >> 32;
-    dw = SetFilePointer(h, (DWORD) length, &high, FILE_BEGIN);
-    if (dw == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
-        return -1;
-    }
-    res = SetEndOfFile(h);
-
-    /* back to old position */
-    SetFilePointer(h, li.LowPart, &li.HighPart, FILE_BEGIN);
-    return res ? 0 : -1;
+    return thread_pool_submit_aio(aio_worker, acb, cb, opaque);
 }
 
 static int set_sparse(int fd)
@@ -525,7 +492,7 @@ static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
     return 0;
 }
 
-static int64_t raw_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn raw_co_getlength(BlockDriverState *bs)
 {
     BDRVRawState *s = bs->opaque;
     LARGE_INTEGER l;
@@ -558,7 +525,7 @@ static int64_t raw_getlength(BlockDriverState *bs)
     return l.QuadPart;
 }
 
-static int64_t raw_get_allocated_file_size(BlockDriverState *bs)
+static int64_t coroutine_fn raw_co_get_allocated_file_size(BlockDriverState *bs)
 {
     typedef DWORD (WINAPI * get_compressed_t)(const char *filename,
                                               DWORD * high);
@@ -612,10 +579,9 @@ static int raw_co_create(BlockdevCreateOptions *options, Error **errp)
     return 0;
 }
 
-static int coroutine_fn raw_co_create_opts(BlockDriver *drv,
-                                           const char *filename,
-                                           QemuOpts *opts,
-                                           Error **errp)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_create_opts(BlockDriver *drv, const char *filename,
+                   QemuOpts *opts, Error **errp)
 {
     BlockdevCreateOptions options;
     int64_t total_size = 0;
@@ -743,16 +709,16 @@ static QemuOptsList raw_create_opts = {
 };
 
 BlockDriver bdrv_file = {
-    .format_name	= "file",
-    .protocol_name	= "file",
-    .instance_size	= sizeof(BDRVRawState),
-    .bdrv_needs_filename = true,
-    .bdrv_parse_filename = raw_parse_filename,
-    .bdrv_file_open     = raw_open,
-    .bdrv_refresh_limits = raw_probe_alignment,
-    .bdrv_close         = raw_close,
-    .bdrv_co_create_opts = raw_co_create_opts,
-    .bdrv_has_zero_init = bdrv_has_zero_init_1,
+    .format_name            = "file",
+    .protocol_name          = "file",
+    .instance_size          = sizeof(BDRVRawState),
+    .bdrv_needs_filename    = true,
+    .bdrv_parse_filename    = raw_parse_filename,
+    .bdrv_open              = raw_open,
+    .bdrv_refresh_limits    = raw_probe_alignment,
+    .bdrv_close             = raw_close,
+    .bdrv_co_create_opts    = raw_co_create_opts,
+    .bdrv_has_zero_init     = bdrv_has_zero_init_1,
 
     .bdrv_reopen_prepare = raw_reopen_prepare,
     .bdrv_reopen_commit  = raw_reopen_commit,
@@ -763,9 +729,9 @@ BlockDriver bdrv_file = {
     .bdrv_aio_flush     = raw_aio_flush,
 
     .bdrv_co_truncate   = raw_co_truncate,
-    .bdrv_getlength	= raw_getlength,
-    .bdrv_get_allocated_file_size
-                        = raw_get_allocated_file_size,
+    .bdrv_co_getlength  = raw_co_getlength,
+    .bdrv_co_get_allocated_file_size
+                        = raw_co_get_allocated_file_size,
 
     .create_opts        = &raw_create_opts,
 };
@@ -838,6 +804,7 @@ static void hdev_refresh_limits(BlockDriverState *bs, Error **errp)
 {
     /* XXX Does Windows support AIO on less than 512-byte alignment? */
     bs->bl.request_alignment = 512;
+    bs->bl.has_variable_length = true;
 }
 
 static int hdev_open(BlockDriverState *bs, QDict *options, int flags,
@@ -905,7 +872,7 @@ static int hdev_open(BlockDriverState *bs, QDict *options, int flags,
         } else {
             ret = -EINVAL;
         }
-        error_setg_errno(errp, -ret, "Could not open device");
+        error_setg_win32(errp, err, "Could not open device");
         goto done;
     }
 
@@ -915,15 +882,15 @@ done:
 }
 
 static BlockDriver bdrv_host_device = {
-    .format_name	= "host_device",
-    .protocol_name	= "host_device",
-    .instance_size	= sizeof(BDRVRawState),
-    .bdrv_needs_filename = true,
-    .bdrv_parse_filename = hdev_parse_filename,
-    .bdrv_probe_device	= hdev_probe_device,
-    .bdrv_file_open	= hdev_open,
-    .bdrv_close		= raw_close,
-    .bdrv_refresh_limits = hdev_refresh_limits,
+    .format_name            = "host_device",
+    .protocol_name          = "host_device",
+    .instance_size          = sizeof(BDRVRawState),
+    .bdrv_needs_filename    = true,
+    .bdrv_parse_filename    = hdev_parse_filename,
+    .bdrv_probe_device      = hdev_probe_device,
+    .bdrv_open              = hdev_open,
+    .bdrv_close             = raw_close,
+    .bdrv_refresh_limits    = hdev_refresh_limits,
 
     .bdrv_aio_preadv    = raw_aio_preadv,
     .bdrv_aio_pwritev   = raw_aio_pwritev,
@@ -932,11 +899,8 @@ static BlockDriver bdrv_host_device = {
     .bdrv_detach_aio_context = raw_detach_aio_context,
     .bdrv_attach_aio_context = raw_attach_aio_context,
 
-    .bdrv_getlength      = raw_getlength,
-    .has_variable_length = true,
-
-    .bdrv_get_allocated_file_size
-                        = raw_get_allocated_file_size,
+    .bdrv_co_getlength                = raw_co_getlength,
+    .bdrv_co_get_allocated_file_size  = raw_co_get_allocated_file_size,
 };
 
 static void bdrv_file_init(void)

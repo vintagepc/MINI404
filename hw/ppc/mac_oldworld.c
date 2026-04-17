@@ -28,11 +28,12 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
-#include "hw/qdev-properties.h"
-#include "hw/boards.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/boards.h"
 #include "hw/input/adb.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "net/net.h"
 #include "hw/isa/isa.h"
 #include "hw/pci/pci.h"
@@ -41,12 +42,12 @@
 #include "hw/nvram/fw_cfg.h"
 #include "hw/char/escc.h"
 #include "hw/misc/macio/macio.h"
-#include "hw/loader.h"
-#include "hw/fw-path-provider.h"
+#include "hw/core/loader.h"
+#include "hw/core/fw-path-provider.h"
 #include "elf.h"
 #include "qemu/error-report.h"
-#include "sysemu/kvm.h"
-#include "sysemu/reset.h"
+#include "system/kvm.h"
+#include "system/reset.h"
 #include "kvm_ppc.h"
 
 #define MAX_IDE_BUS 2
@@ -81,12 +82,14 @@ static void ppc_heathrow_reset(void *opaque)
 {
     PowerPCCPU *cpu = opaque;
 
+    cpu_ppc_tb_reset(&cpu->env);
     cpu_reset(CPU(cpu));
 }
 
 static void ppc_heathrow_init(MachineState *machine)
 {
     const char *bios_name = machine->firmware ?: PROM_FILENAME;
+    MachineClass *mc = MACHINE_GET_CLASS(machine);
     PowerPCCPU *cpu = NULL;
     CPUPPCState *env = NULL;
     char *filename;
@@ -102,7 +105,7 @@ static void ppc_heathrow_init(MachineState *machine)
     DeviceState *dev, *pic_dev, *grackle_dev;
     BusState *adb_bus;
     uint16_t ppc_boot_device;
-    DriveInfo *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
+    DriveInfo *dinfo, *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
     void *fw_cfg;
     uint64_t tbfreq = kvm_enabled() ? kvmppc_get_tbfreq() : TBFREQ;
 
@@ -134,13 +137,14 @@ static void ppc_heathrow_init(MachineState *machine)
     if (filename) {
         /* Load OpenBIOS (ELF) */
         bios_size = load_elf(filename, NULL, NULL, NULL, NULL, &bios_addr,
-                             NULL, NULL, 1, PPC_ELF_MACHINE, 0, 0);
+                             NULL, NULL, ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
         /* Unfortunately, load_elf sign-extends reading elf32 */
         bios_addr = (uint32_t)bios_addr;
 
         if (bios_size <= 0) {
             /* or if could not load ELF try loading a binary ROM image */
-            bios_size = load_image_targphys(filename, PROM_BASE, PROM_SIZE);
+            bios_size = load_image_targphys(filename, PROM_BASE, PROM_SIZE,
+                                            &error_fatal);
             bios_addr = PROM_BASE;
         }
         g_free(filename);
@@ -151,29 +155,20 @@ static void ppc_heathrow_init(MachineState *machine)
     }
 
     if (machine->kernel_filename) {
-        int bswap_needed = 0;
-
-#ifdef BSWAP_NEEDED
-        bswap_needed = 1;
-#endif
         kernel_base = KERNEL_LOAD_ADDR;
         kernel_size = load_elf(machine->kernel_filename, NULL,
                                translate_kernel_address, NULL, NULL, NULL,
-                               NULL, NULL, 1, PPC_ELF_MACHINE, 0, 0);
+                               NULL, NULL, ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
         if (kernel_size < 0) {
             kernel_size = load_aout(machine->kernel_filename, kernel_base,
                                     machine->ram_size - kernel_base,
-                                    bswap_needed, TARGET_PAGE_SIZE);
+                                    true, TARGET_PAGE_SIZE);
         }
         if (kernel_size < 0) {
             kernel_size = load_image_targphys(machine->kernel_filename,
                                               kernel_base,
-                                              machine->ram_size - kernel_base);
-        }
-        if (kernel_size < 0) {
-            error_report("could not load kernel '%s'",
-                         machine->kernel_filename);
-            exit(1);
+                                              machine->ram_size - kernel_base,
+                                              &error_fatal);
         }
         /* load initrd */
         if (machine->initrd_filename) {
@@ -181,12 +176,8 @@ static void ppc_heathrow_init(MachineState *machine)
                                             KERNEL_GAP);
             initrd_size = load_image_targphys(machine->initrd_filename,
                                               initrd_base,
-                                              machine->ram_size - initrd_base);
-            if (initrd_size < 0) {
-                error_report("could not load initial ram disk '%s'",
-                             machine->initrd_filename);
-                exit(1);
-            }
+                                              machine->ram_size - initrd_base,
+                                              &error_fatal);
             cmdline_base = TARGET_PAGE_ALIGN(initrd_base + initrd_size);
         } else {
             cmdline_base = TARGET_PAGE_ALIGN(kernel_base + kernel_size + KERNEL_GAP);
@@ -245,6 +236,12 @@ static void ppc_heathrow_init(MachineState *machine)
     qdev_prop_set_chr(dev, "chrA", serial_hd(0));
     qdev_prop_set_chr(dev, "chrB", serial_hd(1));
 
+    dinfo = drive_get(IF_MTD, 0, 0);
+    if (dinfo) {
+        dev = DEVICE(object_resolve_path_component(macio, "nvram"));
+        qdev_prop_set_drive(dev, "drive", blk_by_legacy_dinfo(dinfo));
+    }
+
     pci_realize_and_unref(PCI_DEVICE(macio), pci_bus, &error_fatal);
 
     pic_dev = DEVICE(object_resolve_path_component(macio, "pic"));
@@ -269,9 +266,7 @@ static void ppc_heathrow_init(MachineState *machine)
 
     pci_vga_init(pci_bus);
 
-    for (i = 0; i < nb_nics; i++) {
-        pci_nic_init_nofail(&nd_table[i], pci_bus, "ne2k_pci", NULL);
-    }
+    pci_init_nic_devices(pci_bus, mc->default_nic);
 
     /* MacIO IDE */
     ide_drive_get(hd, ARRAY_SIZE(hd));
@@ -293,6 +288,15 @@ static void ppc_heathrow_init(MachineState *machine)
         pci_create_simple(pci_bus, -1, "pci-ohci");
     }
 
+    if (!graphic_width) {
+        graphic_width = 800;
+    }
+    if (!graphic_height) {
+        graphic_height = 600;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 32;
+    }
     if (graphic_depth != 15 && graphic_depth != 32 && graphic_depth != 8) {
         graphic_depth = 15;
     }
@@ -303,8 +307,7 @@ static void ppc_heathrow_init(MachineState *machine)
     fw_cfg = FW_CFG(dev);
     qdev_prop_set_uint32(dev, "data_width", 1);
     qdev_prop_set_bit(dev, "dma_enabled", false);
-    object_property_add_child(OBJECT(qdev_get_machine()), TYPE_FW_CFG,
-                              OBJECT(fw_cfg));
+    object_property_add_child(OBJECT(machine), TYPE_FW_CFG, OBJECT(fw_cfg));
     s = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, CFG_ADDR);
@@ -401,12 +404,12 @@ static int heathrow_kvm_type(MachineState *machine, const char *arg)
     return 2;
 }
 
-static void heathrow_class_init(ObjectClass *oc, void *data)
+static void heathrow_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     FWPathProviderClass *fwc = FW_PATH_PROVIDER_CLASS(oc);
 
-    mc->desc = "Heathrow based PowerMAC";
+    mc->desc = "Heathrow based PowerMac";
     mc->init = ppc_heathrow_init;
     mc->block_default_type = IF_IDE;
     /* SMP is not supported currently */
@@ -419,6 +422,7 @@ static void heathrow_class_init(ObjectClass *oc, void *data)
     mc->kvm_type = heathrow_kvm_type;
     mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("750_v3.1");
     mc->default_display = "std";
+    mc->default_nic = "ne2k_pci";
     mc->ignore_boot_device_suffixes = true;
     mc->default_ram_id = "ppc_heathrow.ram";
     fwc->get_dev_path = heathrow_fw_dev_path;
@@ -428,7 +432,7 @@ static const TypeInfo ppc_heathrow_machine_info = {
     .name          = MACHINE_TYPE_NAME("g3beige"),
     .parent        = TYPE_MACHINE,
     .class_init    = heathrow_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_FW_PATH_PROVIDER },
         { }
     },

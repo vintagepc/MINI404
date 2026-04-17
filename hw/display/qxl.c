@@ -28,8 +28,9 @@
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
-#include "sysemu/runstate.h"
+#include "hw/core/qdev-properties.h"
+#include "system/runstate.h"
+#include "migration/cpr.h"
 #include "migration/vmstate.h"
 #include "trace.h"
 
@@ -50,7 +51,7 @@
 #undef ALIGN
 #define ALIGN(a, b) (((a) + ((b) - 1)) & ~((b) - 1))
 
-#define PIXEL_SIZE 0.2936875 //1280x1024 is 14.8" x 11.9" 
+#define PIXEL_SIZE 0.2936875 /* 1280x1024 is 14.8" x 11.9" */
 
 #define QXL_MODE(_x, _y, _b, _o)                  \
     {   .x_res = _x,                              \
@@ -260,12 +261,6 @@ static void qxl_spice_monitors_config_async(PCIQXLDevice *qxl, int replay)
                     QXL_COOKIE_TYPE_POST_LOAD_MONITORS_CONFIG,
                     0));
     } else {
-/* >= release 0.12.6, < release 0.14.2 */
-#if SPICE_SERVER_VERSION >= 0x000c06 && SPICE_SERVER_VERSION < 0x000e02
-        if (qxl->max_outputs) {
-            spice_qxl_set_max_monitors(&qxl->ssd.qxl, qxl->max_outputs);
-        }
-#endif
         qxl->guest_monitors_config = qxl->ram->monitors_config;
         spice_qxl_monitors_config_async(&qxl->ssd.qxl,
                 qxl->ram->monitors_config,
@@ -300,7 +295,7 @@ void qxl_spice_reset_cursor(PCIQXLDevice *qxl)
     qxl->guest_cursor = 0;
     qemu_mutex_unlock(&qxl->track_lock);
     if (qxl->ssd.cursor) {
-        cursor_put(qxl->ssd.cursor);
+        cursor_unref(qxl->ssd.cursor);
     }
     qxl->ssd.cursor = cursor_builtin_hidden();
 }
@@ -333,6 +328,10 @@ static void init_qxl_rom(PCIQXLDevice *d)
     uint32_t num_pages;
     uint32_t fb;
     int i, n;
+
+    if (cpr_is_incoming()) {
+        goto skip_init;
+    }
 
     memset(rom, 0, d->rom_size);
 
@@ -391,6 +390,7 @@ static void init_qxl_rom(PCIQXLDevice *d)
             sizeof(rom->client_monitors_config));
     }
 
+skip_init:
     d->shadow_rom = *rom;
     d->rom        = rom;
     d->modes      = modes;
@@ -404,6 +404,9 @@ static void init_qxl_ram(PCIQXLDevice *d)
 
     buf = d->vga.vram_ptr;
     d->ram = (QXLRam *)(buf + le32_to_cpu(d->shadow_rom.ram_header_offset));
+    if (cpr_is_incoming()) {
+        return;
+    }
     d->ram->magic       = cpu_to_le32(QXL_RAM_MAGIC);
     d->ram->int_pending = cpu_to_le32(0);
     d->ram->int_mask    = cpu_to_le32(0);
@@ -527,38 +530,19 @@ static void interface_attached_worker(QXLInstance *sin)
     trace_qxl_interface_attach_worker(qxl->id);
 }
 
-#if !(SPICE_HAS_ATTACHED_WORKER)
-static void interface_attach_worker(QXLInstance *sin, QXLWorker *qxl_worker)
-{
-    interface_attached_worker(sin);
-}
-#endif
-
 static void interface_set_compression_level(QXLInstance *sin, int level)
 {
     PCIQXLDevice *qxl = container_of(sin, PCIQXLDevice, ssd.qxl);
 
     trace_qxl_interface_set_compression_level(qxl->id, level);
     qxl->shadow_rom.compression_level = cpu_to_le32(level);
+    if (cpr_is_incoming()) {
+        assert(qxl->rom->compression_level == cpu_to_le32(level));
+        return;
+    }
     qxl->rom->compression_level = cpu_to_le32(level);
     qxl_rom_set_dirty(qxl);
 }
-
-#if SPICE_NEEDS_SET_MM_TIME
-static void interface_set_mm_time(QXLInstance *sin, uint32_t mm_time)
-{
-    PCIQXLDevice *qxl = container_of(sin, PCIQXLDevice, ssd.qxl);
-
-    if (!qemu_spice_display_is_running(&qxl->ssd)) {
-        return;
-    }
-
-    trace_qxl_interface_set_mm_time(qxl->id, mm_time);
-    qxl->shadow_rom.mm_clock = cpu_to_le32(mm_time);
-    qxl->rom->mm_clock = cpu_to_le32(mm_time);
-    qxl_rom_set_dirty(qxl);
-}
-#endif
 
 static void interface_get_init_info(QXLInstance *sin, QXLDevInitInfo *info)
 {
@@ -1014,7 +998,8 @@ static void interface_set_client_capabilities(QXLInstance *sin,
     }
 
     if (runstate_check(RUN_STATE_INMIGRATE) ||
-        runstate_check(RUN_STATE_POSTMIGRATE)) {
+        runstate_check(RUN_STATE_POSTMIGRATE) ||
+        cpr_is_incoming()) {
         return;
     }
 
@@ -1089,12 +1074,10 @@ static int interface_client_monitors_config(QXLInstance *sin,
         return 1;
     }
 
-#if SPICE_SERVER_VERSION >= 0x000c06 /* release 0.12.6 */
     /* limit number of outputs based on setting limit */
     if (qxl->max_outputs && qxl->max_outputs <= max_outputs) {
         max_outputs = qxl->max_outputs;
     }
-#endif
 
     config_changed = qxl_rom_monitors_config_changed(rom,
                                                      monitors_config,
@@ -1141,16 +1124,8 @@ static const QXLInterface qxl_interface = {
     .base.major_version      = SPICE_INTERFACE_QXL_MAJOR,
     .base.minor_version      = SPICE_INTERFACE_QXL_MINOR,
 
-#if SPICE_HAS_ATTACHED_WORKER
     .attached_worker         = interface_attached_worker,
-#else
-    .attache_worker          = interface_attach_worker,
-#endif
-
     .set_compression_level   = interface_set_compression_level,
-#if SPICE_NEEDS_SET_MM_TIME
-    .set_mm_time             = interface_set_mm_time,
-#endif
     .get_init_info           = interface_get_init_info,
 
     /* the callbacks below are called from spice server thread context */
@@ -1221,6 +1196,10 @@ static void qxl_check_state(PCIQXLDevice *d)
 static void qxl_reset_state(PCIQXLDevice *d)
 {
     QXLRom *rom = d->rom;
+
+    if (cpr_is_incoming()) {
+        return;
+    }
 
     qxl_check_state(d);
     d->shadow_rom.update_id = cpu_to_le32(0);
@@ -1323,8 +1302,8 @@ static int qxl_add_memslot(PCIQXLDevice *d, uint32_t slot_id, uint64_t delta,
     };
     uint64_t guest_start;
     uint64_t guest_end;
-    int pci_region;
-    pcibus_t pci_start;
+    int pci_region = -1;
+    pcibus_t pci_start = PCI_BAR_UNMAPPED;
     pcibus_t pci_end;
     MemoryRegion *mr;
     intptr_t virt_start;
@@ -1392,8 +1371,11 @@ static int qxl_add_memslot(PCIQXLDevice *d, uint32_t slot_id, uint64_t delta,
     memslot.virt_start = virt_start + (guest_start - pci_start);
     memslot.virt_end   = virt_start + (guest_end   - pci_start);
     memslot.addr_delta = memslot.virt_start - delta;
-    memslot.generation = d->rom->slot_generation = 0;
-    qxl_rom_set_dirty(d);
+    if (!cpr_is_incoming()) {
+        d->rom->slot_generation = 0;
+        qxl_rom_set_dirty(d);
+    }
+    memslot.generation = d->rom->slot_generation;
 
     qemu_spice_add_memslot(&d->ssd, &memslot, async);
     d->guest_slots[slot_id].mr = mr;
@@ -1566,7 +1548,7 @@ static void qxl_create_guest_primary(PCIQXLDevice *qxl, int loadvm,
     }
 }
 
-/* return 1 if surface destoy was initiated (in QXL_ASYNC case) or
+/* return 1 if surface destroy was initiated (in QXL_ASYNC case) or
  * done (in QXL_SYNC case), 0 otherwise. */
 static int qxl_destroy_primary(PCIQXLDevice *d, qxl_async_io async)
 {
@@ -1613,7 +1595,10 @@ static void qxl_set_mode(PCIQXLDevice *d, unsigned int modenr, int loadvm)
     }
 
     d->guest_slots[0].slot = slot;
-    assert(qxl_add_memslot(d, 0, devmem, QXL_SYNC) == 0);
+    if (qxl_add_memslot(d, 0, devmem, QXL_SYNC) != 0) {
+        qxl_set_guest_bug(d, "device isn't initialized yet");
+        return;
+    }
 
     d->guest_primary.surface = surface;
     qxl_create_guest_primary(d, 0, QXL_SYNC);
@@ -2107,6 +2092,8 @@ static void qxl_realize_common(PCIQXLDevice *qxl, Error **errp)
     uint8_t* config = qxl->pci.config;
     uint32_t pci_device_rev;
     uint32_t io_size;
+    Error *err = NULL;
+    char device_address[256] = "";
 
     qemu_spice_display_init_common(&qxl->ssd);
     qxl->mode = QXL_MODE_UNDEFINED;
@@ -2206,9 +2193,6 @@ static void qxl_realize_common(PCIQXLDevice *qxl, Error **errp)
         return;
     }
 
-#if SPICE_SERVER_VERSION >= 0x000e02 /* release 0.14.2 */
-    Error *err = NULL;
-    char device_address[256] = "";
     if (qemu_console_fill_device_address(qxl->vga.con,
                                          device_address, sizeof(device_address),
                                          &err)) {
@@ -2219,15 +2203,17 @@ static void qxl_realize_common(PCIQXLDevice *qxl, Error **errp)
     } else {
         error_report_err(err);
     }
-#endif
 
     qemu_add_vm_change_state_handler(qxl_vm_change_state_handler, qxl);
 
-    qxl->update_irq = qemu_bh_new(qxl_update_irq_bh, qxl);
+    qxl->update_irq = qemu_bh_new_guarded(qxl_update_irq_bh, qxl,
+                                          &DEVICE(qxl)->mem_reentrancy_guard);
     qxl_reset_state(qxl);
 
-    qxl->update_area_bh = qemu_bh_new(qxl_render_update_area_bh, qxl);
-    qxl->ssd.cursor_bh = qemu_bh_new(qemu_spice_cursor_refresh_bh, &qxl->ssd);
+    qxl->update_area_bh = qemu_bh_new_guarded(qxl_render_update_area_bh, qxl,
+                                              &DEVICE(qxl)->mem_reentrancy_guard);
+    qxl->ssd.cursor_bh = qemu_bh_new_guarded(qemu_spice_cursor_refresh_bh, &qxl->ssd,
+                                             &DEVICE(qxl)->mem_reentrancy_guard);
 }
 
 static void qxl_realize_primary(PCIDevice *dev, Error **errp)
@@ -2404,7 +2390,7 @@ static const VMStateDescription qxl_memslot = {
     .name               = "qxl-memslot",
     .version_id         = QXL_SAVE_VERSION,
     .minimum_version_id = QXL_SAVE_VERSION,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(slot.mem_start, struct guest_slots),
         VMSTATE_UINT64(slot.mem_end,   struct guest_slots),
         VMSTATE_UINT32(active,         struct guest_slots),
@@ -2416,7 +2402,7 @@ static const VMStateDescription qxl_surface = {
     .name               = "qxl-surface",
     .version_id         = QXL_SAVE_VERSION,
     .minimum_version_id = QXL_SAVE_VERSION,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(width,      QXLSurfaceCreate),
         VMSTATE_UINT32(height,     QXLSurfaceCreate),
         VMSTATE_INT32(stride,      QXLSurfaceCreate),
@@ -2435,7 +2421,7 @@ static const VMStateDescription qxl_vmstate_monitors_config = {
     .version_id         = 1,
     .minimum_version_id = 1,
     .needed = qxl_monitors_config_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(guest_monitors_config, PCIQXLDevice),
         VMSTATE_END_OF_LIST()
     },
@@ -2448,7 +2434,7 @@ static const VMStateDescription qxl_vmstate = {
     .pre_save           = qxl_pre_save,
     .pre_load           = qxl_pre_load,
     .post_load          = qxl_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(pci, PCIQXLDevice),
         VMSTATE_STRUCT(vga, PCIQXLDevice, 0, vmstate_vga_common, VGACommonState),
         VMSTATE_UINT32(shadow_rom.mode, PCIQXLDevice),
@@ -2468,13 +2454,13 @@ static const VMStateDescription qxl_vmstate = {
         VMSTATE_UINT64(guest_cursor, PCIQXLDevice),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &qxl_vmstate_monitors_config,
         NULL
     }
 };
 
-static Property qxl_properties[] = {
+static const Property qxl_properties[] = {
         DEFINE_PROP_UINT32("ram_size", PCIQXLDevice, vga.vram_size, 64 * MiB),
         DEFINE_PROP_UINT64("vram_size", PCIQXLDevice, vram32_size, 64 * MiB),
         DEFINE_PROP_UINT32("revision", PCIQXLDevice, revision,
@@ -2487,16 +2473,12 @@ static Property qxl_properties[] = {
         DEFINE_PROP_UINT32("vram64_size_mb", PCIQXLDevice, vram_size_mb, -1),
         DEFINE_PROP_UINT32("vgamem_mb", PCIQXLDevice, vgamem_size_mb, 16),
         DEFINE_PROP_INT32("surfaces", PCIQXLDevice, ssd.num_surfaces, 1024),
-#if SPICE_SERVER_VERSION >= 0x000c06 /* release 0.12.6 */
         DEFINE_PROP_UINT16("max_outputs", PCIQXLDevice, max_outputs, 0),
-#endif
         DEFINE_PROP_UINT32("xres", PCIQXLDevice, xres, 0),
         DEFINE_PROP_UINT32("yres", PCIQXLDevice, yres, 0),
-        DEFINE_PROP_BOOL("global-vmstate", PCIQXLDevice, vga.global_vmstate, false),
-        DEFINE_PROP_END_OF_LIST(),
 };
 
-static void qxl_pci_class_init(ObjectClass *klass, void *data)
+static void qxl_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -2504,7 +2486,7 @@ static void qxl_pci_class_init(ObjectClass *klass, void *data)
     k->vendor_id = REDHAT_PCI_VENDOR_ID;
     k->device_id = QXL_DEVICE_ID_STABLE;
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->reset = qxl_reset_handler;
+    device_class_set_legacy_reset(dc, qxl_reset_handler);
     dc->vmsd = &qxl_vmstate;
     device_class_set_props(dc, qxl_properties);
 }
@@ -2515,13 +2497,13 @@ static const TypeInfo qxl_pci_type_info = {
     .instance_size = sizeof(PCIQXLDevice),
     .abstract = true,
     .class_init = qxl_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },
 };
 
-static void qxl_primary_class_init(ObjectClass *klass, void *data)
+static void qxl_primary_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -2541,7 +2523,7 @@ static const TypeInfo qxl_primary_info = {
 module_obj("qxl-vga");
 module_kconfig(QXL);
 
-static void qxl_secondary_class_init(ObjectClass *klass, void *data)
+static void qxl_secondary_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);

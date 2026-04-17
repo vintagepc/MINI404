@@ -25,10 +25,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/input/adb.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/misc/mos6522.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "monitor/monitor.h"
 #include "monitor/hmp.h"
@@ -612,7 +611,7 @@ static const VMStateDescription vmstate_mos6522_timer = {
     .name = "mos6522_timer",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16(latch, MOS6522Timer),
         VMSTATE_UINT16(counter_value, MOS6522Timer),
         VMSTATE_INT64(load_time, MOS6522Timer),
@@ -626,7 +625,7 @@ const VMStateDescription vmstate_mos6522 = {
     .name = "mos6522",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(a, MOS6522State),
         VMSTATE_UINT8(b, MOS6522State),
         VMSTATE_UINT8(dira, MOS6522State),
@@ -643,9 +642,9 @@ const VMStateDescription vmstate_mos6522 = {
     }
 };
 
-static void mos6522_reset(DeviceState *dev)
+static void mos6522_reset_hold(Object *obj, ResetType type)
 {
-    MOS6522State *s = MOS6522(dev);
+    MOS6522State *s = MOS6522(obj);
 
     s->b = 0;
     s->a = 0;
@@ -697,17 +696,17 @@ static void mos6522_finalize(Object *obj)
     timer_free(s->timers[1].timer);
 }
 
-static Property mos6522_properties[] = {
+static const Property mos6522_properties[] = {
     DEFINE_PROP_UINT64("frequency", MOS6522State, frequency, 0),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void mos6522_class_init(ObjectClass *oc, void *data)
+static void mos6522_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
+    ResettableClass *rc = RESETTABLE_CLASS(oc);
     MOS6522DeviceClass *mdc = MOS6522_CLASS(oc);
 
-    dc->reset = mos6522_reset;
+    rc->phases.hold = mos6522_reset_hold;
     dc->vmsd = &vmstate_mos6522;
     device_class_set_props(dc, mos6522_properties);
     mdc->portB_write = mos6522_portB_write;

@@ -29,8 +29,8 @@
 #include "qemu/log.h"
 #include "qemu/timer.h"
 #include "hw/timer/ibex_timer.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "target/riscv/cpu.h"
 #include "migration/vmstate.h"
 
@@ -193,6 +193,7 @@ static void ibex_timer_write(void *opaque, hwaddr addr,
         break;
     case R_CTRL:
         s->timer_ctrl = val;
+        ibex_timer_update_irqs(s);
         break;
     case R_CFG0:
         qemu_log_mask(LOG_UNIMP, "Changing prescale or step not supported");
@@ -234,7 +235,7 @@ static void ibex_timer_write(void *opaque, hwaddr addr,
 static const MemoryRegionOps ibex_timer_ops = {
     .read = ibex_timer_read,
     .write = ibex_timer_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .impl.min_access_size = 4,
     .impl.max_access_size = 4,
 };
@@ -252,7 +253,7 @@ static const VMStateDescription vmstate_ibex_timer = {
     .version_id = 2,
     .minimum_version_id = 2,
     .post_load = ibex_timer_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(timer_ctrl, IbexTimerState),
         VMSTATE_UINT32(timer_cfg0, IbexTimerState),
         VMSTATE_UINT32(timer_compare_lower0, IbexTimerState),
@@ -263,9 +264,8 @@ static const VMStateDescription vmstate_ibex_timer = {
     }
 };
 
-static Property ibex_timer_properties[] = {
+static const Property ibex_timer_properties[] = {
     DEFINE_PROP_UINT32("timebase-freq", IbexTimerState, timebase_freq, 10000),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void ibex_timer_init(Object *obj)
@@ -287,11 +287,11 @@ static void ibex_timer_realize(DeviceState *dev, Error **errp)
 }
 
 
-static void ibex_timer_class_init(ObjectClass *klass, void *data)
+static void ibex_timer_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = ibex_timer_reset;
+    device_class_set_legacy_reset(dc, ibex_timer_reset);
     dc->vmsd = &vmstate_ibex_timer;
     dc->realize = ibex_timer_realize;
     device_class_set_props(dc, ibex_timer_properties);

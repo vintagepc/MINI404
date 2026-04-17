@@ -2,18 +2,28 @@ m68k_ss = ss.source_set()
 m68k_ss.add(files(
   'cpu.c',
   'fpu_helper.c',
-  'gdbstub.c',
   'helper.c',
   'op_helper.c',
   'softfloat.c',
   'translate.c',
 ))
 
-m68k_softmmu_ss = ss.source_set()
-m68k_softmmu_ss.add(files(
-  'm68k-semi.c',
+m68k_user_ss = ss.source_set()
+m68k_user_ss.add(files('gdbstub.c'))
+
+m68k_common_system_ss = ss.source_set()
+m68k_common_system_ss.add(files('gdbstub.c'))
+
+m68k_system_ss = ss.source_set()
+m68k_system_ss.add(files(
   'monitor.c'
 ))
+m68k_system_ss.add(when: ['CONFIG_SEMIHOSTING'],
+  if_true: files('m68k-semi.c'),
+  if_false: files('semihosting-stub.c')
+)
 
 target_arch += {'m68k': m68k_ss}
-target_softmmu_arch += {'m68k': m68k_softmmu_ss}
+target_user_arch += {'m68k': m68k_user_ss}
+target_system_arch += {'m68k': m68k_system_ss}
+target_common_system_arch += {'m68k': m68k_common_system_ss}

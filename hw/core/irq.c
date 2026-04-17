@@ -23,19 +23,8 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-
-DECLARE_INSTANCE_CHECKER(struct IRQState, IRQ,
-                         TYPE_IRQ)
-
-struct IRQState {
-    Object parent_obj;
-
-    qemu_irq_handler handler;
-    void *opaque;
-    int n;
-};
 
 void qemu_set_irq(qemu_irq irq, int level)
 {
@@ -43,6 +32,37 @@ void qemu_set_irq(qemu_irq irq, int level)
         return;
 
     irq->handler(irq->opaque, irq->n, level);
+}
+
+static void init_irq_fields(IRQState *irq, qemu_irq_handler handler,
+                            void *opaque, int n)
+{
+    irq->handler = handler;
+    irq->opaque = opaque;
+    irq->n = n;
+}
+
+void qemu_init_irq(IRQState *irq, qemu_irq_handler handler, void *opaque,
+                   int n)
+{
+    object_initialize(irq, sizeof(*irq), TYPE_IRQ);
+    init_irq_fields(irq, handler, opaque, n);
+}
+
+void qemu_init_irq_child(Object *parent, const char *propname,
+                         IRQState *irq, qemu_irq_handler handler,
+                         void *opaque, int n)
+{
+    object_initialize_child(parent, propname, irq, TYPE_IRQ);
+    init_irq_fields(irq, handler, opaque, n);
+}
+
+void qemu_init_irqs(IRQState irq[], size_t count,
+                    qemu_irq_handler handler, void *opaque)
+{
+    for (size_t i = 0; i < count; i++) {
+        qemu_init_irq(&irq[i], handler, opaque, i);
+    }
 }
 
 qemu_irq *qemu_extend_irqs(qemu_irq *old, int n_old, qemu_irq_handler handler,
@@ -68,13 +88,8 @@ qemu_irq *qemu_allocate_irqs(qemu_irq_handler handler, void *opaque, int n)
 
 qemu_irq qemu_allocate_irq(qemu_irq_handler handler, void *opaque, int n)
 {
-    struct IRQState *irq;
-
-    irq = IRQ(object_new(TYPE_IRQ));
-    irq->handler = handler;
-    irq->opaque = opaque;
-    irq->n = n;
-
+    IRQState *irq = IRQ(object_new(TYPE_IRQ));
+    init_irq_fields(irq, handler, opaque, n);
     return irq;
 }
 
@@ -94,7 +109,7 @@ void qemu_free_irq(qemu_irq irq)
 
 static void qemu_notirq(void *opaque, int line, int level)
 {
-    struct IRQState *irq = opaque;
+    IRQState *irq = opaque;
 
     irq->handler(irq->opaque, irq->n, !level);
 }
@@ -120,7 +135,7 @@ void qemu_irq_intercept_in(qemu_irq *gpio_in, qemu_irq_handler handler, int n)
 static const TypeInfo irq_type_info = {
    .name = TYPE_IRQ,
    .parent = TYPE_OBJECT,
-   .instance_size = sizeof(struct IRQState),
+   .instance_size = sizeof(IRQState),
 };
 
 static void irq_register_types(void)

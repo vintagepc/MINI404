@@ -17,6 +17,8 @@
 #include "clients.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
+#include "system/runstate.h"
+#include "net/eth.h"
 
 #include <vmnet/vmnet.h>
 #include <dispatch/dispatch.h>
@@ -46,11 +48,8 @@ const char *vmnet_status_map_str(vmnet_return_t status)
         return "buffers exhausted in kernel";
     case VMNET_TOO_MANY_PACKETS:
         return "packet count exceeds limit";
-#if defined(MAC_OS_VERSION_11_0) && \
-    MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_VERSION_11_0
     case VMNET_SHARING_SERVICE_BUSY:
         return "conflict, sharing service is in use";
-#endif
     default:
         return "unknown vmnet error";
     }
@@ -95,7 +94,7 @@ ssize_t vmnet_receive_common(NetClientState *nc,
 
     if_status = vmnet_write(s->vmnet_if, &packet, &pkt_cnt);
     if (if_status != VMNET_SUCCESS) {
-        error_report("vmnet: write error: %s\n",
+        error_report("vmnet: write error: %s",
                      vmnet_status_map_str(if_status));
         return -1;
     }
@@ -149,10 +148,26 @@ static int vmnet_read_packets(VmnetState *s)
  */
 static void vmnet_write_packets_to_qemu(VmnetState *s)
 {
+    uint8_t *pkt;
+    size_t pktsz;
+    uint8_t min_pkt[ETH_ZLEN];
+    size_t min_pktsz;
+    ssize_t size;
+
     while (s->packets_send_current_pos < s->packets_send_end_pos) {
-        ssize_t size = qemu_send_packet_async(&s->nc,
-                                      s->iov_buf[s->packets_send_current_pos].iov_base,
-                                      s->packets_buf[s->packets_send_current_pos].vm_pkt_size,
+        pkt = s->iov_buf[s->packets_send_current_pos].iov_base;
+        pktsz = s->packets_buf[s->packets_send_current_pos].vm_pkt_size;
+
+        if (net_peer_needs_padding(&s->nc)) {
+            min_pktsz = sizeof(min_pkt);
+
+            if (eth_pad_short_frame(min_pkt, &min_pktsz, pkt, pktsz)) {
+                pkt = min_pkt;
+                pktsz = min_pktsz;
+            }
+        }
+
+        size = qemu_send_packet_async(&s->nc, pkt, pktsz,
                                       vmnet_send_completed);
 
         if (size == 0) {
@@ -242,6 +257,35 @@ static void vmnet_bufs_init(VmnetState *s)
     }
 }
 
+/**
+ * Called on state change to un-register/re-register handlers
+ */
+static void vmnet_vm_state_change_cb(void *opaque, bool running, RunState state)
+{
+    VmnetState *s = opaque;
+
+    if (running) {
+        vmnet_interface_set_event_callback(
+            s->vmnet_if,
+            VMNET_INTERFACE_PACKETS_AVAILABLE,
+            s->if_queue,
+            ^(interface_event_t event_id, xpc_object_t event) {
+                assert(event_id == VMNET_INTERFACE_PACKETS_AVAILABLE);
+                /*
+                 * This function is being called from a non qemu thread, so
+                 * we only schedule a BH, and do the rest of the io completion
+                 * handling from vmnet_send_bh() which runs in a qemu context.
+                 */
+                qemu_bh_schedule(s->send_bh);
+            });
+    } else {
+        vmnet_interface_set_event_callback(
+            s->vmnet_if,
+            VMNET_INTERFACE_PACKETS_AVAILABLE,
+            NULL,
+            NULL);
+    }
+}
 
 int vmnet_if_create(NetClientState *nc,
                     xpc_object_t if_desc,
@@ -329,19 +373,9 @@ int vmnet_if_create(NetClientState *nc,
     s->packets_send_current_pos = 0;
     s->packets_send_end_pos = 0;
 
-    vmnet_interface_set_event_callback(
-        s->vmnet_if,
-        VMNET_INTERFACE_PACKETS_AVAILABLE,
-        s->if_queue,
-        ^(interface_event_t event_id, xpc_object_t event) {
-            assert(event_id == VMNET_INTERFACE_PACKETS_AVAILABLE);
-            /*
-             * This function is being called from a non qemu thread, so
-             * we only schedule a BH, and do the rest of the io completion
-             * handling from vmnet_send_bh() which runs in a qemu context.
-             */
-            qemu_bh_schedule(s->send_bh);
-        });
+    vmnet_vm_state_change_cb(s, 1, RUN_STATE_RUNNING);
+
+    s->change = qemu_add_vm_change_state_handler(vmnet_vm_state_change_cb, s);
 
     return 0;
 }
@@ -356,6 +390,8 @@ void vmnet_cleanup_common(NetClientState *nc)
         return;
     }
 
+    vmnet_vm_state_change_cb(s, 0, RUN_STATE_SHUTDOWN);
+    qemu_del_vm_change_state_handler(s->change);
     if_stopped_sem = dispatch_semaphore_create(0);
     vmnet_stop_interface(
         s->vmnet_if,

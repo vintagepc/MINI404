@@ -12,7 +12,7 @@
 #include "hw/pci/pci.h"
 #include "qapi/error.h"
 #include "io/channel-util.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "monitor/monitor.h"
 #include "migration/blocker.h"
 #include "qemu/sockets.h"
@@ -21,8 +21,7 @@
 #include "hw/remote/proxy-memory-listener.h"
 #include "qom/object.h"
 #include "qemu/event_notifier.h"
-#include "sysemu/kvm.h"
-#include "util/event_notifier-posix.c"
+#include "system/kvm.h"
 
 static void probe_pci_info(PCIDevice *dev, Error **errp);
 static void proxy_device_reset(DeviceState *dev);
@@ -53,9 +52,20 @@ static void setup_irqfd(PCIProxyDev *dev)
     PCIDevice *pci_dev = PCI_DEVICE(dev);
     MPQemuMsg msg;
     Error *local_err = NULL;
+    int ret = 0;
 
-    event_notifier_init(&dev->intr, 0);
-    event_notifier_init(&dev->resample, 0);
+    ret = event_notifier_init(&dev->intr, 0);
+    if (ret < 0) {
+        error_report("Failed to init intr notifier: %s", strerror(-ret));
+        return;
+    }
+
+    ret = event_notifier_init(&dev->resample, 0);
+    if (ret < 0) {
+        error_report("Failed to init resample notifier: %s", strerror(-ret));
+        event_notifier_cleanup(&dev->intr);
+        return;
+    }
 
     memset(&msg, 0, sizeof(MPQemuMsg));
     msg.cmd = MPQEMU_CMD_SET_IRQFD;
@@ -108,14 +118,17 @@ static void pci_proxy_dev_realize(PCIDevice *device, Error **errp)
 
     error_setg(&dev->migration_blocker, "%s does not support migration",
                TYPE_PCI_PROXY_DEV);
-    if (migrate_add_blocker(dev->migration_blocker, errp) < 0) {
-        error_free(dev->migration_blocker);
+    if (migrate_add_blocker(&dev->migration_blocker, errp) < 0) {
+        object_unref(dev->ioc);
+        return;
+    }
+
+    if (!qio_channel_set_blocking(dev->ioc, true, errp)) {
         object_unref(dev->ioc);
         return;
     }
 
     qemu_mutex_init(&dev->io_mutex);
-    qio_channel_set_blocking(dev->ioc, true, NULL);
 
     pci_conf[PCI_LATENCY_TIMER] = 0xff;
     pci_conf[PCI_INTERRUPT_PIN] = 0x01;
@@ -135,9 +148,7 @@ static void pci_proxy_dev_exit(PCIDevice *pdev)
         qio_channel_close(dev->ioc, NULL);
     }
 
-    migrate_del_blocker(dev->migration_blocker);
-
-    error_free(dev->migration_blocker);
+    migrate_del_blocker(&dev->migration_blocker);
 
     proxy_memory_listener_deconfigure(&dev->proxy_listener);
 
@@ -195,12 +206,11 @@ static void pci_proxy_write_config(PCIDevice *d, uint32_t addr, uint32_t val,
     config_op_send(PCI_PROXY_DEV(d), addr, &val, len, MPQEMU_CMD_PCI_CFGWRITE);
 }
 
-static Property proxy_properties[] = {
+static const Property proxy_properties[] = {
     DEFINE_PROP_STRING("fd", PCIProxyDev, fd),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pci_proxy_dev_class_init(ObjectClass *klass, void *data)
+static void pci_proxy_dev_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -210,7 +220,7 @@ static void pci_proxy_dev_class_init(ObjectClass *klass, void *data)
     k->config_read = pci_proxy_read_config;
     k->config_write = pci_proxy_write_config;
 
-    dc->reset = proxy_device_reset;
+    device_class_set_legacy_reset(dc, proxy_device_reset);
 
     device_class_set_props(dc, proxy_properties);
 }
@@ -220,7 +230,7 @@ static const TypeInfo pci_proxy_dev_type_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(PCIProxyDev),
     .class_init    = pci_proxy_dev_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

@@ -15,11 +15,11 @@
 
 #include "qemu/osdep.h"
 
-#include "hw/irq.h"
-#include "hw/pci/pci.h"
+#include "hw/core/irq.h"
+#include "hw/pci/pci_device.h"
 #include "hw/scsi/scsi.h"
 #include "migration/vmstate.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "trace.h"
@@ -188,7 +188,7 @@ static const char *names[] = {
 #define LSI_TAG_VALID     (1 << 16)
 
 /* Maximum instructions to process. */
-#define LSI_MAX_INSN    10000
+#define LSI_MAX_INSN    500
 
 typedef struct lsi_request {
     SCSIRequest *req;
@@ -197,6 +197,7 @@ typedef struct lsi_request {
     uint8_t *dma_buf;
     uint32_t pending;
     int out;
+    bool orphan;
     QTAILQ_ENTRY(lsi_request) next;
 } lsi_request;
 
@@ -205,6 +206,7 @@ enum {
     LSI_WAIT_RESELECT, /* Wait Reselect instruction has been issued */
     LSI_DMA_SCRIPTS, /* processing DMA from lsi_execute_script */
     LSI_DMA_IN_PROGRESS, /* DMA operation is in progress */
+    LSI_WAIT_SCRIPTS, /* SCRIPTS stopped because of instruction count limit */
 };
 
 enum {
@@ -224,8 +226,9 @@ struct LSIState {
     MemoryRegion ram_io;
     MemoryRegion io_io;
     AddressSpace pci_io_as;
+    QEMUTimer *scripts_timer;
 
-    int carry; /* ??? Should this be an a visible register somewhere?  */
+    int carry; /* ??? Should this be in a visible register somewhere?  */
     int status;
     int msg_action;
     int msg_len;
@@ -415,6 +418,7 @@ static void lsi_soft_reset(LSIState *s)
     s->sbr = 0;
     assert(QTAILQ_EMPTY(&s->queue));
     assert(!s->current);
+    timer_del(s->scripts_timer);
 }
 
 static int lsi_dma_40bit(LSIState *s)
@@ -570,8 +574,9 @@ static inline void lsi_set_phase(LSIState *s, int phase)
     s->sstat1 = (s->sstat1 & ~PHASE_MASK) | phase;
 }
 
-static void lsi_bad_phase(LSIState *s, int out, int new_phase)
+static int lsi_bad_phase(LSIState *s, int out, int new_phase)
 {
+    int ret = 0;
     /* Trigger a phase mismatch.  */
     if (s->ccntl0 & LSI_CCNTL0_ENPMJ) {
         if ((s->ccntl0 & LSI_CCNTL0_PMJCTL)) {
@@ -584,8 +589,10 @@ static void lsi_bad_phase(LSIState *s, int out, int new_phase)
         trace_lsi_bad_phase_interrupt();
         lsi_script_scsi_interrupt(s, LSI_SIST0_MA, 0);
         lsi_stop_script(s);
+        ret = 1;
     }
     lsi_set_phase(s, new_phase);
+    return ret;
 }
 
 
@@ -620,6 +627,8 @@ static void lsi_do_dma(LSIState *s, int out)
     uint32_t count;
     dma_addr_t addr;
     SCSIDevice *dev;
+    SCSIRequest *req;
+    lsi_request *p;
 
     if (!s->current || !s->current->dma_len) {
         /* Wait until data is available.  */
@@ -627,12 +636,14 @@ static void lsi_do_dma(LSIState *s, int out)
         return;
     }
 
-    dev = s->current->req->dev;
+    p = s->current;
+    req = scsi_req_ref(s->current->req);
+    dev = req->dev;
     assert(dev);
 
     count = s->dbc;
-    if (count > s->current->dma_len)
-        count = s->current->dma_len;
+    if (count > p->dma_len)
+        count = p->dma_len;
 
     addr = s->dnad;
     /* both 40 and Table Indirect 64-bit DMAs store upper bits in dnad64 */
@@ -647,21 +658,27 @@ static void lsi_do_dma(LSIState *s, int out)
     s->csbc += count;
     s->dnad += count;
     s->dbc -= count;
-     if (s->current->dma_buf == NULL) {
-        s->current->dma_buf = scsi_req_get_buf(s->current->req);
+    if (p->dma_buf == NULL) {
+        p->dma_buf = scsi_req_get_buf(req);
     }
     /* ??? Set SFBR to first data byte.  */
     if (out) {
-        lsi_mem_read(s, addr, s->current->dma_buf, count);
+        lsi_mem_read(s, addr, p->dma_buf, count);
     } else {
-        lsi_mem_write(s, addr, s->current->dma_buf, count);
+        lsi_mem_write(s, addr, p->dma_buf, count);
     }
-    s->current->dma_len -= count;
-    if (s->current->dma_len == 0) {
-        s->current->dma_buf = NULL;
-        scsi_req_continue(s->current->req);
+    if (p->orphan) {
+        scsi_req_unref(req);
+        return;
+    }
+    scsi_req_unref(req);
+
+    p->dma_len -= count;
+    if (p->dma_len == 0) {
+        p->dma_buf = NULL;
+        scsi_req_continue(req);
     } else {
-        s->current->dma_buf += count;
+        p->dma_buf += count;
         lsi_resume_script(s);
     }
 }
@@ -737,14 +754,20 @@ static lsi_request *lsi_find_by_tag(LSIState *s, uint32_t tag)
     return NULL;
 }
 
-static void lsi_request_free(LSIState *s, lsi_request *p)
+static void lsi_request_orphan(LSIState *s, lsi_request *p)
 {
+    p->orphan = true;
     if (p == s->current) {
         s->current = NULL;
     } else {
         QTAILQ_REMOVE(&s->queue, p, next);
     }
-    g_free(p);
+    scsi_req_unref(p->req);
+}
+
+static void lsi_free_request(SCSIBus *bus, void *priv)
+{
+    g_free(priv);
 }
 
 static void lsi_request_cancelled(SCSIRequest *req)
@@ -752,9 +775,7 @@ static void lsi_request_cancelled(SCSIRequest *req)
     LSIState *s = LSI53C895A(req->bus->qbus.parent);
     lsi_request *p = req->hba_private;
 
-    req->hba_private = NULL;
-    lsi_request_free(s, p);
-    scsi_req_unref(req);
+    lsi_request_orphan(s, p);
 }
 
 /* Record that data is available for a queued command.  Returns zero if
@@ -789,7 +810,7 @@ static int lsi_queue_req(LSIState *s, SCSIRequest *req, uint32_t len)
 static void lsi_command_complete(SCSIRequest *req, size_t resid)
 {
     LSIState *s = LSI53C895A(req->bus->qbus.parent);
-    int out;
+    int out, stop = 0;
 
     out = (s->sstat1 & PHASE_MASK) == PHASE_DO;
     trace_lsi_command_complete(req->status);
@@ -797,27 +818,31 @@ static void lsi_command_complete(SCSIRequest *req, size_t resid)
     s->command_complete = 2;
     if (s->waiting && s->dbc != 0) {
         /* Raise phase mismatch for short transfers.  */
-        lsi_bad_phase(s, out, PHASE_ST);
+        stop = lsi_bad_phase(s, out, PHASE_ST);
+        if (stop) {
+            s->waiting = 0;
+        }
     } else {
         lsi_set_phase(s, PHASE_ST);
     }
 
     if (req->hba_private == s->current) {
-        req->hba_private = NULL;
-        lsi_request_free(s, s->current);
-        scsi_req_unref(req);
+        lsi_request_orphan(s, s->current);
     }
-    lsi_resume_script(s);
+    if (!stop) {
+        lsi_resume_script(s);
+    }
 }
 
  /* Callback to indicate that the SCSI layer has completed a transfer.  */
 static void lsi_transfer_data(SCSIRequest *req, uint32_t len)
 {
     LSIState *s = LSI53C895A(req->bus->qbus.parent);
+    lsi_request *p = req->hba_private;
     int out;
 
-    assert(req->hba_private);
-    if (s->waiting == LSI_WAIT_RESELECT || req->hba_private != s->current ||
+    assert(!p->orphan);
+    if (s->waiting == LSI_WAIT_RESELECT || p != s->current ||
         (lsi_irq_on_rsl(s) && !(s->scntl1 & LSI_SCNTL1_CON))) {
         if (lsi_queue_req(s, req, len)) {
             return;
@@ -916,13 +941,18 @@ static void lsi_do_msgin(LSIState *s)
     assert(len > 0 && len <= LSI_MAX_MSGIN_LEN);
     if (len > s->dbc)
         len = s->dbc;
-    pci_dma_write(PCI_DEVICE(s), s->dnad, s->msg, len);
-    /* Linux drivers rely on the last byte being in the SIDL.  */
-    s->sidl = s->msg[len - 1];
-    s->msg_len -= len;
-    if (s->msg_len) {
-        memmove(s->msg, s->msg + len, s->msg_len);
-    } else {
+
+    if (len) {
+        pci_dma_write(PCI_DEVICE(s), s->dnad, s->msg, len);
+        /* Linux drivers rely on the last byte being in the SIDL.  */
+        s->sidl = s->msg[len - 1];
+        s->msg_len -= len;
+        if (s->msg_len) {
+            memmove(s->msg, s->msg + len, s->msg_len);
+        }
+    }
+
+    if (!s->msg_len) {
         /* ??? Check if ATN (not yet implemented) is asserted and maybe
            switch to PHASE_MO.  */
         switch (s->msg_action) {
@@ -1096,7 +1126,7 @@ bad:
 static void lsi_memcpy(LSIState *s, uint32_t dest, uint32_t src, int count)
 {
     int n;
-    uint8_t buf[LSI_BUF_SIZE];
+    QEMU_UNINITIALIZED uint8_t buf[LSI_BUF_SIZE];
 
     trace_lsi_memcpy(dest, src, count);
     while (count) {
@@ -1127,6 +1157,12 @@ static void lsi_wait_reselect(LSIState *s)
     }
 }
 
+static void lsi_scripts_timer_start(LSIState *s)
+{
+    trace_lsi_scripts_timer_start();
+    timer_mod(s->scripts_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 500);
+}
+
 static void lsi_execute_script(LSIState *s)
 {
     PCIDevice *pci_dev = PCI_DEVICE(s);
@@ -1134,22 +1170,34 @@ static void lsi_execute_script(LSIState *s)
     uint32_t addr, addr_high;
     int opcode;
     int insn_processed = 0;
+    static int reentrancy_level;
+
+    if (s->waiting == LSI_WAIT_SCRIPTS) {
+        timer_del(s->scripts_timer);
+        s->waiting = LSI_NOWAIT;
+    }
+
+    object_ref(s);
+    reentrancy_level++;
 
     s->istat1 |= LSI_ISTAT1_SRUN;
 again:
-    if (++insn_processed > LSI_MAX_INSN) {
-        /* Some windows drivers make the device spin waiting for a memory
-           location to change.  If we have been executed a lot of code then
-           assume this is the case and force an unexpected device disconnect.
-           This is apparently sufficient to beat the drivers into submission.
-         */
-        if (!(s->sien0 & LSI_SIST0_UDC)) {
-            qemu_log_mask(LOG_GUEST_ERROR,
-                          "lsi_scsi: inf. loop with UDC masked");
-        }
-        lsi_script_scsi_interrupt(s, LSI_SIST0_UDC, 0);
-        lsi_disconnect(s);
-        trace_lsi_execute_script_stop();
+    /*
+     * Some windows drivers make the device spin waiting for a memory location
+     * to change. If we have executed more than LSI_MAX_INSN instructions then
+     * assume this is the case and start a timer. Until the timer fires, the
+     * host CPU has a chance to run and change the memory location.
+     *
+     * Another issue (CVE-2023-0330) can occur if the script is programmed to
+     * trigger itself again and again. Avoid this problem by stopping after
+     * being called multiple times in a reentrant way (8 is an arbitrary value
+     * which should be enough for all valid use cases).
+     */
+    if (++insn_processed > LSI_MAX_INSN || reentrancy_level > 8) {
+        s->waiting = LSI_WAIT_SCRIPTS;
+        lsi_scripts_timer_start(s);
+        reentrancy_level--;
+        object_unref(s);
         return;
     }
     insn = read_dword(s, s->dsp);
@@ -1312,7 +1360,7 @@ again:
                 }
                 trace_lsi_execute_script_io_selected(id,
                                              insn & (1 << 3) ? " ATN" : "");
-                /* ??? Linux drivers compain when this is set.  Maybe
+                /* ??? Linux drivers complain when this is set.  Maybe
                    it only applies in low-level mode (unimplemented).
                 lsi_script_scsi_interrupt(s, LSI_SIST0_CMP, 0); */
                 s->select_tag = id << 8;
@@ -1596,6 +1644,9 @@ again:
         }
     }
     trace_lsi_execute_script_stop();
+
+    reentrancy_level--;
+    object_unref(s);
 }
 
 static uint8_t lsi_reg_readb(LSIState *s, int offset)
@@ -1912,6 +1963,10 @@ static void lsi_reg_writeb(LSIState *s, int offset, uint8_t val)
     CASE_SET_REG32(dsa, 0x10)
     case 0x14: /* ISTAT0 */
         s->istat0 = (s->istat0 & 0x0f) | (val & 0xf0);
+        if (val & LSI_ISTAT0_SRST) {
+            device_cold_reset(DEVICE(s));
+            return;
+        }
         if (val & LSI_ISTAT0_ABRT) {
             lsi_script_dma_interrupt(s, LSI_DSTAT_ABRT);
         }
@@ -1924,9 +1979,6 @@ static void lsi_reg_writeb(LSIState *s, int offset, uint8_t val)
             s->waiting = LSI_NOWAIT;
             s->dsp = s->dnad;
             lsi_execute_script(s);
-        }
-        if (val & LSI_ISTAT0_SRST) {
-            device_cold_reset(DEVICE(s));
         }
         break;
     case 0x16: /* MBOX0 */
@@ -2185,6 +2237,9 @@ static int lsi_post_load(void *opaque, int version_id)
         return -EINVAL;
     }
 
+    if (s->waiting == LSI_WAIT_SCRIPTS) {
+        lsi_scripts_timer_start(s);
+    }
     return 0;
 }
 
@@ -2194,7 +2249,7 @@ static const VMStateDescription vmstate_lsi_scsi = {
     .minimum_version_id = 0,
     .pre_save = lsi_pre_save,
     .post_load = lsi_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, LSIState),
 
         VMSTATE_INT32(carry, LSIState),
@@ -2279,8 +2334,18 @@ static const struct SCSIBusInfo lsi_scsi_info = {
 
     .transfer_data = lsi_transfer_data,
     .complete = lsi_command_complete,
-    .cancel = lsi_request_cancelled
+    .cancel = lsi_request_cancelled,
+    .free_request = lsi_free_request,
 };
+
+static void scripts_timer_cb(void *opaque)
+{
+    LSIState *s = opaque;
+
+    trace_lsi_scripts_timer_triggered();
+    s->waiting = LSI_NOWAIT;
+    lsi_execute_script(s);
+}
 
 static void lsi_scsi_realize(PCIDevice *dev, Error **errp)
 {
@@ -2301,6 +2366,14 @@ static void lsi_scsi_realize(PCIDevice *dev, Error **errp)
                           "lsi-ram", 0x2000);
     memory_region_init_io(&s->io_io, OBJECT(s), &lsi_io_ops, s,
                           "lsi-io", 256);
+    s->scripts_timer = timer_new_us(QEMU_CLOCK_VIRTUAL, scripts_timer_cb, s);
+
+    /*
+     * Since we use the address-space API to interact with ram_io, disable the
+     * re-entrancy guard.
+     */
+    s->ram_io.disable_reentrancy_guard = true;
+    s->mmio_io.disable_reentrancy_guard = true;
 
     address_space_init(&s->pci_io_as, pci_address_space_io(dev), "lsi-pci-io");
     qdev_init_gpio_out(d, &s->ext_irq, 1);
@@ -2318,9 +2391,10 @@ static void lsi_scsi_exit(PCIDevice *dev)
     LSIState *s = LSI53C895A(dev);
 
     address_space_destroy(&s->pci_io_as);
+    timer_free(s->scripts_timer);
 }
 
-static void lsi_class_init(ObjectClass *klass, void *data)
+static void lsi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -2331,7 +2405,7 @@ static void lsi_class_init(ObjectClass *klass, void *data)
     k->device_id = PCI_DEVICE_ID_LSI_53C895A;
     k->class_id = PCI_CLASS_STORAGE_SCSI;
     k->subsystem_id = 0x1000;
-    dc->reset = lsi_scsi_reset;
+    device_class_set_legacy_reset(dc, lsi_scsi_reset);
     dc->vmsd = &vmstate_lsi_scsi;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
 }
@@ -2341,13 +2415,13 @@ static const TypeInfo lsi_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(LSIState),
     .class_init    = lsi_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },
 };
 
-static void lsi53c810_class_init(ObjectClass *klass, void *data)
+static void lsi53c810_class_init(ObjectClass *klass, const void *data)
 {
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 

@@ -21,9 +21,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 
@@ -564,14 +564,14 @@ static void pl041_realize(DeviceState *dev, Error **errp)
     }
 
     /* Init the codec */
-    lm4549_init(&s->codec, &pl041_request_data, (void *)s);
+    lm4549_init(&s->codec, &pl041_request_data, (void *)s, errp);
 }
 
 static const VMStateDescription vmstate_pl041_regfile = {
     .name = "pl041_regfile",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
 #define REGISTER(name, offset) VMSTATE_UINT32(name, pl041_regfile),
         #include "pl041.hx"
 #undef REGISTER
@@ -583,7 +583,7 @@ static const VMStateDescription vmstate_pl041_fifo = {
     .name = "pl041_fifo",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(level, pl041_fifo),
         VMSTATE_UINT32_ARRAY(data, pl041_fifo, MAX_FIFO_DEPTH),
         VMSTATE_END_OF_LIST()
@@ -594,7 +594,7 @@ static const VMStateDescription vmstate_pl041_channel = {
     .name = "pl041_channel",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(tx_fifo, pl041_channel, 0,
                        vmstate_pl041_fifo, pl041_fifo),
         VMSTATE_UINT8(tx_enabled, pl041_channel),
@@ -613,7 +613,7 @@ static const VMStateDescription vmstate_pl041 = {
     .name = "pl041",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(fifo_depth, PL041State),
         VMSTATE_STRUCT(regs, PL041State, 0,
                        vmstate_pl041_regfile, pl041_regfile),
@@ -625,21 +625,20 @@ static const VMStateDescription vmstate_pl041 = {
     }
 };
 
-static Property pl041_device_properties[] = {
-    DEFINE_AUDIO_PROPERTIES(PL041State, codec.card),
+static const Property pl041_device_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(PL041State, codec.audio_be),
     /* Non-compact FIFO depth property */
     DEFINE_PROP_UINT32("nc_fifo_depth", PL041State, fifo_depth,
                        DEFAULT_FIFO_DEPTH),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pl041_device_class_init(ObjectClass *klass, void *data)
+static void pl041_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = pl041_realize;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
-    dc->reset = pl041_device_reset;
+    device_class_set_legacy_reset(dc, pl041_device_reset);
     dc->vmsd = &vmstate_pl041;
     device_class_set_props(dc, pl041_device_properties);
 }

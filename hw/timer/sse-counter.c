@@ -32,10 +32,10 @@
 #include "qapi/error.h"
 #include "trace.h"
 #include "hw/timer/sse-counter.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
-#include "hw/clock.h"
-#include "hw/qdev-clock.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/clock.h"
+#include "hw/core/qdev-clock.h"
 #include "migration/vmstate.h"
 
 /* Registers in the control frame */
@@ -442,19 +442,19 @@ static const VMStateDescription sse_counter_vmstate = {
     .name = "sse-counter",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_CLOCK(clk, SSECounter),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void sse_counter_class_init(ObjectClass *klass, void *data)
+static void sse_counter_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = sse_counter_realize;
     dc->vmsd = &sse_counter_vmstate;
-    dc->reset = sse_counter_reset;
+    device_class_set_legacy_reset(dc, sse_counter_reset);
 }
 
 static const TypeInfo sse_counter_info = {

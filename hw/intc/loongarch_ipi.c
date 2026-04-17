@@ -1,273 +1,230 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * LoongArch ipi interrupt support
+ * LoongArch IPI interrupt support
  *
- * Copyright (C) 2021 Loongson Technology Corporation Limited
+ * Copyright (C) 2024 Loongson Technology Corporation Limited
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/intc/loongarch_ipi.h"
-#include "hw/irq.h"
+#include "qemu/error-report.h"
+#include "hw/core/boards.h"
 #include "qapi/error.h"
-#include "qemu/log.h"
-#include "exec/address-spaces.h"
-#include "hw/loongarch/virt.h"
-#include "migration/vmstate.h"
-#include "target/loongarch/internals.h"
-#include "trace.h"
+#include "hw/intc/loongarch_ipi.h"
+#include "hw/core/qdev-properties.h"
+#include "system/kvm.h"
+#include "target/loongarch/cpu.h"
 
-static uint64_t loongarch_ipi_readl(void *opaque, hwaddr addr, unsigned size)
+static AddressSpace *get_iocsr_as(CPUState *cpu)
 {
-    IPICore *s = opaque;
-    uint64_t ret = 0;
-    int index = 0;
-
-    addr &= 0xff;
-    switch (addr) {
-    case CORE_STATUS_OFF:
-        ret = s->status;
-        break;
-    case CORE_EN_OFF:
-        ret = s->en;
-        break;
-    case CORE_SET_OFF:
-        ret = 0;
-        break;
-    case CORE_CLEAR_OFF:
-        ret = 0;
-        break;
-    case CORE_BUF_20 ... CORE_BUF_38 + 4:
-        index = (addr - CORE_BUF_20) >> 2;
-        ret = s->buf[index];
-        break;
-    default:
-        qemu_log_mask(LOG_UNIMP, "invalid read: %x", (uint32_t)addr);
-        break;
-    }
-
-    trace_loongarch_ipi_read(size, (uint64_t)addr, ret);
-    return ret;
+    return LOONGARCH_CPU(cpu)->env.address_space_iocsr;
 }
 
-static void send_ipi_data(CPULoongArchState *env, target_ulong val, target_ulong addr)
+static int loongarch_ipi_cmp(const void *a, const void *b)
 {
-    int i, mask = 0, data = 0;
+   IPICore *ipi_a = (IPICore *)a;
+   IPICore *ipi_b = (IPICore *)b;
 
-    /*
-     * bit 27-30 is mask for byte writing,
-     * if the mask is 0, we need not to do anything.
-     */
-    if ((val >> 27) & 0xf) {
-        data = address_space_ldl(&env->address_space_iocsr, addr,
-                                 MEMTXATTRS_UNSPECIFIED, NULL);
-        for (i = 0; i < 4; i++) {
-            /* get mask for byte writing */
-            if (val & (0x1 << (27 + i))) {
-                mask |= 0xff << (i * 8);
-            }
+   return ipi_a->arch_id - ipi_b->arch_id;
+}
+
+static int loongarch_cpu_by_arch_id(LoongsonIPICommonState *lics,
+                                    int64_t arch_id, int *index, CPUState **pcs)
+{
+    IPICore ipi, *found;
+
+    ipi.arch_id = arch_id;
+    found = bsearch(&ipi, lics->cpu, lics->num_cpu, sizeof(IPICore),
+                    loongarch_ipi_cmp);
+    if (found && found->cpu) {
+        if (index) {
+            *index = found - lics->cpu;
+        }
+
+        if (pcs) {
+            *pcs = found->cpu;
+        }
+
+        return MEMTX_OK;
+    }
+
+    return MEMTX_ERROR;
+}
+
+static IPICore *loongarch_ipi_get_cpu(LoongsonIPICommonState *lics,
+                                      DeviceState *dev)
+{
+    CPUClass *k = CPU_GET_CLASS(dev);
+    uint64_t arch_id = k->get_arch_id(CPU(dev));
+    int i;
+
+    for (i = 0; i < lics->num_cpu; i++) {
+        if (lics->cpu[i].arch_id == arch_id) {
+            return &lics->cpu[i];
         }
     }
 
-    data &= mask;
-    data |= (val >> 32) & ~mask;
-    address_space_stl(&env->address_space_iocsr, addr,
-                      data, MEMTXATTRS_UNSPECIFIED, NULL);
+    return NULL;
 }
 
-static void ipi_send(uint64_t val)
+static void loongarch_ipi_realize(DeviceState *dev, Error **errp)
 {
-    int cpuid, data;
-    CPULoongArchState *env;
-    CPUState *cs;
-    LoongArchCPU *cpu;
+    LoongsonIPICommonState *lics = LOONGSON_IPI_COMMON(dev);
+    LoongarchIPIClass *lic = LOONGARCH_IPI_GET_CLASS(dev);
+    MachineState *machine = MACHINE(qdev_get_machine());
+    MachineClass *mc = MACHINE_GET_CLASS(machine);
+    const CPUArchIdList *id_list;
+    Error *local_err = NULL;
+    int i;
 
-    cpuid = (val >> 16) & 0x3ff;
-    /* IPI status vector */
-    data = 1 << (val & 0x1f);
-    cs = qemu_get_cpu(cpuid);
-    cpu = LOONGARCH_CPU(cs);
-    env = &cpu->env;
-    address_space_stl(&env->address_space_iocsr, 0x1008,
-                      data, MEMTXATTRS_UNSPECIFIED, NULL);
-
-}
-
-static void mail_send(uint64_t val)
-{
-    int cpuid;
-    hwaddr addr;
-    CPULoongArchState *env;
-    CPUState *cs;
-    LoongArchCPU *cpu;
-
-    cpuid = (val >> 16) & 0x3ff;
-    addr = 0x1020 + (val & 0x1c);
-    cs = qemu_get_cpu(cpuid);
-    cpu = LOONGARCH_CPU(cs);
-    env = &cpu->env;
-    send_ipi_data(env, val, addr);
-}
-
-static void any_send(uint64_t val)
-{
-    int cpuid;
-    hwaddr addr;
-    CPULoongArchState *env;
-
-    cpuid = (val >> 16) & 0x3ff;
-    addr = val & 0xffff;
-    CPUState *cs = qemu_get_cpu(cpuid);
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    env = &cpu->env;
-    send_ipi_data(env, val, addr);
-}
-
-static void loongarch_ipi_writel(void *opaque, hwaddr addr, uint64_t val,
-                                 unsigned size)
-{
-    IPICore *s = opaque;
-    int index = 0;
-
-    addr &= 0xff;
-    trace_loongarch_ipi_write(size, (uint64_t)addr, val);
-    switch (addr) {
-    case CORE_STATUS_OFF:
-        qemu_log_mask(LOG_GUEST_ERROR, "can not be written");
-        break;
-    case CORE_EN_OFF:
-        s->en = val;
-        break;
-    case CORE_SET_OFF:
-        s->status |= val;
-        if (s->status != 0 && (s->status & s->en) != 0) {
-            qemu_irq_raise(s->irq);
-        }
-        break;
-    case CORE_CLEAR_OFF:
-        s->status &= ~val;
-        if (s->status == 0 && s->en != 0) {
-            qemu_irq_lower(s->irq);
-        }
-        break;
-    case CORE_BUF_20 ... CORE_BUF_38 + 4:
-        index = (addr - CORE_BUF_20) >> 2;
-        s->buf[index] = val;
-        break;
-    case IOCSR_IPI_SEND:
-        ipi_send(val);
-        break;
-    default:
-        qemu_log_mask(LOG_UNIMP, "invalid write: %x", (uint32_t)addr);
-        break;
-    }
-}
-
-static const MemoryRegionOps loongarch_ipi_ops = {
-    .read = loongarch_ipi_readl,
-    .write = loongarch_ipi_writel,
-    .impl.min_access_size = 4,
-    .impl.max_access_size = 4,
-    .valid.min_access_size = 4,
-    .valid.max_access_size = 8,
-    .endianness = DEVICE_LITTLE_ENDIAN,
-};
-
-/* mail send and any send only support writeq */
-static void loongarch_ipi_writeq(void *opaque, hwaddr addr, uint64_t val,
-                                 unsigned size)
-{
-    addr &= 0xfff;
-    switch (addr) {
-    case MAIL_SEND_OFFSET:
-        mail_send(val);
-        break;
-    case ANY_SEND_OFFSET:
-        any_send(val);
-        break;
-    default:
-       break;
-    }
-}
-
-static const MemoryRegionOps loongarch_ipi64_ops = {
-    .write = loongarch_ipi_writeq,
-    .impl.min_access_size = 8,
-    .impl.max_access_size = 8,
-    .valid.min_access_size = 8,
-    .valid.max_access_size = 8,
-    .endianness = DEVICE_LITTLE_ENDIAN,
-};
-
-static void loongarch_ipi_init(Object *obj)
-{
-    int cpu;
-    LoongArchMachineState *lams;
-    LoongArchIPI *s = LOONGARCH_IPI(obj);
-    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    Object *machine = qdev_get_machine();
-    ObjectClass *mc = object_get_class(machine);
-    /* 'lams' should be initialized */
-    if (!strcmp(MACHINE_CLASS(mc)->name, "none")) {
+    lic->parent_realize(dev, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
         return;
     }
-    lams = LOONGARCH_MACHINE(machine);
-    for (cpu = 0; cpu < MAX_IPI_CORE_NUM; cpu++) {
-        memory_region_init_io(&s->ipi_iocsr_mem[cpu], obj, &loongarch_ipi_ops,
-                            &lams->ipi_core[cpu], "loongarch_ipi_iocsr", 0x48);
-        sysbus_init_mmio(sbd, &s->ipi_iocsr_mem[cpu]);
 
-        memory_region_init_io(&s->ipi64_iocsr_mem[cpu], obj, &loongarch_ipi64_ops,
-                              &lams->ipi_core[cpu], "loongarch_ipi64_iocsr", 0x118);
-        sysbus_init_mmio(sbd, &s->ipi64_iocsr_mem[cpu]);
-        qdev_init_gpio_out(DEVICE(obj), &lams->ipi_core[cpu].irq, 1);
+    assert(mc->possible_cpu_arch_ids);
+    id_list = mc->possible_cpu_arch_ids(machine);
+    lics->num_cpu = id_list->len;
+    lics->cpu = g_new0(IPICore, lics->num_cpu);
+    for (i = 0; i < lics->num_cpu; i++) {
+        lics->cpu[i].arch_id = id_list->cpus[i].arch_id;
+        lics->cpu[i].cpu = CPU(id_list->cpus[i].cpu);
+        lics->cpu[i].ipi = lics;
+        qdev_init_gpio_out(dev, &lics->cpu[i].irq, 1);
+    }
+
+    if (kvm_irqchip_in_kernel()) {
+        kvm_ipi_realize(dev, errp);
     }
 }
 
-static const VMStateDescription vmstate_ipi_core = {
-    .name = "ipi-single",
-    .version_id = 0,
-    .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32(status, IPICore),
-        VMSTATE_UINT32(en, IPICore),
-        VMSTATE_UINT32(set, IPICore),
-        VMSTATE_UINT32(clear, IPICore),
-        VMSTATE_UINT32_ARRAY(buf, IPICore, MAX_IPI_MBX_NUM * 2),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-static const VMStateDescription vmstate_loongarch_ipi = {
-    .name = TYPE_LOONGARCH_IPI,
-    .version_id = 0,
-    .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
-        VMSTATE_STRUCT_ARRAY(ipi_core, LoongArchMachineState,
-                             MAX_IPI_CORE_NUM, 0,
-                             vmstate_ipi_core, IPICore),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-static void loongarch_ipi_class_init(ObjectClass *klass, void *data)
+static void loongarch_ipi_reset_hold(Object *obj, ResetType type)
 {
+    int i;
+    LoongarchIPIClass *lic = LOONGARCH_IPI_GET_CLASS(obj);
+    LoongsonIPICommonState *lics = LOONGSON_IPI_COMMON(obj);
+    IPICore *core;
+
+    if (lic->parent_phases.hold) {
+        lic->parent_phases.hold(obj, type);
+    }
+
+    for (i = 0; i < lics->num_cpu; i++) {
+        core = lics->cpu + i;
+        /* IPI with targeted CPU available however not present */
+        if (!core->cpu) {
+            continue;
+        }
+
+        core->status = 0;
+        core->en = 0;
+        core->set = 0;
+        core->clear = 0;
+        memset(core->buf, 0, sizeof(core->buf));
+    }
+
+    if (kvm_irqchip_in_kernel()) {
+        kvm_ipi_put(obj, 0);
+    }
+}
+
+static void loongarch_ipi_cpu_plug(HotplugHandler *hotplug_dev,
+                                   DeviceState *dev, Error **errp)
+{
+    LoongsonIPICommonState *lics = LOONGSON_IPI_COMMON(hotplug_dev);
+    Object *obj = OBJECT(dev);
+    IPICore *core;
+    int index;
+
+    if (!object_dynamic_cast(obj, TYPE_LOONGARCH_CPU)) {
+        warn_report("LoongArch extioi: Invalid %s device type",
+                                       object_get_typename(obj));
+        return;
+    }
+
+    core = loongarch_ipi_get_cpu(lics, dev);
+    if (!core) {
+        return;
+    }
+
+    core->cpu = CPU(dev);
+    index = core - lics->cpu;
+
+    /* connect ipi irq to cpu irq */
+    qdev_connect_gpio_out(DEVICE(lics), index, qdev_get_gpio_in(dev, IRQ_IPI));
+}
+
+static void loongarch_ipi_cpu_unplug(HotplugHandler *hotplug_dev,
+                                     DeviceState *dev, Error **errp)
+{
+    LoongsonIPICommonState *lics = LOONGSON_IPI_COMMON(hotplug_dev);
+    Object *obj = OBJECT(dev);
+    IPICore *core;
+
+    if (!object_dynamic_cast(obj, TYPE_LOONGARCH_CPU)) {
+        warn_report("LoongArch extioi: Invalid %s device type",
+                                       object_get_typename(obj));
+        return;
+    }
+
+    core = loongarch_ipi_get_cpu(lics, dev);
+    if (!core) {
+        return;
+    }
+
+    core->cpu = NULL;
+}
+
+static int loongarch_ipi_pre_save(void *opaque)
+{
+    if (kvm_irqchip_in_kernel()) {
+        return kvm_ipi_get(opaque);
+    }
+
+    return 0;
+}
+
+static int loongarch_ipi_post_load(void *opaque, int version_id)
+{
+    if (kvm_irqchip_in_kernel()) {
+        return kvm_ipi_put(opaque, version_id);
+    }
+
+    return 0;
+}
+
+static void loongarch_ipi_class_init(ObjectClass *klass, const void *data)
+{
+    LoongsonIPICommonClass *licc = LOONGSON_IPI_COMMON_CLASS(klass);
+    HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(klass);
+    LoongarchIPIClass *lic = LOONGARCH_IPI_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->vmsd = &vmstate_loongarch_ipi;
+    device_class_set_parent_realize(dc, loongarch_ipi_realize,
+                                    &lic->parent_realize);
+    resettable_class_set_parent_phases(rc, NULL, loongarch_ipi_reset_hold,
+                                       NULL, &lic->parent_phases);
+    licc->get_iocsr_as = get_iocsr_as;
+    licc->cpu_by_arch_id = loongarch_cpu_by_arch_id;
+    hc->plug = loongarch_ipi_cpu_plug;
+    hc->unplug = loongarch_ipi_cpu_unplug;
+    licc->pre_save = loongarch_ipi_pre_save;
+    licc->post_load = loongarch_ipi_post_load;
 }
 
-static const TypeInfo loongarch_ipi_info = {
-    .name          = TYPE_LOONGARCH_IPI,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(LoongArchIPI),
-    .instance_init = loongarch_ipi_init,
-    .class_init    = loongarch_ipi_class_init,
+static const TypeInfo loongarch_ipi_types[] = {
+    {
+        .name               = TYPE_LOONGARCH_IPI,
+        .parent             = TYPE_LOONGSON_IPI_COMMON,
+        .instance_size      = sizeof(LoongarchIPIState),
+        .class_size         = sizeof(LoongarchIPIClass),
+        .class_init         = loongarch_ipi_class_init,
+        .interfaces         = (const InterfaceInfo[]) {
+            { TYPE_HOTPLUG_HANDLER },
+            { }
+        },
+    }
 };
 
-static void loongarch_ipi_register_types(void)
-{
-    type_register_static(&loongarch_ipi_info);
-}
-
-type_init(loongarch_ipi_register_types)
+DEFINE_TYPES(loongarch_ipi_types)

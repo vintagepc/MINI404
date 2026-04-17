@@ -8,7 +8,7 @@
  */
 
 /* The controller can support a variety of different displays, but we only
-   implement one.  Most of the commends relating to brightness and geometry
+   implement one.  Most of the commands relating to brightness and geometry
    setup are ignored. */
 
 #include "qemu/osdep.h"
@@ -281,7 +281,7 @@ static const VMStateDescription vmstate_ssd0303 = {
     .name = "ssd0303_oled",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32(row, ssd0303_state),
         VMSTATE_INT32(col, ssd0303_state),
         VMSTATE_INT32(start_line, ssd0303_state),
@@ -311,7 +311,7 @@ static void ssd0303_realize(DeviceState *dev, Error **errp)
     qemu_console_resize(s->con, 96 * MAGNIFY, 16 * MAGNIFY);
 }
 
-static void ssd0303_class_init(ObjectClass *klass, void *data)
+static void ssd0303_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);

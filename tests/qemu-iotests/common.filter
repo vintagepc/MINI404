@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (C) 2009 Red Hat, Inc.
+# Copyright Red Hat
 # Copyright (c) 2000-2001 Silicon Graphics, Inc.  All Rights Reserved.
 #
 # This program is free software; you can redistribute it and/or
@@ -74,7 +74,7 @@ _filter_qemu_io()
 {
     _filter_win32 | \
     gsed -e "s/[0-9]* ops\; [0-9/:. sec]* ([0-9/.inf]* [EPTGMKiBbytes]*\/sec and [0-9/.inf]* ops\/sec)/X ops\; XX:XX:XX.X (XXX YYY\/sec and XXX ops\/sec)/" \
-        -e "s/: line [0-9][0-9]*:  *[0-9][0-9]*\( Aborted\| Killed\)/:\1/" \
+        -e "s/: line [0-9][0-9]*:  *[0-9][0-9]*\( Aborted\| Killed\) \{2,\}/:\1 /" \
         -e "s/qemu-io> //g"
 }
 
@@ -84,6 +84,12 @@ _filter_qemu()
     gsed -e "s#\\(^\\|(qemu) \\)$(basename $QEMU_PROG):#\1QEMU_PROG:#" \
         -e 's#^QEMU [0-9]\+\.[0-9]\+\.[0-9]\+ monitor#QEMU X.Y.Z monitor#' \
         -e $'s#\r##' # QEMU monitor uses \r\n line endings
+}
+
+# replace occurrences of QEMU_IMG_PROG with "qemu-img"
+_filter_qemu_img()
+{
+    sed -e "s#$QEMU_IMG_PROG#qemu-img#g"
 }
 
 # replace problematic QMP output like timestamps
@@ -131,7 +137,6 @@ _filter_img_create_filenames()
         -e "s#$SOCK_DIR#SOCK_DIR#g" \
         -e 's#SOCK_DIR/fuse-#TEST_DIR/#g' \
         -e "s#$IMGFMT#IMGFMT#g" \
-        -e 's#nbd:127.0.0.1:[0-9]\\+#TEST_DIR/t.IMGFMT#g' \
         -e 's#nbd+unix:///\??socket=SOCK_DIR/nbd#TEST_DIR/t.IMGFMT#g'
 }
 
@@ -177,7 +182,7 @@ _do_filter_img_create()
             -e 's/^\(fmt\)/0-\1/' \
             -e 's/^\(size\)/1-\1/' \
             -e 's/^\(backing\)/2-\1/' \
-            -e 's/^\(data_file\)/3-\1/' \
+            -e 's/^\(\(keep_\)\?data_file\)/3-\1/' \
             -e 's/^\(encryption\)/4-\1/' \
             -e 's/^\(preallocation\)/8-\1/' \
         | LC_ALL=C sort \
@@ -223,12 +228,13 @@ _filter_img_info()
 
     discard=0
     regex_json_spec_start='^ *"format-specific": \{'
+    regex_json_child_start='^ *"children": \['
+    regex_json_limit_start='^ *"limits": \{'
     gsed -e "s#$REMOTE_TEST_DIR#TEST_DIR#g" \
         -e "s#$IMGPROTO:$TEST_DIR#TEST_DIR#g" \
         -e "s#$TEST_DIR#TEST_DIR#g" \
         -e "s#$SOCK_DIR#SOCK_DIR#g" \
         -e "s#$IMGFMT#IMGFMT#g" \
-        -e 's#nbd://127.0.0.1:[0-9]\\+$#TEST_DIR/t.IMGFMT#g' \
         -e 's#nbd+unix:///\??socket=SOCK_DIR/nbd#TEST_DIR/t.IMGFMT#g' \
         -e 's#SOCK_DIR/fuse-#TEST_DIR/#g' \
         -e "/encrypted: yes/d" \
@@ -251,20 +257,25 @@ _filter_img_info()
         -e 's/\(compression type: \)\(zlib\|zstd\)/\1COMPRESSION_TYPE/' \
         -e "s/uuid: [-a-f0-9]\\+/uuid: 00000000-0000-0000-0000-000000000000/" | \
     while IFS='' read -r line; do
-        if [[ $format_specific == 1 ]]; then
-            discard=0
-        elif [[ $line == "Format specific information:" ]]; then
-            discard=1
-        elif [[ $line =~ $regex_json_spec_start ]]; then
-            discard=2
-            regex_json_spec_end="^${line%%[^ ]*}\\},? *$"
+        if [[ $discard == 0 ]]; then
+            if [[ $format_specific == 0 && $line == "Format specific information:" ]]; then
+                discard=1
+            elif [[ $line =~ "Child node '/" ]]; then
+                discard=1
+            elif [[ $line =~ $regex_json_spec_start || $line =~ $regex_json_limit_start ]]; then
+                discard=2
+                regex_json_end="^${line%%[^ ]*}\\},? *$"
+            elif [[ $line =~ $regex_json_child_start ]]; then
+                discard=2
+                regex_json_end="^${line%%[^ ]*}\\],? *$"
+            fi
         fi
         if [[ $discard == 0 ]]; then
             echo "$line"
         elif [[ $discard == 1 && ! $line ]]; then
             echo
             discard=0
-        elif [[ $discard == 2 && $line =~ $regex_json_spec_end ]]; then
+        elif [[ $discard == 2 && $line =~ $regex_json_end ]]; then
             discard=0
         fi
     done

@@ -6,13 +6,14 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/intc/loongarch_pch_msi.h"
 #include "hw/intc/loongarch_pch_pic.h"
 #include "hw/pci/msi.h"
 #include "hw/misc/unimp.h"
 #include "migration/vmstate.h"
+#include "system/kvm.h"
 #include "trace.h"
 
 static uint64_t loongarch_msi_mem_read(void *opaque, hwaddr addr, unsigned size)
@@ -26,13 +27,22 @@ static void loongarch_msi_mem_write(void *opaque, hwaddr addr,
     LoongArchPCHMSI *s = (LoongArchPCHMSI *)opaque;
     int irq_num;
 
+    if (kvm_irqchip_in_kernel()) {
+        MSIMessage msg;
+
+        msg.address = addr;
+        msg.data = val;
+        kvm_irqchip_send_msi(kvm_state, msg);
+        return;
+    }
+
     /*
      * vector number is irq number from upper extioi intc
      * need subtract irq base to get msi vector offset
      */
     irq_num = (val & 0xff) - s->irq_base;
     trace_loongarch_msi_set_irq(irq_num);
-    assert(irq_num < PCH_MSI_IRQ_NUM);
+    assert(irq_num < s->irq_num);
     qemu_set_irq(s->pch_msi_irq[irq_num], 1);
 }
 
@@ -42,11 +52,24 @@ static const MemoryRegionOps loongarch_pch_msi_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
-static void pch_msi_irq_handler(void *opaque, int irq, int level)
+static void loongarch_pch_msi_realize(DeviceState *dev, Error **errp)
 {
-    LoongArchPCHMSI *s = LOONGARCH_PCH_MSI(opaque);
+    LoongArchPCHMSI *s = LOONGARCH_PCH_MSI(dev);
 
-    qemu_set_irq(s->pch_msi_irq[irq], level);
+    if (!s->irq_num || s->irq_num  > PCH_MSI_IRQ_NUM) {
+        error_setg(errp, "Invalid 'msi_irq_num'");
+        return;
+    }
+
+    s->pch_msi_irq = g_new(qemu_irq, s->irq_num);
+    qdev_init_gpio_out(dev, s->pch_msi_irq, s->irq_num);
+}
+
+static void loongarch_pch_msi_unrealize(DeviceState *dev)
+{
+    LoongArchPCHMSI *s = LOONGARCH_PCH_MSI(dev);
+
+    g_free(s->pch_msi_irq);
 }
 
 static void loongarch_pch_msi_init(Object *obj)
@@ -59,19 +82,19 @@ static void loongarch_pch_msi_init(Object *obj)
     sysbus_init_mmio(sbd, &s->msi_mmio);
     msi_nonbroken = true;
 
-    qdev_init_gpio_out(DEVICE(obj), s->pch_msi_irq, PCH_MSI_IRQ_NUM);
-    qdev_init_gpio_in(DEVICE(obj), pch_msi_irq_handler, PCH_MSI_IRQ_NUM);
 }
 
-static Property loongarch_msi_properties[] = {
+static const Property loongarch_msi_properties[] = {
     DEFINE_PROP_UINT32("msi_irq_base", LoongArchPCHMSI, irq_base, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    DEFINE_PROP_UINT32("msi_irq_num",  LoongArchPCHMSI, irq_num, 0),
 };
 
-static void loongarch_pch_msi_class_init(ObjectClass *klass, void *data)
+static void loongarch_pch_msi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    dc->realize = loongarch_pch_msi_realize;
+    dc->unrealize = loongarch_pch_msi_unrealize;
     device_class_set_props(dc, loongarch_msi_properties);
 }
 

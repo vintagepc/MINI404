@@ -30,8 +30,8 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
-#include "sysemu/runstate.h"
-#include "sysemu/sysemu.h"
+#include "system/runstate.h"
+#include "system/system.h"
 #include "qapi/qmp/qerror.h"
 #include "qemu/error-report.h"
 #include "qemu/iov.h"
@@ -41,9 +41,9 @@
 #include <usbredirparser.h>
 #include <usbredirfilter.h>
 
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
-#include "hw/usb.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
+#include "hw/usb/usb.h"
 #include "migration/qemu-file-types.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
@@ -113,7 +113,7 @@ struct PacketIdQueue {
 struct USBRedirDevice {
     USBDevice dev;
     /* Properties */
-    CharBackend cs;
+    CharFrontend cs;
     bool enable_streams;
     bool suppress_remote_wake;
     bool in_write;
@@ -278,7 +278,7 @@ static gboolean usbredir_write_unblocked(void *do_not_use, GIOCondition cond,
     dev->watch = 0;
     usbredirparser_do_write(dev->parser);
 
-    return FALSE;
+    return G_SOURCE_REMOVE;
 }
 
 static int usbredir_write(void *priv, uint8_t *data, int count)
@@ -471,7 +471,7 @@ static int bufp_alloc(USBRedirDevice *dev, uint8_t *data, uint16_t len,
         DPRINTF("bufpq overflow, dropping packets ep %02X\n", ep);
         dev->endpoint[EP2I(ep)].bufpq_dropping_packets = 1;
     }
-    /* Since we're interupting the stream anyways, drop enough packets to get
+    /* Since we're interrupting the stream anyways, drop enough packets to get
        back to our target buffer size */
     if (dev->endpoint[EP2I(ep)].bufpq_dropping_packets) {
         if (dev->endpoint[EP2I(ep)].bufpq_size >
@@ -1403,7 +1403,7 @@ static void usbredir_vm_state_change(void *priv, bool running, RunState state)
 {
     USBRedirDevice *dev = priv;
 
-    if (state == RUN_STATE_RUNNING && dev->parser != NULL) {
+    if (running && dev->parser != NULL) {
         usbredirparser_do_write(dev->parser); /* Flush any pending writes */
     }
 }
@@ -1441,8 +1441,10 @@ static void usbredir_realize(USBDevice *udev, Error **errp)
         }
     }
 
-    dev->chardev_close_bh = qemu_bh_new(usbredir_chardev_close_bh, dev);
-    dev->device_reject_bh = qemu_bh_new(usbredir_device_reject_bh, dev);
+    dev->chardev_close_bh = qemu_bh_new_guarded(usbredir_chardev_close_bh, dev,
+                                                &DEVICE(dev)->mem_reentrancy_guard);
+    dev->device_reject_bh = qemu_bh_new_guarded(usbredir_device_reject_bh, dev,
+                                                &DEVICE(dev)->mem_reentrancy_guard);
     dev->attach_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, usbredir_do_attach, dev);
 
     packet_id_queue_init(&dev->cancelled, dev, "cancelled");
@@ -2371,7 +2373,7 @@ static const VMStateDescription usbredir_bulk_receiving_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = usbredir_bulk_receiving_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(bulk_receiving_started, struct endp_data),
         VMSTATE_END_OF_LIST()
     }
@@ -2389,7 +2391,7 @@ static const VMStateDescription usbredir_stream_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = usbredir_stream_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(max_streams, struct endp_data),
         VMSTATE_END_OF_LIST()
     }
@@ -2399,7 +2401,7 @@ static const VMStateDescription usbredir_ep_vmstate = {
     .name = "usb-redir-ep",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(type, struct endp_data),
         VMSTATE_UINT8(interval, struct endp_data),
         VMSTATE_UINT8(interface, struct endp_data),
@@ -2422,7 +2424,7 @@ static const VMStateDescription usbredir_ep_vmstate = {
         VMSTATE_INT32(bufpq_target_size, struct endp_data),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &usbredir_bulk_receiving_vmstate,
         &usbredir_stream_vmstate,
         NULL
@@ -2479,7 +2481,7 @@ static const VMStateDescription usbredir_ep_packet_id_queue_vmstate = {
     .name = "usb-redir-packet-id-queue",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         {
             .name         = "queue",
             .version_id   = 0,
@@ -2499,7 +2501,7 @@ static const VMStateDescription usbredir_device_info_vmstate = {
     .name = "usb-redir-device-info",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(speed, struct usb_redir_device_connect_header),
         VMSTATE_UINT8(device_class, struct usb_redir_device_connect_header),
         VMSTATE_UINT8(device_subclass, struct usb_redir_device_connect_header),
@@ -2518,7 +2520,7 @@ static const VMStateDescription usbredir_interface_info_vmstate = {
     .name = "usb-redir-interface-info",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(interface_count,
                        struct usb_redir_interface_info_header),
         VMSTATE_UINT8_ARRAY(interface,
@@ -2541,7 +2543,7 @@ static const VMStateDescription usbredir_vmstate = {
     .minimum_version_id = 1,
     .pre_save = usbredir_pre_save,
     .post_load = usbredir_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_USB_DEVICE(dev, USBRedirDevice),
         VMSTATE_TIMER_PTR(attach_timer, USBRedirDevice),
         {
@@ -2571,17 +2573,16 @@ static const VMStateDescription usbredir_vmstate = {
     }
 };
 
-static Property usbredir_properties[] = {
+static const Property usbredir_properties[] = {
     DEFINE_PROP_CHR("chardev", USBRedirDevice, cs),
     DEFINE_PROP_UINT8("debug", USBRedirDevice, debug, usbredirparser_warning),
     DEFINE_PROP_STRING("filter", USBRedirDevice, filter_str),
     DEFINE_PROP_BOOL("streams", USBRedirDevice, enable_streams, true),
     DEFINE_PROP_BOOL("suppress-remote-wake", USBRedirDevice,
                      suppress_remote_wake, true),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void usbredir_class_initfn(ObjectClass *klass, void *data)
+static void usbredir_class_initfn(ObjectClass *klass, const void *data)
 {
     USBDeviceClass *uc = USB_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);

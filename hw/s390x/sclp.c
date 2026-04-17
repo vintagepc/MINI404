@@ -15,18 +15,21 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
+#include "system/memory.h"
 #include "hw/s390x/sclp.h"
 #include "hw/s390x/event-facility.h"
 #include "hw/s390x/s390-pci-bus.h"
 #include "hw/s390x/ipl.h"
+#include "hw/s390x/cpu-topology.h"
+#include "hw/s390x/s390-virtio-ccw.h"
 
-static inline SCLPDevice *get_sclp_device(void)
+static SCLPDevice *get_sclp_device(void)
 {
     static SCLPDevice *sclp;
 
     if (!sclp) {
-        sclp = SCLP(object_resolve_path_type("", TYPE_SCLP, NULL));
+        sclp = S390_CCW_MACHINE(qdev_get_machine())->sclp;
     }
     return sclp;
 }
@@ -107,8 +110,7 @@ static void read_SCP_info(SCLPDevice *sclp, SCCB *sccb)
     ReadInfo *read_info = (ReadInfo *) sccb;
     MachineState *machine = MACHINE(qdev_get_machine());
     int cpu_count;
-    int rnsize, rnmax;
-    IplParameterBlock *ipib = s390_ipl_get_iplb();
+    int rnmax;
     int required_len = SCCB_REQ_LEN(ReadInfo, machine->possible_cpus->len);
     int offset_cpu = s390_has_feat(S390_FEAT_EXTENDED_LENGTH_SCCB) ?
                      offsetof(ReadInfo, entries) :
@@ -121,6 +123,10 @@ static void read_SCP_info(SCLPDevice *sclp, SCCB *sccb)
         }
         sccb->h.response_code = cpu_to_be16(SCLP_RC_INSUFFICIENT_SCCB_LENGTH);
         return;
+    }
+
+    if (s390_has_topology()) {
+        read_info->stsi_parm = SCLP_READ_SCP_INFO_MNEST;
     }
 
     /* CPU information */
@@ -147,17 +153,14 @@ static void read_SCP_info(SCLPDevice *sclp, SCCB *sccb)
 
     read_info->mha_pow = s390_get_mha_pow();
     read_info->hmfai = cpu_to_be32(s390_get_hmfai());
+    read_info->rnsize = 1;
 
-    rnsize = 1 << (sclp->increment_size - 20);
-    if (rnsize <= 128) {
-        read_info->rnsize = rnsize;
-    } else {
-        read_info->rnsize = 0;
-        read_info->rnsize2 = cpu_to_be32(rnsize);
-    }
-
-    /* we don't support standby memory, maxram_size is never exposed */
-    rnmax = machine->ram_size >> sclp->increment_size;
+    /*
+     * We don't support standby memory. maxram_size is used for sizing the
+     * memory device region, which is not exposed through SCLP but through
+     * diag500.
+     */
+    rnmax = machine->ram_size >> 20;
     if (rnmax < 0x10000) {
         read_info->rnmax = cpu_to_be16(rnmax);
     } else {
@@ -165,12 +168,8 @@ static void read_SCP_info(SCLPDevice *sclp, SCCB *sccb)
         read_info->rnmax2 = cpu_to_be64(rnmax);
     }
 
-    if (ipib && ipib->flags & DIAG308_FLAGS_LP_VALID) {
-        memcpy(&read_info->loadparm, &ipib->loadparm,
-               sizeof(read_info->loadparm));
-    } else {
-        s390_ipl_set_loadparm(read_info->loadparm);
-    }
+    s390_ipl_convert_loadparm((char *)S390_CCW_MACHINE(machine)->loadparm,
+                                read_info->loadparm);
 
     sccb->h.response_code = cpu_to_be16(SCLP_RC_NORMAL_READ_COMPLETION);
 }
@@ -264,9 +263,9 @@ static void sclp_execute(SCLPDevice *sclp, SCCB *sccb, uint32_t code)
  * service_interrupt call.
  */
 #define SCLP_PV_DUMMY_ADDR 0x4000
-int sclp_service_call_protected(CPUS390XState *env, uint64_t sccb,
-                                uint32_t code)
+int sclp_service_call_protected(S390CPU *cpu, uint64_t sccb, uint32_t code)
 {
+    CPUS390XState *env = &cpu->env;
     SCLPDevice *sclp = get_sclp_device();
     SCLPDeviceClass *sclp_c = SCLP_GET_CLASS(sclp);
     SCCBHeader header;
@@ -291,18 +290,22 @@ out_write:
     return 0;
 }
 
-int sclp_service_call(CPUS390XState *env, uint64_t sccb, uint32_t code)
+int sclp_service_call(S390CPU *cpu, uint64_t sccb, uint32_t code)
 {
+    CPUS390XState *env = &cpu->env;
     SCLPDevice *sclp = get_sclp_device();
     SCLPDeviceClass *sclp_c = SCLP_GET_CLASS(sclp);
     SCCBHeader header;
     g_autofree SCCB *work_sccb = NULL;
+    AddressSpace *as = CPU(cpu)->as;
+    const MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED;
+    MemTxResult ret;
 
     /* first some basic checks on program checks */
     if (env->psw.mask & PSW_MASK_PSTATE) {
         return -PGM_PRIVILEGED;
     }
-    if (cpu_physical_memory_is_io(sccb)) {
+    if (address_space_is_io(CPU(cpu)->as, sccb)) {
         return -PGM_ADDRESSING;
     }
     if ((sccb & ~0x1fffUL) == 0 || (sccb & ~0x1fffUL) == env->psa
@@ -311,7 +314,10 @@ int sclp_service_call(CPUS390XState *env, uint64_t sccb, uint32_t code)
     }
 
     /* the header contains the actual length of the sccb */
-    cpu_physical_memory_read(sccb, &header, sizeof(SCCBHeader));
+    ret = address_space_read(as, sccb, attrs, &header, sizeof(SCCBHeader));
+    if (ret != MEMTX_OK) {
+        return -PGM_ADDRESSING;
+    }
 
     /* Valid sccb sizes */
     if (be16_to_cpu(header.length) < sizeof(SCCBHeader)) {
@@ -324,7 +330,11 @@ int sclp_service_call(CPUS390XState *env, uint64_t sccb, uint32_t code)
      * the host has checked the values
      */
     work_sccb = g_malloc0(be16_to_cpu(header.length));
-    cpu_physical_memory_read(sccb, work_sccb, be16_to_cpu(header.length));
+    ret = address_space_read(as, sccb, attrs,
+                            work_sccb, be16_to_cpu(header.length));
+    if (ret != MEMTX_OK) {
+        return -PGM_ADDRESSING;
+    }
 
     if (!sclp_command_code_valid(code)) {
         work_sccb->h.response_code = cpu_to_be16(SCLP_RC_INVALID_SCLP_COMMAND);
@@ -338,8 +348,11 @@ int sclp_service_call(CPUS390XState *env, uint64_t sccb, uint32_t code)
 
     sclp_c->execute(sclp, work_sccb, code);
 out_write:
-    cpu_physical_memory_write(sccb, work_sccb,
-                              be16_to_cpu(work_sccb->h.length));
+    ret = address_space_write(as, sccb, attrs,
+                              work_sccb, be16_to_cpu(header.length));
+    if (ret != MEMTX_OK) {
+        return -PGM_PROTECTION;
+    }
 
     sclp_c->service_interrupt(sclp, sccb);
 
@@ -372,22 +385,9 @@ void sclp_service_interrupt(uint32_t sccb)
 }
 
 /* qemu object creation and initialization functions */
-
-void s390_sclp_init(void)
-{
-    Object *new = object_new(TYPE_SCLP);
-
-    object_property_add_child(qdev_get_machine(), TYPE_SCLP, new);
-    object_unref(new);
-    qdev_realize(DEVICE(new), NULL, &error_fatal);
-}
-
 static void sclp_realize(DeviceState *dev, Error **errp)
 {
-    MachineState *machine = MACHINE(qdev_get_machine());
     SCLPDevice *sclp = SCLP(dev);
-    uint64_t hw_limit;
-    int ret;
 
     /*
      * qdev_device_add searches the sysbus for TYPE_SCLP_EVENTS_BUS. As long
@@ -397,33 +397,6 @@ static void sclp_realize(DeviceState *dev, Error **errp)
     if (!sysbus_realize(SYS_BUS_DEVICE(sclp->event_facility), errp)) {
         return;
     }
-
-    ret = s390_set_memory_limit(machine->maxram_size, &hw_limit);
-    if (ret == -E2BIG) {
-        error_setg(errp, "host supports a maximum of %" PRIu64 " GB",
-                   hw_limit / GiB);
-    } else if (ret) {
-        error_setg(errp, "setting the guest size failed");
-    }
-}
-
-static void sclp_memory_init(SCLPDevice *sclp)
-{
-    MachineState *machine = MACHINE(qdev_get_machine());
-    MachineClass *machine_class = MACHINE_GET_CLASS(qdev_get_machine());
-    ram_addr_t initial_mem = machine->ram_size;
-    int increment_size = 20;
-
-    /* The storage increment size is a multiple of 1M and is a power of 2.
-     * For some machine types, the number of storage increments must be
-     * MAX_STORAGE_INCREMENTS or fewer.
-     * The variable 'increment_size' is an exponent of 2 that can be
-     * used to calculate the size (in bytes) of an increment. */
-    while (machine_class->fixup_ram_size != NULL &&
-           (initial_mem >> increment_size) > MAX_STORAGE_INCREMENTS) {
-        increment_size++;
-    }
-    sclp->increment_size = increment_size;
 }
 
 static void sclp_init(Object *obj)
@@ -435,11 +408,9 @@ static void sclp_init(Object *obj)
     object_property_add_child(obj, TYPE_SCLP_EVENT_FACILITY, new);
     object_unref(new);
     sclp->event_facility = EVENT_FACILITY(new);
-
-    sclp_memory_init(sclp);
 }
 
-static void sclp_class_init(ObjectClass *oc, void *data)
+static void sclp_class_init(ObjectClass *oc, const void *data)
 {
     SCLPDeviceClass *sc = SCLP_CLASS(oc);
     DeviceClass *dc = DEVICE_CLASS(oc);

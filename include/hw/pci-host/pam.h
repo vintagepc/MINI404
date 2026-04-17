@@ -50,7 +50,7 @@
  * 0xf0000 - 0xfffff System BIOS Area Memory Segments
  */
 
-#include "exec/memory.h"
+#include "system/memory.h"
 
 #define SMRAM_C_BASE    0xa0000
 #define SMRAM_C_END     0xc0000
@@ -87,8 +87,9 @@ typedef struct PAMMemoryRegion {
     unsigned current;
 } PAMMemoryRegion;
 
-void init_pam(DeviceState *dev, MemoryRegion *ram, MemoryRegion *system,
-              MemoryRegion *pci, PAMMemoryRegion *mem, uint32_t start, uint32_t size);
+void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram,
+              MemoryRegion *system, MemoryRegion *pci,
+              uint32_t start, uint32_t size);
 void pam_update(PAMMemoryRegion *mem, int idx, uint8_t val);
 
 #endif /* QEMU_PAM_H */

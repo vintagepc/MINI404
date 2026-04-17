@@ -7,15 +7,17 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "hw/m68k/mcf.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
+
+#define FIFO_DEPTH 4
 
 struct mcf_uart_state {
     SysBusDevice parent_obj;
@@ -27,14 +29,14 @@ struct mcf_uart_state {
     uint8_t imr;
     uint8_t bg1;
     uint8_t bg2;
-    uint8_t fifo[4];
+    uint8_t fifo[FIFO_DEPTH];
     uint8_t tb;
     int current_mr;
     int fifo_len;
     int tx_enabled;
     int rx_enabled;
     qemu_irq irq;
-    CharBackend chr;
+    CharFrontend chr;
 };
 
 #define TYPE_MCF_UART "mcf-uart"
@@ -247,14 +249,16 @@ static void mcf_uart_reset(DeviceState *dev)
 static void mcf_uart_push_byte(mcf_uart_state *s, uint8_t data)
 {
     /* Break events overwrite the last byte if the fifo is full.  */
-    if (s->fifo_len == 4)
+    if (s->fifo_len == FIFO_DEPTH) {
         s->fifo_len--;
+    }
 
     s->fifo[s->fifo_len] = data;
     s->fifo_len++;
     s->sr |= MCF_UART_RxRDY;
-    if (s->fifo_len == 4)
+    if (s->fifo_len == FIFO_DEPTH) {
         s->sr |= MCF_UART_FFULL;
+    }
 
     mcf_uart_update(s);
 }
@@ -277,14 +281,16 @@ static int mcf_uart_can_receive(void *opaque)
 {
     mcf_uart_state *s = (mcf_uart_state *)opaque;
 
-    return s->rx_enabled && (s->sr & MCF_UART_FFULL) == 0;
+    return s->rx_enabled ? FIFO_DEPTH - s->fifo_len : 0;
 }
 
 static void mcf_uart_receive(void *opaque, const uint8_t *buf, int size)
 {
     mcf_uart_state *s = (mcf_uart_state *)opaque;
 
-    mcf_uart_push_byte(s, buf[0]);
+    for (int i = 0; i < size; i++) {
+        mcf_uart_push_byte(s, buf[i]);
+    }
 }
 
 static const MemoryRegionOps mcf_uart_ops = {
@@ -312,17 +318,16 @@ static void mcf_uart_realize(DeviceState *dev, Error **errp)
                              mcf_uart_event, NULL, s, NULL, true);
 }
 
-static Property mcf_uart_properties[] = {
+static const Property mcf_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", mcf_uart_state, chr),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void mcf_uart_class_init(ObjectClass *oc, void *data)
+static void mcf_uart_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     dc->realize = mcf_uart_realize;
-    dc->reset = mcf_uart_reset;
+    device_class_set_legacy_reset(dc, mcf_uart_reset);
     device_class_set_props(dc, mcf_uart_properties);
     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
 }
@@ -342,25 +347,26 @@ static void mcf_uart_register(void)
 
 type_init(mcf_uart_register)
 
-void *mcf_uart_init(qemu_irq irq, Chardev *chrdrv)
+DeviceState *mcf_uart_create(qemu_irq irq, Chardev *chrdrv)
 {
-    DeviceState  *dev;
+    DeviceState *dev;
 
     dev = qdev_new(TYPE_MCF_UART);
     if (chrdrv) {
         qdev_prop_set_chr(dev, "chardev", chrdrv);
     }
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-
     sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, irq);
 
     return dev;
 }
 
-void mcf_uart_mm_init(hwaddr base, qemu_irq irq, Chardev *chrdrv)
+DeviceState *mcf_uart_create_mmap(hwaddr base, qemu_irq irq, Chardev *chrdrv)
 {
-    DeviceState  *dev;
+    DeviceState *dev;
 
-    dev = mcf_uart_init(irq, chrdrv);
+    dev = mcf_uart_create(irq, chrdrv);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
+
+    return dev;
 }

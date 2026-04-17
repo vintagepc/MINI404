@@ -24,7 +24,7 @@ class QMPExampleMarkersLexer(RegexLexer):
         'root': [
             (r'-> ', token.Generic.Prompt),
             (r'<- ', token.Generic.Prompt),
-            (r' ?\.{3} ?', token.Generic.Prompt),
+            (r'\.{3}( .* \.{3})?', token.Comment.Multiline),
         ]
     }
 
@@ -41,3 +41,8 @@ def setup(sphinx):
         sphinx.add_lexer('QMP', QMPExampleLexer)
     except errors.VersionRequirementError:
         sphinx.add_lexer('QMP', QMPExampleLexer())
+
+    return dict(
+        parallel_read_safe = True,
+        parallel_write_safe = True
+    )

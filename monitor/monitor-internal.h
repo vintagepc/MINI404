@@ -28,10 +28,10 @@
 #include "chardev/char-fe.h"
 #include "monitor/monitor.h"
 #include "qapi/qapi-types-control.h"
-#include "qapi/qmp/dispatch.h"
-#include "qapi/qmp/json-parser.h"
+#include "qapi/qmp-registry.h"
+#include "qobject/json-parser.h"
 #include "qemu/readline.h"
-#include "sysemu/iothread.h"
+#include "system/iothread.h"
 
 /*
  * Supported types:
@@ -93,8 +93,7 @@ typedef struct HMPCommand {
 } HMPCommand;
 
 struct Monitor {
-    CharBackend chr;
-    int reset_seen;
+    CharFrontend chr;
     int suspend_cnt;            /* Needs to be accessed atomically */
     bool is_qmp;
     bool skip_flush;
@@ -115,8 +114,8 @@ struct Monitor {
     QLIST_HEAD(, mon_fd_t) fds;
     GString *outbuf;
     guint out_watch;
-    /* Read under either BQL or mon_lock, written with BQL+mon_lock.  */
     int mux_out;
+    int reset_seen;
 };
 
 struct MonitorHMP {
@@ -166,13 +165,9 @@ typedef QTAILQ_HEAD(MonitorList, Monitor) MonitorList;
 extern IOThread *mon_iothread;
 extern Coroutine *qmp_dispatcher_co;
 extern bool qmp_dispatcher_co_shutdown;
-extern bool qmp_dispatcher_co_busy;
 extern QmpCommandList qmp_commands, qmp_cap_negotiation_commands;
 extern QemuMutex monitor_lock;
 extern MonitorList mon_list;
-extern int mon_refcount;
-
-extern HMPCommand hmp_cmds[];
 
 void monitor_data_init(Monitor *mon, bool is_qmp, bool skip_flush,
                        bool use_io_thread);
@@ -184,10 +179,17 @@ void monitor_fdsets_cleanup(void);
 void qmp_send_response(MonitorQMP *mon, const QDict *rsp);
 void monitor_data_destroy_qmp(MonitorQMP *mon);
 void coroutine_fn monitor_qmp_dispatcher_co(void *data);
+void qmp_dispatcher_co_wake(void);
 
 int get_monitor_def(Monitor *mon, int64_t *pval, const char *name);
-void help_cmd(Monitor *mon, const char *name);
 void handle_hmp_command(MonitorHMP *mon, const char *cmdline);
 int hmp_compare_cmd(const char *name, const char *list);
+
+/*
+ * hmp_cmds_for_target: Return array of HMPCommand entries
+ *
+ * If @info_command is true, return the particular 'info foo' commands array.
+ */
+HMPCommand *hmp_cmds_for_target(bool info_command);
 
 #endif

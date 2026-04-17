@@ -96,7 +96,7 @@ typedef void (*QIOTaskWorker)(QIOTask *task,
  *                         1000,
  *                         myobject_operation_timer,
  *                         task,
- *                         NULL);
+ *                         qio_task_free);
  *    }
  *   </programlisting>
  * </example>
@@ -138,18 +138,17 @@ typedef void (*QIOTaskWorker)(QIOTask *task,
  * the callback func 'myobject_operation_notify' shown
  * earlier to deal with the results.
  *
- * Once this function returns false, object_unref will be called
- * automatically on the task causing it to be released and the
- * ref on QMyObject dropped too.
+ * Once this function returns FALSE, the task will be freed,
+ * causing it release the ref on QMyObject too.
  *
  * The QIOTask module can also be used to perform operations
  * in a background thread context, while still reporting the
  * results in the main event thread. This allows code which
- * cannot easily be rewritten to be asychronous (such as DNS
+ * cannot easily be rewritten to be asynchronous (such as DNS
  * lookups) to be easily run non-blocking. Reporting the
  * results in the main thread context means that the caller
  * typically does not need to be concerned about thread
- * safety wrt the QEMU global mutex.
+ * safety wrt the BQL.
  *
  * For example, the socket_listen() method will block the caller
  * while DNS lookups take place if given a name, instead of IP
@@ -208,8 +207,8 @@ typedef void (*QIOTaskWorker)(QIOTask *task,
  * 'err' attribute in the task object to determine if
  * the operation was successful or not.
  *
- * The returned task will be released when qio_task_complete()
- * is invoked.
+ * The returned task must be released by calling
+ * qio_task_free() when no longer required.
  *
  * Returns: the task struct
  */
@@ -217,6 +216,19 @@ QIOTask *qio_task_new(Object *source,
                       QIOTaskFunc func,
                       gpointer opaque,
                       GDestroyNotify destroy);
+
+/**
+ * qio_task_free:
+ * task: the task object to free
+ *
+ * Free the resources associated with the task. Typically
+ * the qio_task_complete() method will be called immediately
+ * before this to trigger the task callback, however, it is
+ * permissible to free the task in the case of cancellation.
+ * The destroy callback will be used to release the opaque
+ * data provided to qio_task_new().
+ */
+void qio_task_free(QIOTask *task);
 
 /**
  * qio_task_run_in_thread:
@@ -268,8 +280,9 @@ void qio_task_wait_thread(QIOTask *task);
  * qio_task_complete:
  * @task: the task struct
  *
- * Invoke the completion callback for @task and
- * then free its memory.
+ * Invoke the completion callback for @task. This should typically
+ * only be invoked once on a task, and then qio_task_free() used
+ * to free it.
  */
 void qio_task_complete(QIOTask *task);
 

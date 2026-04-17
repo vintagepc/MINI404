@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "qemu/iov.h"
 #include "qemu/sockets.h"
 
@@ -186,7 +187,7 @@ static void test_io(void)
 
        close(sv[0]);
        FD_SET(sv[1], &fds);
-       g_unix_set_fd_nonblocking(sv[1], true, NULL);
+       qemu_set_blocking(sv[1], false, &error_abort);
        r = g_test_rand_int_range(sz / 2, sz);
        setsockopt(sv[1], SOL_SOCKET, SO_SNDBUF, &r, sizeof(r));
 
@@ -197,15 +198,17 @@ static void test_io(void)
                    s = g_test_rand_int_range(0, j - k + 1);
                    r = iov_send(sv[1], iov, niov, k, s);
                    g_assert(memcmp(iov, siov, sizeof(*iov)*niov) == 0);
-                   if (r >= 0) {
-                       k += r;
-                       usleep(g_test_rand_int_range(0, 30));
-                   } else if (errno == EAGAIN) {
-                       select(sv[1]+1, NULL, &fds, NULL, NULL);
-                       continue;
-                   } else {
-                       perror("send");
-                       exit(1);
+                   if (r < 0) {
+                        if (errno == EAGAIN) {
+                            r = 0;
+                        } else {
+                            perror("send");
+                            exit(1);
+                        }
+                   }
+                   k += r;
+                   if (k < j) {
+                        select(sv[1] + 1, NULL, &fds, NULL, NULL);
                    }
                } while(k < j);
            }
@@ -220,7 +223,7 @@ static void test_io(void)
 
        close(sv[1]);
        FD_SET(sv[0], &fds);
-       g_unix_set_fd_nonblocking(sv[0], true, NULL);
+       qemu_set_blocking(sv[0], false, &error_abort);
        r = g_test_rand_int_range(sz / 2, sz);
        setsockopt(sv[0], SOL_SOCKET, SO_RCVBUF, &r, sizeof(r));
        usleep(500000);

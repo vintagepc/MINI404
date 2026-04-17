@@ -42,7 +42,7 @@ static MemoryRegion *virtio_pmem_pci_get_memory_region(MemoryDeviceState *md,
                                                        Error **errp)
 {
     VirtIOPMEMPCI *pci_pmem = VIRTIO_PMEM_PCI(md);
-    VirtIOPMEM *pmem = VIRTIO_PMEM(&pci_pmem->vdev);
+    VirtIOPMEM *pmem = &pci_pmem->vdev;
     VirtIOPMEMClass *vpc = VIRTIO_PMEM_GET_CLASS(pmem);
 
     return vpc->get_memory_region(pmem, errp);
@@ -52,7 +52,7 @@ static uint64_t virtio_pmem_pci_get_plugged_size(const MemoryDeviceState *md,
                                                  Error **errp)
 {
     VirtIOPMEMPCI *pci_pmem = VIRTIO_PMEM_PCI(md);
-    VirtIOPMEM *pmem = VIRTIO_PMEM(&pci_pmem->vdev);
+    VirtIOPMEM *pmem = &pci_pmem->vdev;
     VirtIOPMEMClass *vpc = VIRTIO_PMEM_GET_CLASS(pmem);
     MemoryRegion *mr = vpc->get_memory_region(pmem, errp);
 
@@ -65,12 +65,11 @@ static void virtio_pmem_pci_fill_device_info(const MemoryDeviceState *md,
 {
     VirtioPMEMDeviceInfo *vi = g_new0(VirtioPMEMDeviceInfo, 1);
     VirtIOPMEMPCI *pci_pmem = VIRTIO_PMEM_PCI(md);
-    VirtIOPMEM *pmem = VIRTIO_PMEM(&pci_pmem->vdev);
+    VirtIOPMEM *pmem = &pci_pmem->vdev;
     VirtIOPMEMClass *vpc = VIRTIO_PMEM_GET_CLASS(pmem);
     DeviceState *dev = DEVICE(md);
 
     if (dev->id) {
-        vi->has_id = true;
         vi->id = g_strdup(dev->id);
     }
 
@@ -81,7 +80,7 @@ static void virtio_pmem_pci_fill_device_info(const MemoryDeviceState *md,
     info->type = MEMORY_DEVICE_INFO_KIND_VIRTIO_PMEM;
 }
 
-static void virtio_pmem_pci_class_init(ObjectClass *klass, void *data)
+static void virtio_pmem_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioPCIClass *k = VIRTIO_PCI_CLASS(klass);
@@ -111,13 +110,10 @@ static void virtio_pmem_pci_instance_init(Object *obj)
 static const VirtioPCIDeviceTypeInfo virtio_pmem_pci_info = {
     .base_name             = TYPE_VIRTIO_PMEM_PCI,
     .generic_name          = "virtio-pmem-pci",
+    .parent                = TYPE_VIRTIO_MD_PCI,
     .instance_size = sizeof(VirtIOPMEMPCI),
     .instance_init = virtio_pmem_pci_instance_init,
     .class_init    = virtio_pmem_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
-        { TYPE_MEMORY_DEVICE },
-        { }
-    },
 };
 
 static void virtio_pmem_pci_register_types(void)

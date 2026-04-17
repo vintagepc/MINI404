@@ -25,13 +25,12 @@
 #include "chardev/char-fe.h"
 #include "qemu/sockets.h"
 #include "colo.h"
-#include "sysemu/iothread.h"
+#include "system/iothread.h"
 #include "net/colo-compare.h"
 #include "migration/colo.h"
-#include "migration/migration.h"
 #include "util.h"
 
-#include "block/aio-wait.h"
+#include "qemu/aio-wait.h"
 #include "qemu/coroutine.h"
 
 #define TYPE_COLO_COMPARE "colo-compare"
@@ -89,7 +88,7 @@ static uint32_t max_queue_size;
 typedef struct SendCo {
     Coroutine *co;
     struct CompareState *s;
-    CharBackend *chr;
+    CharFrontend *chr;
     GQueue send_list;
     bool notify_remote_frame;
     bool done;
@@ -109,10 +108,10 @@ struct CompareState {
     char *sec_indev;
     char *outdev;
     char *notify_dev;
-    CharBackend chr_pri_in;
-    CharBackend chr_sec_in;
-    CharBackend chr_out;
-    CharBackend chr_notify_dev;
+    CharFrontend chr_pri_in;
+    CharFrontend chr_sec_in;
+    CharFrontend chr_out;
+    CharFrontend chr_notify_dev;
     SocketReadState pri_rs;
     SocketReadState sec_rs;
     SocketReadState notify_rs;
@@ -189,7 +188,7 @@ static void colo_compare_inconsistency_notify(CompareState *s)
         notify_remote_frame(s);
     } else {
         notifier_list_notify(&colo_compare_notifiers,
-                             migrate_get_current());
+                             NULL);
     }
 }
 
@@ -413,8 +412,7 @@ static void colo_compare_tcp(CompareState *s, Connection *conn)
      * can ensure that the packet's payload is acknowledged by
      * primary and secondary.
     */
-    uint32_t min_ack = conn->pack - conn->sack > 0 ?
-                       conn->sack : conn->pack;
+    uint32_t min_ack = MIN(conn->pack, conn->sack);
 
 pri:
     if (g_queue_is_empty(&conn->primary_list)) {
@@ -1135,22 +1133,17 @@ static void set_max_queue_size(Object *obj, Visitor *v,
                                const char *name, void *opaque,
                                Error **errp)
 {
-    Error *local_err = NULL;
     uint64_t value;
 
-    visit_type_uint64(v, name, &value, &local_err);
-    if (local_err) {
-        goto out;
+    if (!visit_type_uint64(v, name, &value, errp)) {
+        return;
     }
     if (!value) {
-        error_setg(&local_err, "Property '%s.%s' requires a positive value",
+        error_setg(errp, "Property '%s.%s' requires a positive value",
                    object_get_typename(obj), name);
-        goto out;
+        return;
     }
     max_queue_size = value;
-
-out:
-    error_propagate(errp, local_err);
 }
 
 static void compare_pri_rs_finalize(SocketReadState *pri_rs)
@@ -1335,8 +1328,6 @@ static void colo_compare_complete(UserCreatable *uc, Error **errp)
     }
     QTAILQ_INSERT_TAIL(&net_compares, s, next);
     qemu_mutex_unlock(&colo_compare_mutex);
-
-    return;
 }
 
 static void colo_flush_packets(void *opaque, void *user_data)
@@ -1361,7 +1352,7 @@ static void colo_flush_packets(void *opaque, void *user_data)
     }
 }
 
-static void colo_compare_class_init(ObjectClass *oc, void *data)
+static void colo_compare_class_init(ObjectClass *oc, const void *data)
 {
     UserCreatableClass *ucc = USER_CREATABLE_CLASS(oc);
 
@@ -1444,12 +1435,10 @@ static void colo_compare_finalize(Object *obj)
     qemu_bh_delete(s->event_bh);
 
     AioContext *ctx = iothread_get_aio_context(s->iothread);
-    aio_context_acquire(ctx);
     AIO_WAIT_WHILE(ctx, !s->out_sendco.done);
     if (s->notify_dev) {
         AIO_WAIT_WHILE(ctx, !s->notify_sendco.done);
     }
-    aio_context_release(ctx);
 
     /* Release all unhandled packets after compare thead exited */
     g_queue_foreach(&s->conn_list, colo_flush_packets, s);
@@ -1487,7 +1476,7 @@ static const TypeInfo colo_compare_info = {
     .instance_finalize = colo_compare_finalize,
     .class_size = sizeof(CompareClass),
     .class_init = colo_compare_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_USER_CREATABLE },
         { }
     }

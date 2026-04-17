@@ -24,9 +24,11 @@
 
 #include "qemu/osdep.h"
 #include "qemu/timer.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
-#include "block/aio.h"
+#include "qemu/aio.h"
 #include "block/raw-aio.h"
+#include "qemu/aiocb.h"
 #include "qemu/event_notifier.h"
 #include "qemu/iov.h"
 #include "qemu/memalign.h"
@@ -47,13 +49,24 @@ struct QEMUWin32AIOState {
 typedef struct QEMUWin32AIOCB {
     BlockAIOCB common;
     struct QEMUWin32AIOState *ctx;
+    AioContext *req_ctx;
     int nbytes;
     OVERLAPPED ov;
     QEMUIOVector *qiov;
     void *buf;
     bool is_read;
     bool is_linear;
+    int ret;
 } QEMUWin32AIOCB;
+
+static void win32_aio_completion_cb_bh(void *opaque)
+{
+    QEMUWin32AIOCB *waiocb = opaque;
+
+    waiocb->common.cb(waiocb->common.opaque, waiocb->ret);
+    aio_context_unref(waiocb->req_ctx);
+    qemu_aio_unref(waiocb);
+}
 
 /*
  * Completes an AIO request (calls the callback and frees the ACB).
@@ -61,34 +74,37 @@ typedef struct QEMUWin32AIOCB {
 static void win32_aio_process_completion(QEMUWin32AIOState *s,
     QEMUWin32AIOCB *waiocb, DWORD count)
 {
-    int ret;
     s->count--;
 
     if (waiocb->ov.Internal != 0) {
-        ret = -EIO;
+        waiocb->ret = -EIO;
     } else {
-        ret = 0;
+        waiocb->ret = 0;
         if (count < waiocb->nbytes) {
             /* Short reads mean EOF, pad with zeros. */
             if (waiocb->is_read) {
                 qemu_iovec_memset(waiocb->qiov, count, 0,
                     waiocb->qiov->size - count);
             } else {
-                ret = -EINVAL;
+                waiocb->ret = -EINVAL;
             }
        }
     }
 
     if (!waiocb->is_linear) {
-        if (ret == 0 && waiocb->is_read) {
+        if (waiocb->ret == 0 && waiocb->is_read) {
             QEMUIOVector *qiov = waiocb->qiov;
             iov_from_buf(qiov->iov, qiov->niov, 0, waiocb->buf, qiov->size);
         }
         qemu_vfree(waiocb->buf);
     }
 
-    waiocb->common.cb(waiocb->common.opaque, ret);
-    qemu_aio_unref(waiocb);
+    if (waiocb->req_ctx == s->aio_ctx) {
+        win32_aio_completion_cb_bh(waiocb);
+    } else {
+        aio_bh_schedule_oneshot(waiocb->req_ctx, win32_aio_completion_cb_bh,
+                                waiocb);
+    }
 }
 
 static void win32_aio_completion_cb(EventNotifier *e)
@@ -119,9 +135,12 @@ BlockAIOCB *win32_aio_submit(BlockDriverState *bs,
     DWORD rc;
 
     waiocb = qemu_aio_get(&win32_aiocb_info, bs, cb, opaque);
+    waiocb->req_ctx = qemu_get_current_aio_context();
     waiocb->nbytes = bytes;
     waiocb->qiov = qiov;
     waiocb->is_read = (type == QEMU_AIO_READ);
+
+    aio_context_ref(waiocb->req_ctx);
 
     if (qiov->niov > 1) {
         waiocb->buf = qemu_try_blockalign(bs, qiov->size);
@@ -173,7 +192,7 @@ int win32_aio_attach(QEMUWin32AIOState *aio, HANDLE hfile)
 void win32_aio_detach_aio_context(QEMUWin32AIOState *aio,
                                   AioContext *old_context)
 {
-    aio_set_event_notifier(old_context, &aio->e, false, NULL, NULL, NULL);
+    aio_set_event_notifier(old_context, &aio->e, NULL, NULL, NULL);
     aio->aio_ctx = NULL;
 }
 
@@ -181,8 +200,8 @@ void win32_aio_attach_aio_context(QEMUWin32AIOState *aio,
                                   AioContext *new_context)
 {
     aio->aio_ctx = new_context;
-    aio_set_event_notifier(new_context, &aio->e, false,
-                           win32_aio_completion_cb, NULL, NULL);
+    aio_set_event_notifier(new_context, &aio->e, win32_aio_completion_cb,
+                           NULL, NULL);
 }
 
 QEMUWin32AIOState *win32_aio_init(void)

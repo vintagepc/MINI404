@@ -32,7 +32,7 @@
 #include "qapi/visitor.h"
 #include "net/filter.h"
 #include "qom/object.h"
-#include "sysemu/rtc.h"
+#include "system/rtc.h"
 
 typedef struct DumpState {
     int64_t start_ts;
@@ -61,13 +61,14 @@ struct pcap_sf_pkthdr {
     uint32_t len;
 };
 
-static ssize_t dump_receive_iov(DumpState *s, const struct iovec *iov, int cnt)
+static ssize_t dump_receive_iov(DumpState *s, const struct iovec *iov, int cnt,
+                                int offset)
 {
     struct pcap_sf_pkthdr hdr;
     int64_t ts;
     int caplen;
-    size_t size = iov_size(iov, cnt);
-    struct iovec dumpiov[cnt + 1];
+    size_t size = iov_size(iov, cnt) - offset;
+    g_autofree struct iovec *dumpiov = g_new(struct iovec, cnt + 1);
 
     /* Early return in case of previous error. */
     if (s->fd < 0) {
@@ -84,7 +85,7 @@ static ssize_t dump_receive_iov(DumpState *s, const struct iovec *iov, int cnt)
 
     dumpiov[0].iov_base = &hdr;
     dumpiov[0].iov_len = sizeof(hdr);
-    cnt = iov_copy(&dumpiov[1], cnt, iov, cnt, 0, caplen);
+    cnt = iov_copy(&dumpiov[1], cnt, iov, cnt, offset, caplen);
 
     if (writev(s->fd, dumpiov, cnt + 1) != sizeof(hdr) + caplen) {
         error_report("network dump write error - stopping dump");
@@ -110,7 +111,7 @@ static int net_dump_state_init(DumpState *s, const char *filename,
 
     fd = open(filename, O_CREAT | O_TRUNC | O_WRONLY | O_BINARY, 0644);
     if (fd < 0) {
-        error_setg_errno(errp, errno, "net dump: can't open %s", filename);
+        error_setg_file_open(errp, errno, filename);
         return -1;
     }
 
@@ -154,7 +155,8 @@ static ssize_t filter_dump_receive_iov(NetFilterState *nf, NetClientState *sndr,
 {
     NetFilterDumpState *nfds = FILTER_DUMP(nf);
 
-    dump_receive_iov(&nfds->ds, iov, iovcnt);
+    dump_receive_iov(&nfds->ds, iov, iovcnt, flags & QEMU_NET_PACKET_FLAG_RAW ?
+                     0 : qemu_get_vnet_hdr_len(nf->netdev));
     return 0;
 }
 
@@ -232,7 +234,7 @@ static void filter_dump_instance_finalize(Object *obj)
     g_free(nfds->filename);
 }
 
-static void filter_dump_class_init(ObjectClass *oc, void *data)
+static void filter_dump_class_init(ObjectClass *oc, const void *data)
 {
     NetFilterClass *nfc = NETFILTER_CLASS(oc);
 

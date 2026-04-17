@@ -21,8 +21,8 @@
 #include "trace.h"
 #include "qapi/error.h"
 #include "migration/vmstate.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
 #include "hw/misc/armsse-cpu-pwrctrl.h"
 
 REG32(CPUPWRCFG, 0x0)
@@ -109,7 +109,7 @@ static const VMStateDescription pwrctrl_vmstate = {
     .name = "armsse-cpu-pwrctrl",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(cpupwrcfg, ARMSSECPUPwrCtrl),
         VMSTATE_END_OF_LIST()
     },
@@ -125,11 +125,11 @@ static void pwrctrl_init(Object *obj)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static void pwrctrl_class_init(ObjectClass *klass, void *data)
+static void pwrctrl_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = pwrctrl_reset;
+    device_class_set_legacy_reset(dc, pwrctrl_reset);
     dc->vmsd = &pwrctrl_vmstate;
 }
 

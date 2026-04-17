@@ -25,9 +25,13 @@ import subprocess
 import socket
 import json
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'python'))
-from qemu.machine import QEMUMachine
-from qemu.qmp import ConnectError
+try:
+    from qemu.machine import QEMUMachine
+    from qemu.qmp import ConnectError
+except ModuleNotFoundError as exc:
+    print(f"Module '{exc.name}' not found.", file=sys.stderr)
+    print(f"Try $builddir/run {' '.join(sys.argv)}", file=sys.stderr)
+    sys.exit(1)
 
 
 def bench_block_job(cmd, cmd_args, qemu_args):
@@ -39,7 +43,7 @@ def bench_block_job(cmd, cmd_args, qemu_args):
                  binary
 
     Returns {'seconds': int} on success and {'error': str} on failure, dict may
-    contain addional 'vm-log' field. Return value is compatible with
+    contain additional 'vm-log' field. Return value is compatible with
     simplebench lib.
     """
 

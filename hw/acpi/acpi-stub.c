@@ -19,11 +19,17 @@
  */
 
 #include "qemu/osdep.h"
-#include "qapi/error.h"
-#include "qapi/qmp/qerror.h"
 #include "hw/acpi/acpi.h"
+
+char unsigned *acpi_tables;
+size_t acpi_tables_len;
 
 void acpi_table_add(const QemuOpts *opts, Error **errp)
 {
-    error_setg(errp, QERR_UNSUPPORTED);
+    g_assert_not_reached();
+}
+
+bool acpi_builtin(void)
+{
+    return false;
 }

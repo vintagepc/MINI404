@@ -11,8 +11,9 @@
 #ifndef HW_S390X_S390_VIRTIO_CCW_H
 #define HW_S390X_S390_VIRTIO_CCW_H
 
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "qom/object.h"
+#include "hw/s390x/sclp.h"
 
 #define TYPE_S390_CCW_MACHINE               "s390-ccw-machine"
 
@@ -28,31 +29,32 @@ struct S390CcwMachineState {
     bool dea_key_wrap;
     bool pv;
     uint8_t loadparm[8];
+    uint64_t memory_limit;
+    uint64_t max_pagesize;
+
+    SCLPDevice *sclp;
 };
+
+static inline uint64_t s390_get_memory_limit(S390CcwMachineState *s390ms)
+{
+    /* We expect to be called only after the limit was set. */
+    assert(s390ms->memory_limit);
+    return s390ms->memory_limit;
+}
+
+#define S390_PTF_REASON_NONE (0x00 << 8)
+#define S390_PTF_REASON_DONE (0x01 << 8)
+#define S390_PTF_REASON_BUSY (0x02 << 8)
+#define S390_TOPO_FC_MASK 0xffUL
+void s390_handle_ptf(S390CPU *cpu, uint8_t r1, uintptr_t ra);
 
 struct S390CcwMachineClass {
     /*< private >*/
     MachineClass parent_class;
 
     /*< public >*/
-    bool ri_allowed;
-    bool cpu_model_allowed;
-    bool css_migration_enabled;
-    bool hpage_1m_allowed;
     int max_threads;
+    bool use_cpi;
 };
-
-/* runtime-instrumentation allowed by the machine */
-bool ri_allowed(void);
-/* cpu model allowed by the machine */
-bool cpu_model_allowed(void);
-/* 1M huge page mappings allowed by the machine */
-bool hpage_1m_allowed(void);
-
-/**
- * Returns true if (vmstate based) migration of the channel subsystem
- * is enabled, false if it is disabled.
- */
-bool css_migration_enabled(void);
 
 #endif

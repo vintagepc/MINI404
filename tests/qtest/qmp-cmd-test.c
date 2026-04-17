@@ -14,7 +14,7 @@
 #include "libqtest.h"
 #include "qapi/error.h"
 #include "qapi/qapi-visit-introspect.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "qapi/qobject-input-visitor.h"
 
 const char common_args[] = "-nodefaults -machine none";
@@ -45,15 +45,15 @@ static int query_error_class(const char *cmd)
         { "query-acpi-ospm-status", ERROR_CLASS_GENERIC_ERROR },
         { "query-balloon", ERROR_CLASS_DEVICE_NOT_ACTIVE },
         { "query-hotpluggable-cpus", ERROR_CLASS_GENERIC_ERROR },
+        { "query-hv-balloon-status-report", ERROR_CLASS_GENERIC_ERROR },
         { "query-vm-generation-id", ERROR_CLASS_GENERIC_ERROR },
-#ifndef CONFIG_PROFILER
-        { "x-query-profile", ERROR_CLASS_GENERIC_ERROR },
-#endif
         /* Only valid with a USB bus added */
         { "x-query-usb", ERROR_CLASS_GENERIC_ERROR },
         /* Only valid with accel=tcg */
         { "x-query-jit", ERROR_CLASS_GENERIC_ERROR },
-        { "x-query-opcount", ERROR_CLASS_GENERIC_ERROR },
+        { "xen-event-list", ERROR_CLASS_GENERIC_ERROR },
+        /* requires firmware with memory buffer logging support */
+        { "query-firmware-log", ERROR_CLASS_GENERIC_ERROR },
         { NULL, -1 }
     };
     int i;
@@ -101,6 +101,7 @@ static bool query_is_ignored(const char *cmd)
         /* Success depends on target arch: */
         "query-cpu-definitions",  /* arm, i386, ppc, s390x */
         "query-gic-capabilities", /* arm */
+        "query-s390x-cpu-polarization", /* s390x */
         /* Success depends on target-specific build configuration: */
         "query-pci",              /* CONFIG_PCI */
         "x-query-virtio",         /* CONFIG_VIRTIO */
@@ -174,7 +175,7 @@ static bool object_type_has_mandatory_members(SchemaInfo *type)
     g_assert(type->meta_type == SCHEMA_META_TYPE_OBJECT);
 
     for (tail = type->u.object.members; tail; tail = tail->next) {
-        if (!tail->value->has_q_default) {
+        if (!tail->value->q_default) {
             return true;
         }
     }

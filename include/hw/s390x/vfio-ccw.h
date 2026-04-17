@@ -14,14 +14,12 @@
 #ifndef HW_VFIO_CCW_H
 #define HW_VFIO_CCW_H
 
-#include "hw/vfio/vfio-common.h"
+#include "hw/vfio/vfio-device.h"
 #include "hw/s390x/s390-ccw.h"
 #include "hw/s390x/ccw-device.h"
 #include "qom/object.h"
 
 #define TYPE_VFIO_CCW "vfio-ccw"
 OBJECT_DECLARE_SIMPLE_TYPE(VFIOCCWDevice, VFIO_CCW)
-
-#define TYPE_VFIO_CCW "vfio-ccw"
 
 #endif

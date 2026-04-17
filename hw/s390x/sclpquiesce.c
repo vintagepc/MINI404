@@ -16,7 +16,7 @@
 #include "hw/s390x/sclp.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "hw/s390x/event-facility.h"
 
 typedef struct SignalQuiesce {
@@ -72,18 +72,16 @@ static const VMStateDescription vmstate_sclpquiesce = {
     .name = TYPE_SCLP_QUIESCE,
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(event_pending, SCLPEvent),
         VMSTATE_END_OF_LIST()
      }
 };
 
-typedef struct QuiesceNotifier QuiesceNotifier;
-
-static struct QuiesceNotifier {
+typedef struct QuiesceNotifier {
     Notifier notifier;
     SCLPEvent *event;
-} qn;
+} QuiesceNotifier;
 
 static void quiesce_powerdown_req(Notifier *n, void *opaque)
 {
@@ -97,6 +95,8 @@ static void quiesce_powerdown_req(Notifier *n, void *opaque)
 
 static int quiesce_init(SCLPEvent *event)
 {
+    static QuiesceNotifier qn;
+
     qn.notifier.notify = quiesce_powerdown_req;
     qn.event = event;
 
@@ -112,12 +112,12 @@ static void quiesce_reset(DeviceState *dev)
    event->event_pending = false;
 }
 
-static void quiesce_class_init(ObjectClass *klass, void *data)
+static void quiesce_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     SCLPEventClass *k = SCLP_EVENT_CLASS(klass);
 
-    dc->reset = quiesce_reset;
+    device_class_set_legacy_reset(dc, quiesce_reset);
     dc->vmsd = &vmstate_sclpquiesce;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     /*

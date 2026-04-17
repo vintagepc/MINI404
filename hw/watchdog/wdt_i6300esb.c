@@ -23,8 +23,8 @@
 
 #include "qemu/module.h"
 #include "qemu/timer.h"
-#include "sysemu/watchdog.h"
-#include "hw/pci/pci.h"
+#include "system/watchdog.h"
+#include "hw/pci/pci_device.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 
@@ -55,7 +55,7 @@
 /* Config register bits */
 #define ESB_WDT_REBOOT  (0x01 << 5)   /* Enable reboot on timeout          */
 #define ESB_WDT_FREQ    (0x01 << 2)   /* Decrement frequency               */
-#define ESB_WDT_INTTYPE (0x11 << 0)   /* Interrupt type on timer1 timeout  */
+#define ESB_WDT_INTTYPE (0x03 << 0)   /* Interrupt type on timer1 timeout  */
 
 /* Reload register bits */
 #define ESB_WDT_RELOAD  (0x01 << 8)    /* prevent timeout                   */
@@ -418,7 +418,7 @@ static const VMStateDescription vmstate_i6300esb = {
      */
     .version_id = 10000,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(dev, I6300State),
         VMSTATE_INT32(reboot_enabled, I6300State),
         VMSTATE_INT32(clock_scale, I6300State),
@@ -457,7 +457,7 @@ static void i6300esb_exit(PCIDevice *dev)
     timer_free(d->timer);
 }
 
-static void i6300esb_class_init(ObjectClass *klass, void *data)
+static void i6300esb_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -469,7 +469,7 @@ static void i6300esb_class_init(ObjectClass *klass, void *data)
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_ESB_9;
     k->class_id = PCI_CLASS_SYSTEM_OTHER;
-    dc->reset = i6300esb_reset;
+    device_class_set_legacy_reset(dc, i6300esb_reset);
     dc->vmsd = &vmstate_i6300esb;
     set_bit(DEVICE_CATEGORY_WATCHDOG, dc->categories);
     dc->desc = "Intel 6300ESB";
@@ -480,7 +480,7 @@ static const TypeInfo i6300esb_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(I6300State),
     .class_init    = i6300esb_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

@@ -20,8 +20,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/acpi/acpi.h"
+#include "hw/acpi/acpi_dev_interface.h"
 #include "hw/nvram/fw_cfg.h"
 #include "qemu/config-file.h"
 #include "qapi/error.h"
@@ -31,7 +32,8 @@
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
+#include "trace.h"
 
 struct acpi_table_header {
     uint16_t _length;         /* our length, not actual part of the hdr */
@@ -77,7 +79,15 @@ static void acpi_register_config(void)
 
 opts_init(acpi_register_config);
 
-static int acpi_checksum(const uint8_t *data, int len)
+bool acpi_builtin(void)
+{
+    return true;
+}
+
+/* Calculate the ACPI checksum value so that if used in the corresponding
+ * header field, the ACPI checksum verification will be successful.
+ */
+int acpi_checksum(const uint8_t *data, int len)
 {
     int sum, i;
     sum = 0;
@@ -185,7 +195,7 @@ static void acpi_table_install(const char unsigned *blob, size_t bloblen,
     changed_fields = 0;
     ext_hdr->_length = cpu_to_le16(acpi_payload_size);
 
-    if (hdrs->has_sig) {
+    if (hdrs->sig) {
         strncpy(ext_hdr->sig, hdrs->sig, sizeof ext_hdr->sig);
         ++changed_fields;
     }
@@ -204,11 +214,11 @@ static void acpi_table_install(const char unsigned *blob, size_t bloblen,
 
     ext_hdr->checksum = 0;
 
-    if (hdrs->has_oem_id) {
+    if (hdrs->oem_id) {
         strncpy(ext_hdr->oem_id, hdrs->oem_id, sizeof ext_hdr->oem_id);
         ++changed_fields;
     }
-    if (hdrs->has_oem_table_id) {
+    if (hdrs->oem_table_id) {
         strncpy(ext_hdr->oem_table_id, hdrs->oem_table_id,
                 sizeof ext_hdr->oem_table_id);
         ++changed_fields;
@@ -217,7 +227,7 @@ static void acpi_table_install(const char unsigned *blob, size_t bloblen,
         ext_hdr->oem_revision = cpu_to_le32(hdrs->oem_rev);
         ++changed_fields;
     }
-    if (hdrs->has_asl_compiler_id) {
+    if (hdrs->asl_compiler_id) {
         strncpy(ext_hdr->asl_compiler_id, hdrs->asl_compiler_id,
                 sizeof ext_hdr->asl_compiler_id);
         ++changed_fields;
@@ -255,12 +265,12 @@ void acpi_table_add(const QemuOpts *opts, Error **errp)
     if (!hdrs) {
         goto out;
     }
-    if (hdrs->has_file == hdrs->has_data) {
+    if (!hdrs->file == !hdrs->data) {
         error_setg(errp, "'-acpitable' requires one of 'data' or 'file'");
         goto out;
     }
 
-    pathnames = g_strsplit(hdrs->has_file ? hdrs->file : hdrs->data, ":", 0);
+    pathnames = g_strsplit(hdrs->file ?: hdrs->data, ":", 0);
     if (pathnames == NULL || pathnames[0] == NULL) {
         error_setg(errp, "'-acpitable' requires at least one pathname");
         goto out;
@@ -271,7 +281,7 @@ void acpi_table_add(const QemuOpts *opts, Error **errp)
         int fd = open(*cur, O_RDONLY | O_BINARY);
 
         if (fd < 0) {
-            error_setg(errp, "can't open file %s: %s", *cur, strerror(errno));
+            error_setg_file_open(errp, errno, *cur);
             goto out;
         }
 
@@ -287,8 +297,7 @@ void acpi_table_add(const QemuOpts *opts, Error **errp)
                 memcpy(blob + bloblen, data, r);
                 bloblen += r;
             } else if (errno != EINTR) {
-                error_setg(errp, "can't read file %s: %s", *cur,
-                           strerror(errno));
+                error_setg_errno(errp, errno, "can't read file %s", *cur);
                 close(fd);
                 goto out;
             }
@@ -297,7 +306,7 @@ void acpi_table_add(const QemuOpts *opts, Error **errp)
         close(fd);
     }
 
-    acpi_table_install(blob, bloblen, hdrs->has_file, hdrs, errp);
+    acpi_table_install(blob, bloblen, !!hdrs->file, hdrs, errp);
 
 out:
     g_free(blob);
@@ -541,6 +550,7 @@ void acpi_pm_tmr_init(ACPIREGS *ar, acpi_update_sci_fn update_sci,
     ar->tmr.timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, acpi_pm_tmr_timer, ar);
     memory_region_init_io(&ar->tmr.io, memory_region_owner(parent),
                           &acpi_pm_tmr_ops, ar, "acpi-tmr", 4);
+    memory_region_enable_lockless_io(&ar->tmr.io);
     memory_region_add_subregion(parent, 8, &ar->tmr.io);
 }
 
@@ -551,8 +561,35 @@ void acpi_pm_tmr_reset(ACPIREGS *ar)
 }
 
 /* ACPI PM1aCNT */
-static void acpi_pm1_cnt_write(ACPIREGS *ar, uint16_t val)
+void acpi_pm1_cnt_update(ACPIREGS *ar,
+                         bool sci_enable, bool sci_disable)
 {
+    /* ACPI specs 3.0, 4.7.2.5 */
+    if (ar->pm1.cnt.acpi_only) {
+        return;
+    }
+
+    if (sci_enable) {
+        ar->pm1.cnt.cnt |= ACPI_BITMASK_SCI_ENABLE;
+    } else if (sci_disable) {
+        ar->pm1.cnt.cnt &= ~ACPI_BITMASK_SCI_ENABLE;
+    }
+}
+
+static uint64_t acpi_pm_cnt_read(void *opaque, hwaddr addr, unsigned width)
+{
+    ACPIREGS *ar = opaque;
+    return ar->pm1.cnt.cnt >> addr * 8;
+}
+
+static void acpi_pm_cnt_write(void *opaque, hwaddr addr, uint64_t val,
+                              unsigned width)
+{
+    ACPIREGS *ar = opaque;
+
+    if (addr == 1) {
+        val = val << 8 | (ar->pm1.cnt.cnt & 0xff);
+    }
     ar->pm1.cnt.cnt = val & ~(ACPI_BITMASK_SLEEP_ENABLE);
 
     if (val & ACPI_BITMASK_SLEEP_ENABLE) {
@@ -573,33 +610,6 @@ static void acpi_pm1_cnt_write(ACPIREGS *ar, uint16_t val)
             break;
         }
     }
-}
-
-void acpi_pm1_cnt_update(ACPIREGS *ar,
-                         bool sci_enable, bool sci_disable)
-{
-    /* ACPI specs 3.0, 4.7.2.5 */
-    if (ar->pm1.cnt.acpi_only) {
-        return;
-    }
-
-    if (sci_enable) {
-        ar->pm1.cnt.cnt |= ACPI_BITMASK_SCI_ENABLE;
-    } else if (sci_disable) {
-        ar->pm1.cnt.cnt &= ~ACPI_BITMASK_SCI_ENABLE;
-    }
-}
-
-static uint64_t acpi_pm_cnt_read(void *opaque, hwaddr addr, unsigned width)
-{
-    ACPIREGS *ar = opaque;
-    return ar->pm1.cnt.cnt;
-}
-
-static void acpi_pm_cnt_write(void *opaque, hwaddr addr, uint64_t val,
-                              unsigned width)
-{
-    acpi_pm1_cnt_write(opaque, val);
 }
 
 static const MemoryRegionOps acpi_pm_cnt_ops = {
@@ -688,9 +698,11 @@ void acpi_gpe_ioport_writeb(ACPIREGS *ar, uint32_t addr, uint32_t val)
 
     cur = acpi_gpe_ioport_get_ptr(ar, addr);
     if (addr < ar->gpe.len / 2) {
+        trace_acpi_gpe_sts_ioport_writeb(addr, val);
         /* GPE_STS */
         *cur = (*cur) & ~val;
     } else if (addr < ar->gpe.len) {
+        trace_acpi_gpe_en_ioport_writeb(addr - (ar->gpe.len / 2), val);
         /* GPE_EN */
         *cur = val;
     } else {
@@ -707,6 +719,12 @@ uint32_t acpi_gpe_ioport_readb(ACPIREGS *ar, uint32_t addr)
     val = 0;
     if (cur != NULL) {
         val = *cur;
+    }
+
+    if (addr < ar->gpe.len / 2) {
+        trace_acpi_gpe_sts_ioport_readb(addr, val);
+    } else {
+        trace_acpi_gpe_en_ioport_readb(addr - (ar->gpe.len / 2), val);
     }
 
     return val;
@@ -735,4 +753,13 @@ void acpi_update_sci(ACPIREGS *regs, qemu_irq irq)
     acpi_pm_tmr_update(regs,
                        (regs->pm1.evt.en & ACPI_BITMASK_TIMER_ENABLE) &&
                        !(pm1a_sts & ACPI_BITMASK_TIMER_STATUS));
+}
+
+void acpi_send_event(DeviceState *dev, AcpiEventStatusBits event)
+{
+    AcpiDeviceIfClass *adevc = ACPI_DEVICE_IF_GET_CLASS(dev);
+    if (adevc->send_event) {
+        AcpiDeviceIf *adev = ACPI_DEVICE_IF(dev);
+        adevc->send_event(adev, event);
+    }
 }

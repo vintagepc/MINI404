@@ -14,8 +14,8 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "sysemu/blockdev.h"
-#include "hw/irq.h"
+#include "system/blockdev.h"
+#include "hw/core/irq.h"
 #include "hw/sd/bcm2835_sdhost.h"
 #include "migration/vmstate.h"
 #include "trace.h"
@@ -113,15 +113,12 @@ static void bcm2835_sdhost_send_command(BCM2835SDHostState *s)
 {
     SDRequest request;
     uint8_t rsp[16];
-    int rlen;
+    size_t rlen;
 
     request.cmd = s->cmd & SDCMD_CMD_MASK;
     request.arg = s->cmdarg;
 
-    rlen = sdbus_do_command(&s->sdbus, &request, rsp);
-    if (rlen < 0) {
-        goto error;
-    }
+    rlen = sdbus_do_command(&s->sdbus, &request, rsp, sizeof(rsp));
     if (!(s->cmd & SDCMD_NO_RESPONSE)) {
         if (rlen == 0 || (rlen == 4 && (s->cmd & SDCMD_LONG_RESPONSE))) {
             goto error;
@@ -381,7 +378,7 @@ static const VMStateDescription vmstate_bcm2835_sdhost = {
     .name = TYPE_BCM2835_SDHOST,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(cmd, BCM2835SDHostState),
         VMSTATE_UINT32(cmdarg, BCM2835SDHostState),
         VMSTATE_UINT32(status, BCM2835SDHostState),
@@ -428,32 +425,27 @@ static void bcm2835_sdhost_reset(DeviceState *dev)
     s->fifo_len = 0;
 }
 
-static void bcm2835_sdhost_class_init(ObjectClass *klass, void *data)
+static void bcm2835_sdhost_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = bcm2835_sdhost_reset;
+    device_class_set_legacy_reset(dc, bcm2835_sdhost_reset);
     dc->vmsd = &vmstate_bcm2835_sdhost;
 }
 
-static const TypeInfo bcm2835_sdhost_info = {
-    .name          = TYPE_BCM2835_SDHOST,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(BCM2835SDHostState),
-    .class_init    = bcm2835_sdhost_class_init,
-    .instance_init = bcm2835_sdhost_init,
+static const TypeInfo bcm2835_sdhost_types[] = {
+    {
+        .name           = TYPE_BCM2835_SDHOST,
+        .parent         = TYPE_SYS_BUS_DEVICE,
+        .instance_size  = sizeof(BCM2835SDHostState),
+        .class_init     = bcm2835_sdhost_class_init,
+        .instance_init  = bcm2835_sdhost_init,
+    },
+    {
+        .name           = TYPE_BCM2835_SDHOST_BUS,
+        .parent         = TYPE_SD_BUS,
+        .instance_size  = sizeof(SDBus),
+    },
 };
 
-static const TypeInfo bcm2835_sdhost_bus_info = {
-    .name = TYPE_BCM2835_SDHOST_BUS,
-    .parent = TYPE_SD_BUS,
-    .instance_size = sizeof(SDBus),
-};
-
-static void bcm2835_sdhost_register_types(void)
-{
-    type_register_static(&bcm2835_sdhost_info);
-    type_register_static(&bcm2835_sdhost_bus_info);
-}
-
-type_init(bcm2835_sdhost_register_types)
+DEFINE_TYPES(bcm2835_sdhost_types)

@@ -14,7 +14,7 @@
 
 #include "qemu/cutils.h"
 #include "libqtest.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 
 
 struct arch2cpu {
@@ -30,15 +30,12 @@ static struct arch2cpu cpus_map[] = {
     { "x86_64", "qemu64,apic-id=0" },
     { "i386", "qemu32,apic-id=0" },
     { "alpha", "ev67" },
-    { "cris", "crisv32" },
     { "m68k", "m5206" },
     { "microblaze", "any" },
-    { "microblazeel", "any" },
     { "mips", "4Kc" },
     { "mipsel", "I7200" },
     { "mips64", "20Kc" },
     { "mips64el", "I6500" },
-    { "nios2", "FIXME" },
     { "or1k", "or1200" },
     { "ppc", "604" },
     { "ppc64", "power8e_v2.1" },
@@ -50,7 +47,7 @@ static struct arch2cpu cpus_map[] = {
     { "tricore", "tc1796" },
     { "xtensa", "dc233c" },
     { "xtensaeb", "fsf" },
-    { "hppa", "hppa" },
+    { "hppa", "pa-7300lc" },
     { "riscv64", "rv64" },
     { "riscv32", "rv32" },
     { "rx", "rx62n" },

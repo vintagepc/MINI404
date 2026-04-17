@@ -17,7 +17,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/intc/imx_avic.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -38,7 +38,7 @@ static const VMStateDescription vmstate_imx_avic = {
     .name = TYPE_IMX_AVIC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(pending, IMXAVICState),
         VMSTATE_UINT64(enabled, IMXAVICState),
         VMSTATE_UINT64(is_fiq, IMXAVICState),
@@ -341,12 +341,12 @@ static void imx_avic_init(Object *obj)
 }
 
 
-static void imx_avic_class_init(ObjectClass *klass, void *data)
+static void imx_avic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_imx_avic;
-    dc->reset = imx_avic_reset;
+    device_class_set_legacy_reset(dc, imx_avic_reset);
     dc->desc = "i.MX Advanced Vector Interrupt Controller";
 }
 

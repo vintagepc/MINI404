@@ -28,11 +28,12 @@
 #include <poll.h>
 #include <math.h>
 #include <arpa/inet.h>
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
 #include "qemu/bitops.h"
 #include "qemu/bitmap.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "block/qdict.h"
 #include "scsi/constants.h"
@@ -40,11 +41,11 @@
 #include "qemu/module.h"
 #include "qemu/option.h"
 #include "qemu/uuid.h"
-#include "sysemu/replay.h"
+#include "system/replay.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-machine.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qstring.h"
+#include "qobject/qdict.h"
+#include "qobject/qstring.h"
 #include "crypto/secret.h"
 #include "scsi/utils.h"
 #include "trace.h"
@@ -106,7 +107,6 @@ typedef struct IscsiLun {
 
 typedef struct IscsiTask {
     int status;
-    int complete;
     int retries;
     int do_retry;
     struct scsi_task *task;
@@ -119,6 +119,7 @@ typedef struct IscsiTask {
 
 typedef struct IscsiAIOCB {
     BlockAIOCB common;
+    AioContext *ctx;
     QEMUBH *bh;
     IscsiLun *iscsilun;
     struct scsi_task *task;
@@ -173,27 +174,16 @@ iscsi_schedule_bh(IscsiAIOCB *acb)
     if (acb->bh) {
         return;
     }
-    acb->bh = aio_bh_new(acb->iscsilun->aio_context, iscsi_bh_cb, acb);
+    acb->bh = aio_bh_new(acb->ctx, iscsi_bh_cb, acb);
     qemu_bh_schedule(acb->bh);
 }
 
 #endif
 
-static void iscsi_co_generic_bh_cb(void *opaque)
-{
-    struct IscsiTask *iTask = opaque;
-
-    iTask->complete = 1;
-    aio_co_wake(iTask->co);
-}
-
 static void iscsi_retry_timer_expired(void *opaque)
 {
     struct IscsiTask *iTask = opaque;
-    iTask->complete = 1;
-    if (iTask->co) {
-        aio_co_wake(iTask->co);
-    }
+    aio_co_wake(iTask->co);
 }
 
 static inline unsigned exp_random(double mean)
@@ -238,6 +228,8 @@ iscsi_co_generic_cb(struct iscsi_context *iscsi, int status,
 {
     struct IscsiTask *iTask = opaque;
     struct scsi_task *task = command_data;
+    IscsiLun *iscsilun = iTask->iscsilun;
+    AioContext *itask_ctx = qemu_coroutine_get_aio_context(iTask->co);
 
     iTask->status = status;
     iTask->do_retry = 0;
@@ -262,12 +254,13 @@ iscsi_co_generic_cb(struct iscsi_context *iscsi, int status,
                              " (retry #%u in %u ms): %s",
                              iTask->retries, retry_time,
                              iscsi_get_error(iscsi));
-                aio_timer_init(iTask->iscsilun->aio_context,
-                               &iTask->retry_timer, QEMU_CLOCK_REALTIME,
-                               SCALE_MS, iscsi_retry_timer_expired, iTask);
+                aio_timer_init(itask_ctx, &iTask->retry_timer,
+                               QEMU_CLOCK_REALTIME, SCALE_MS,
+                               iscsi_retry_timer_expired, iTask);
                 timer_mod(&iTask->retry_timer,
                           qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + retry_time);
                 iTask->do_retry = 1;
+                return;
             } else if (status == SCSI_STATUS_CHECK_CONDITION) {
                 int error = iscsi_translate_sense(&task->sense);
                 if (error == EAGAIN) {
@@ -282,12 +275,17 @@ iscsi_co_generic_cb(struct iscsi_context *iscsi, int status,
         }
     }
 
-    if (iTask->co) {
-        replay_bh_schedule_oneshot_event(iTask->iscsilun->aio_context,
-                                         iscsi_co_generic_bh_cb, iTask);
-    } else {
-        iTask->complete = 1;
-    }
+    /*
+     * aio_co_wake() is safe to call: iscsi_service(), which called us, is only
+     * run from the event_timer and/or the FD handlers, never from the request
+     * coroutine.  The request coroutine in turn will yield unconditionally.
+     * We must release the lock, though, in case we enter the coroutine
+     * directly.  (Note that if do we enter the coroutine, iTask will probably
+     * be dangling once aio_co_wake() returns.)
+     */
+    qemu_mutex_unlock(&iscsilun->mutex);
+    aio_co_wake(iTask->co);
+    qemu_mutex_lock(&iscsilun->mutex);
 }
 
 static void coroutine_fn
@@ -361,7 +359,6 @@ iscsi_set_events(IscsiLun *iscsilun)
 
     if (ev != iscsilun->events) {
         aio_set_fd_handler(iscsilun->aio_context, iscsi_get_fd(iscsi),
-                           false,
                            (ev & POLLIN) ? iscsi_process_read : NULL,
                            (ev & POLLOUT) ? iscsi_process_write : NULL,
                            NULL, NULL,
@@ -591,12 +588,10 @@ static inline bool iscsi_allocmap_is_valid(IscsiLun *iscsilun,
 static void coroutine_fn iscsi_co_wait_for_task(IscsiTask *iTask,
                                                 IscsiLun *iscsilun)
 {
-    while (!iTask->complete) {
-        iscsi_set_events(iscsilun);
-        qemu_mutex_unlock(&iscsilun->mutex);
-        qemu_coroutine_yield();
-        qemu_mutex_lock(&iscsilun->mutex);
-    }
+    iscsi_set_events(iscsilun);
+    qemu_mutex_unlock(&iscsilun->mutex);
+    qemu_coroutine_yield();
+    qemu_mutex_lock(&iscsilun->mutex);
 }
 
 static int coroutine_fn
@@ -668,7 +663,6 @@ retry:
     }
 
     if (iTask.do_retry) {
-        iTask.complete = 0;
         goto retry;
     }
 
@@ -693,9 +687,9 @@ out_unlock:
 
 
 static int coroutine_fn iscsi_co_block_status(BlockDriverState *bs,
-                                              bool want_zero, int64_t offset,
-                                              int64_t bytes, int64_t *pnum,
-                                              int64_t *map,
+                                              unsigned int mode,
+                                              int64_t offset, int64_t bytes,
+                                              int64_t *pnum, int64_t *map,
                                               BlockDriverState **file)
 {
     IscsiLun *iscsilun = bs->opaque;
@@ -739,7 +733,6 @@ retry:
             scsi_free_scsi_task(iTask.task);
             iTask.task = NULL;
         }
-        iTask.complete = 0;
         goto retry;
     }
 
@@ -901,7 +894,6 @@ retry:
     }
 
     if (iTask.do_retry) {
-        iTask.complete = 0;
         goto retry;
     }
 
@@ -939,7 +931,6 @@ retry:
     }
 
     if (iTask.do_retry) {
-        iTask.complete = 0;
         goto retry;
     }
 
@@ -1022,8 +1013,7 @@ static void iscsi_ioctl_handle_emulated(IscsiAIOCB *acb, int req, void *buf)
         ret = -EINVAL;
     }
     assert(!acb->bh);
-    acb->bh = aio_bh_new(bdrv_get_aio_context(bs),
-                         iscsi_ioctl_bh_completion, acb);
+    acb->bh = aio_bh_new(acb->ctx, iscsi_ioctl_bh_completion, acb);
     acb->ret = ret;
     qemu_bh_schedule(acb->bh);
 }
@@ -1040,6 +1030,7 @@ static BlockAIOCB *iscsi_aio_ioctl(BlockDriverState *bs,
     acb = qemu_aio_get(&iscsi_aiocb_info, bs, cb, opaque);
 
     acb->iscsilun = iscsilun;
+    acb->ctx         = qemu_get_current_aio_context();
     acb->bh          = NULL;
     acb->status      = -EINPROGRESS;
     acb->ioh         = buf;
@@ -1057,6 +1048,7 @@ static BlockAIOCB *iscsi_aio_ioctl(BlockDriverState *bs,
         return NULL;
     }
 
+    /* Must use malloc(): this is freed via scsi_free_scsi_task() */
     acb->task = malloc(sizeof(struct scsi_task));
     if (acb->task == NULL) {
         error_report("iSCSI: Failed to allocate task for scsi command. %s",
@@ -1126,8 +1118,8 @@ static BlockAIOCB *iscsi_aio_ioctl(BlockDriverState *bs,
 
 #endif
 
-static int64_t
-iscsi_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn
+iscsi_co_getlength(BlockDriverState *bs)
 {
     IscsiLun *iscsilun = bs->opaque;
     int64_t len;
@@ -1182,7 +1174,6 @@ retry:
     }
 
     if (iTask.do_retry) {
-        iTask.complete = 0;
         goto retry;
     }
 
@@ -1299,7 +1290,6 @@ retry:
     }
 
     if (iTask.do_retry) {
-        iTask.complete = 0;
         goto retry;
     }
 
@@ -1352,6 +1342,9 @@ static void apply_chap(struct iscsi_context *iscsi, QemuOpts *opts,
     } else if (!password) {
         error_setg(errp, "CHAP username specified but no password was given");
         return;
+    } else {
+        warn_report("iSCSI block driver 'password' option is deprecated, "
+                    "use 'password-secret' instead");
     }
 
     if (iscsi_set_initiator_username_pwd(iscsi, user, password)) {
@@ -1535,7 +1528,7 @@ static void iscsi_detach_aio_context(BlockDriverState *bs)
     IscsiLun *iscsilun = bs->opaque;
 
     aio_set_fd_handler(iscsilun->aio_context, iscsi_get_fd(iscsilun->iscsi),
-                       false, NULL, NULL, NULL, NULL, NULL);
+                       NULL, NULL, NULL, NULL, NULL);
     iscsilun->events = 0;
 
     if (iscsilun->nop_timer) {
@@ -1920,7 +1913,9 @@ static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
     /* Check the write protect flag of the LUN if we want to write */
     if (iscsilun->type == TYPE_DISK && (flags & BDRV_O_RDWR) &&
         iscsilun->write_protected) {
+        bdrv_graph_rdlock_main_loop();
         ret = bdrv_apply_auto_read_only(bs, "LUN is write protected", errp);
+        bdrv_graph_rdunlock_main_loop();
         if (ret < 0) {
             goto out;
         }
@@ -2154,7 +2149,7 @@ static int coroutine_fn iscsi_co_truncate(BlockDriverState *bs, int64_t offset,
         return -EIO;
     }
 
-    cur_length = iscsi_getlength(bs);
+    cur_length = iscsi_co_getlength(bs);
     if (offset != cur_length && exact) {
         error_setg(errp, "Cannot resize iSCSI devices");
         return -ENOTSUP;
@@ -2170,7 +2165,8 @@ static int coroutine_fn iscsi_co_truncate(BlockDriverState *bs, int64_t offset,
     return 0;
 }
 
-static int iscsi_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
+static int coroutine_fn
+iscsi_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
 {
     IscsiLun *iscsilun = bs->opaque;
     bdi->cluster_size = iscsilun->cluster_size;
@@ -2184,14 +2180,12 @@ static void coroutine_fn iscsi_co_invalidate_cache(BlockDriverState *bs,
     iscsi_allocmap_invalidate(iscsilun);
 }
 
-static int coroutine_fn iscsi_co_copy_range_from(BlockDriverState *bs,
-                                                 BdrvChild *src,
-                                                 int64_t src_offset,
-                                                 BdrvChild *dst,
-                                                 int64_t dst_offset,
-                                                 int64_t bytes,
-                                                 BdrvRequestFlags read_flags,
-                                                 BdrvRequestFlags write_flags)
+static int coroutine_fn GRAPH_RDLOCK
+iscsi_co_copy_range_from(BlockDriverState *bs,
+                         BdrvChild *src, int64_t src_offset,
+                         BdrvChild *dst, int64_t dst_offset,
+                         int64_t bytes, BdrvRequestFlags read_flags,
+                         BdrvRequestFlags write_flags)
 {
     return bdrv_co_copy_range_to(src, src_offset, dst, dst_offset, bytes,
                                  read_flags, write_flags);
@@ -2325,14 +2319,12 @@ static void iscsi_xcopy_data(struct iscsi_data *data,
                               src_lba, dst_lba);
 }
 
-static int coroutine_fn iscsi_co_copy_range_to(BlockDriverState *bs,
-                                               BdrvChild *src,
-                                               int64_t src_offset,
-                                               BdrvChild *dst,
-                                               int64_t dst_offset,
-                                               int64_t bytes,
-                                               BdrvRequestFlags read_flags,
-                                               BdrvRequestFlags write_flags)
+static int coroutine_fn GRAPH_RDLOCK
+iscsi_co_copy_range_to(BlockDriverState *bs,
+                       BdrvChild *src, int64_t src_offset,
+                       BdrvChild *dst, int64_t dst_offset,
+                       int64_t bytes, BdrvRequestFlags read_flags,
+                       BdrvRequestFlags write_flags)
 {
     IscsiLun *dst_lun = dst->bs->opaque;
     IscsiLun *src_lun;
@@ -2386,7 +2378,6 @@ retry:
     iscsi_co_wait_for_task(&iscsi_task, dst_lun);
 
     if (iscsi_task.do_retry) {
-        iscsi_task.complete = 0;
         goto retry;
     }
 
@@ -2425,7 +2416,7 @@ static BlockDriver bdrv_iscsi = {
 
     .instance_size          = sizeof(IscsiLun),
     .bdrv_parse_filename    = iscsi_parse_filename,
-    .bdrv_file_open         = iscsi_open,
+    .bdrv_open              = iscsi_open,
     .bdrv_close             = iscsi_close,
     .bdrv_co_create_opts    = bdrv_co_create_opts_simple,
     .create_opts            = &bdrv_create_opts_simple,
@@ -2433,8 +2424,8 @@ static BlockDriver bdrv_iscsi = {
     .bdrv_reopen_commit     = iscsi_reopen_commit,
     .bdrv_co_invalidate_cache = iscsi_co_invalidate_cache,
 
-    .bdrv_getlength  = iscsi_getlength,
-    .bdrv_get_info   = iscsi_get_info,
+    .bdrv_co_getlength   = iscsi_co_getlength,
+    .bdrv_co_get_info    = iscsi_co_get_info,
     .bdrv_co_truncate    = iscsi_co_truncate,
     .bdrv_refresh_limits = iscsi_refresh_limits,
 
@@ -2464,7 +2455,7 @@ static BlockDriver bdrv_iser = {
 
     .instance_size          = sizeof(IscsiLun),
     .bdrv_parse_filename    = iscsi_parse_filename,
-    .bdrv_file_open         = iscsi_open,
+    .bdrv_open              = iscsi_open,
     .bdrv_close             = iscsi_close,
     .bdrv_co_create_opts    = bdrv_co_create_opts_simple,
     .create_opts            = &bdrv_create_opts_simple,
@@ -2472,8 +2463,8 @@ static BlockDriver bdrv_iser = {
     .bdrv_reopen_commit     = iscsi_reopen_commit,
     .bdrv_co_invalidate_cache  = iscsi_co_invalidate_cache,
 
-    .bdrv_getlength  = iscsi_getlength,
-    .bdrv_get_info   = iscsi_get_info,
+    .bdrv_co_getlength   = iscsi_co_getlength,
+    .bdrv_co_get_info    = iscsi_co_get_info,
     .bdrv_co_truncate    = iscsi_co_truncate,
     .bdrv_refresh_limits = iscsi_refresh_limits,
 

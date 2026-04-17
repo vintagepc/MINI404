@@ -23,9 +23,9 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
-#include "hw/registerfields.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/timer/renesas_tmr.h"
 #include "migration/vmstate.h"
 
@@ -115,7 +115,7 @@ static int elapsed_time(RTMRState *tmr, int ch, int64_t delta)
         et = tmr->div_round[ch] / divrate;
         tmr->div_round[ch] %= divrate;
     } else {
-        /* disble clock. so no update */
+        /* disable clock. so no update */
         et = 0;
     }
     return et;
@@ -447,7 +447,7 @@ static const VMStateDescription vmstate_rtmr = {
     .name = "rx-tmr",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT64(tick, RTMRState),
         VMSTATE_UINT8_ARRAY(tcnt, RTMRState, TMR_CH),
         VMSTATE_UINT8_ARRAY(tcora, RTMRState, TMR_CH),
@@ -463,17 +463,16 @@ static const VMStateDescription vmstate_rtmr = {
     }
 };
 
-static Property rtmr_properties[] = {
+static const Property rtmr_properties[] = {
     DEFINE_PROP_UINT64("input-freq", RTMRState, input_freq, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void rtmr_class_init(ObjectClass *klass, void *data)
+static void rtmr_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_rtmr;
-    dc->reset = rtmr_reset;
+    device_class_set_legacy_reset(dc, rtmr_reset);
     device_class_set_props(dc, rtmr_properties);
 }
 

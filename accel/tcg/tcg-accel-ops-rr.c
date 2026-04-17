@@ -24,14 +24,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/tcg.h"
-#include "sysemu/replay.h"
-#include "sysemu/cpu-timers.h"
+#include "qemu/lockable.h"
+#include "system/tcg.h"
+#include "system/replay.h"
+#include "exec/icount.h"
 #include "qemu/main-loop.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
-#include "exec/exec-all.h"
-
+#include "exec/cpu-common.h"
+#include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
@@ -42,7 +43,7 @@ void rr_kick_vcpu_thread(CPUState *unused)
     CPUState *cpu;
 
     CPU_FOREACH(cpu) {
-        cpu_exit(cpu);
+        tcg_kick_vcpu_thread(cpu);
     };
 }
 
@@ -71,11 +72,13 @@ static void rr_kick_next_cpu(void)
 {
     CPUState *cpu;
     do {
-        cpu = qatomic_mb_read(&rr_current_cpu);
+        cpu = qatomic_read(&rr_current_cpu);
         if (cpu) {
             cpu_exit(cpu);
         }
-    } while (cpu != qatomic_mb_read(&rr_current_cpu));
+        /* Finish kicking this cpu before reading again.  */
+        smp_mb();
+    } while (cpu != qatomic_read(&rr_current_cpu));
 }
 
 static void rr_kick_thread(void *opaque)
@@ -108,13 +111,13 @@ static void rr_wait_io_event(void)
 
     while (all_cpu_threads_idle()) {
         rr_stop_kick_timer();
-        qemu_cond_wait_iothread(first_cpu->halt_cond);
+        qemu_cond_wait_bql(first_cpu->halt_cond);
     }
 
     rr_start_kick_timer();
 
     CPU_FOREACH(cpu) {
-        qemu_wait_io_event_common(cpu);
+        qemu_process_cpu_events_common(cpu);
     }
 }
 
@@ -128,7 +131,7 @@ static void rr_deal_with_unplugged_cpus(void)
 
     CPU_FOREACH(cpu) {
         if (cpu->unplug && !cpu_can_run(cpu)) {
-            tcg_cpus_destroy(cpu);
+            tcg_cpu_destroy(cpu);
             break;
         }
     }
@@ -137,6 +140,33 @@ static void rr_deal_with_unplugged_cpus(void)
 static void rr_force_rcu(Notifier *notify, void *data)
 {
     rr_kick_next_cpu();
+}
+
+/*
+ * Calculate the number of CPUs that we will process in a single iteration of
+ * the main CPU thread loop so that we can fairly distribute the instruction
+ * count across CPUs.
+ *
+ * The CPU count is cached based on the CPU list generation ID to avoid
+ * iterating the list every time.
+ */
+static int rr_cpu_count(void)
+{
+    static unsigned int last_gen_id = ~0;
+    static int cpu_count;
+    CPUState *cpu;
+
+    QEMU_LOCK_GUARD(&qemu_cpu_list_lock);
+
+    if (cpu_list_generation_id_get() != last_gen_id) {
+        cpu_count = 0;
+        CPU_FOREACH(cpu) {
+            ++cpu_count;
+        }
+        last_gen_id = cpu_list_generation_id_get();
+    }
+
+    return cpu_count;
 }
 
 /*
@@ -158,22 +188,22 @@ static void *rr_cpu_thread_fn(void *arg)
     rcu_add_force_rcu_notifier(&force_rcu);
     tcg_register_thread();
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     qemu_thread_get_self(cpu->thread);
 
     cpu->thread_id = qemu_get_thread_id();
-    cpu->can_do_io = 1;
+    cpu->neg.can_do_io = true;
     cpu_thread_signal_created(cpu);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
     /* wait for initial kick-off after machine start */
-    while (first_cpu->stopped) {
-        qemu_cond_wait_iothread(first_cpu->halt_cond);
+    while (cpu_is_stopped(first_cpu)) {
+        qemu_cond_wait_bql(first_cpu->halt_cond);
 
         /* process any pending work */
         CPU_FOREACH(cpu) {
             current_cpu = cpu;
-            qemu_wait_io_event_common(cpu);
+            qemu_process_cpu_events_common(cpu);
         }
     }
 
@@ -181,75 +211,17 @@ static void *rr_cpu_thread_fn(void *arg)
 
     cpu = first_cpu;
 
-    /* process any pending work */
-    cpu->exit_request = 1;
-
     while (1) {
-        qemu_mutex_unlock_iothread();
-        replay_mutex_lock();
-        qemu_mutex_lock_iothread();
+        /* Only used for icount_enabled() */
+        int64_t cpu_budget = 0;
 
-        if (icount_enabled()) {
-            /* Account partial waits to QEMU_CLOCK_VIRTUAL.  */
-            icount_account_warp_timer();
+        if (cpu) {
             /*
-             * Run the timers here.  This is much more efficient than
-             * waking up the I/O thread and waiting for completion.
+             * This could even reset exit_request for all CPUs, but in practice
+             * races between CPU exits and changes to "cpu" are so rare that
+             * there's no advantage in doing so.
              */
-            icount_handle_deadline();
-        }
-
-        replay_mutex_unlock();
-
-        if (!cpu) {
-            cpu = first_cpu;
-        }
-
-        while (cpu && cpu_work_list_empty(cpu) && !cpu->exit_request) {
-
-            qatomic_mb_set(&rr_current_cpu, cpu);
-            current_cpu = cpu;
-
-            qemu_clock_enable(QEMU_CLOCK_VIRTUAL,
-                              (cpu->singlestep_enabled & SSTEP_NOTIMER) == 0);
-
-            if (cpu_can_run(cpu)) {
-                int r;
-
-                qemu_mutex_unlock_iothread();
-                if (icount_enabled()) {
-                    icount_prepare_for_run(cpu);
-                }
-                r = tcg_cpus_exec(cpu);
-                if (icount_enabled()) {
-                    icount_process_data(cpu);
-                }
-                qemu_mutex_lock_iothread();
-
-                if (r == EXCP_DEBUG) {
-                    cpu_handle_guest_debug(cpu);
-                    break;
-                } else if (r == EXCP_ATOMIC) {
-                    qemu_mutex_unlock_iothread();
-                    cpu_exec_step_atomic(cpu);
-                    qemu_mutex_lock_iothread();
-                    break;
-                }
-            } else if (cpu->stop) {
-                if (cpu->unplug) {
-                    cpu = CPU_NEXT(cpu);
-                }
-                break;
-            }
-
-            cpu = CPU_NEXT(cpu);
-        } /* while (cpu && !cpu->exit_request).. */
-
-        /* Does not need qatomic_mb_set because a spurious wakeup is okay.  */
-        qatomic_set(&rr_current_cpu, NULL);
-
-        if (cpu && cpu->exit_request) {
-            qatomic_mb_set(&cpu->exit_request, 0);
+            qatomic_set(&cpu->exit_request, false);
         }
 
         if (icount_enabled() && all_cpu_threads_idle()) {
@@ -262,11 +234,84 @@ static void *rr_cpu_thread_fn(void *arg)
 
         rr_wait_io_event();
         rr_deal_with_unplugged_cpus();
+
+        bql_unlock();
+        replay_mutex_lock();
+        bql_lock();
+
+        if (icount_enabled()) {
+            int cpu_count = rr_cpu_count();
+
+            /* Account partial waits to QEMU_CLOCK_VIRTUAL.  */
+            icount_account_warp_timer();
+            /*
+             * Run the timers here.  This is much more efficient than
+             * waking up the I/O thread and waiting for completion.
+             */
+            icount_handle_deadline();
+
+            cpu_budget = icount_percpu_budget(cpu_count);
+        }
+
+        replay_mutex_unlock();
+
+        if (!cpu) {
+            cpu = first_cpu;
+        }
+
+        while (cpu && cpu_work_list_empty(cpu)) {
+            /*
+             * Store rr_current_cpu before evaluating cpu->exit_request.
+             * Pairs with rr_kick_next_cpu().
+             */
+            qatomic_set_mb(&rr_current_cpu, cpu);
+
+            /* Pairs with store-release in cpu_exit.  */
+            if (qatomic_load_acquire(&cpu->exit_request)) {
+                break;
+            }
+            current_cpu = cpu;
+
+            qemu_clock_enable(QEMU_CLOCK_VIRTUAL,
+                              (cpu->singlestep_enabled & SSTEP_NOTIMER) == 0);
+
+            if (cpu_can_run(cpu)) {
+                int r;
+
+                bql_unlock();
+                if (icount_enabled()) {
+                    icount_prepare_for_run(cpu, cpu_budget);
+                }
+                r = tcg_cpu_exec(cpu);
+                if (icount_enabled()) {
+                    icount_process_data(cpu);
+                }
+                bql_lock();
+
+                if (r == EXCP_DEBUG) {
+                    cpu_handle_guest_debug(cpu);
+                    break;
+                } else if (r == EXCP_ATOMIC) {
+                    bql_unlock();
+                    cpu_exec_step_atomic(cpu);
+                    bql_lock();
+                    break;
+                }
+            } else if (cpu->stop) {
+                if (cpu->unplug) {
+                    cpu = CPU_NEXT(cpu);
+                }
+                break;
+            }
+
+            cpu = CPU_NEXT(cpu);
+        } /* while (cpu && !cpu->exit_request).. */
+
+        /* Does not need a memory barrier because a spurious wakeup is okay.  */
+        qatomic_set(&rr_current_cpu, NULL);
     }
 
-    rcu_remove_force_rcu_notifier(&force_rcu);
-    rcu_unregister_thread();
-    return NULL;
+    g_assert_not_reached();
 }
 
 void rr_start_vcpu_thread(CPUState *cpu)
@@ -279,27 +324,25 @@ void rr_start_vcpu_thread(CPUState *cpu)
     tcg_cpu_init_cflags(cpu, false);
 
     if (!single_tcg_cpu_thread) {
-        cpu->thread = g_new0(QemuThread, 1);
-        cpu->halt_cond = g_new0(QemuCond, 1);
-        qemu_cond_init(cpu->halt_cond);
+        single_tcg_halt_cond = cpu->halt_cond;
+        single_tcg_cpu_thread = cpu->thread;
 
         /* share a single thread for all cpus with TCG */
         snprintf(thread_name, VCPU_THREAD_NAME_SIZE, "ALL CPUs/TCG");
         qemu_thread_create(cpu->thread, thread_name,
                            rr_cpu_thread_fn,
                            cpu, QEMU_THREAD_JOINABLE);
-
-        single_tcg_halt_cond = cpu->halt_cond;
-        single_tcg_cpu_thread = cpu->thread;
-#ifdef _WIN32
-        cpu->hThread = qemu_thread_get_handle(cpu->thread);
-#endif
     } else {
-        /* we share the thread */
+        /* we share the thread, dump spare data */
+        g_free(cpu->thread);
+        qemu_cond_destroy(cpu->halt_cond);
+        g_free(cpu->halt_cond);
         cpu->thread = single_tcg_cpu_thread;
         cpu->halt_cond = single_tcg_halt_cond;
+
+        /* copy the stuff done at start of rr_cpu_thread_fn */
         cpu->thread_id = first_cpu->thread_id;
-        cpu->can_do_io = 1;
+        cpu->neg.can_do_io = 1;
         cpu->created = true;
     }
 }

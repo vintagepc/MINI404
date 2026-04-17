@@ -20,10 +20,10 @@
 #ifndef PPC_PNV_PSI_H
 #define PPC_PNV_PSI_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/ppc/xics.h"
 #include "hw/ppc/xive.h"
-#include "qom/object.h"
+#include "hw/core/qdev.h"
 
 #define TYPE_PNV_PSI "pnv-psi"
 OBJECT_DECLARE_TYPE(PnvPsi, PnvPsiClass,
@@ -110,6 +110,6 @@ typedef enum PnvPsiIrq {
 #define PSIHB9_IRQ_PSU          13
 #define PSIHB9_NUM_IRQS         14
 
-void pnv_psi_pic_print_info(Pnv9Psi *psi, Monitor *mon);
+void pnv_psi_pic_print_info(Pnv9Psi *psi, GString *buf);
 
 #endif /* PPC_PNV_PSI_H */

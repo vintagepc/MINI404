@@ -121,8 +121,12 @@ static void sys_cache_info(int *isize, int *dsize)
 static bool have_coherent_icache;
 #endif
 
-#if defined(__aarch64__) && !defined(CONFIG_DARWIN)
-/* Apple does not expose CTR_EL0, so we must use system interfaces. */
+#if defined(__aarch64__) && !defined(CONFIG_DARWIN) && !defined(CONFIG_WIN32)
+/*
+ * Apple does not expose CTR_EL0, so we must use system interfaces.
+ * Windows neither, but we use a generic implementation of flush_idcache_range
+ * in this case.
+ */
 static uint64_t save_ctr_el0;
 static void arch_cache_info(int *isize, int *dsize)
 {
@@ -149,7 +153,7 @@ static void arch_cache_info(int *isize, int *dsize)
     }
 }
 
-#elif defined(_ARCH_PPC) && defined(__linux__)
+#elif defined(_ARCH_PPC64) && defined(__linux__)
 # include "elf.h"
 
 static void arch_cache_info(int *isize, int *dsize)
@@ -183,7 +187,7 @@ static void fallback_cache_info(int *isize, int *dsize)
     } else if (*dsize) {
         *isize = *dsize;
     } else {
-#if defined(_ARCH_PPC)
+#if defined(_ARCH_PPC64)
         /*
          * For PPC, we're going to use the cache sizes computed for
          * flush_idcache_range.  Which means that we must use the
@@ -212,8 +216,6 @@ static void __attribute__((constructor)) init_cache_info(void)
     qemu_icache_linesize_log = ctz32(isize);
     qemu_dcache_linesize = dsize;
     qemu_dcache_linesize_log = ctz32(dsize);
-
-    qatomic64_init();
 }
 
 
@@ -221,19 +223,34 @@ static void __attribute__((constructor)) init_cache_info(void)
  * Architecture (+ OS) specific cache flushing mechanisms.
  */
 
-#if defined(__i386__) || defined(__x86_64__) || defined(__s390__)
+#if defined(__x86_64__) || defined(__s390__)
 
 /* Caches are coherent and do not require flushing; symbol inline. */
 
-#elif defined(__aarch64__)
+#elif defined(EMSCRIPTEN)
+
+/* Wasm doesn't have executable region of memory. */
+
+#elif defined(__aarch64__) && !defined(CONFIG_WIN32)
+/*
+ * For Windows, we use generic implementation of flush_idcache_range, that
+ * performs a call to FlushInstructionCache, through __builtin___clear_cache.
+ */
 
 #ifdef CONFIG_DARWIN
 /* Apple does not expose CTR_EL0, so we must use system interfaces. */
-extern void sys_icache_invalidate(void *start, size_t len);
-extern void sys_dcache_flush(void *start, size_t len);
+#include <libkern/OSCacheControl.h>
+
 void flush_idcache_range(uintptr_t rx, uintptr_t rw, size_t len)
 {
-    sys_dcache_flush((void *)rw, len);
+    if (rx == rw) {
+        /*
+         * sys_icache_invalidate() syncs the dcache and icache,
+         * so no need to call sys_dcache_flush().
+         */
+    } else {
+        sys_dcache_flush((void *)rw, len);
+    }
     sys_icache_invalidate((void *)rx, len);
 }
 #else
@@ -264,8 +281,10 @@ void flush_idcache_range(uintptr_t rx, uintptr_t rw, size_t len)
         for (p = rw & -dcache_lsize; p < rw + len; p += dcache_lsize) {
             asm volatile("dc\tcvau, %0" : : "r" (p) : "memory");
         }
-        asm volatile("dsb\tish" : : : "memory");
     }
+
+    /* DSB unconditionally to ensure any outstanding writes are committed. */
+    asm volatile("dsb\tish" : : : "memory");
 
     /*
      * If CTR_EL0.DIC is enabled, Instruction cache cleaning to the Point

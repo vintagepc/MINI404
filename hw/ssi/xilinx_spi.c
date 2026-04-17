@@ -25,13 +25,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "qapi/error.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "qemu/fifo8.h"
 
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/ssi/ssi.h"
 #include "qom/object.h"
 
@@ -83,6 +85,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(XilinxSPI, XILINX_SPI)
 struct XilinxSPI {
     SysBusDevice parent_obj;
 
+    EndianMode model_endianness;
     MemoryRegion mmio;
 
     qemu_irq irq;
@@ -156,6 +159,7 @@ static void xlx_spi_do_reset(XilinxSPI *s)
     txfifo_reset(s);
 
     s->regs[R_SPISSR] = ~0;
+    s->regs[R_SPICR] = R_SPICR_MTI;
     xlx_spi_update_irq(s);
     xlx_spi_update_cs(s);
 }
@@ -232,7 +236,7 @@ spi_read(void *opaque, hwaddr addr, unsigned int size)
         break;
 
     }
-    DB_PRINT("addr=" TARGET_FMT_plx " = %x\n", addr * 4, r);
+    DB_PRINT("addr=" HWADDR_FMT_plx " = %x\n", addr * 4, r);
     xlx_spi_update_irq(s);
     return r;
 }
@@ -244,7 +248,7 @@ spi_write(void *opaque, hwaddr addr,
     XilinxSPI *s = opaque;
     uint32_t value = val64;
 
-    DB_PRINT("addr=" TARGET_FMT_plx " = %x\n", addr, value);
+    DB_PRINT("addr=" HWADDR_FMT_plx " = %x\n", addr, value);
     addr >>= 2;
     switch (addr) {
     case R_SRR:
@@ -312,14 +316,17 @@ done:
     xlx_spi_update_irq(s);
 }
 
-static const MemoryRegionOps spi_ops = {
-    .read = spi_read,
-    .write = spi_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .valid = {
-        .min_access_size = 4,
-        .max_access_size = 4
-    }
+static const MemoryRegionOps spi_ops[2] = {
+    [0 ... 1] = {
+        .read = spi_read,
+        .write = spi_write,
+        .valid = {
+            .min_access_size = 4,
+            .max_access_size = 4,
+        },
+    },
+    [0].endianness = DEVICE_LITTLE_ENDIAN,
+    [1].endianness = DEVICE_BIG_ENDIAN,
 };
 
 static void xilinx_spi_realize(DeviceState *dev, Error **errp)
@@ -327,6 +334,12 @@ static void xilinx_spi_realize(DeviceState *dev, Error **errp)
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     XilinxSPI *s = XILINX_SPI(dev);
     int i;
+
+    if (s->model_endianness == ENDIAN_MODE_UNSPECIFIED) {
+        error_setg(errp, TYPE_XILINX_SPI " property 'endianness'"
+                         " must be set to 'big' or 'little'");
+        return;
+    }
 
     DB_PRINT("\n");
 
@@ -338,7 +351,8 @@ static void xilinx_spi_realize(DeviceState *dev, Error **errp)
         sysbus_init_irq(sbd, &s->cs_lines[i]);
     }
 
-    memory_region_init_io(&s->mmio, OBJECT(s), &spi_ops, s,
+    memory_region_init_io(&s->mmio, OBJECT(s),
+                          &spi_ops[s->model_endianness == ENDIAN_MODE_BIG], s,
                           "xilinx-spi", R_MAX * 4);
     sysbus_init_mmio(sbd, &s->mmio);
 
@@ -352,7 +366,7 @@ static const VMStateDescription vmstate_xilinx_spi = {
     .name = "xilinx_spi",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_FIFO8(tx_fifo, XilinxSPI),
         VMSTATE_FIFO8(rx_fifo, XilinxSPI),
         VMSTATE_UINT32_ARRAY(regs, XilinxSPI, R_MAX),
@@ -360,17 +374,17 @@ static const VMStateDescription vmstate_xilinx_spi = {
     }
 };
 
-static Property xilinx_spi_properties[] = {
+static const Property xilinx_spi_properties[] = {
+    DEFINE_PROP_ENDIAN_NODEFAULT("endianness", XilinxSPI, model_endianness),
     DEFINE_PROP_UINT8("num-ss-bits", XilinxSPI, num_cs, 1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void xilinx_spi_class_init(ObjectClass *klass, void *data)
+static void xilinx_spi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = xilinx_spi_realize;
-    dc->reset = xlx_spi_reset;
+    device_class_set_legacy_reset(dc, xlx_spi_reset);
     device_class_set_props(dc, xilinx_spi_properties);
     dc->vmsd = &vmstate_xilinx_spi;
 }

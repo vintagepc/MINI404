@@ -24,18 +24,18 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/datadir.h"
-#include "cpu.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/primecell.h"
+#include "hw/arm/machines-qom.h"
 #include "hw/net/lan9118.h"
 #include "hw/i2c/i2c.h"
 #include "net/net.h"
-#include "sysemu/sysemu.h"
-#include "hw/boards.h"
-#include "hw/loader.h"
+#include "system/system.h"
+#include "hw/core/boards.h"
+#include "hw/core/loader.h"
 #include "hw/block/flash.h"
-#include "sysemu/device_tree.h"
+#include "system/device_tree.h"
 #include "qemu/error-report.h"
 #include <libfdt.h>
 #include "hw/char/pl011.h"
@@ -43,11 +43,16 @@
 #include "hw/cpu/a15mpcore.h"
 #include "hw/i2c/arm_sbcon_i2c.h"
 #include "hw/sd/sd.h"
+#include "qobject/qlist.h"
 #include "qom/object.h"
+#include "qemu/audio.h"
+#include "target/arm/cpu-qom.h"
 
 #define VEXPRESS_BOARD_ID 0x8e0
 #define VEXPRESS_FLASH_SIZE (64 * 1024 * 1024)
 #define VEXPRESS_FLASH_SECT_SIZE (256 * 1024)
+
+#define GIC_EXT_IRQS 64 /* Versatile Express A9 development board */
 
 /* Number of virtio transports to create (0..8; limited by
  * number of available IRQ lines).
@@ -173,6 +178,10 @@ struct VexpressMachineClass {
 
 struct VexpressMachineState {
     MachineState parent;
+    MemoryRegion vram;
+    MemoryRegion sram;
+    MemoryRegion flashalias;
+    MemoryRegion a15sram;
     bool secure;
     bool virt;
 };
@@ -182,7 +191,7 @@ struct VexpressMachineState {
 #define TYPE_VEXPRESS_A15_MACHINE   MACHINE_TYPE_NAME("vexpress-a15")
 OBJECT_DECLARE_TYPE(VexpressMachineState, VexpressMachineClass, VEXPRESS_MACHINE)
 
-typedef void DBoardInitFn(const VexpressMachineState *machine,
+typedef void DBoardInitFn(VexpressMachineState *machine,
                           ram_addr_t ram_size,
                           const char *cpu_type,
                           qemu_irq *pic);
@@ -235,6 +244,7 @@ static void init_cpus(MachineState *ms, const char *cpu_type,
      */
     dev = qdev_new(privdev);
     qdev_prop_set_uint32(dev, "num-cpu", smp_cpus);
+    qdev_prop_set_uint32(dev, "num-irq", GIC_EXT_IRQS + GIC_INTERNAL);
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(busdev, &error_fatal);
     sysbus_mmio_map(busdev, 0, periphbase);
@@ -245,7 +255,7 @@ static void init_cpus(MachineState *ms, const char *cpu_type,
      * external interrupts starting from 32 (because there
      * are internal interrupts 0..31).
      */
-    for (n = 0; n < 64; n++) {
+    for (n = 0; n < GIC_EXT_IRQS; n++) {
         pic[n] = qdev_get_gpio_in(dev, n);
     }
 
@@ -263,15 +273,14 @@ static void init_cpus(MachineState *ms, const char *cpu_type,
     }
 }
 
-static void a9_daughterboard_init(const VexpressMachineState *vms,
+static void a9_daughterboard_init(VexpressMachineState *vms,
                                   ram_addr_t ram_size,
                                   const char *cpu_type,
                                   qemu_irq *pic)
 {
     MachineState *machine = MACHINE(vms);
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *lowram = g_new(MemoryRegion, 1);
-    ram_addr_t low_ram_size;
+    DeviceState *dev;
 
     if (ram_size > 0x40000000) {
         /* 1GB is the maximum the address space permits */
@@ -279,17 +288,11 @@ static void a9_daughterboard_init(const VexpressMachineState *vms,
         exit(1);
     }
 
-    low_ram_size = ram_size;
-    if (low_ram_size > 0x4000000) {
-        low_ram_size = 0x4000000;
-    }
-    /* RAM is from 0x60000000 upwards. The bottom 64MB of the
+    /*
+     * RAM is from 0x60000000 upwards. The bottom 64MB of the
      * address space should in theory be remappable to various
-     * things including ROM or RAM; we always map the RAM there.
+     * things including ROM or RAM; we always map the flash there.
      */
-    memory_region_init_alias(lowram, NULL, "vexpress.lowmem", machine->ram,
-                             0, low_ram_size);
-    memory_region_add_subregion(sysmem, 0x0, lowram);
     memory_region_add_subregion(sysmem, 0x60000000, machine->ram);
 
     /* 0x1e000000 A9MPCore (SCU) private memory region */
@@ -299,7 +302,12 @@ static void a9_daughterboard_init(const VexpressMachineState *vms,
     /* Daughterboard peripherals : 0x10020000 .. 0x20000000 */
 
     /* 0x10020000 PL111 CLCD (daughterboard) */
-    sysbus_create_simple("pl111", 0x10020000, pic[44]);
+    dev = qdev_new("pl111");
+    object_property_set_link(OBJECT(dev), "framebuffer-memory",
+                             OBJECT(sysmem), &error_fatal);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x10020000);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[44]);
 
     /* 0x10060000 AXI RAM */
     /* 0x100e0000 PL341 Dynamic Memory Controller */
@@ -348,14 +356,13 @@ static VEDBoardInfo a9_daughterboard = {
     .init = a9_daughterboard_init,
 };
 
-static void a15_daughterboard_init(const VexpressMachineState *vms,
+static void a15_daughterboard_init(VexpressMachineState *vms,
                                    ram_addr_t ram_size,
                                    const char *cpu_type,
                                    qemu_irq *pic)
 {
     MachineState *machine = MACHINE(vms);
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *sram = g_new(MemoryRegion, 1);
 
     {
         /* We have to use a separate 64 bit variable here to avoid the gcc
@@ -386,9 +393,9 @@ static void a15_daughterboard_init(const VexpressMachineState *vms,
     /* 0x2b060000: SP805 watchdog: not modelled */
     /* 0x2b0a0000: PL341 dynamic memory controller: not modelled */
     /* 0x2e000000: system SRAM */
-    memory_region_init_ram(sram, NULL, "vexpress.a15sram", 0x10000,
+    memory_region_init_ram(&vms->a15sram, NULL, "vexpress.a15sram", 0x10000,
                            &error_fatal);
-    memory_region_add_subregion(sysmem, 0x2e000000, sram);
+    memory_region_add_subregion(sysmem, 0x2e000000, &vms->a15sram);
 
     /* 0x7ffb0000: DMA330 DMA controller: not modelled */
     /* 0x7ffd0000: PL354 static memory controller: not modelled */
@@ -540,18 +547,15 @@ static void vexpress_common_init(MachineState *machine)
     VexpressMachineClass *vmc = VEXPRESS_MACHINE_GET_CLASS(machine);
     VEDBoardInfo *daughterboard = vmc->daughterboard;
     DeviceState *dev, *sysctl, *pl041;
-    qemu_irq pic[64];
+    qemu_irq pic[GIC_EXT_IRQS];
     uint32_t sys_id;
     DriveInfo *dinfo;
     PFlashCFI01 *pflash0;
     I2CBus *i2c;
     ram_addr_t vram_size, sram_size;
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *vram = g_new(MemoryRegion, 1);
-    MemoryRegion *sram = g_new(MemoryRegion, 1);
-    MemoryRegion *flashalias = g_new(MemoryRegion, 1);
-    MemoryRegion *flash0mem;
     const hwaddr *map = daughterboard->motherboard_map;
+    QList *db_voltage, *db_clock;
     int i;
 
     daughterboard->init(vms, machine->ram_size, machine->cpu_type, pic);
@@ -575,7 +579,7 @@ static void vexpress_common_init(MachineState *machine)
             exit(1);
         }
         image_size = load_image_targphys(fn, map[VE_NORFLASH0],
-                                         VEXPRESS_FLASH_SIZE);
+                                         VEXPRESS_FLASH_SIZE, NULL);
         g_free(fn);
         if (image_size < 0) {
             error_report("Could not load ROM image '%s'", machine->firmware);
@@ -592,20 +596,19 @@ static void vexpress_common_init(MachineState *machine)
     sysctl = qdev_new("realview_sysctl");
     qdev_prop_set_uint32(sysctl, "sys_id", sys_id);
     qdev_prop_set_uint32(sysctl, "proc_id", daughterboard->proc_id);
-    qdev_prop_set_uint32(sysctl, "len-db-voltage",
-                         daughterboard->num_voltage_sensors);
+
+    db_voltage = qlist_new();
     for (i = 0; i < daughterboard->num_voltage_sensors; i++) {
-        char *propname = g_strdup_printf("db-voltage[%d]", i);
-        qdev_prop_set_uint32(sysctl, propname, daughterboard->voltages[i]);
-        g_free(propname);
+        qlist_append_int(db_voltage, daughterboard->voltages[i]);
     }
-    qdev_prop_set_uint32(sysctl, "len-db-clock",
-                         daughterboard->num_clocks);
+    qdev_prop_set_array(sysctl, "db-voltage", db_voltage);
+
+    db_clock = qlist_new();
     for (i = 0; i < daughterboard->num_clocks; i++) {
-        char *propname = g_strdup_printf("db-clock[%d]", i);
-        qdev_prop_set_uint32(sysctl, propname, daughterboard->clocks[i]);
-        g_free(propname);
+        qlist_append_int(db_clock, daughterboard->clocks[i]);
     }
+    qdev_prop_set_array(sysctl, "db-clock", db_clock);
+
     sysbus_realize_and_unref(SYS_BUS_DEVICE(sysctl), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(sysctl), 0, map[VE_SYSREGS]);
 
@@ -614,6 +617,9 @@ static void vexpress_common_init(MachineState *machine)
 
     pl041 = qdev_new("pl041");
     qdev_prop_set_uint32(pl041, "nc_fifo_depth", 512);
+    if (machine->audiodev) {
+        qdev_prop_set_string(pl041, "audiodev", machine->audiodev);
+    }
     sysbus_realize_and_unref(SYS_BUS_DEVICE(pl041), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(pl041), 0, map[VE_PL041]);
     sysbus_connect_irq(SYS_BUS_DEVICE(pl041), 0, pic[11]);
@@ -646,7 +652,7 @@ static void vexpress_common_init(MachineState *machine)
     sysbus_create_simple("sp804", map[VE_TIMER01], pic[2]);
     sysbus_create_simple("sp804", map[VE_TIMER23], pic[3]);
 
-    dev = sysbus_create_simple(TYPE_VERSATILE_I2C, map[VE_SERIALDVI], NULL);
+    dev = sysbus_create_simple(TYPE_ARM_SBCON_I2C, map[VE_SERIALDVI], NULL);
     i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
     i2c_slave_create_simple(i2c, "sii9022", 0x39);
 
@@ -654,44 +660,42 @@ static void vexpress_common_init(MachineState *machine)
 
     /* VE_COMPACTFLASH: not modelled */
 
-    sysbus_create_simple("pl111", map[VE_CLCD], pic[14]);
+    dev = qdev_new("pl111");
+    object_property_set_link(OBJECT(dev), "framebuffer-memory",
+                             OBJECT(sysmem), &error_fatal);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, map[VE_CLCD]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[14]);
 
     dinfo = drive_get(IF_PFLASH, 0, 0);
     pflash0 = ve_pflash_cfi01_register(map[VE_NORFLASH0], "vexpress.flash0",
                                        dinfo);
-    if (!pflash0) {
-        error_report("vexpress: error registering flash 0");
-        exit(1);
-    }
 
     if (map[VE_NORFLASHALIAS] != -1) {
         /* Map flash 0 as an alias into low memory */
+        MemoryRegion *flash0mem;
         flash0mem = sysbus_mmio_get_region(SYS_BUS_DEVICE(pflash0), 0);
-        memory_region_init_alias(flashalias, NULL, "vexpress.flashalias",
+        memory_region_init_alias(&vms->flashalias, NULL, "vexpress.flashalias",
                                  flash0mem, 0, VEXPRESS_FLASH_SIZE);
-        memory_region_add_subregion(sysmem, map[VE_NORFLASHALIAS], flashalias);
+        memory_region_add_subregion(sysmem, map[VE_NORFLASHALIAS], &vms->flashalias);
     }
 
     dinfo = drive_get(IF_PFLASH, 0, 1);
-    if (!ve_pflash_cfi01_register(map[VE_NORFLASH1], "vexpress.flash1",
-                                  dinfo)) {
-        error_report("vexpress: error registering flash 1");
-        exit(1);
-    }
+    ve_pflash_cfi01_register(map[VE_NORFLASH1], "vexpress.flash1", dinfo);
 
     sram_size = 0x2000000;
-    memory_region_init_ram(sram, NULL, "vexpress.sram", sram_size,
+    memory_region_init_ram(&vms->sram, NULL, "vexpress.sram", sram_size,
                            &error_fatal);
-    memory_region_add_subregion(sysmem, map[VE_SRAM], sram);
+    memory_region_add_subregion(sysmem, map[VE_SRAM], &vms->sram);
 
     vram_size = 0x800000;
-    memory_region_init_ram(vram, NULL, "vexpress.vram", vram_size,
+    memory_region_init_ram(&vms->vram, NULL, "vexpress.vram", vram_size,
                            &error_fatal);
-    memory_region_add_subregion(sysmem, map[VE_VIDEORAM], vram);
+    memory_region_add_subregion(sysmem, map[VE_VIDEORAM], &vms->vram);
 
     /* 0x4e000000 LAN9118 Ethernet */
-    if (nd_table[0].used) {
-        lan9118_init(&nd_table[0], map[VE_ETHERNET], pic[15]);
+    if (qemu_find_nic_info("lan9118", true, NULL)) {
+        lan9118_init(map[VE_ETHERNET], pic[15]);
     }
 
     /* VE_USB: not modelled */
@@ -774,7 +778,7 @@ static void vexpress_a9_instance_init(Object *obj)
     vms->virt = false;
 }
 
-static void vexpress_class_init(ObjectClass *oc, void *data)
+static void vexpress_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -784,6 +788,7 @@ static void vexpress_class_init(ObjectClass *oc, void *data)
     mc->ignore_memory_transaction_failures = true;
     mc->default_ram_id = "vexpress.highmem";
 
+    machine_add_audiodev_property(mc);
     object_class_property_add_bool(oc, "secure", vexpress_get_secure,
                                    vexpress_set_secure);
     object_class_property_set_description(oc, "secure",
@@ -791,24 +796,34 @@ static void vexpress_class_init(ObjectClass *oc, void *data)
                                           "Security Extensions (TrustZone)");
 }
 
-static void vexpress_a9_class_init(ObjectClass *oc, void *data)
+static void vexpress_a9_class_init(ObjectClass *oc, const void *data)
 {
+    static const char * const valid_cpu_types[] = {
+        ARM_CPU_TYPE_NAME("cortex-a9"),
+        NULL
+    };
     MachineClass *mc = MACHINE_CLASS(oc);
     VexpressMachineClass *vmc = VEXPRESS_MACHINE_CLASS(oc);
 
     mc->desc = "ARM Versatile Express for Cortex-A9";
-    mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a9");
+    mc->valid_cpu_types = valid_cpu_types;
+    mc->auto_create_sdcard = true;
 
     vmc->daughterboard = &a9_daughterboard;
 }
 
-static void vexpress_a15_class_init(ObjectClass *oc, void *data)
+static void vexpress_a15_class_init(ObjectClass *oc, const void *data)
 {
+    static const char * const valid_cpu_types[] = {
+        ARM_CPU_TYPE_NAME("cortex-a15"),
+        NULL
+    };
     MachineClass *mc = MACHINE_CLASS(oc);
     VexpressMachineClass *vmc = VEXPRESS_MACHINE_CLASS(oc);
 
     mc->desc = "ARM Versatile Express for Cortex-A15";
-    mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a15");
+    mc->valid_cpu_types = valid_cpu_types;
+    mc->auto_create_sdcard = true;
 
     vmc->daughterboard = &a15_daughterboard;
 
@@ -836,6 +851,7 @@ static const TypeInfo vexpress_a9_info = {
     .parent = TYPE_VEXPRESS_MACHINE,
     .class_init = vexpress_a9_class_init,
     .instance_init = vexpress_a9_instance_init,
+    .interfaces = arm_machine_interfaces,
 };
 
 static const TypeInfo vexpress_a15_info = {
@@ -843,6 +859,7 @@ static const TypeInfo vexpress_a15_info = {
     .parent = TYPE_VEXPRESS_MACHINE,
     .class_init = vexpress_a15_class_init,
     .instance_init = vexpress_a15_instance_init,
+    .interfaces = arm_machine_interfaces,
 };
 
 static void vexpress_machine_init(void)

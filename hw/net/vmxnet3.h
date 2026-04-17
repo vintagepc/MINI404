@@ -63,8 +63,8 @@
  * details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * along with this program; if not, see
+ * <https://www.gnu.org/licenses/>.
  *
  * The full GNU General Public License is included in this distribution in
  * the file called "COPYING".
@@ -733,7 +733,7 @@ struct Vmxnet3_TxQueueDesc {
 struct Vmxnet3_RxQueueDesc {
     struct Vmxnet3_RxQueueCtrl        ctrl;
     struct Vmxnet3_RxQueueConf        conf;
-    /* Driver read after a GET commad */
+    /* Driver read after a GET command */
     struct Vmxnet3_QueueStatus        status;
     struct UPT1_RxStats            stats;
     u8                      __pad[88]; /* 128 aligned */

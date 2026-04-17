@@ -4,8 +4,7 @@
 #include "qom/object.h"
 #include "qapi/visitor.h"
 #include "qom/object_interfaces.h"
-#include "block/aio.h"
-#include "qemu/coroutine.h"
+#include "qemu/aio.h"
 
 #define TYPE_PR_MANAGER "pr-manager"
 

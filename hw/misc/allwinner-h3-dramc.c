@@ -20,12 +20,12 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu/error-report.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "exec/address-spaces.h"
-#include "hw/qdev-properties.h"
+#include "system/address-spaces.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "hw/misc/allwinner-h3-dramc.h"
 #include "trace.h"
@@ -219,7 +219,7 @@ static void allwinner_h3_dramphy_write(void *opaque, hwaddr offset,
 static const MemoryRegionOps allwinner_h3_dramcom_ops = {
     .read = allwinner_h3_dramcom_read,
     .write = allwinner_h3_dramcom_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -230,7 +230,7 @@ static const MemoryRegionOps allwinner_h3_dramcom_ops = {
 static const MemoryRegionOps allwinner_h3_dramctl_ops = {
     .read = allwinner_h3_dramctl_read,
     .write = allwinner_h3_dramctl_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -241,7 +241,7 @@ static const MemoryRegionOps allwinner_h3_dramctl_ops = {
 static const MemoryRegionOps allwinner_h3_dramphy_ops = {
     .read = allwinner_h3_dramphy_read,
     .write = allwinner_h3_dramphy_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -314,17 +314,16 @@ static void allwinner_h3_dramc_init(Object *obj)
     sysbus_init_mmio(sbd, &s->dramphy_iomem);
 }
 
-static Property allwinner_h3_dramc_properties[] = {
+static const Property allwinner_h3_dramc_properties[] = {
     DEFINE_PROP_UINT64("ram-addr", AwH3DramCtlState, ram_addr, 0x0),
     DEFINE_PROP_UINT32("ram-size", AwH3DramCtlState, ram_size, 256 * MiB),
-    DEFINE_PROP_END_OF_LIST()
 };
 
 static const VMStateDescription allwinner_h3_dramc_vmstate = {
     .name = "allwinner-h3-dramc",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(dramcom, AwH3DramCtlState, AW_H3_DRAMCOM_REGS_NUM),
         VMSTATE_UINT32_ARRAY(dramctl, AwH3DramCtlState, AW_H3_DRAMCTL_REGS_NUM),
         VMSTATE_UINT32_ARRAY(dramphy, AwH3DramCtlState, AW_H3_DRAMPHY_REGS_NUM),
@@ -332,11 +331,11 @@ static const VMStateDescription allwinner_h3_dramc_vmstate = {
     }
 };
 
-static void allwinner_h3_dramc_class_init(ObjectClass *klass, void *data)
+static void allwinner_h3_dramc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = allwinner_h3_dramc_reset;
+    device_class_set_legacy_reset(dc, allwinner_h3_dramc_reset);
     dc->vmsd = &allwinner_h3_dramc_vmstate;
     dc->realize = allwinner_h3_dramc_realize;
     device_class_set_props(dc, allwinner_h3_dramc_properties);

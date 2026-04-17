@@ -23,7 +23,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "block/aio.h"
+#include "qemu/aio.h"
 #include "block/aio_task.h"
 
 struct AioTaskPool {
@@ -118,9 +118,4 @@ int aio_task_pool_status(AioTaskPool *pool)
     }
 
     return pool->status;
-}
-
-bool aio_task_pool_empty(AioTaskPool *pool)
-{
-    return pool->busy_tasks == 0;
 }

@@ -20,8 +20,8 @@
 #ifndef MIPS_CPS_H
 #define MIPS_CPS_H
 
-#include "hw/sysbus.h"
-#include "hw/clock.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/clock.h"
 #include "hw/misc/mips_cmgcr.h"
 #include "hw/intc/mips_gic.h"
 #include "hw/misc/mips_cpc.h"
@@ -38,6 +38,7 @@ struct MIPSCPSState {
     uint32_t num_vp;
     uint32_t num_irq;
     char *cpu_type;
+    bool cpu_is_bigendian;
 
     MemoryRegion container;
     MIPSGCRState gcr;

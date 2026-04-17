@@ -32,8 +32,8 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
-#include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "trace.h"
 #include "qom/object.h"
@@ -77,7 +77,7 @@ static const VMStateDescription vmstate_xen_pvdevice = {
     .name = "xen-pvdevice",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, XenPVDevice),
         VMSTATE_END_OF_LIST()
     }
@@ -115,15 +115,14 @@ static void xen_pv_realize(PCIDevice *pci_dev, Error **errp)
                      &d->mmio);
 }
 
-static Property xen_pv_props[] = {
+static const Property xen_pv_props[] = {
     DEFINE_PROP_UINT16("vendor-id", XenPVDevice, vendor_id, PCI_VENDOR_ID_XEN),
     DEFINE_PROP_UINT16("device-id", XenPVDevice, device_id, 0xffff),
     DEFINE_PROP_UINT8("revision", XenPVDevice, revision, 0x01),
     DEFINE_PROP_UINT32("size", XenPVDevice, size, 0x400000),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void xen_pv_class_init(ObjectClass *klass, void *data)
+static void xen_pv_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -140,7 +139,7 @@ static const TypeInfo xen_pv_type_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(XenPVDevice),
     .class_init    = xen_pv_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

@@ -24,9 +24,13 @@ import subprocess
 import json
 from graphviz import Digraph
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'python'))
-from qemu.qmp import QMPError
-from qemu.qmp.legacy import QEMUMonitorProtocol
+try:
+    from qemu.qmp import QMPError
+    from qemu.qmp.legacy import QEMUMonitorProtocol
+except ModuleNotFoundError as exc:
+    print(f"Module '{exc.name}' not found.", file=sys.stderr)
+    print(f"Try $builddir/run {' '.join(sys.argv)}", file=sys.stderr)
+    sys.exit(1)
 
 
 def perm(arr):
@@ -43,13 +47,13 @@ def render_block_graph(qmp, filename, format='png'):
     representation in @format into "@filename.@format"
     '''
 
-    bds_nodes = qmp.command('query-named-block-nodes')
+    bds_nodes = qmp.cmd('query-named-block-nodes')
     bds_nodes = {n['node-name']: n for n in bds_nodes}
 
-    job_nodes = qmp.command('query-block-jobs')
+    job_nodes = qmp.cmd('query-block-jobs')
     job_nodes = {n['device']: n for n in job_nodes}
 
-    block_graph = qmp.command('x-debug-query-block-graph')
+    block_graph = qmp.cmd('x-debug-query-block-graph')
 
     graph = Digraph(comment='Block Nodes Graph')
     graph.format = format
@@ -94,7 +98,7 @@ class LibvirtGuest():
     def __init__(self, name):
         self.name = name
 
-    def command(self, cmd):
+    def cmd(self, cmd):
         # only supports qmp commands without parameters
         m = {'execute': cmd}
         ar = ['virsh', 'qemu-monitor-command', self.name, json.dumps(m)]

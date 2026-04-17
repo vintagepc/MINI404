@@ -27,7 +27,8 @@
 #include "qapi/error.h"
 #include "qemu/datadir.h"
 #include "cpu.h"
-#include "hw/sysbus.h"
+#include "exec/target_page.h"
+#include "hw/core/sysbus.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "hw/sparc/sun4m_iommu.h"
@@ -35,22 +36,22 @@
 #include "migration/vmstate.h"
 #include "hw/sparc/sparc32_dma.h"
 #include "hw/block/fdc.h"
-#include "sysemu/reset.h"
-#include "sysemu/runstate.h"
-#include "sysemu/sysemu.h"
+#include "system/reset.h"
+#include "system/runstate.h"
+#include "system/system.h"
 #include "net/net.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/scsi/esp.h"
 #include "hw/nvram/sun_nvram.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/nvram/chrp_nvram.h"
 #include "hw/nvram/fw_cfg.h"
 #include "hw/char/escc.h"
 #include "hw/misc/empty_slot.h"
 #include "hw/misc/unimp.h"
-#include "hw/irq.h"
-#include "hw/or-irq.h"
-#include "hw/loader.h"
+#include "hw/core/irq.h"
+#include "hw/core/or-irq.h"
+#include "hw/core/loader.h"
 #include "elf.h"
 #include "trace.h"
 #include "qom/object.h"
@@ -195,10 +196,6 @@ static void cpu_set_irq(void *opaque, int irq, int level)
     }
 }
 
-static void dummy_cpu_set_irq(void *opaque, int irq, int level)
-{
-}
-
 static void sun4m_cpu_reset(void *opaque)
 {
     SPARCCPU *cpu = opaque;
@@ -233,24 +230,19 @@ static unsigned long sun4m_load_kernel(const char *kernel_filename,
 
     kernel_size = 0;
     if (linux_boot) {
-        int bswap_needed;
-
-#ifdef BSWAP_NEEDED
-        bswap_needed = 1;
-#else
-        bswap_needed = 0;
-#endif
         kernel_size = load_elf(kernel_filename, NULL,
                                translate_kernel_address, NULL,
-                               NULL, NULL, NULL, NULL, 1, EM_SPARC, 0, 0);
+                               NULL, NULL, NULL, NULL,
+                               ELFDATA2MSB, EM_SPARC, 0, 0);
         if (kernel_size < 0)
             kernel_size = load_aout(kernel_filename, KERNEL_LOAD_ADDR,
-                                    RAM_size - KERNEL_LOAD_ADDR, bswap_needed,
+                                    RAM_size - KERNEL_LOAD_ADDR, true,
                                     TARGET_PAGE_SIZE);
         if (kernel_size < 0)
             kernel_size = load_image_targphys(kernel_filename,
                                               KERNEL_LOAD_ADDR,
-                                              RAM_size - KERNEL_LOAD_ADDR);
+                                              RAM_size - KERNEL_LOAD_ADDR,
+                                              NULL);
         if (kernel_size < 0) {
             error_report("could not load kernel '%s'", kernel_filename);
             exit(1);
@@ -261,7 +253,8 @@ static unsigned long sun4m_load_kernel(const char *kernel_filename,
         if (initrd_filename) {
             *initrd_size = load_image_targphys(initrd_filename,
                                                INITRD_LOAD_ADDR,
-                                               RAM_size - INITRD_LOAD_ADDR);
+                                               RAM_size - INITRD_LOAD_ADDR,
+                                               NULL);
             if ((int)*initrd_size < 0) {
                 error_report("could not load initial ram disk '%s'",
                              initrd_filename);
@@ -271,9 +264,9 @@ static unsigned long sun4m_load_kernel(const char *kernel_filename,
         if (*initrd_size > 0) {
             for (i = 0; i < 64 * TARGET_PAGE_SIZE; i += TARGET_PAGE_SIZE) {
                 ptr = rom_ptr(KERNEL_LOAD_ADDR + i, 24);
-                if (ptr && ldl_p(ptr) == 0x48647253) { /* HdrS */
-                    stl_p(ptr + 16, INITRD_LOAD_ADDR);
-                    stl_p(ptr + 20, *initrd_size);
+                if (ptr && ldl_be_p(ptr) == 0x48647253) { /* HdrS */
+                    stl_be_p(ptr + 16, INITRD_LOAD_ADDR);
+                    stl_be_p(ptr + 20, *initrd_size);
                     break;
                 }
             }
@@ -299,30 +292,42 @@ static void *iommu_init(hwaddr addr, uint32_t version, qemu_irq irq)
 
 static void *sparc32_dma_init(hwaddr dma_base,
                               hwaddr esp_base, qemu_irq espdma_irq,
-                              hwaddr le_base, qemu_irq ledma_irq, NICInfo *nd)
+                              hwaddr le_base, qemu_irq ledma_irq,
+                              MACAddr *mac)
 {
     DeviceState *dma;
     ESPDMADeviceState *espdma;
     LEDMADeviceState *ledma;
     SysBusESPState *esp;
     SysBusPCNetState *lance;
+    NICInfo *nd = qemu_find_nic_info("lance", true, NULL);
 
     dma = qdev_new(TYPE_SPARC32_DMA);
     espdma = SPARC32_ESPDMA_DEVICE(object_resolve_path_component(
                                    OBJECT(dma), "espdma"));
-    sysbus_connect_irq(SYS_BUS_DEVICE(espdma), 0, espdma_irq);
 
     esp = SYSBUS_ESP(object_resolve_path_component(OBJECT(espdma), "esp"));
 
     ledma = SPARC32_LEDMA_DEVICE(object_resolve_path_component(
                                  OBJECT(dma), "ledma"));
-    sysbus_connect_irq(SYS_BUS_DEVICE(ledma), 0, ledma_irq);
 
     lance = SYSBUS_PCNET(object_resolve_path_component(
                          OBJECT(ledma), "lance"));
-    qdev_set_nic_properties(DEVICE(lance), nd);
+
+    if (nd) {
+        qdev_set_nic_properties(DEVICE(lance), nd);
+        memcpy(mac->a, nd->macaddr.a, sizeof(mac->a));
+    } else {
+        qemu_macaddr_default_if_unset(mac);
+        qdev_prop_set_macaddr(DEVICE(lance), "mac", mac->a);
+    }
 
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dma), &error_fatal);
+
+    sysbus_connect_irq(SYS_BUS_DEVICE(espdma), 0, espdma_irq);
+
+    sysbus_connect_irq(SYS_BUS_DEVICE(ledma), 0, ledma_irq);
+
     sysbus_mmio_map(SYS_BUS_DEVICE(dma), 0, dma_base);
 
     sysbus_mmio_map(SYS_BUS_DEVICE(esp), 0, esp_base);
@@ -335,7 +340,8 @@ static void *sparc32_dma_init(hwaddr dma_base,
 
 static DeviceState *slavio_intctl_init(hwaddr addr,
                                        hwaddr addrg,
-                                       qemu_irq **parent_irq)
+                                       unsigned int smp_cpus,
+                                       DeviceState **cpus)
 {
     DeviceState *dev;
     SysBusDevice *s;
@@ -346,9 +352,10 @@ static DeviceState *slavio_intctl_init(hwaddr addr,
     s = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(s, &error_fatal);
 
-    for (i = 0; i < MAX_CPUS; i++) {
+    for (i = 0; i < smp_cpus; i++) {
         for (j = 0; j < MAX_PILS; j++) {
-            sysbus_connect_irq(s, i * MAX_PILS + j, parent_irq[i][j]);
+            sysbus_connect_irq(s, i * MAX_PILS + j,
+                               qdev_get_gpio_in_named(cpus[i], "pil", j));
         }
     }
     sysbus_mmio_map(s, 0, addrg);
@@ -577,21 +584,15 @@ static void idreg_realize(DeviceState *ds, Error **errp)
 {
     IDRegState *s = MACIO_ID_REGISTER(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
-    Error *local_err = NULL;
 
-    memory_region_init_ram_nomigrate(&s->mem, OBJECT(ds), "sun4m.idreg",
-                                     sizeof(idreg_data), &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!memory_region_init_rom(&s->mem, OBJECT(ds), "sun4m.idreg",
+                                sizeof(idreg_data), errp)) {
         return;
     }
-
-    vmstate_register_ram_global(&s->mem);
-    memory_region_set_readonly(&s->mem, true);
     sysbus_init_mmio(dev, &s->mem);
 }
 
-static void idreg_class_init(ObjectClass *oc, void *data)
+static void idreg_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
@@ -631,20 +632,14 @@ static void afx_realize(DeviceState *ds, Error **errp)
 {
     AFXState *s = TCX_AFX(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
-    Error *local_err = NULL;
 
-    memory_region_init_ram_nomigrate(&s->mem, OBJECT(ds), "sun4m.afx", 4,
-                                     &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!memory_region_init_ram(&s->mem, OBJECT(ds), "sun4m.afx", 4, errp)) {
         return;
     }
-
-    vmstate_register_ram_global(&s->mem);
     sysbus_init_mmio(dev, &s->mem);
 }
 
-static void afx_class_init(ObjectClass *oc, void *data)
+static void afx_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
@@ -697,9 +692,9 @@ static void prom_init(hwaddr addr, const char *bios_name)
     if (filename) {
         ret = load_elf(filename, NULL,
                        translate_prom_address, &addr, NULL,
-                       NULL, NULL, NULL, 1, EM_SPARC, 0, 0);
+                       NULL, NULL, NULL, ELFDATA2MSB, EM_SPARC, 0, 0);
         if (ret < 0 || ret > PROM_SIZE_MAX) {
-            ret = load_image_targphys(filename, addr, PROM_SIZE_MAX);
+            ret = load_image_targphys(filename, addr, PROM_SIZE_MAX, NULL);
         }
         g_free(filename);
     } else {
@@ -715,29 +710,18 @@ static void prom_realize(DeviceState *ds, Error **errp)
 {
     PROMState *s = OPENPROM(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
-    Error *local_err = NULL;
 
-    memory_region_init_ram_nomigrate(&s->prom, OBJECT(ds), "sun4m.prom",
-                                     PROM_SIZE_MAX, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!memory_region_init_rom(&s->prom, OBJECT(ds), "sun4m.prom",
+                                PROM_SIZE_MAX, errp)) {
         return;
     }
-
-    vmstate_register_ram_global(&s->prom);
-    memory_region_set_readonly(&s->prom, true);
     sysbus_init_mmio(dev, &s->prom);
 }
 
-static Property prom_properties[] = {
-    {/* end of property list */},
-};
-
-static void prom_class_init(ObjectClass *klass, void *data)
+static void prom_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_props(dc, prom_properties);
     dc->realize = prom_realize;
 }
 
@@ -778,7 +762,7 @@ static void ram_initfn(Object *obj)
                                     "Valid value is ID of a hostmem backend");
 }
 
-static void ram_class_init(ObjectClass *klass, void *data)
+static void ram_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -793,22 +777,25 @@ static const TypeInfo ram_info = {
     .class_init    = ram_class_init,
 };
 
-static void cpu_devinit(const char *cpu_type, unsigned int id,
-                        uint64_t prom_addr, qemu_irq **cpu_irqs)
+static DeviceState *cpu_devinit(const char *cpu_type, unsigned int id,
+                                uint64_t prom_addr)
 {
     SPARCCPU *cpu;
     CPUSPARCState *env;
+    DeviceState *cpudev;
 
     cpu = SPARC_CPU(object_new(cpu_type));
     env = &cpu->env;
+    cpudev = DEVICE(cpu);
 
     qemu_register_reset(sun4m_cpu_reset, cpu);
     object_property_set_bool(OBJECT(cpu), "start-powered-off", id != 0,
-                             &error_fatal);
-    qdev_realize_and_unref(DEVICE(cpu), NULL, &error_fatal);
+                             &error_abort);
+    qdev_init_gpio_in_named(cpudev, cpu_set_irq, "pil", MAX_PILS);
+    qdev_realize_and_unref(cpudev, NULL, &error_fatal);
     cpu_sparc_set_id(env, id);
-    *cpu_irqs = qemu_allocate_irqs(cpu_set_irq, cpu, MAX_PILS);
     env->prom_addr = prom_addr;
+    return cpudev;
 }
 
 static void dummy_fdc_tc(void *opaque, int irq, int level)
@@ -821,18 +808,19 @@ static void sun4m_hw_init(MachineState *machine)
     DeviceState *slavio_intctl;
     unsigned int i;
     Nvram *nvram;
-    qemu_irq *cpu_irqs[MAX_CPUS], slavio_irq[32], slavio_cpu_irq[MAX_CPUS];
+    qemu_irq slavio_irq[32], slavio_cpu_irq[MAX_CPUS];
     qemu_irq fdc_tc;
     unsigned long kernel_size;
     uint32_t initrd_size;
     DriveInfo *fd[MAX_FD];
     FWCfgState *fw_cfg;
     DeviceState *dev, *ms_kb_orgate, *serial_orgate;
+    DeviceState *cpus[MAX_CPUS];
     SysBusDevice *s;
     unsigned int smp_cpus = machine->smp.cpus;
     unsigned int max_cpus = machine->smp.max_cpus;
     HostMemoryBackend *ram_memdev = machine->memdev;
-    NICInfo *nd = &nd_table[0];
+    MACAddr hostid;
 
     if (machine->ram_size > hwdef->max_mem) {
         error_report("Too much memory for this machine: %" PRId64 ","
@@ -843,11 +831,8 @@ static void sun4m_hw_init(MachineState *machine)
 
     /* init CPUs */
     for(i = 0; i < smp_cpus; i++) {
-        cpu_devinit(machine->cpu_type, i, hwdef->slavio_base, &cpu_irqs[i]);
+        cpus[i] = cpu_devinit(machine->cpu_type, i, hwdef->slavio_base);
     }
-
-    for (i = smp_cpus; i < MAX_CPUS; i++)
-        cpu_irqs[i] = qemu_allocate_irqs(dummy_cpu_set_irq, NULL, MAX_PILS);
 
     /* Create and map RAM frontend */
     dev = qdev_new("memory");
@@ -865,7 +850,8 @@ static void sun4m_hw_init(MachineState *machine)
 
     slavio_intctl = slavio_intctl_init(hwdef->intctl_base,
                                        hwdef->intctl_base + 0x10000ULL,
-                                       cpu_irqs);
+                                       smp_cpus,
+                                       cpus);
 
     for (i = 0; i < 32; i++) {
         slavio_irq[i] = qdev_get_gpio_in(slavio_intctl, i);
@@ -893,11 +879,19 @@ static void sun4m_hw_init(MachineState *machine)
                         hwdef->iommu_pad_base, hwdef->iommu_pad_len);
     }
 
-    qemu_check_nic_model(nd, TYPE_LANCE);
     sparc32_dma_init(hwdef->dma_base,
                      hwdef->esp_base, slavio_irq[18],
-                     hwdef->le_base, slavio_irq[16], nd);
+                     hwdef->le_base, slavio_irq[16], &hostid);
 
+    if (!graphic_width) {
+        graphic_width = 1024;
+    }
+    if (!graphic_height) {
+        graphic_height = 768;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 8;
+    }
     if (graphic_depth != 8 && graphic_depth != 24) {
         error_report("Unsupported depth: %d", graphic_depth);
         exit (1);
@@ -977,12 +971,12 @@ static void sun4m_hw_init(MachineState *machine)
     sysbus_mmio_map(s, 0, hwdef->ms_kb_base);
 
     /* Logically OR both its IRQs together */
-    ms_kb_orgate = DEVICE(object_new(TYPE_OR_IRQ));
+    ms_kb_orgate = qdev_new(TYPE_OR_IRQ);
     object_property_set_int(OBJECT(ms_kb_orgate), "num-lines", 2, &error_fatal);
     qdev_realize_and_unref(ms_kb_orgate, NULL, &error_fatal);
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(ms_kb_orgate, 0));
     sysbus_connect_irq(s, 1, qdev_get_gpio_in(ms_kb_orgate, 1));
-    qdev_connect_gpio_out(DEVICE(ms_kb_orgate), 0, slavio_irq[14]);
+    qdev_connect_gpio_out(ms_kb_orgate, 0, slavio_irq[14]);
 
     dev = qdev_new(TYPE_ESCC);
     qdev_prop_set_uint32(dev, "disabled", 0);
@@ -998,13 +992,13 @@ static void sun4m_hw_init(MachineState *machine)
     sysbus_mmio_map(s, 0, hwdef->serial_base);
 
     /* Logically OR both its IRQs together */
-    serial_orgate = DEVICE(object_new(TYPE_OR_IRQ));
+    serial_orgate = qdev_new(TYPE_OR_IRQ);
     object_property_set_int(OBJECT(serial_orgate), "num-lines", 2,
                             &error_fatal);
     qdev_realize_and_unref(serial_orgate, NULL, &error_fatal);
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(serial_orgate, 0));
     sysbus_connect_irq(s, 1, qdev_get_gpio_in(serial_orgate, 1));
-    qdev_connect_gpio_out(DEVICE(serial_orgate), 0, slavio_irq[15]);
+    qdev_connect_gpio_out(serial_orgate, 0, slavio_irq[15]);
 
     if (hwdef->apc_base) {
         apc_init(hwdef->apc_base, qemu_allocate_irq(cpu_halt_signal, NULL, 0));
@@ -1048,7 +1042,7 @@ static void sun4m_hw_init(MachineState *machine)
                                     machine->initrd_filename,
                                     machine->ram_size, &initrd_size);
 
-    nvram_init(nvram, (uint8_t *)&nd->macaddr, machine->kernel_cmdline,
+    nvram_init(nvram, hostid.a, machine->kernel_cmdline,
                machine->boot_config.order, machine->ram_size, kernel_size,
                graphic_width, graphic_height, graphic_depth,
                hwdef->nvram_machine_id, "Sun4m");
@@ -1106,7 +1100,7 @@ enum {
     ss600mp_id,
 };
 
-static void sun4m_machine_class_init(ObjectClass *oc, void *data)
+static void sun4m_machine_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -1117,7 +1111,7 @@ static void sun4m_machine_class_init(ObjectClass *oc, void *data)
     mc->default_ram_id = "sun4m.ram";
 }
 
-static void ss5_class_init(ObjectClass *oc, void *data)
+static void ss5_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1154,7 +1148,7 @@ static void ss5_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &ss5_hwdef;
 }
 
-static void ss10_class_init(ObjectClass *oc, void *data)
+static void ss10_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1189,7 +1183,7 @@ static void ss10_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &ss10_hwdef;
 }
 
-static void ss600mp_class_init(ObjectClass *oc, void *data)
+static void ss600mp_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1222,7 +1216,7 @@ static void ss600mp_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &ss600mp_hwdef;
 }
 
-static void ss20_class_init(ObjectClass *oc, void *data)
+static void ss20_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1273,7 +1267,7 @@ static void ss20_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &ss20_hwdef;
 }
 
-static void voyager_class_init(ObjectClass *oc, void *data)
+static void voyager_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1305,7 +1299,7 @@ static void voyager_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &voyager_hwdef;
 }
 
-static void ss_lx_class_init(ObjectClass *oc, void *data)
+static void ss_lx_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1338,7 +1332,7 @@ static void ss_lx_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &ss_lx_hwdef;
 }
 
-static void ss4_class_init(ObjectClass *oc, void *data)
+static void ss4_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1371,7 +1365,7 @@ static void ss4_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &ss4_hwdef;
 }
 
-static void scls_class_init(ObjectClass *oc, void *data)
+static void scls_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);
@@ -1403,7 +1397,7 @@ static void scls_class_init(ObjectClass *oc, void *data)
     smc->hwdef = &scls_hwdef;
 }
 
-static void sbook_class_init(ObjectClass *oc, void *data)
+static void sbook_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     Sun4mMachineClass *smc = SUN4M_MACHINE_CLASS(mc);

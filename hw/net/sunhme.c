@@ -23,15 +23,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/net/mii.h"
 #include "net/net.h"
 #include "qemu/module.h"
 #include "net/checksum.h"
 #include "net/eth.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "trace.h"
 #include "qom/object.h"
 
@@ -177,9 +177,8 @@ struct SunHMEState {
     uint16_t miiregs[HME_MII_REGS_SIZE];
 };
 
-static Property sunhme_properties[] = {
+static const Property sunhme_properties[] = {
     DEFINE_NIC_PROPERTIES(SunHMEState, conf),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void sunhme_reset_tx(SunHMEState *s)
@@ -714,8 +713,6 @@ static inline void sunhme_set_rx_ring_nr(SunHMEState *s, int i)
     s->erxregs[HME_ERXI_RING >> 2] = ring;
 }
 
-#define MIN_BUF_SIZE 60
-
 static ssize_t sunhme_receive(NetClientState *nc, const uint8_t *buf,
                               size_t size)
 {
@@ -724,7 +721,6 @@ static ssize_t sunhme_receive(NetClientState *nc, const uint8_t *buf,
     dma_addr_t rb, addr;
     uint32_t intstatus, status, buffer, buffersize, sum;
     uint16_t csum;
-    uint8_t buf1[60];
     int nr, cr, len, rxoffset, csum_offset;
 
     trace_sunhme_rx_incoming(size);
@@ -774,14 +770,6 @@ static ssize_t sunhme_receive(NetClientState *nc, const uint8_t *buf,
     }
 
     trace_sunhme_rx_filter_accept();
-
-    /* If too small buffer, then expand it */
-    if (size < MIN_BUF_SIZE) {
-        memcpy(buf1, buf, size);
-        memset(buf1 + size, 0, MIN_BUF_SIZE - size);
-        buf = buf1;
-        size = MIN_BUF_SIZE;
-    }
 
     rb = s->erxregs[HME_ERXI_RING >> 2] & HME_ERXI_RING_ADDR;
     nr = sunhme_get_rx_ring_count(s);
@@ -892,7 +880,8 @@ static void sunhme_realize(PCIDevice *pci_dev, Error **errp)
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
     s->nic = qemu_new_nic(&net_sunhme_info, &s->conf,
-                          object_get_typename(OBJECT(d)), d->id, s);
+                          object_get_typename(OBJECT(d)), d->id,
+                          &d->mem_reentrancy_guard, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
 }
 
@@ -912,7 +901,7 @@ static void sunhme_reset(DeviceState *ds)
     /* Configure internal transceiver */
     s->mifregs[HME_MIFI_CFG >> 2] |= HME_MIF_CFG_MDI0;
 
-    /* Advetise auto, 100Mbps FD */
+    /* Advertise auto, 100Mbps FD */
     s->miiregs[MII_ANAR] = MII_ANAR_TXFD;
     s->miiregs[MII_BMSR] = MII_BMSR_AUTONEG | MII_BMSR_100TX_FD |
                            MII_BMSR_AN_COMP;
@@ -935,7 +924,7 @@ static const VMStateDescription vmstate_hme = {
     .name = "sunhme",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, SunHMEState),
         VMSTATE_MACADDR(conf.macaddr, SunHMEState),
         VMSTATE_UINT32_ARRAY(sebregs, SunHMEState, (HME_SEB_REG_SIZE >> 2)),
@@ -948,7 +937,7 @@ static const VMStateDescription vmstate_hme = {
     }
 };
 
-static void sunhme_class_init(ObjectClass *klass, void *data)
+static void sunhme_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -958,7 +947,7 @@ static void sunhme_class_init(ObjectClass *klass, void *data)
     k->device_id = PCI_DEVICE_ID_SUN_HME;
     k->class_id = PCI_CLASS_NETWORK_ETHERNET;
     dc->vmsd = &vmstate_hme;
-    dc->reset = sunhme_reset;
+    device_class_set_legacy_reset(dc, sunhme_reset);
     device_class_set_props(dc, sunhme_properties);
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
 }
@@ -969,7 +958,7 @@ static const TypeInfo sunhme_info = {
     .class_init    = sunhme_class_init,
     .instance_size = sizeof(SunHMEState),
     .instance_init = sunhme_instance_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { }
     }

@@ -1,13 +1,12 @@
 smbios_ss = ss.source_set()
 smbios_ss.add(files('smbios.c'))
 smbios_ss.add(when: 'CONFIG_IPMI',
-              if_true: files('smbios_type_38.c'),
-              if_false: files('smbios_type_38-stub.c'))
+              if_true: files('smbios_type_38.c'))
+stub_ss.add(files('smbios_type_38-stub.c'))
 
-softmmu_ss.add_all(when: 'CONFIG_SMBIOS', if_true: smbios_ss)
-softmmu_ss.add(when: 'CONFIG_SMBIOS', if_false: files('smbios-stub.c'))
+smbios_ss.add(when: 'CONFIG_SMBIOS_LEGACY',
+              if_true: files('smbios_legacy.c'))
+stub_ss.add(files('smbios_legacy_stub.c'))
 
-softmmu_ss.add(when: 'CONFIG_ALL', if_true: files(
-  'smbios-stub.c',
-  'smbios_type_38-stub.c',
-))
+system_ss.add_all(when: 'CONFIG_SMBIOS', if_true: smbios_ss)
+stub_ss.add(files('smbios-stub.c'))

@@ -18,20 +18,16 @@
 #ifndef HW_TRICORE_TESTDEVICE_H
 #define HW_TRICORE_TESTDEVICE_H
 
-#include "hw/sysbus.h"
-#include "hw/hw.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_TRICORE_TESTDEVICE "tricore_testdevice"
 #define TRICORE_TESTDEVICE(obj) \
     OBJECT_CHECK(TriCoreTestDeviceState, (obj), TYPE_TRICORE_TESTDEVICE)
 
 typedef struct {
-    /* <private> */
     SysBusDevice parent_obj;
 
-    /* <public> */
     MemoryRegion iomem;
-
 } TriCoreTestDeviceState;
 
 #endif

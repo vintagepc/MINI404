@@ -27,8 +27,8 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "chardev/char.h"
-#include "hw/irq.h"
+#include "qemu/bitops.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "net/can_emu.h"
 
@@ -108,7 +108,7 @@ void can_sja_single_filter(struct qemu_can_filter *filter,
         }
 
         filter->can_mask = (uint32_t)amr[0] << 3;
-        filter->can_mask |= (uint32_t)amr[1] << 5;
+        filter->can_mask |= (uint32_t)amr[1] >> 5;
         filter->can_mask = ~filter->can_mask & QEMU_CAN_SFF_MASK;
         if (!(amr[1] & 0x10)) {
             filter->can_mask |= QEMU_CAN_RTR_FLAG;
@@ -842,7 +842,6 @@ ssize_t can_sja_receive(CanBusClientState *client, const qemu_can_frame *frames,
         s->status_pel |= 0x01; /* Set the Receive Buffer Status. DS-p23 */
         s->interrupt_pel |= 0x01;
         s->status_pel &= ~(1 << 4);
-        s->status_pel |= (1 << 0);
         can_sja_update_pel_irq(s);
     } else { /* BasicCAN mode */
 
@@ -929,7 +928,7 @@ const VMStateDescription vmstate_qemu_can_filter = {
     .name = "qemu_can_filter",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(can_id, qemu_can_filter),
         VMSTATE_UINT32(can_mask, qemu_can_filter),
         VMSTATE_END_OF_LIST()
@@ -953,7 +952,7 @@ const VMStateDescription vmstate_can_sja = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = can_sja_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(mode, CanSJA1000State),
 
         VMSTATE_UINT8(status_pel, CanSJA1000State),

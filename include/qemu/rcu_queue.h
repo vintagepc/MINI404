@@ -17,8 +17,8 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * License along with this library; if not, see
+ * <https://www.gnu.org/licenses/>.
  *
  * Copyright (c) 2013 Mike D. Day, IBM Corporation.
  *
@@ -27,11 +27,6 @@
 
 #include "qemu/queue.h"
 #include "qemu/atomic.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 
 /*
  * List access methods.
@@ -311,7 +306,4 @@ extern "C" {
          (var) && ((next) = qatomic_rcu_read(&(var)->field.sle_next), 1); \
          (var) = (next))
 
-#ifdef __cplusplus
-}
-#endif
 #endif /* QEMU_RCU_QUEUE_H */

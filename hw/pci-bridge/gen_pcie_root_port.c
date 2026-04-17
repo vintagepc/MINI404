@@ -15,8 +15,8 @@
 #include "qemu/module.h"
 #include "hw/pci/msix.h"
 #include "hw/pci/pcie_port.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 
@@ -34,8 +34,6 @@ struct GenPCIERootPort {
     /*< private >*/
     PCIESlot parent_obj;
     /*< public >*/
-
-    bool migrate_msix;
 
     /* additional resources to reserve */
     PCIResReserve res_reserve;
@@ -66,13 +64,6 @@ static void gen_rp_interrupts_uninit(PCIDevice *d)
     msix_uninit_exclusive_bar(d);
 }
 
-static bool gen_rp_test_migrate_msix(void *opaque, int version_id)
-{
-    GenPCIERootPort *rp = opaque;
-
-    return rp->migrate_msix;
-}
-
 static void gen_rp_realize(DeviceState *dev, Error **errp)
 {
     PCIDevice *d = PCI_DEVICE(dev);
@@ -87,7 +78,12 @@ static void gen_rp_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    if (grp->res_reserve.io == -1 && s->hotplug && !s->native_hotplug) {
+    /*
+     * reserving IO space led to worse issues in 6.1, when this hunk was
+     * introduced. (see commit: 211afe5c69b59). Keep this broken for 6.1
+     * machine type ABI compatibility only
+     */
+    if (s->hide_native_hotplug_cap && grp->res_reserve.io == -1 && s->hotplug) {
         grp->res_reserve.io = GEN_PCIE_ROOT_DEFAULT_IO_RANGE;
     }
     int rc = pci_bridge_qemu_reserve_cap_init(d, 0,
@@ -112,20 +108,17 @@ static const VMStateDescription vmstate_rp_dev = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = pcie_cap_slot_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj.parent_obj.parent_obj, PCIESlot),
         VMSTATE_STRUCT(parent_obj.parent_obj.parent_obj.exp.aer_log,
                        PCIESlot, 0, vmstate_pcie_aer_log, PCIEAERLog),
-        VMSTATE_MSIX_TEST(parent_obj.parent_obj.parent_obj.parent_obj,
-                          GenPCIERootPort,
-                          gen_rp_test_migrate_msix),
+        VMSTATE_MSIX(parent_obj.parent_obj.parent_obj.parent_obj,
+                     GenPCIERootPort),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property gen_rp_props[] = {
-    DEFINE_PROP_BOOL("x-migrate-msix", GenPCIERootPort,
-                     migrate_msix, true),
+static const Property gen_rp_props[] = {
     DEFINE_PROP_UINT32("bus-reserve", GenPCIERootPort,
                        res_reserve.bus, -1),
     DEFINE_PROP_SIZE("io-reserve", GenPCIERootPort,
@@ -140,10 +133,9 @@ static Property gen_rp_props[] = {
                                 speed, PCIE_LINK_SPEED_16),
     DEFINE_PROP_PCIE_LINK_WIDTH("x-width", PCIESlot,
                                 width, PCIE_LINK_WIDTH_32),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void gen_rp_dev_class_init(ObjectClass *klass, void *data)
+static void gen_rp_dev_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);

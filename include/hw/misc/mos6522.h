@@ -27,9 +27,8 @@
 #ifndef MOS6522_H
 #define MOS6522_H
 
-#include "exec/memory.h"
-#include "hw/sysbus.h"
-#include "hw/input/adb.h"
+#include "exec/hwaddr.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 
 #define MOS6522_NUM_REGS 16
@@ -155,9 +154,9 @@ struct MOS6522State {
 OBJECT_DECLARE_TYPE(MOS6522State, MOS6522DeviceClass, MOS6522)
 
 struct MOS6522DeviceClass {
-    DeviceClass parent_class;
+    SysBusDeviceClass parent_class;
 
-    DeviceReset parent_reset;
+    ResettablePhases parent_phases;
     void (*portB_write)(MOS6522State *dev);
     void (*portA_write)(MOS6522State *dev);
     /* These are used to influence the CUDA MacOS timebase calibration */
@@ -172,7 +171,5 @@ extern const VMStateDescription vmstate_mos6522;
 
 uint64_t mos6522_read(void *opaque, hwaddr addr, unsigned size);
 void mos6522_write(void *opaque, hwaddr addr, uint64_t val, unsigned size);
-
-void hmp_info_via(Monitor *mon, const QDict *qdict);
 
 #endif /* MOS6522_H */

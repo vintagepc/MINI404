@@ -37,7 +37,7 @@ translator starts by allocating a budget of instructions to be
 executed. The budget of instructions is limited by how long it will be
 until the next timer will expire. We store this budget as part of a
 vCPU icount_decr field which shared with the machinery for handling
-cpu_exit(). The whole field is checked at the start of every
+qemu_cpu_kick(). The whole field is checked at the start of every
 translated block and will cause a return to the outer loop to deal
 with whatever caused the exit.
 
@@ -62,12 +62,6 @@ To deal with this case, when an I/O access is made we:
   - re-compile a single [1]_ instruction block for the current PC
   - exit the cpu loop and execute the re-compiled block
 
-The new block is created with the CF_LAST_IO compile flag which
-ensures the final instruction translation starts with a call to
-gen_io_start() so we don't enter a perpetual loop constantly
-recompiling a single instruction block. For translators using the
-common translator_loop this is done automatically.
-  
 .. [1] sometimes two instructions if dealing with delay slots  
 
 Other I/O operations

@@ -231,6 +231,7 @@
 #define MODE_PAGE_FLEXIBLE_DISK_GEOMETRY      0x05
 #define MODE_PAGE_CACHING                     0x08
 #define MODE_PAGE_AUDIO_CTL                   0x0e
+#define MODE_PAGE_CONTROL                     0x0a
 #define MODE_PAGE_POWER                       0x1a
 #define MODE_PAGE_FAULT_FAIL                  0x1c
 #define MODE_PAGE_TO_PROTECT                  0x1d
@@ -317,5 +318,26 @@
 #define XCOPY_DESC_OFFSET 16
 #define IDENT_DESCR_TGT_DESCR_SIZE 32
 #define XCOPY_BLK2BLK_SEG_DESC_SIZE 28
+
+/*
+ * PERSISTENT RESERVATION IN service action codes
+ */
+#define PRI_READ_KEYS           0x00
+#define PRI_READ_RESERVATION    0x01
+#define PRI_REPORT_CAPABILITIES 0x02
+#define PRI_READ_FULL_STATUS    0x03
+
+/*
+ * PERSISTENT RESERVATION OUT service action codes
+ */
+#define PRO_REGISTER                            0x00
+#define PRO_RESERVE                             0x01
+#define PRO_RELEASE                             0x02
+#define PRO_CLEAR                               0x03
+#define PRO_PREEMPT                             0x04
+#define PRO_PREEMPT_AND_ABORT                   0x05
+#define PRO_REGISTER_AND_IGNORE_EXISTING_KEY    0x06
+#define PRO_REGISTER_AND_MOVE                   0x07
+#define PRO_REPLACE_LOST_RESERVATION            0x08
 
 #endif

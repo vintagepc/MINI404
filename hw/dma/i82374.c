@@ -26,7 +26,7 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/isa/isa.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/dma/i8257.h"
 #include "qom/object.h"
@@ -58,7 +58,7 @@ static const VMStateDescription vmstate_i82374 = {
     .name = "i82374",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8_ARRAY(commands, I82374State, 8),
         VMSTATE_END_OF_LIST()
     },
@@ -125,11 +125,11 @@ static void i82374_realize(DeviceState *dev, Error **errp)
     I82374State *s = I82374(dev);
     ISABus *isa_bus = isa_bus_from_device(ISA_DEVICE(dev));
 
-    if (isa_get_dma(isa_bus, 0)) {
+    if (isa_bus_get_dma(isa_bus, 0)) {
         error_setg(errp, "DMA already initialized on ISA bus");
         return;
     }
-    i8257_dma_init(isa_bus, true);
+    i8257_dma_init(OBJECT(dev), isa_bus, true);
 
     portio_list_init(&s->port_list, OBJECT(s), i82374_portio_list, s,
                      "i82374");
@@ -139,18 +139,19 @@ static void i82374_realize(DeviceState *dev, Error **errp)
     memset(s->commands, 0, sizeof(s->commands));
 }
 
-static Property i82374_properties[] = {
+static const Property i82374_properties[] = {
     DEFINE_PROP_UINT32("iobase", I82374State, iobase, 0x400),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void i82374_class_init(ObjectClass *klass, void *data)
+static void i82374_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     
     dc->realize = i82374_realize;
     dc->vmsd = &vmstate_i82374;
     device_class_set_props(dc, i82374_properties);
+    dc->desc = "Intel 82374 DMA controller";
+    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 
 static const TypeInfo i82374_info = {

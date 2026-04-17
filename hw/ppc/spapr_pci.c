@@ -25,8 +25,8 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/msi.h"
@@ -34,22 +34,20 @@
 #include "hw/pci/pci_host.h"
 #include "hw/ppc/spapr.h"
 #include "hw/pci-host/spapr.h"
-#include "exec/ram_addr.h"
 #include <libfdt.h>
 #include "trace.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
-#include "qapi/qmp/qerror.h"
 #include "hw/ppc/fdt.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/ppc/spapr_drc.h"
-#include "hw/qdev-properties.h"
-#include "sysemu/device_tree.h"
-#include "sysemu/kvm.h"
-#include "sysemu/hostmem.h"
-#include "sysemu/numa.h"
+#include "hw/core/qdev-properties.h"
+#include "system/device_tree.h"
+#include "system/kvm.h"
+#include "system/hostmem.h"
+#include "system/numa.h"
 #include "hw/ppc/spapr_numa.h"
 #include "qemu/log.h"
 
@@ -270,7 +268,6 @@ static void rtas_ibm_change_msi(PowerPCCPU *cpu, SpaprMachineState *spapr,
                                 target_ulong args, uint32_t nret,
                                 target_ulong rets)
 {
-    SpaprMachineClass *smc = SPAPR_MACHINE_GET_CLASS(spapr);
     uint32_t config_addr = rtas_ld(args, 0);
     uint64_t buid = rtas_ldq(args, 1);
     unsigned int func = rtas_ld(args, 3);
@@ -375,13 +372,8 @@ static void rtas_ibm_change_msi(PowerPCCPU *cpu, SpaprMachineState *spapr,
     }
 
     /* Allocate MSIs */
-    if (smc->legacy_irq_allocation) {
-        irq = spapr_irq_find(spapr, req_num, ret_intr_type == RTAS_TYPE_MSI,
-                             &err);
-    } else {
-        irq = spapr_irq_msi_alloc(spapr, req_num,
-                                  ret_intr_type == RTAS_TYPE_MSI, &err);
-    }
+    irq = spapr_irq_msi_alloc(spapr, req_num,
+                              ret_intr_type == RTAS_TYPE_MSI, &err);
     if (err) {
         error_reportf_err(err, "Can't allocate MSIs for device %x: ",
                           config_addr);
@@ -395,9 +387,7 @@ static void rtas_ibm_change_msi(PowerPCCPU *cpu, SpaprMachineState *spapr,
             if (i) {
                 spapr_irq_free(spapr, irq, i);
             }
-            if (!smc->legacy_irq_allocation) {
-                spapr_irq_msi_free(spapr, irq, req_num);
-            }
+            spapr_irq_msi_free(spapr, irq, req_num);
             error_reportf_err(err, "Can't allocate MSIs for device %x: ",
                               config_addr);
             rtas_st(rets, 0, RTAS_OUT_HW_ERROR);
@@ -779,6 +769,10 @@ static AddressSpace *spapr_pci_dma_iommu(PCIBus *bus, void *opaque, int devfn)
 
     return &phb->iommu_as;
 }
+
+static const PCIIOMMUOps spapr_iommu_ops = {
+    .get_address_space = spapr_pci_dma_iommu,
+};
 
 static char *spapr_phb_vfio_get_loc_code(SpaprPhbState *sphb,  PCIDevice *pdev)
 {
@@ -1234,10 +1228,6 @@ static void add_drcs(SpaprPhbState *phb, PCIBus *bus)
     int i;
     uint8_t chassis;
 
-    if (!phb->dr_enabled) {
-        return;
-    }
-
     chassis = chassis_from_bus(bus);
 
     if (pci_bus_is_root(bus)) {
@@ -1256,10 +1246,6 @@ static void remove_drcs(SpaprPhbState *phb, PCIBus *bus)
 {
     int i;
     uint8_t chassis;
-
-    if (!phb->dr_enabled) {
-        return;
-    }
 
     chassis = chassis_from_bus(bus);
 
@@ -1288,8 +1274,7 @@ static void spapr_dt_pci_device_cb(PCIBus *bus, PCIDevice *pdev,
     PciWalkFdt *p = opaque;
     int err;
 
-    if (p->err) {
-        /* Something's already broken, don't keep going */
+    if (p->err || !pdev->enabled) {
         return;
     }
 
@@ -1361,7 +1346,6 @@ static int spapr_dt_pci_device(SpaprPhbState *sphb, PCIDevice *dev,
 {
     int offset;
     g_autofree gchar *nodename = spapr_pci_fw_dev_name(dev);
-    PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(dev);
     ResourceProps rp;
     SpaprDrc *drc = drc_from_dev(sphb, dev);
     uint32_t vendor_id = pci_default_read_config(dev, PCI_VENDOR_ID, 2);
@@ -1444,9 +1428,7 @@ static int spapr_dt_pci_device(SpaprPhbState *sphb, PCIDevice *dev,
         _FDT(fdt_setprop_cell(fdt, offset, "ibm,pci-config-space-type", 0x1));
     }
 
-    spapr_phb_nvgpu_populate_pcidev_dt(dev, fdt, offset, sphb);
-
-    if (!pc->is_bridge) {
+    if (!IS_PCI_BRIDGE(dev)) {
         /* Properties only for non-bridges */
         uint32_t min_grant = pci_default_read_config(dev, PCI_MIN_GNT, 1);
         uint32_t max_latency = pci_default_read_config(dev, PCI_MAX_LAT, 1);
@@ -1544,23 +1526,11 @@ static void spapr_pci_pre_plug(HotplugHandler *plug_handler,
 {
     SpaprPhbState *phb = SPAPR_PCI_HOST_BRIDGE(DEVICE(plug_handler));
     PCIDevice *pdev = PCI_DEVICE(plugged_dev);
-    PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(plugged_dev);
     SpaprDrc *drc = drc_from_dev(phb, pdev);
     PCIBus *bus = PCI_BUS(qdev_get_parent_bus(DEVICE(pdev)));
     uint32_t slotnr = PCI_SLOT(pdev->devfn);
 
-    if (!phb->dr_enabled) {
-        /* if this is a hotplug operation initiated by the user
-         * we need to let them know it's not enabled
-         */
-        if (plugged_dev->hotplugged) {
-            error_setg(errp, QERR_BUS_NO_HOTPLUG,
-                       object_get_typename(OBJECT(phb)));
-            return;
-        }
-    }
-
-    if (pc->is_bridge) {
+    if (IS_PCI_BRIDGE(plugged_dev)) {
         if (!bridge_has_valid_chassis_nr(OBJECT(plugged_dev), errp)) {
             return;
         }
@@ -1570,7 +1540,9 @@ static void spapr_pci_pre_plug(HotplugHandler *plug_handler,
      * hotplug, we do not allow functions to be hotplugged to a
      * slot that already has function 0 present
      */
-    if (plugged_dev->hotplugged && bus->devices[PCI_DEVFN(slotnr, 0)] &&
+    if (plugged_dev->hotplugged &&
+        !pci_is_vf(pdev) &&
+        bus->devices[PCI_DEVFN(slotnr, 0)] &&
         PCI_FUNC(pdev->devfn) != 0) {
         error_setg(errp, "PCI: slot %d function 0 already occupied by %s,"
                    " additional functions can no longer be exposed to guest.",
@@ -1589,21 +1561,20 @@ static void spapr_pci_plug(HotplugHandler *plug_handler,
 {
     SpaprPhbState *phb = SPAPR_PCI_HOST_BRIDGE(DEVICE(plug_handler));
     PCIDevice *pdev = PCI_DEVICE(plugged_dev);
-    PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(plugged_dev);
     SpaprDrc *drc = drc_from_dev(phb, pdev);
     uint32_t slotnr = PCI_SLOT(pdev->devfn);
 
     /*
-     * If DR is disabled we don't need to do anything in the case of
-     * hotplug or coldplug callbacks.
+     * If DR or the PCI device is disabled we don't need to do anything
+     * in the case of hotplug or coldplug callbacks.
      */
-    if (!phb->dr_enabled) {
+    if (!pdev->enabled) {
         return;
     }
 
     g_assert(drc);
 
-    if (pc->is_bridge) {
+    if (IS_PCI_BRIDGE(plugged_dev)) {
         spapr_pci_bridge_plug(phb, PCI_BRIDGE(plugged_dev));
     }
 
@@ -1646,7 +1617,6 @@ static void spapr_pci_bridge_unplug(SpaprPhbState *phb,
 static void spapr_pci_unplug(HotplugHandler *plug_handler,
                              DeviceState *plugged_dev, Error **errp)
 {
-    PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(plugged_dev);
     SpaprPhbState *phb = SPAPR_PCI_HOST_BRIDGE(DEVICE(plug_handler));
 
     /* some version guests do not wait for completion of a device
@@ -1661,7 +1631,7 @@ static void spapr_pci_unplug(HotplugHandler *plug_handler,
      */
     pci_device_reset(PCI_DEVICE(plugged_dev));
 
-    if (pc->is_bridge) {
+    if (IS_PCI_BRIDGE(plugged_dev)) {
         spapr_pci_bridge_unplug(phb, PCI_BRIDGE(plugged_dev));
         return;
     }
@@ -1676,17 +1646,15 @@ static void spapr_pci_unplug_request(HotplugHandler *plug_handler,
     PCIDevice *pdev = PCI_DEVICE(plugged_dev);
     SpaprDrc *drc = drc_from_dev(phb, pdev);
 
-    if (!phb->dr_enabled) {
-        error_setg(errp, QERR_BUS_NO_HOTPLUG,
-                   object_get_typename(OBJECT(phb)));
+    g_assert(drc);
+
+    if (!drc->dev) {
         return;
     }
 
-    g_assert(drc);
     g_assert(drc->dev == plugged_dev);
 
     if (!spapr_drc_unplug_requested(drc)) {
-        PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(plugged_dev);
         uint32_t slotnr = PCI_SLOT(pdev->devfn);
         SpaprDrc *func_drc;
         SpaprDrcClass *func_drck;
@@ -1694,7 +1662,7 @@ static void spapr_pci_unplug_request(HotplugHandler *plug_handler,
         int i;
         uint8_t chassis = chassis_from_bus(pci_get_bus(pdev));
 
-        if (pc->is_bridge) {
+        if (IS_PCI_BRIDGE(plugged_dev)) {
             error_setg(errp, "PCI: Hot unplug of PCI bridges not supported");
             return;
         }
@@ -1762,8 +1730,6 @@ static void spapr_phb_unrealize(DeviceState *dev)
     int i;
     const unsigned windows_supported = spapr_phb_windows_supported(sphb);
 
-    spapr_phb_nvgpu_free(sphb);
-
     if (sphb->msi) {
         g_hash_table_unref(sphb->msi);
         sphb->msi = NULL;
@@ -1815,12 +1781,9 @@ static void spapr_phb_unrealize(DeviceState *dev)
 static void spapr_phb_destroy_msi(gpointer opaque)
 {
     SpaprMachineState *spapr = SPAPR_MACHINE(qdev_get_machine());
-    SpaprMachineClass *smc = SPAPR_MACHINE_GET_CLASS(spapr);
     SpaprPciMsi *msi = opaque;
 
-    if (!smc->legacy_irq_allocation) {
-        spapr_irq_msi_free(spapr, msi->first_irq, msi->num);
-    }
+    spapr_irq_msi_free(spapr, msi->first_irq, msi->num);
     spapr_irq_free(spapr, msi->first_irq, msi->num);
     g_free(msi);
 }
@@ -1834,10 +1797,9 @@ static void spapr_phb_realize(DeviceState *dev, Error **errp)
     SpaprMachineState *spapr =
         (SpaprMachineState *) object_dynamic_cast(qdev_get_machine(),
                                                   TYPE_SPAPR_MACHINE);
-    SpaprMachineClass *smc = spapr ? SPAPR_MACHINE_GET_CLASS(spapr) : NULL;
-    SysBusDevice *s = SYS_BUS_DEVICE(dev);
-    SpaprPhbState *sphb = SPAPR_PCI_HOST_BRIDGE(s);
-    PCIHostState *phb = PCI_HOST_BRIDGE(s);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    SpaprPhbState *sphb = SPAPR_PCI_HOST_BRIDGE(sbd);
+    PCIHostState *phb = PCI_HOST_BRIDGE(sbd);
     MachineState *ms = MACHINE(spapr);
     char *namebuf;
     int i;
@@ -1853,29 +1815,14 @@ static void spapr_phb_realize(DeviceState *dev, Error **errp)
 
     assert(sphb->index != (uint32_t)-1); /* checked in spapr_phb_pre_plug() */
 
-    if (sphb->mem64_win_size != 0) {
-        if (sphb->mem_win_size > SPAPR_PCI_MEM32_WIN_SIZE) {
-            error_setg(errp, "32-bit memory window of size 0x%"HWADDR_PRIx
-                       " (max 2 GiB)", sphb->mem_win_size);
-            return;
-        }
-
-        /* 64-bit window defaults to identity mapping */
-        sphb->mem64_win_pciaddr = sphb->mem64_win_addr;
-    } else if (sphb->mem_win_size > SPAPR_PCI_MEM32_WIN_SIZE) {
-        /*
-         * For compatibility with old configuration, if no 64-bit MMIO
-         * window is specified, but the ordinary (32-bit) memory
-         * window is specified as > 2GiB, we treat it as a 2GiB 32-bit
-         * window, with a 64-bit MMIO window following on immediately
-         * afterwards
-         */
-        sphb->mem64_win_size = sphb->mem_win_size - SPAPR_PCI_MEM32_WIN_SIZE;
-        sphb->mem64_win_addr = sphb->mem_win_addr + SPAPR_PCI_MEM32_WIN_SIZE;
-        sphb->mem64_win_pciaddr =
-            SPAPR_PCI_MEM_WIN_BUS_OFFSET + SPAPR_PCI_MEM32_WIN_SIZE;
-        sphb->mem_win_size = SPAPR_PCI_MEM32_WIN_SIZE;
+    if (sphb->mem_win_size > SPAPR_PCI_MEM32_WIN_SIZE) {
+        error_setg(errp, "32-bit memory window of size 0x%"HWADDR_PRIx
+                   " (max 2 GiB)", sphb->mem_win_size);
+        return;
     }
+
+    /* 64-bit window defaults to identity mapping */
+    sphb->mem64_win_pciaddr = sphb->mem64_win_addr;
 
     if (spapr_pci_find_phb(spapr, sphb->buid)) {
         SpaprPhbState *s;
@@ -1987,7 +1934,7 @@ static void spapr_phb_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&sphb->iommu_root, SPAPR_PCI_MSI_WINDOW,
                                 &sphb->msiwindow);
 
-    pci_setup_iommu(bus, spapr_pci_dma_iommu, sphb);
+    pci_setup_iommu(bus, &spapr_iommu_ops, sphb);
 
     pci_bus_set_route_irq_fn(bus, spapr_route_intx_pin_to_irq);
 
@@ -1996,18 +1943,6 @@ static void spapr_phb_realize(DeviceState *dev, Error **errp)
     /* Initialize the LSI table */
     for (i = 0; i < PCI_NUM_PINS; i++) {
         int irq = SPAPR_IRQ_PCI_LSI + sphb->index * PCI_NUM_PINS + i;
-
-        if (smc->legacy_irq_allocation) {
-            irq = spapr_irq_findone(spapr, errp);
-            if (irq < 0) {
-                error_prepend(errp, "can't allocate LSIs: ");
-                /*
-                 * Older machines will never support PHB hotplug, ie, this is an
-                 * init only path and QEMU will terminate. No need to rollback.
-                 */
-                return;
-            }
-        }
 
         if (spapr_irq_claim(spapr, irq, true, errp) < 0) {
             error_prepend(errp, "can't allocate LSIs: ");
@@ -2074,14 +2009,8 @@ void spapr_phb_dma_reset(SpaprPhbState *sphb)
 static void spapr_phb_reset(DeviceState *qdev)
 {
     SpaprPhbState *sphb = SPAPR_PCI_HOST_BRIDGE(qdev);
-    Error *err = NULL;
 
     spapr_phb_dma_reset(sphb);
-    spapr_phb_nvgpu_free(sphb);
-    spapr_phb_nvgpu_setup(sphb, &err);
-    if (err) {
-        error_report_err(err);
-    }
 
     /* Reset the IOMMU state */
     object_child_foreach(OBJECT(qdev), spapr_phb_children_reset, NULL);
@@ -2093,7 +2022,7 @@ static void spapr_phb_reset(DeviceState *qdev)
     g_hash_table_remove_all(sphb->msi);
 }
 
-static Property spapr_phb_properties[] = {
+static const Property spapr_phb_properties[] = {
     DEFINE_PROP_UINT32("index", SpaprPhbState, index, -1),
     DEFINE_PROP_UINT64("mem_win_size", SpaprPhbState, mem_win_size,
                        SPAPR_PCI_MEM32_WIN_SIZE),
@@ -2101,8 +2030,6 @@ static Property spapr_phb_properties[] = {
                        SPAPR_PCI_MEM64_WIN_SIZE),
     DEFINE_PROP_UINT64("io_win_size", SpaprPhbState, io_win_size,
                        SPAPR_PCI_IO_WIN_SIZE),
-    DEFINE_PROP_BOOL("dynamic-reconfiguration", SpaprPhbState, dr_enabled,
-                     true),
     /* Default DMA window is 0..1GB */
     DEFINE_PROP_UINT64("dma_win_addr", SpaprPhbState, dma_win_addr, 0),
     DEFINE_PROP_UINT64("dma_win_size", SpaprPhbState, dma_win_size, 0x40000000),
@@ -2113,22 +2040,17 @@ static Property spapr_phb_properties[] = {
                        (1ULL << 12) | (1ULL << 16)
                        | (1ULL << 21) | (1ULL << 24)),
     DEFINE_PROP_UINT32("numa_node", SpaprPhbState, numa_node, -1),
-    DEFINE_PROP_BOOL("pre-2.8-migration", SpaprPhbState,
-                     pre_2_8_migration, false),
     DEFINE_PROP_BOOL("pcie-extended-configuration-space", SpaprPhbState,
                      pcie_ecs, true),
-    DEFINE_PROP_UINT64("gpa", SpaprPhbState, nv2_gpa_win_addr, 0),
-    DEFINE_PROP_UINT64("atsd", SpaprPhbState, nv2_atsd_win_addr, 0),
     DEFINE_PROP_BOOL("pre-5.1-associativity", SpaprPhbState,
                      pre_5_1_assoc, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_spapr_pci_lsi = {
     .name = "spapr_pci/lsi",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_EQUAL(irq, SpaprPciLsi, NULL),
 
         VMSTATE_END_OF_LIST()
@@ -2139,7 +2061,7 @@ static const VMStateDescription vmstate_spapr_pci_msi = {
     .name = "spapr_pci/msi",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField []) {
+    .fields = (const VMStateField []) {
         VMSTATE_UINT32(key, SpaprPciMsiMig),
         VMSTATE_UINT32(value.first_irq, SpaprPciMsiMig),
         VMSTATE_UINT32(value.num, SpaprPciMsiMig),
@@ -2153,20 +2075,6 @@ static int spapr_pci_pre_save(void *opaque)
     GHashTableIter iter;
     gpointer key, value;
     int i;
-
-    if (sphb->pre_2_8_migration) {
-        sphb->mig_liobn = sphb->dma_liobn[0];
-        sphb->mig_mem_win_addr = sphb->mem_win_addr;
-        sphb->mig_mem_win_size = sphb->mem_win_size;
-        sphb->mig_io_win_addr = sphb->io_win_addr;
-        sphb->mig_io_win_size = sphb->io_win_size;
-
-        if ((sphb->mem64_win_size != 0)
-            && (sphb->mem64_win_addr
-                == (sphb->mem_win_addr + sphb->mem_win_size))) {
-            sphb->mig_mem_win_size += sphb->mem64_win_size;
-        }
-    }
 
     g_free(sphb->msi_devs);
     sphb->msi_devs = NULL;
@@ -2202,10 +2110,9 @@ static int spapr_pci_post_load(void *opaque, int version_id)
     int i;
 
     for (i = 0; i < sphb->msi_devs_num; ++i) {
-        key = g_memdup(&sphb->msi_devs[i].key,
-                       sizeof(sphb->msi_devs[i].key));
-        value = g_memdup(&sphb->msi_devs[i].value,
-                         sizeof(sphb->msi_devs[i].value));
+        key = g_memdup2(&sphb->msi_devs[i].key, sizeof(sphb->msi_devs[i].key));
+        value = g_memdup2(&sphb->msi_devs[i].value,
+                          sizeof(sphb->msi_devs[i].value));
         g_hash_table_insert(sphb->msi, key, value);
     }
     g_free(sphb->msi_devs);
@@ -2215,13 +2122,6 @@ static int spapr_pci_post_load(void *opaque, int version_id)
     return 0;
 }
 
-static bool pre_2_8_migration(void *opaque, int version_id)
-{
-    SpaprPhbState *sphb = opaque;
-
-    return sphb->pre_2_8_migration;
-}
-
 static const VMStateDescription vmstate_spapr_pci = {
     .name = "spapr_pci",
     .version_id = 2,
@@ -2229,13 +2129,8 @@ static const VMStateDescription vmstate_spapr_pci = {
     .pre_save = spapr_pci_pre_save,
     .post_save = spapr_pci_post_save,
     .post_load = spapr_pci_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64_EQUAL(buid, SpaprPhbState, NULL),
-        VMSTATE_UINT32_TEST(mig_liobn, SpaprPhbState, pre_2_8_migration),
-        VMSTATE_UINT64_TEST(mig_mem_win_addr, SpaprPhbState, pre_2_8_migration),
-        VMSTATE_UINT64_TEST(mig_mem_win_size, SpaprPhbState, pre_2_8_migration),
-        VMSTATE_UINT64_TEST(mig_io_win_addr, SpaprPhbState, pre_2_8_migration),
-        VMSTATE_UINT64_TEST(mig_io_win_size, SpaprPhbState, pre_2_8_migration),
         VMSTATE_STRUCT_ARRAY(lsi_table, SpaprPhbState, PCI_NUM_PINS, 0,
                              vmstate_spapr_pci_lsi, SpaprPciLsi),
         VMSTATE_INT32(msi_devs_num, SpaprPhbState),
@@ -2253,7 +2148,7 @@ static const char *spapr_phb_root_bus_path(PCIHostState *host_bridge,
     return sphb->dtbusname;
 }
 
-static void spapr_phb_class_init(ObjectClass *klass, void *data)
+static void spapr_phb_class_init(ObjectClass *klass, const void *data)
 {
     PCIHostBridgeClass *hc = PCI_HOST_BRIDGE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -2263,7 +2158,7 @@ static void spapr_phb_class_init(ObjectClass *klass, void *data)
     dc->realize = spapr_phb_realize;
     dc->unrealize = spapr_phb_unrealize;
     device_class_set_props(dc, spapr_phb_properties);
-    dc->reset = spapr_phb_reset;
+    device_class_set_legacy_reset(dc, spapr_phb_reset);
     dc->vmsd = &vmstate_spapr_pci;
     /* Supported by TYPE_SPAPR_MACHINE */
     dc->user_creatable = true;
@@ -2280,7 +2175,7 @@ static const TypeInfo spapr_phb_info = {
     .instance_size = sizeof(SpaprPhbState),
     .instance_finalize = spapr_phb_finalizefn,
     .class_init    = spapr_phb_class_init,
-    .interfaces    = (InterfaceInfo[]) {
+    .interfaces    = (const InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
         { }
     }
@@ -2367,7 +2262,6 @@ int spapr_dt_phb(SpaprMachineState *spapr, SpaprPhbState *phb,
     };
     SpaprTceTable *tcet;
     SpaprDrc *drc;
-    Error *err = NULL;
 
     /* Start populating the FDT */
     _FDT(bus_off = fdt_add_subnode(fdt, 0, phb->dtbusname));
@@ -2385,7 +2279,7 @@ int spapr_dt_phb(SpaprMachineState *spapr, SpaprPhbState *phb,
     _FDT(fdt_setprop(fdt, bus_off, "reg", &bus_reg, sizeof(bus_reg)));
     _FDT(fdt_setprop_cell(fdt, bus_off, "ibm,pci-config-space-type", 0x1));
     _FDT(fdt_setprop_cell(fdt, bus_off, "ibm,pe-total-#msi",
-                          spapr_irq_nr_msis(spapr)));
+                          SPAPR_IRQ_NR_MSIS));
 
     /* Dynamic DMA window */
     if (phb->ddw_enabled) {
@@ -2447,12 +2341,6 @@ int spapr_dt_phb(SpaprMachineState *spapr, SpaprPhbState *phb,
     if (ret < 0) {
         return ret;
     }
-
-    spapr_phb_nvgpu_populate_dt(phb, fdt, bus_off, &err);
-    if (err) {
-        error_report_err(err);
-    }
-    spapr_phb_nvgpu_ram_populate_dt(phb, fdt);
 
     return 0;
 }

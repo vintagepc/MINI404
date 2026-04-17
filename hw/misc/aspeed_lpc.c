@@ -13,8 +13,8 @@
 #include "hw/misc/aspeed_lpc.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 
 #define TO_REG(offset) ((offset) >> 2)
@@ -447,24 +447,23 @@ static const VMStateDescription vmstate_aspeed_lpc = {
     .name = TYPE_ASPEED_LPC,
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, AspeedLPCState, ASPEED_LPC_NR_REGS),
         VMSTATE_UINT32(subdevice_irqs_pending, AspeedLPCState),
         VMSTATE_END_OF_LIST(),
     }
 };
 
-static Property aspeed_lpc_properties[] = {
+static const Property aspeed_lpc_properties[] = {
     DEFINE_PROP_UINT32("hicr7", AspeedLPCState, hicr7, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void aspeed_lpc_class_init(ObjectClass *klass, void *data)
+static void aspeed_lpc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = aspeed_lpc_realize;
-    dc->reset = aspeed_lpc_reset;
+    device_class_set_legacy_reset(dc, aspeed_lpc_reset);
     dc->desc = "Aspeed LPC Controller",
     dc->vmsd = &vmstate_aspeed_lpc;
     device_class_set_props(dc, aspeed_lpc_properties);

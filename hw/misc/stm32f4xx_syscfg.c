@@ -25,7 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "trace.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "hw/misc/stm32f4xx_syscfg.h"
 
@@ -137,7 +137,7 @@ static const VMStateDescription vmstate_stm32f4xx_syscfg = {
     .name = TYPE_STM32F4XX_SYSCFG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(syscfg_memrmp, STM32F4xxSyscfgState),
         VMSTATE_UINT32(syscfg_pmc, STM32F4xxSyscfgState),
         VMSTATE_UINT32_ARRAY(syscfg_exticr, STM32F4xxSyscfgState,
@@ -147,11 +147,11 @@ static const VMStateDescription vmstate_stm32f4xx_syscfg = {
     }
 };
 
-static void stm32f4xx_syscfg_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_syscfg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = stm32f4xx_syscfg_reset;
+    device_class_set_legacy_reset(dc, stm32f4xx_syscfg_reset);
     dc->vmsd = &vmstate_stm32f4xx_syscfg;
 }
 

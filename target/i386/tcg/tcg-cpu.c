@@ -21,8 +21,10 @@
 #include "cpu.h"
 #include "helper-tcg.h"
 #include "qemu/accel.h"
-#include "hw/core/accel-cpu.h"
-
+#include "accel/accel-cpu-target.h"
+#include "exec/translation-block.h"
+#include "exec/target_page.h"
+#include "accel/tcg/cpu-ops.h"
 #include "tcg-cpu.h"
 
 /* Frob eflags into and out of the CPU temporary format.  */
@@ -46,13 +48,37 @@ static void x86_cpu_exec_exit(CPUState *cs)
     env->eflags = cpu_compute_eflags(env);
 }
 
+static TCGTBCPUState x86_get_tb_cpu_state(CPUState *cs)
+{
+    CPUX86State *env = cpu_env(cs);
+    uint32_t flags, cs_base;
+    vaddr pc;
+
+    flags = env->hflags |
+        (env->eflags & (IOPL_MASK | TF_MASK | RF_MASK | VM_MASK | AC_MASK));
+    if (env->hflags & HF_CS64_MASK) {
+        cs_base = 0;
+        pc = env->eip;
+    } else {
+        cs_base = env->segs[R_CS].base;
+        pc = (uint32_t)(cs_base + env->eip);
+    }
+
+    return (TCGTBCPUState){ .pc = pc, .flags = flags, .cs_base = cs_base };
+}
+
 static void x86_cpu_synchronize_from_tb(CPUState *cs,
                                         const TranslationBlock *tb)
 {
-    /* The instruction pointer is always up to date with TARGET_TB_PCREL. */
-    if (!TARGET_TB_PCREL) {
-        CPUX86State *env = cs->env_ptr;
-        env->eip = tb_pc(tb) - tb->cs_base;
+    /* The instruction pointer is always up to date with CF_PCREL. */
+    if (!(tb_cflags(tb) & CF_PCREL)) {
+        CPUX86State *env = cpu_env(cs);
+
+        if (tb->flags & HF_CS64_MASK) {
+            env->eip = tb->pc;
+        } else {
+            env->eip = (uint32_t)(tb->pc - tb->cs_base);
+        }
     }
 }
 
@@ -63,15 +89,46 @@ static void x86_restore_state_to_opc(CPUState *cs,
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env = &cpu->env;
     int cc_op = data[1];
+    uint64_t new_pc;
 
-    if (TARGET_TB_PCREL) {
-        env->eip = (env->eip & TARGET_PAGE_MASK) | data[0];
+    if (tb_cflags(tb) & CF_PCREL) {
+        /*
+         * data[0] in PC-relative TBs is also a linear address, i.e. an address with
+         * the CS base added, because it is not guaranteed that EIP bits 12 and higher
+         * stay the same across the translation block.  Add the CS base back before
+         * replacing the low bits, and subtract it below just like for !CF_PCREL.
+         */
+        uint64_t pc = env->eip + tb->cs_base;
+        new_pc = (pc & TARGET_PAGE_MASK) | data[0];
     } else {
-        env->eip = data[0] - tb->cs_base;
+        new_pc = data[0];
     }
+    if (tb->flags & HF_CS64_MASK) {
+        env->eip = new_pc;
+    } else {
+        env->eip = (uint32_t)(new_pc - tb->cs_base);
+    }
+
     if (cc_op != CC_OP_DYNAMIC) {
         env->cc_op = cc_op;
     }
+}
+
+int x86_mmu_index_pl(CPUX86State *env, unsigned pl)
+{
+    int mmu_index_32 = (env->hflags & HF_CS64_MASK) ? 0 : 1;
+    int mmu_index_base =
+        pl == 3 ? MMU_USER64_IDX :
+        !(env->hflags & HF_SMAP_MASK) ? MMU_KNOSMAP64_IDX :
+        (env->eflags & AC_MASK) ? MMU_KNOSMAP64_IDX : MMU_KSMAP64_IDX;
+
+    return mmu_index_base + mmu_index_32;
+}
+
+static int x86_cpu_mmu_index(CPUState *cs, bool ifetch)
+{
+    CPUX86State *env = cpu_env(cs);
+    return x86_mmu_index_pl(env, env->hflags & HF_CPL_MASK);
 }
 
 #ifndef CONFIG_USER_ONLY
@@ -83,14 +140,36 @@ static bool x86_debug_check_breakpoint(CPUState *cs)
     /* RF disables all architectural breakpoints. */
     return !(env->eflags & RF_MASK);
 }
+
+static void x86_cpu_exec_reset(CPUState *cs)
+{
+    CPUArchState *env = cpu_env(cs);
+
+    cpu_svm_check_intercept_param(env, SVM_EXIT_INIT, 0, 0);
+    do_cpu_init(env_archcpu(env));
+    cs->exception_index = EXCP_HALTED;
+}
+
+static vaddr x86_pointer_wrap(CPUState *cs, int mmu_idx,
+                              vaddr result, vaddr base)
+{
+    return cpu_env(cs)->hflags & HF_CS64_MASK ? result : (uint32_t)result;
+}
 #endif
 
-#include "hw/core/tcg-cpu-ops.h"
-
-static const struct TCGCPUOps x86_tcg_ops = {
+const TCGCPUOps x86_tcg_ops = {
+    .mttcg_supported = true,
+    .precise_smc = true,
+    /*
+     * The x86 has a strong memory model with some store-after-load re-ordering
+     */
+    .guest_default_memory_order = TCG_MO_ALL & ~TCG_MO_ST_LD,
     .initialize = tcg_x86_init,
+    .translate_code = x86_translate_code,
+    .get_tb_cpu_state = x86_get_tb_cpu_state,
     .synchronize_from_tb = x86_cpu_synchronize_from_tb,
     .restore_state_to_opc = x86_restore_state_to_opc,
+    .mmu_index = x86_cpu_mmu_index,
     .cpu_exec_enter = x86_cpu_exec_enter,
     .cpu_exec_exit = x86_cpu_exec_exit,
 #ifdef CONFIG_USER_ONLY
@@ -99,26 +178,19 @@ static const struct TCGCPUOps x86_tcg_ops = {
     .record_sigbus = x86_cpu_record_sigbus,
 #else
     .tlb_fill = x86_cpu_tlb_fill,
+    .pointer_wrap = x86_pointer_wrap,
     .do_interrupt = x86_cpu_do_interrupt,
+    .cpu_exec_halt = x86_cpu_exec_halt,
     .cpu_exec_interrupt = x86_cpu_exec_interrupt,
+    .cpu_exec_reset = x86_cpu_exec_reset,
     .do_unaligned_access = x86_cpu_do_unaligned_access,
     .debug_excp_handler = breakpoint_handler,
     .debug_check_breakpoint = x86_debug_check_breakpoint,
+    .need_replay_interrupt = x86_need_replay_interrupt,
 #endif /* !CONFIG_USER_ONLY */
 };
 
-static void tcg_cpu_init_ops(AccelCPUClass *accel_cpu, CPUClass *cc)
-{
-    /* for x86, all cpus use the same set of operations */
-    cc->tcg_ops = &x86_tcg_ops;
-}
-
-static void tcg_cpu_class_init(CPUClass *cc)
-{
-    cc->init_accel_cpu = tcg_cpu_init_ops;
-}
-
-static void tcg_cpu_xsave_init(void)
+static void x86_tcg_cpu_xsave_init(void)
 {
 #define XO(bit, field) \
     x86_ext_save_areas[bit].offset = offsetof(X86XSaveArea, field);
@@ -140,44 +212,43 @@ static void tcg_cpu_xsave_init(void)
  * TCG-specific defaults that override cpudef models when using TCG.
  * Only for builtin_x86_defs models initialized with x86_register_cpudef_types.
  */
-static PropValue tcg_default_props[] = {
+static PropValue x86_tcg_default_props[] = {
     { "vme", "off" },
     { NULL, NULL },
 };
 
-static void tcg_cpu_instance_init(CPUState *cs)
+static void x86_tcg_cpu_instance_init(CPUState *cs)
 {
     X86CPU *cpu = X86_CPU(cs);
     X86CPUClass *xcc = X86_CPU_GET_CLASS(cpu);
 
     if (xcc->model) {
         /* Special cases not set in the X86CPUDefinition structs: */
-        x86_cpu_apply_props(cpu, tcg_default_props);
+        x86_cpu_apply_props(cpu, x86_tcg_default_props);
     }
 
-    tcg_cpu_xsave_init();
+    x86_tcg_cpu_xsave_init();
 }
 
-static void tcg_cpu_accel_class_init(ObjectClass *oc, void *data)
+static void x86_tcg_cpu_accel_class_init(ObjectClass *oc, const void *data)
 {
     AccelCPUClass *acc = ACCEL_CPU_CLASS(oc);
 
 #ifndef CONFIG_USER_ONLY
-    acc->cpu_realizefn = tcg_cpu_realizefn;
+    acc->cpu_target_realize = tcg_cpu_realizefn;
 #endif /* CONFIG_USER_ONLY */
 
-    acc->cpu_class_init = tcg_cpu_class_init;
-    acc->cpu_instance_init = tcg_cpu_instance_init;
+    acc->cpu_instance_init = x86_tcg_cpu_instance_init;
 }
-static const TypeInfo tcg_cpu_accel_type_info = {
+static const TypeInfo x86_tcg_cpu_accel_type_info = {
     .name = ACCEL_CPU_NAME("tcg"),
 
     .parent = TYPE_ACCEL_CPU,
-    .class_init = tcg_cpu_accel_class_init,
+    .class_init = x86_tcg_cpu_accel_class_init,
     .abstract = true,
 };
-static void tcg_cpu_accel_register_types(void)
+static void x86_tcg_cpu_accel_register_types(void)
 {
-    type_register_static(&tcg_cpu_accel_type_info);
+    type_register_static(&x86_tcg_cpu_accel_type_info);
 }
-type_init(tcg_cpu_accel_register_types);
+type_init(x86_tcg_cpu_accel_register_types);

@@ -7,14 +7,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/ptimer.h"
+#include "hw/core/ptimer.h"
 #include "migration/vmstate.h"
 #include "qemu/host-utils.h"
-#include "sysemu/replay.h"
-#include "sysemu/cpu-timers.h"
-#include "sysemu/qtest.h"
-#include "block/aio.h"
-#include "hw/clock.h"
+#include "exec/replay-core.h"
+#include "exec/icount.h"
+#include "system/qtest.h"
+#include "hw/core/clock.h"
 
 #define DELTA_ADJUST     1
 #define DELTA_NO_ADJUST -1
@@ -83,7 +82,7 @@ static void ptimer_reload(ptimer_state *s, int delta_adjust)
         delta = s->delta = s->limit;
     }
 
-    if (s->period == 0) {
+    if (s->period == 0 && s->period_frac == 0) {
         if (!qtest_enabled()) {
             fprintf(stderr, "Timer with period zero, disabling\n");
         }
@@ -309,7 +308,7 @@ void ptimer_run(ptimer_state *s, int oneshot)
 
     assert(s->in_transaction);
 
-    if (was_disabled && s->period == 0) {
+    if (was_disabled && s->period == 0 && s->period_frac == 0) {
         if (!qtest_enabled()) {
             fprintf(stderr, "Timer with period zero, disabling\n");
         }
@@ -441,7 +440,7 @@ const VMStateDescription vmstate_ptimer = {
     .name = "ptimer",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(enabled, ptimer_state),
         VMSTATE_UINT64(limit, ptimer_state),
         VMSTATE_UINT64(delta, ptimer_state),

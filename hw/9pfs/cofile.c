@@ -19,8 +19,8 @@
 #include "qemu/osdep.h"
 #include "fsdev/qemu-fsdev.h"
 #include "qemu/thread.h"
-#include "qemu/coroutine.h"
 #include "qemu/main-loop.h"
+#include "qemu/error-report.h"
 #include "coth.h"
 
 int coroutine_fn v9fs_co_st_gen(V9fsPDU *pdu, V9fsPath *path, mode_t st_mode,
@@ -198,7 +198,11 @@ int coroutine_fn v9fs_co_close(V9fsPDU *pdu, V9fsFidOpenState *fs)
                 err = -errno;
             }
         });
-    if (!err) {
+    /* 'man 2 close' suggests to ignore close() errors except of EBADF */
+    if (unlikely(err && errno == EBADF)) {
+        /* unexpected case as we should have checked for a valid file handle */
+        error_report("9pfs: WARNING: v9fs_co_close() failed with EBADF");
+    } else {
         total_open_fd--;
     }
     return err;
@@ -253,7 +257,7 @@ int coroutine_fn v9fs_co_pwritev(V9fsPDU *pdu, V9fsFidState *fidp,
     if (v9fs_request_cancelled(pdu)) {
         return -EINTR;
     }
-    fsdev_co_throttle_request(s->ctx.fst, true, iov, iovcnt);
+    fsdev_co_throttle_request(s->ctx.fst, THROTTLE_WRITE, iov, iovcnt);
     v9fs_co_run_in_worker(
         {
             err = s->ops->pwritev(&s->ctx, &fidp->fs, iov, iovcnt, offset);
@@ -273,7 +277,7 @@ int coroutine_fn v9fs_co_preadv(V9fsPDU *pdu, V9fsFidState *fidp,
     if (v9fs_request_cancelled(pdu)) {
         return -EINTR;
     }
-    fsdev_co_throttle_request(s->ctx.fst, false, iov, iovcnt);
+    fsdev_co_throttle_request(s->ctx.fst, THROTTLE_READ, iov, iovcnt);
     v9fs_co_run_in_worker(
         {
             err = s->ops->preadv(&s->ctx, &fidp->fs, iov, iovcnt, offset);

@@ -20,7 +20,7 @@
 #include "hub.h"
 #include "qemu/iov.h"
 #include "qemu/error-report.h"
-#include "sysemu/qtest.h"
+#include "system/qtest.h"
 
 /*
  * A hub broadcasts incoming packets to all its ports except the source port.
@@ -34,6 +34,7 @@ typedef struct NetHubPort {
     QLIST_ENTRY(NetHubPort) next;
     NetHub *hub;
     int id;
+    bool listed;
 } NetHubPort;
 
 struct NetHub {
@@ -129,7 +130,10 @@ static void net_hub_port_cleanup(NetClientState *nc)
 {
     NetHubPort *port = DO_UPCAST(NetHubPort, nc, nc);
 
-    QLIST_REMOVE(port, next);
+    if (port->listed) {
+        QLIST_REMOVE(port, next);
+        port->listed = false;
+    }
 }
 
 static NetClientInfo net_hub_port_info = {
@@ -159,8 +163,10 @@ static NetHubPort *net_hub_port_new(NetHub *hub, const char *name,
     port = DO_UPCAST(NetHubPort, nc, nc);
     port->id = id;
     port->hub = hub;
+    port->listed = false;
 
     QLIST_INSERT_HEAD(&hub->ports, port, next);
+    port->listed = true;
 
     return port;
 }
@@ -191,31 +197,6 @@ NetClientState *net_hub_add_port(int hub_id, const char *name,
 
     port = net_hub_port_new(hub, name, hubpeer);
     return &port->nc;
-}
-
-/**
- * Find a available port on a hub; otherwise create one new port
- */
-NetClientState *net_hub_port_find(int hub_id)
-{
-    NetHub *hub;
-    NetHubPort *port;
-    NetClientState *nc;
-
-    QLIST_FOREACH(hub, &hubs, next) {
-        if (hub->id == hub_id) {
-            QLIST_FOREACH(port, &hub->ports, next) {
-                nc = port->nc.peer;
-                if (!nc) {
-                    return &(port->nc);
-                }
-            }
-            break;
-        }
-    }
-
-    nc = net_hub_add_port(hub_id, NULL, NULL);
-    return nc;
 }
 
 /**
@@ -274,7 +255,7 @@ int net_init_hubport(const Netdev *netdev, const char *name,
     assert(!peer);
     hubport = &netdev->u.hubport;
 
-    if (hubport->has_netdev) {
+    if (hubport->netdev) {
         hubpeer = qemu_find_netdev(hubport->netdev);
         if (!hubpeer) {
             error_setg(errp, "netdev '%s' not found", hubport->netdev);
@@ -310,6 +291,9 @@ void net_hub_check_clients(void)
             case NET_CLIENT_DRIVER_NIC:
                 has_nic = 1;
                 break;
+#ifdef CONFIG_PASST
+            case NET_CLIENT_DRIVER_PASST:
+#endif
             case NET_CLIENT_DRIVER_USER:
             case NET_CLIENT_DRIVER_TAP:
             case NET_CLIENT_DRIVER_SOCKET:

@@ -23,12 +23,12 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "ne2000.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 
 typedef struct PCINE2000State {
     PCIDevice dev;
@@ -39,7 +39,7 @@ static const VMStateDescription vmstate_pci_ne2000 = {
     .name = "ne2000",
     .version_id = 3,
     .minimum_version_id = 3,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(dev, PCINE2000State),
         VMSTATE_STRUCT(ne2000, PCINE2000State, 0, vmstate_ne2000, NE2000State),
         VMSTATE_END_OF_LIST()
@@ -71,7 +71,8 @@ static void pci_ne2000_realize(PCIDevice *pci_dev, Error **errp)
 
     s->nic = qemu_new_nic(&net_ne2000_info, &s->c,
                           object_get_typename(OBJECT(pci_dev)),
-                          pci_dev->qdev.id, s);
+                          pci_dev->qdev.id,
+                          &pci_dev->qdev.mem_reentrancy_guard, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->c.macaddr.a);
 }
 
@@ -95,12 +96,11 @@ static void ne2000_instance_init(Object *obj)
                                   &pci_dev->qdev);
 }
 
-static Property ne2000_properties[] = {
+static const Property ne2000_properties[] = {
     DEFINE_NIC_PROPERTIES(PCINE2000State, ne2000.c),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void ne2000_class_init(ObjectClass *klass, void *data)
+static void ne2000_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -122,7 +122,7 @@ static const TypeInfo ne2000_info = {
     .instance_size = sizeof(PCINE2000State),
     .class_init    = ne2000_class_init,
     .instance_init = ne2000_instance_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

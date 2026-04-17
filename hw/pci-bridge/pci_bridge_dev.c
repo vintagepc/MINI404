@@ -27,10 +27,10 @@
 #include "hw/pci/msi.h"
 #include "hw/pci/shpc.h"
 #include "hw/pci/slotid_cap.h"
-#include "hw/qdev-properties.h"
-#include "exec/memory.h"
+#include "hw/core/qdev-properties.h"
+#include "system/memory.h"
 #include "hw/pci/pci_bus.h"
-#include "hw/hotplug.h"
+#include "hw/core/hotplug.h"
 #include "qom/object.h"
 
 #define TYPE_PCI_BRIDGE_DEV      "pci-bridge"
@@ -168,7 +168,7 @@ static void qdev_pci_bridge_dev_reset(DeviceState *qdev)
     }
 }
 
-static Property pci_bridge_dev_properties[] = {
+static const Property pci_bridge_dev_properties[] = {
                     /* Note: 0 is not a legal chassis number. */
     DEFINE_PROP_UINT8(PCI_BRIDGE_DEV_PROP_CHASSIS_NR, PCIBridgeDev, chassis_nr,
                       0),
@@ -186,8 +186,6 @@ static Property pci_bridge_dev_properties[] = {
                      res_reserve.mem_pref_32, -1),
     DEFINE_PROP_SIZE("pref64-reserve", PCIBridgeDev,
                      res_reserve.mem_pref_64, -1),
-
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static bool pci_device_shpc_present(void *opaque, int version_id)
@@ -200,7 +198,7 @@ static bool pci_device_shpc_present(void *opaque, int version_id)
 static const VMStateDescription pci_bridge_dev_vmstate = {
     .name = "pci_bridge",
     .priority = MIG_PRI_PCI_BUS,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, PCIBridge),
         SHPC_VMSTATE(shpc, PCIDevice, pci_device_shpc_present),
         VMSTATE_END_OF_LIST()
@@ -242,7 +240,7 @@ void pci_bridge_dev_unplug_request_cb(HotplugHandler *hotplug_dev,
     shpc_device_unplug_request_cb(hotplug_dev, dev, errp);
 }
 
-static void pci_bridge_dev_class_init(ObjectClass *klass, void *data)
+static void pci_bridge_dev_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -254,9 +252,8 @@ static void pci_bridge_dev_class_init(ObjectClass *klass, void *data)
     k->vendor_id = PCI_VENDOR_ID_REDHAT;
     k->device_id = PCI_DEVICE_ID_REDHAT_BRIDGE;
     k->class_id = PCI_CLASS_BRIDGE_PCI;
-    k->is_bridge = true;
     dc->desc = "Standard PCI Bridge";
-    dc->reset = qdev_pci_bridge_dev_reset;
+    device_class_set_legacy_reset(dc, qdev_pci_bridge_dev_reset);
     device_class_set_props(dc, pci_bridge_dev_properties);
     dc->vmsd = &pci_bridge_dev_vmstate;
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
@@ -271,7 +268,7 @@ static const TypeInfo pci_bridge_dev_info = {
     .instance_size     = sizeof(PCIBridgeDev),
     .class_init        = pci_bridge_dev_class_init,
     .instance_finalize = pci_bridge_dev_instance_finalize,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { }
@@ -283,7 +280,7 @@ static const TypeInfo pci_bridge_dev_info = {
  * different pci id, so we can match it easily in the guest for
  * automagic multiseat configuration.  See docs/multiseat.txt for more.
  */
-static void pci_bridge_dev_seat_class_init(ObjectClass *klass, void *data)
+static void pci_bridge_dev_seat_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);

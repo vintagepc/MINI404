@@ -50,7 +50,7 @@ static void aux_slave_dev_print(Monitor *mon, DeviceState *dev, int indent);
 static inline I2CBus *aux_bridge_get_i2c_bus(AUXTOI2CState *bridge);
 
 /* aux-bus implementation (internal not public) */
-static void aux_bus_class_init(ObjectClass *klass, void *data)
+static void aux_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
 
@@ -256,7 +256,7 @@ struct AUXTOI2CState {
     I2CBus *i2c_bus;
 };
 
-static void aux_bridge_class_init(ObjectClass *oc, void *data)
+static void aux_bridge_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
@@ -299,7 +299,7 @@ static void aux_slave_dev_print(Monitor *mon, DeviceState *dev, int indent)
 
     s = AUX_SLAVE(dev);
 
-    monitor_printf(mon, "%*smemory " TARGET_FMT_plx "/" TARGET_FMT_plx "\n",
+    monitor_printf(mon, "%*smemory " HWADDR_FMT_plx "/" HWADDR_FMT_plx "\n",
                    indent, "",
                    object_property_get_uint(OBJECT(s->mmio), "addr", NULL),
                    memory_region_size(s->mmio));
@@ -311,7 +311,7 @@ void aux_init_mmio(AUXSlave *aux_slave, MemoryRegion *mmio)
     aux_slave->mmio = mmio;
 }
 
-static void aux_slave_class_init(ObjectClass *klass, void *data)
+static void aux_slave_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
 

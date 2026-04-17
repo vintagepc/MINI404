@@ -28,8 +28,8 @@
 #ifndef HW_MCHP_PFSOC_MMUART_H
 #define HW_MCHP_PFSOC_MMUART_H
 
-#include "hw/sysbus.h"
-#include "hw/char/serial.h"
+#include "hw/core/sysbus.h"
+#include "hw/char/serial-mm.h"
 
 #define MCHP_PFSOC_MMUART_REG_COUNT 13
 

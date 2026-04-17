@@ -1,8 +1,10 @@
 #ifndef QEMU_VIRTIO_INPUT_H
 #define QEMU_VIRTIO_INPUT_H
 
+#include "hw/virtio/vhost-user.h"
+#include "hw/virtio/vhost-user-base.h"
 #include "ui/input.h"
-#include "sysemu/vhost-user-backend.h"
+#include "system/vhost-user-backend.h"
 
 /* ----------------------------------------------------------------- */
 /* virtio input protocol                                             */
@@ -24,10 +26,11 @@ OBJECT_DECLARE_TYPE(VirtIOInput, VirtIOInputClass,
 #define VIRTIO_INPUT_GET_PARENT_CLASS(obj) \
         OBJECT_GET_PARENT_CLASS(obj, TYPE_VIRTIO_INPUT)
 
-#define TYPE_VIRTIO_INPUT_HID "virtio-input-hid-device"
-#define TYPE_VIRTIO_KEYBOARD  "virtio-keyboard-device"
-#define TYPE_VIRTIO_MOUSE     "virtio-mouse-device"
-#define TYPE_VIRTIO_TABLET    "virtio-tablet-device"
+#define TYPE_VIRTIO_INPUT_HID  "virtio-input-hid-device"
+#define TYPE_VIRTIO_KEYBOARD   "virtio-keyboard-device"
+#define TYPE_VIRTIO_MOUSE      "virtio-mouse-device"
+#define TYPE_VIRTIO_TABLET     "virtio-tablet-device"
+#define TYPE_VIRTIO_MULTITOUCH "virtio-multitouch-device"
 
 OBJECT_DECLARE_SIMPLE_TYPE(VirtIOInputHID, VIRTIO_INPUT_HID)
 #define VIRTIO_INPUT_HID_GET_PARENT_CLASS(obj) \
@@ -83,10 +86,9 @@ struct VirtIOInputHID {
     VirtIOInput                       parent_obj;
     char                              *display;
     uint32_t                          head;
-    QemuInputHandler                  *handler;
+    const QemuInputHandler            *handler;
     QemuInputHandlerState             *hs;
     int                               ledstate;
-    bool                              wheel_axis;
 };
 
 struct VirtIOInputHost {
@@ -96,9 +98,7 @@ struct VirtIOInputHost {
 };
 
 struct VHostUserInput {
-    VirtIOInput                       parent_obj;
-
-    VhostUserBackend                  *vhost;
+    VHostUserBase parent_obj;
 };
 
 void virtio_input_send(VirtIOInput *vinput, virtio_input_event *event);

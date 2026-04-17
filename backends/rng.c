@@ -11,9 +11,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/rng.h"
+#include "system/rng.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qerror.h"
 #include "qemu/module.h"
 #include "qom/object_interfaces.h"
 
@@ -100,7 +99,7 @@ static void rng_backend_finalize(Object *obj)
     rng_backend_free_requests(s);
 }
 
-static void rng_backend_class_init(ObjectClass *oc, void *data)
+static void rng_backend_class_init(ObjectClass *oc, const void *data)
 {
     UserCreatableClass *ucc = USER_CREATABLE_CLASS(oc);
 
@@ -120,7 +119,7 @@ static const TypeInfo rng_backend_info = {
     .class_size = sizeof(RngBackendClass),
     .class_init = rng_backend_class_init,
     .abstract = true,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_USER_CREATABLE },
         { }
     }

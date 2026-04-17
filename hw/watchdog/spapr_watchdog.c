@@ -226,7 +226,7 @@ static const VMStateDescription vmstate_wdt = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = watchdog_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER(timer, SpaprWatchdog),
         VMSTATE_UINT8(action, SpaprWatchdog),
         VMSTATE_UINT8(leave_others, SpaprWatchdog),
@@ -249,7 +249,7 @@ static void spapr_wdt_realize(DeviceState *dev, Error **errp)
                                   &w->leave_others, OBJ_PROP_FLAG_READ);
 }
 
-static void spapr_wdt_class_init(ObjectClass *oc, void *data)
+static void spapr_wdt_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

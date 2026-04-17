@@ -11,8 +11,8 @@
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 #include "libqtest.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qjson.h"
+#include "qobject/qdict.h"
+#include "qobject/qjson.h"
 
 /*
  * We expect the SVE max-vq to be 16. Also it must be <= 64
@@ -21,7 +21,7 @@
 #define SVE_MAX_VQ 16
 
 #define MACHINE     "-machine virt,gic-version=max -accel tcg "
-#define MACHINE_KVM "-machine virt,gic-version=max -accel kvm -accel tcg "
+#define MACHINE_KVM "-machine virt,gic-version=max -accel kvm "
 #define QUERY_HEAD  "{ 'execute': 'query-cpu-model-expansion', " \
                     "  'arguments': { 'type': 'full', "
 #define QUERY_TAIL  "}}"
@@ -32,6 +32,7 @@ static QDict *do_query_no_props(QTestState *qts, const char *cpu_type)
                           QUERY_TAIL, cpu_type);
 }
 
+G_GNUC_PRINTF(3, 4)
 static QDict *do_query(QTestState *qts, const char *cpu_type,
                        const char *fmt, ...)
 {
@@ -78,7 +79,7 @@ static const char *resp_get_error(QDict *resp)
     g_assert(_resp);                                                   \
     _error = resp_get_error(_resp);                                    \
     g_assert(_error);                                                  \
-    g_assert(g_str_equal(_error, expected_error));                     \
+    g_assert_cmpstr(_error, ==, expected_error);                       \
     qobject_unref(_resp);                                              \
 })
 
@@ -193,8 +194,8 @@ static void assert_type_full(QTestState *qts)
     g_assert(resp);
     error = resp_get_error(resp);
     g_assert(error);
-    g_assert(g_str_equal(error,
-                         "The requested expansion type is not supported"));
+    g_assert_cmpstr(error, ==,
+                    "The requested expansion type is not supported");
     qobject_unref(resp);
 }
 
@@ -211,8 +212,9 @@ static void assert_bad_props(QTestState *qts, const char *cpu_type)
     g_assert(resp);
     error = resp_get_error(resp);
     g_assert(error);
-    g_assert(g_str_equal(error,
-                         "Invalid parameter type for 'props', expected: dict"));
+    g_assert_cmpstr(error, ==,
+                    "Invalid parameter type for 'model.props',"
+                    " expected: object");
     qobject_unref(resp);
 }
 
@@ -416,12 +418,29 @@ static void pauth_tests_default(QTestState *qts, const char *cpu_type)
 {
     assert_has_feature_enabled(qts, cpu_type, "pauth");
     assert_has_feature_disabled(qts, cpu_type, "pauth-impdef");
+    assert_has_feature_disabled(qts, cpu_type, "pauth-qarma3");
+    assert_has_feature_disabled(qts, cpu_type, "pauth-qarma5");
     assert_set_feature(qts, cpu_type, "pauth", false);
     assert_set_feature(qts, cpu_type, "pauth", true);
     assert_set_feature(qts, cpu_type, "pauth-impdef", true);
     assert_set_feature(qts, cpu_type, "pauth-impdef", false);
-    assert_error(qts, cpu_type, "cannot enable pauth-impdef without pauth",
+    assert_set_feature(qts, cpu_type, "pauth-qarma3", true);
+    assert_set_feature(qts, cpu_type, "pauth-qarma3", false);
+    assert_set_feature(qts, cpu_type, "pauth-qarma5", true);
+    assert_set_feature(qts, cpu_type, "pauth-qarma5", false);
+    assert_error(qts, cpu_type,
+                 "cannot enable pauth-impdef, pauth-qarma3 or pauth-qarma5 without pauth",
                  "{ 'pauth': false, 'pauth-impdef': true }");
+    assert_error(qts, cpu_type,
+                 "cannot enable pauth-impdef, pauth-qarma3 or pauth-qarma5 without pauth",
+                 "{ 'pauth': false, 'pauth-qarma3': true }");
+    assert_error(qts, cpu_type,
+                 "cannot enable pauth-impdef, pauth-qarma3 or pauth-qarma5 without pauth",
+                 "{ 'pauth': false, 'pauth-qarma5': true }");
+    assert_error(qts, cpu_type,
+                 "cannot enable pauth-impdef, pauth-qarma3 and pauth-qarma5 at the same time",
+                 "{ 'pauth': true, 'pauth-impdef': true, 'pauth-qarma3': true,"
+                 "  'pauth-qarma5': true }");
 }
 
 static void test_query_cpu_model_expansion(const void *data)
@@ -435,7 +454,7 @@ static void test_query_cpu_model_expansion(const void *data)
     assert_bad_props(qts, "max");
     assert_error(qts, "foo", "The CPU type 'foo' is not a recognized "
                  "ARM CPU type", NULL);
-    assert_error(qts, "max", "Parameter 'not-a-prop' is unexpected",
+    assert_error(qts, "max", "Parameter 'model.props.not-a-prop' is unexpected",
                  "{ 'not-a-prop': false }");
     assert_error(qts, "host", "The CPU type 'host' requires KVM", NULL);
 
@@ -497,24 +516,33 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
     assert_set_feature(qts, "host", "kvm-no-adjvtime", false);
 
     if (g_str_equal(qtest_get_arch(), "aarch64")) {
+        bool kvm_supports_pmu;
         bool kvm_supports_steal_time;
         bool kvm_supports_sve;
-        char max_name[8], name[8];
         uint32_t max_vq, vq;
         uint64_t vls;
         QDict *resp;
         char *error;
 
-        assert_error(qts, "cortex-a15",
-            "We cannot guarantee the CPU type 'cortex-a15' works "
-            "with KVM on this host", NULL);
+        /*
+         * When using KVM, only the 'host' and 'max' CPU models are
+         * supported. Test that we're emitting a suitable error for
+         * unsupported CPU models.
+         */
+        if (qtest_has_accel("tcg")) {
+            assert_error(qts, "cortex-a7",
+                         "We cannot guarantee the CPU type 'cortex-a7' works "
+                         "with KVM on this host", NULL);
+        } else {
+            /*
+             * With a KVM-only build the 32-bit CPUs are not present.
+             */
+            assert_error(qts, "cortex-a7",
+                         "The CPU type 'cortex-a7' is not a "
+                         "recognized ARM CPU type", NULL);
+        }
 
         assert_has_feature_enabled(qts, "host", "aarch64");
-
-        /* Enabling and disabling pmu should always work. */
-        assert_has_feature_enabled(qts, "host", "pmu");
-        assert_set_feature(qts, "host", "pmu", false);
-        assert_set_feature(qts, "host", "pmu", true);
 
         /*
          * Some features would be enabled by default, but they're disabled
@@ -525,10 +553,17 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
         assert_has_feature(qts, "host", "sve");
 
         resp = do_query_no_props(qts, "host");
+        kvm_supports_pmu = resp_get_feature(resp, "pmu");
         kvm_supports_steal_time = resp_get_feature(resp, "kvm-steal-time");
         kvm_supports_sve = resp_get_feature(resp, "sve");
         vls = resp_get_sve_vls(resp);
         qobject_unref(resp);
+
+        if (kvm_supports_pmu) {
+            /* If we have pmu then we should be able to toggle it. */
+            assert_set_feature(qts, "host", "pmu", false);
+            assert_set_feature(qts, "host", "pmu", true);
+        }
 
         if (kvm_supports_steal_time) {
             /* If we have steal-time then we should be able to toggle it. */
@@ -537,9 +572,12 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
         }
 
         if (kvm_supports_sve) {
+            g_autofree const char *max_name = NULL;
+            g_autofree const char *name = NULL;
+
             g_assert(vls != 0);
             max_vq = 64 - __builtin_clzll(vls);
-            sprintf(max_name, "sve%u", max_vq * 128);
+            max_name = g_strdup_printf("sve%u", max_vq * 128);
 
             /* Enabling a supported length is of course fine. */
             assert_sve_vls(qts, "host", vls, "{ %s: true }", max_name);
@@ -547,6 +585,9 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
             /* Get the next supported length smaller than max-vq. */
             vq = 64 - __builtin_clzll(vls & ~BIT_ULL(max_vq - 1));
             if (vq) {
+                g_autofree const char *name2 =
+                    g_strdup_printf("sve%u", vq * 128);
+
                 /*
                  * We have at least one length smaller than max-vq,
                  * so we can disable max-vq.
@@ -559,11 +600,10 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
                  * unless all larger, supported vector lengths are also
                  * disabled.
                  */
-                sprintf(name, "sve%u", vq * 128);
-                error = g_strdup_printf("cannot disable %s", name);
+                error = g_strdup_printf("cannot disable %s", name2);
                 assert_error(qts, "host", error,
                              "{ %s: true, %s: false }",
-                             max_name, name);
+                             max_name, name2);
                 g_free(error);
             }
 
@@ -572,7 +612,7 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
              * we need at least one vector length enabled.
              */
             vq = __builtin_ffsll(vls);
-            sprintf(name, "sve%u", vq * 128);
+            name = g_strdup_printf("sve%u", vq * 128);
             error = g_strdup_printf("cannot disable %s", name);
             assert_error(qts, "host", error, "{ %s: false }", name);
             g_free(error);
@@ -584,9 +624,11 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
                 }
             }
             if (vq <= SVE_MAX_VQ) {
-                sprintf(name, "sve%u", vq * 128);
-                error = g_strdup_printf("cannot enable %s", name);
-                assert_error(qts, "host", error, "{ %s: true }", name);
+                g_autofree const char *name2 =
+                    g_strdup_printf("sve%u", vq * 128);
+
+                error = g_strdup_printf("cannot enable %s", name2);
+                assert_error(qts, "host", error, "{ %s: true }", name2);
                 g_free(error);
             }
         } else {
@@ -606,31 +648,43 @@ int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
-    qtest_add_data_func("/arm/query-cpu-model-expansion",
-                        NULL, test_query_cpu_model_expansion);
+    if (!qtest_has_machine("virt")) {
+        goto out;
+    }
+
+    if (qtest_has_accel("tcg")) {
+        qtest_add_data_func("/arm/query-cpu-model-expansion",
+                            NULL, test_query_cpu_model_expansion);
+    }
+
+    if (!g_str_equal(qtest_get_arch(), "aarch64")) {
+        goto out;
+    }
 
     /*
      * For now we only run KVM specific tests with AArch64 QEMU in
      * order avoid attempting to run an AArch32 QEMU with KVM on
      * AArch64 hosts. That won't work and isn't easy to detect.
      */
-    if (g_str_equal(qtest_get_arch(), "aarch64") && qtest_has_accel("kvm")) {
+    if (qtest_has_accel("kvm")) {
         /*
          * This tests target the 'host' CPU type, so register it only if
          * KVM is available.
          */
         qtest_add_data_func("/arm/kvm/query-cpu-model-expansion",
                             NULL, test_query_cpu_model_expansion_kvm);
-    }
 
-    if (g_str_equal(qtest_get_arch(), "aarch64")) {
-        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-max-vq-8",
-                            NULL, sve_tests_sve_max_vq_8);
-        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-off",
-                            NULL, sve_tests_sve_off);
         qtest_add_data_func("/arm/kvm/query-cpu-model-expansion/sve-off",
                             NULL, sve_tests_sve_off_kvm);
     }
 
+    if (qtest_has_accel("tcg")) {
+        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-max-vq-8",
+                            NULL, sve_tests_sve_max_vq_8);
+        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-off",
+                            NULL, sve_tests_sve_off);
+    }
+
+out:
     return g_test_run();
 }

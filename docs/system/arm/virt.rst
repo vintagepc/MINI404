@@ -1,3 +1,5 @@
+.. _arm-virt:
+
 'virt' generic virtual platform (``virt``)
 ==========================================
 
@@ -19,23 +21,30 @@ of the 5.0 release and ``virt-5.0`` of the 5.1 release. Migration
 is not guaranteed to work between different QEMU releases for
 the non-versioned ``virt`` machine type.
 
+VM migration is not guaranteed when using ``-cpu max``, as features
+supported may change between QEMU versions.  To ensure your VM can be
+migrated, it is recommended to use another cpu model instead.
+
 Supported devices
 """""""""""""""""
 
 The virt board supports:
 
 - PCI/PCIe devices
+- CXL Fixed memory windows, root bridges and devices.
 - Flash memory
-- One PL011 UART
+- Either one or two PL011 UARTs for the NonSecure World
 - An RTC
 - The fw_cfg device that allows a guest to obtain data from QEMU
 - A PL061 GPIO controller
-- An optional SMMUv3 IOMMU
+- An optional machine-wide SMMUv3 IOMMU
+- User-creatable SMMUv3 devices (see below for example)
 - hotpluggable DIMMs
 - hotpluggable NVDIMMs
-- An MSI controller (GICv2M or ITS). GICv2M is selected by default along
-  with GICv2. ITS is selected by default with GICv3 (>= virt-2.7). Note
-  that ITS is not modeled in TCG mode.
+- An MSI controller (GICv2m or ITS).
+  - When using GICv3, ITS is selected by default when available on the platform.
+  - If using GICv2, a GICv2m is provided by default instead.
+  - When ITS is not available on a GICv3 platform, a GICv2m is provided by default.
 - 32 virtio-mmio transport devices
 - running guests using the KVM accelerator on aarch64 hardware
 - large amounts of RAM (at least 255GB, and more if using highmem)
@@ -48,22 +57,43 @@ The virt board supports:
   - A secure flash memory
   - 16MB of secure RAM
 
+The second NonSecure UART only exists if a backend is configured
+explicitly (e.g. with a second -serial command line option) and
+TrustZone emulation is not enabled.
+
 Supported guest CPU types:
 
 - ``cortex-a7`` (32-bit)
 - ``cortex-a15`` (32-bit; the default)
 - ``cortex-a35`` (64-bit)
 - ``cortex-a53`` (64-bit)
+- ``cortex-a55`` (64-bit)
 - ``cortex-a57`` (64-bit)
 - ``cortex-a72`` (64-bit)
 - ``cortex-a76`` (64-bit)
+- ``cortex-a710`` (64-bit)
 - ``a64fx`` (64-bit)
-- ``host`` (with KVM only)
+- ``host`` (with KVM and HVF only)
 - ``neoverse-n1`` (64-bit)
-- ``max`` (same as ``host`` for KVM; best possible emulation with TCG)
+- ``neoverse-v1`` (64-bit)
+- ``neoverse-n2`` (64-bit)
+- ``max`` (same as ``host`` for KVM and HVF; best possible emulation with TCG)
 
 Note that the default is ``cortex-a15``, so for an AArch64 guest you must
 specify a CPU type.
+
+Also, please note that passing ``max`` CPU (i.e. ``-cpu max``) won't
+enable all the CPU features for a given ``virt`` machine. Where a CPU
+architectural feature requires support in both the CPU itself and in the
+wider system (e.g. the MTE feature), it may not be enabled by default,
+but instead requires a machine option to enable it.
+
+For example, MTE support must be enabled with ``-machine virt,mte=on``,
+as well as by selecting an MTE-capable CPU (e.g., ``max``) with the
+``-cpu`` option.
+
+See the machine-specific options below, or check them for a given machine
+by passing the ``help`` suboption, like: ``-machine virt-9.0,help``.
 
 Graphics output is available, but unlike the x86 PC machine types
 there is no default display device enabled: you should select one from
@@ -92,7 +122,34 @@ mte
 highmem
   Set ``on``/``off`` to enable/disable placing devices and RAM in physical
   address space above 32 bits. The default is ``on`` for machine types
-  later than ``virt-2.12``.
+  later than ``virt-2.12`` when the CPU supports an address space
+  bigger than 32 bits (i.e. 64-bit CPUs, and 32-bit CPUs with the
+  Large Physical Address Extension (LPAE) feature). If you want to
+  boot a 32-bit kernel which does not have ``CONFIG_LPAE`` enabled on
+  a CPU type which implements LPAE, you will need to manually set
+  this to ``off``; otherwise some devices, such as the PCI controller,
+  will not be accessible.
+
+compact-highmem
+  Set ``on``/``off`` to enable/disable the compact layout for high memory regions.
+  The default is ``on`` for machine types later than ``virt-7.2``.
+
+highmem-redists
+  Set ``on``/``off`` to enable/disable the high memory region for GICv3 or
+  GICv4 redistributor. The default is ``on``. Setting this to ``off`` will
+  limit the maximum number of CPUs when GICv3 or GICv4 is used.
+
+highmem-ecam
+  Set ``on``/``off`` to enable/disable the high memory region for PCI ECAM.
+  The default is ``on`` for machine types later than ``virt-3.0``.
+
+highmem-mmio
+  Set ``on``/``off`` to enable/disable the high memory region for PCI MMIO.
+  The default is ``on``.
+
+highmem-mmio-size
+  Set the high memory region size for PCI MMIO. Must be a power of 2 and
+  greater than or equal to the default size (512G).
 
 gic-version
   Specify the version of the Generic Interrupt Controller (GIC) to provide.
@@ -111,9 +168,22 @@ gic-version
     with TCG this is currently ``3`` if ``virtualization`` is ``off`` and
     ``4`` if ``virtualization`` is ``on``, but this may change in future)
 
+msi
+  Specify the MSI and MSI-X controller (GIC) to provide.
+  Valid values are:
+
+  ``auto``
+    Use the best available MSI-X controller option. ITS when supported, GICv2m otherwise.
+  ``gicv2m``
+    GICv2m. Typically used with a GICv2. Also available with a newer GIC.
+  ``its``
+    GICv3 ITS. This is the default option when using a GICv3 or GICv4 with a supported
+    accelerator.
+  ``off``
+    Disable support for MSI/MSI-X interrupts.
+
 its
-  Set ``on``/``off`` to enable/disable ITS instantiation. The default is ``on``
-  for machine types later than ``virt-2.7``.
+  Set ``on``/``off`` to control ITS instantiation. This is a deprecated option, use ``msi`` instead.
 
 iommu
   Set the IOMMU type to create for the guest. Valid values are:
@@ -121,11 +191,27 @@ iommu
   ``none``
     Don't create an IOMMU (the default)
   ``smmuv3``
-    Create an SMMUv3
+    Create a machine-wide SMMUv3.
+
+default-bus-bypass-iommu
+  Set ``on``/``off`` to enable/disable `bypass_iommu
+  <https://gitlab.com/qemu-project/qemu/-/blob/master/docs/bypass-iommu.txt>`_
+  for default root bus.
 
 ras
   Set ``on``/``off`` to enable/disable reporting host memory errors to a guest
   using ACPI and guest external abort exceptions. The default is off.
+
+acpi
+  Set ``on``/``off``/``auto`` to enable/disable ACPI.
+
+cxl
+  Set  ``on``/``off`` to enable/disable CXL. More details in
+  :doc:`../devices/cxl`. The default is off.
+
+cxl-fmw
+  Array of CXL fixed memory windows describing fixed address routing to
+  target CXL host bridges. See :doc:`../devices/cxl`.
 
 dtb-randomness
   Set ``on``/``off`` to pass random seeds via the guest DTB
@@ -139,6 +225,49 @@ dtb-randomness
 
 dtb-kaslr-seed
   A deprecated synonym for dtb-randomness.
+
+virtio-mmio-transports
+  Set the number of virtio-mmio transports to create (between 0 and 32;
+  the default is 32).  Unused transports are harmless, but you can
+  use this property to avoid exposing them to the guest if you wish.
+
+x-oem-id
+  Set string (up to 6 bytes) to override the default value of field OEMID in ACPI
+  table header.
+
+x-oem-table-id
+  Set string (up to 8 bytes) to override the default value of field OEM Table ID
+  in ACPI table header.
+
+SMMU configuration
+""""""""""""""""""
+
+Machine-wide SMMUv3 IOMMU
+  Setting the machine-specific option ``iommu=smmuv3`` causes QEMU to
+  create a single, machine-wide SMMUv3 instance that applies to all
+  devices in the PCIe topology.
+
+  For information about selectively bypassing devices, refer to
+  ``docs/bypass-iommu.txt``.
+
+User-creatable SMMUv3 devices
+  You can use the ``-device arm-smmuv3`` option to create multiple
+  user-defined SMMUv3 devices, each associated with a separate PCIe
+  root complex. This is only permitted if the machine-wide SMMUv3
+  (``iommu=smmuv3``) option is not used. Each ``arm-smmuv3`` device
+  uses the ``primary-bus`` sub-option to specify which PCIe root
+  complex it is associated with.
+
+  This model is useful when you want to mirror a host configuration where
+  each NUMA node typically has its own SMMU, allowing the VM topology to
+  align more closely with the host’s hardware layout.
+
+  Example::
+
+      -device arm-smmuv3,primary-bus=pcie.0,id=smmuv3.0
+      ...
+      -device pxb-pcie,id=pcie.1,numa_node=1
+      -device arm-smmuv3,primary-bus=pcie.1,id=smmuv3.1
 
 Linux guest kernel configuration
 """"""""""""""""""""""""""""""""

@@ -5,6 +5,7 @@
 
 #include "qemu/osdep.h"
 #include <sys/epoll.h>
+#include "qemu/lockcnt.h"
 #include "qemu/rcu_queue.h"
 #include "aio-posix.h"
 
@@ -18,8 +19,12 @@ void fdmon_epoll_disable(AioContext *ctx)
         ctx->epollfd = -1;
     }
 
-    /* Switch back */
-    ctx->fdmon_ops = &fdmon_poll_ops;
+    if (ctx->epollfd_tag) {
+        g_source_remove_unix_fd(&ctx->source, ctx->epollfd_tag);
+        ctx->epollfd_tag = NULL;
+    }
+
+    fdmon_poll_downgrade(ctx);
 }
 
 static inline int epoll_events_from_pfd(int pfd_events)
@@ -64,11 +69,6 @@ static int fdmon_epoll_wait(AioContext *ctx, AioHandlerList *ready_list,
     int i, ret = 0;
     struct epoll_event events[128];
 
-    /* Fall back while external clients are disabled */
-    if (qatomic_read(&ctx->external_disable_cnt)) {
-        return fdmon_poll_ops.wait(ctx, ready_list, timeout);
-    }
-
     if (timeout > 0) {
         ret = qemu_poll_ns(&pfd, 1, timeout);
         if (ret > 0) {
@@ -97,10 +97,29 @@ out:
     return ret;
 }
 
+static void fdmon_epoll_gsource_prepare(AioContext *ctx)
+{
+    /* Do nothing */
+}
+
+static bool fdmon_epoll_gsource_check(AioContext *ctx)
+{
+    return g_source_query_unix_fd(&ctx->source, ctx->epollfd_tag) & G_IO_IN;
+}
+
+static void fdmon_epoll_gsource_dispatch(AioContext *ctx,
+                                         AioHandlerList *ready_list)
+{
+    fdmon_epoll_wait(ctx, ready_list, 0);
+}
+
 static const FDMonOps fdmon_epoll_ops = {
     .update = fdmon_epoll_update,
     .wait = fdmon_epoll_wait,
     .need_wait = aio_poll_disabled,
+    .gsource_prepare = fdmon_epoll_gsource_prepare,
+    .gsource_check = fdmon_epoll_gsource_check,
+    .gsource_dispatch = fdmon_epoll_gsource_dispatch,
 };
 
 static bool fdmon_epoll_try_enable(AioContext *ctx)
@@ -122,28 +141,35 @@ static bool fdmon_epoll_try_enable(AioContext *ctx)
     }
 
     ctx->fdmon_ops = &fdmon_epoll_ops;
+    ctx->epollfd_tag = g_source_add_unix_fd(&ctx->source, ctx->epollfd,
+                                            G_IO_IN);
     return true;
 }
 
 bool fdmon_epoll_try_upgrade(AioContext *ctx, unsigned npfd)
 {
+    bool ok;
+
     if (ctx->epollfd < 0) {
         return false;
     }
 
-    /* Do not upgrade while external clients are disabled */
-    if (qatomic_read(&ctx->external_disable_cnt)) {
+    if (npfd < EPOLL_ENABLE_THRESHOLD) {
         return false;
     }
 
-    if (npfd >= EPOLL_ENABLE_THRESHOLD) {
-        if (fdmon_epoll_try_enable(ctx)) {
-            return true;
-        } else {
-            fdmon_epoll_disable(ctx);
-        }
+    /* The list must not change while we add fds to epoll */
+    if (!qemu_lockcnt_dec_if_lock(&ctx->list_lock)) {
+        return false;
     }
-    return false;
+
+    ok = fdmon_epoll_try_enable(ctx);
+    if (!ok) {
+        fdmon_epoll_disable(ctx);
+    }
+
+    qemu_lockcnt_inc_and_unlock(&ctx->list_lock);
+    return ok;
 }
 
 void fdmon_epoll_setup(AioContext *ctx)

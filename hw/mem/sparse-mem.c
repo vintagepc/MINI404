@@ -11,12 +11,13 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/error-report.h"
 
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "qapi/error.h"
 #include "qemu/units.h"
-#include "sysemu/qtest.h"
+#include "system/qtest.h"
 #include "hw/mem/sparse-mem.h"
 
 #define SPARSE_MEM(obj) OBJECT_CHECK(SparseMemState, (obj), TYPE_SPARSE_MEM)
@@ -77,6 +78,12 @@ static void sparse_mem_write(void *opaque, hwaddr addr, uint64_t v,
 
 }
 
+static void sparse_mem_enter_reset(Object *obj, ResetType type)
+{
+    SparseMemState *s = SPARSE_MEM(obj);
+    g_hash_table_remove_all(s->mapped);
+}
+
 static const MemoryRegionOps sparse_mem_ops = {
     .read = sparse_mem_read,
     .write = sparse_mem_write,
@@ -88,14 +95,13 @@ static const MemoryRegionOps sparse_mem_ops = {
         },
 };
 
-static Property sparse_mem_properties[] = {
+static const Property sparse_mem_properties[] = {
     /* The base address of the memory */
     DEFINE_PROP_UINT64("baseaddr", SparseMemState, baseaddr, 0x0),
     /* The length of the sparse memory region */
     DEFINE_PROP_UINT64("length", SparseMemState, length, UINT64_MAX),
     /* Max amount of actual memory that can be used to back the sparse memory */
     DEFINE_PROP_UINT64("maxsize", SparseMemState, maxsize, 10 * MiB),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 MemoryRegion *sparse_mem_init(uint64_t addr, uint64_t length)
@@ -123,20 +129,24 @@ static void sparse_mem_realize(DeviceState *dev, Error **errp)
 
     assert(s->baseaddr + s->length > s->baseaddr);
 
-    s->mapped = g_hash_table_new(NULL, NULL);
+    s->mapped = g_hash_table_new_full(NULL, NULL, NULL,
+                                      (GDestroyNotify)g_free);
     memory_region_init_io(&s->mmio, OBJECT(s), &sparse_mem_ops, s,
                           "sparse-mem", s->length);
     sysbus_init_mmio(sbd, &s->mmio);
 }
 
-static void sparse_mem_class_init(ObjectClass *klass, void *data)
+static void sparse_mem_class_init(ObjectClass *klass, const void *data)
 {
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_props(dc, sparse_mem_properties);
 
     dc->desc = "Sparse Memory Device";
     dc->realize = sparse_mem_realize;
+
+    rc->phases.enter = sparse_mem_enter_reset;
 }
 
 static const TypeInfo sparse_mem_types[] = {

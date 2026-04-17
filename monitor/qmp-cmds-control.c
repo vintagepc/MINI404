@@ -1,5 +1,5 @@
 /*
- * QMP commands related to the monitor (common to sysemu and tools)
+ * QMP commands related to the monitor (common to system and tools)
  *
  * Copyright (c) 2003-2004 Fabrice Bellard
  *
@@ -30,7 +30,6 @@
 #include "qapi/error.h"
 #include "qapi/qapi-commands-control.h"
 #include "qapi/qapi-commands-introspect.h"
-#include "qapi/qapi-emit-events.h"
 #include "qapi/qapi-introspect.h"
 #include "qapi/qapi-visit-introspect.h"
 #include "qapi/qobject-input-visitor.h"

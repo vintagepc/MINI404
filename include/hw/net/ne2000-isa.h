@@ -11,7 +11,7 @@
 #define HW_NET_NE2000_ISA_H
 
 #include "hw/isa/isa.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "net/net.h"
 #include "qapi/error.h"
 
@@ -21,8 +21,6 @@ static inline ISADevice *isa_ne2000_init(ISABus *bus, int base, int irq,
                                          NICInfo *nd)
 {
     ISADevice *d;
-
-    qemu_check_nic_model(nd, "ne2k_isa");
 
     d = isa_try_new(TYPE_ISA_NE2000);
     if (d) {

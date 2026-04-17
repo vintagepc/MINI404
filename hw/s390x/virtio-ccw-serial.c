@@ -12,10 +12,9 @@
 #include "qemu/osdep.h"
 #include "hw/virtio/virtio.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/virtio/virtio-serial.h"
 #include "virtio-ccw.h"
-#include "hw/virtio/virtio-serial.h"
 
 #define TYPE_VIRTIO_SERIAL_CCW "virtio-serial-ccw"
 OBJECT_DECLARE_SIMPLE_TYPE(VirtioSerialCcw, VIRTIO_SERIAL_CCW)
@@ -54,15 +53,14 @@ static void virtio_ccw_serial_instance_init(Object *obj)
                                 TYPE_VIRTIO_SERIAL);
 }
 
-static Property virtio_ccw_serial_properties[] = {
+static const Property virtio_ccw_serial_properties[] = {
     DEFINE_PROP_BIT("ioeventfd", VirtioCcwDevice, flags,
                     VIRTIO_CCW_FLAG_USE_IOEVENTFD_BIT, true),
     DEFINE_PROP_UINT32("max_revision", VirtioCcwDevice, max_rev,
                        VIRTIO_CCW_MAX_REV),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void virtio_ccw_serial_class_init(ObjectClass *klass, void *data)
+static void virtio_ccw_serial_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtIOCCWDeviceClass *k = VIRTIO_CCW_DEVICE_CLASS(klass);

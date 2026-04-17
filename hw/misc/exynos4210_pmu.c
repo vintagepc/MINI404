@@ -25,10 +25,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "qom/object.h"
 
 #ifndef DEBUG_PMU
@@ -492,17 +492,17 @@ static const VMStateDescription exynos4210_pmu_vmstate = {
     .name = "exynos4210.pmu",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(reg, Exynos4210PmuState, PMU_NUM_OF_REGISTERS),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void exynos4210_pmu_class_init(ObjectClass *klass, void *data)
+static void exynos4210_pmu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = exynos4210_pmu_reset;
+    device_class_set_legacy_reset(dc, exynos4210_pmu_reset);
     dc->vmsd = &exynos4210_pmu_vmstate;
 }
 

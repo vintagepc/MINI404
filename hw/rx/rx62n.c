@@ -23,11 +23,13 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "qemu/units.h"
 #include "hw/rx/rx62n.h"
-#include "hw/loader.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
-#include "sysemu/sysemu.h"
+#include "hw/core/loader.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "system/system.h"
+#include "qobject/qlist.h"
 #include "qom/object.h"
 
 /*
@@ -114,7 +116,7 @@ static const uint8_t ipr_table[NR_IRQS] = {
 };
 
 /*
- * Level triggerd IRQ list
+ * Level triggered IRQ list
  * Not listed IRQ is Edge trigger.
  * See "11.3.1 Interrupt Vector Table" in hardware manual.
  */
@@ -130,31 +132,28 @@ static void register_icu(RX62NState *s)
 {
     int i;
     SysBusDevice *icu;
+    QList *ipr_map, *trigger_level;
 
     object_initialize_child(OBJECT(s), "icu", &s->icu, TYPE_RX_ICU);
     icu = SYS_BUS_DEVICE(&s->icu);
-    qdev_prop_set_uint32(DEVICE(icu), "len-ipr-map", NR_IRQS);
-    for (i = 0; i < NR_IRQS; i++) {
-        char propname[32];
-        snprintf(propname, sizeof(propname), "ipr-map[%d]", i);
-        qdev_prop_set_uint32(DEVICE(icu), propname, ipr_table[i]);
-    }
-    qdev_prop_set_uint32(DEVICE(icu), "len-trigger-level",
-                         ARRAY_SIZE(levelirq));
-    for (i = 0; i < ARRAY_SIZE(levelirq); i++) {
-        char propname[32];
-        snprintf(propname, sizeof(propname), "trigger-level[%d]", i);
-        qdev_prop_set_uint32(DEVICE(icu), propname, levelirq[i]);
-    }
 
+    ipr_map = qlist_new();
     for (i = 0; i < NR_IRQS; i++) {
-        s->irq[i] = qdev_get_gpio_in(DEVICE(icu), i);
+        qlist_append_int(ipr_map, ipr_table[i]);
     }
+    qdev_prop_set_array(DEVICE(icu), "ipr-map", ipr_map);
+
+    trigger_level = qlist_new();
+    for (i = 0; i < ARRAY_SIZE(levelirq); i++) {
+        qlist_append_int(trigger_level, levelirq[i]);
+    }
+    qdev_prop_set_array(DEVICE(icu), "trigger-level", trigger_level);
     sysbus_realize(icu, &error_abort);
+
     sysbus_connect_irq(icu, 0, qdev_get_gpio_in(DEVICE(&s->cpu), RX_CPU_IRQ));
     sysbus_connect_irq(icu, 1, qdev_get_gpio_in(DEVICE(&s->cpu), RX_CPU_FIR));
-    sysbus_connect_irq(icu, 2, s->irq[SWI]);
-    sysbus_mmio_map(SYS_BUS_DEVICE(icu), 0, RX62N_ICU_BASE);
+    sysbus_connect_irq(icu, 2, qdev_get_gpio_in(DEVICE(&s->icu), SWI));
+    sysbus_mmio_map(icu, 0, RX62N_ICU_BASE);
 }
 
 static void register_tmr(RX62NState *s, int unit)
@@ -170,7 +169,8 @@ static void register_tmr(RX62NState *s, int unit)
 
     irqbase = RX62N_TMR_IRQ + TMR_NR_IRQ * unit;
     for (i = 0; i < TMR_NR_IRQ; i++) {
-        sysbus_connect_irq(tmr, i, s->irq[irqbase + i]);
+        sysbus_connect_irq(tmr, i,
+                           qdev_get_gpio_in(DEVICE(&s->icu), irqbase + i));
     }
     sysbus_mmio_map(tmr, 0, RX62N_TMR_BASE + unit * 0x10);
 }
@@ -188,7 +188,8 @@ static void register_cmt(RX62NState *s, int unit)
 
     irqbase = RX62N_CMT_IRQ + CMT_NR_IRQ * unit;
     for (i = 0; i < CMT_NR_IRQ; i++) {
-        sysbus_connect_irq(cmt, i, s->irq[irqbase + i]);
+        sysbus_connect_irq(cmt, i,
+                           qdev_get_gpio_in(DEVICE(&s->icu), irqbase + i));
     }
     sysbus_mmio_map(cmt, 0, RX62N_CMT_BASE + unit * 0x10);
 }
@@ -207,7 +208,8 @@ static void register_sci(RX62NState *s, int unit)
 
     irqbase = RX62N_SCI_IRQ + SCI_NR_IRQ * unit;
     for (i = 0; i < SCI_NR_IRQ; i++) {
-        sysbus_connect_irq(sci, i, s->irq[irqbase + i]);
+        sysbus_connect_irq(sci, i,
+                           qdev_get_gpio_in(DEVICE(&s->icu), irqbase + i));
     }
     sysbus_mmio_map(sci, 0, RX62N_SCI_BASE + unit * 0x08);
 }
@@ -255,15 +257,14 @@ static void rx62n_realize(DeviceState *dev, Error **errp)
     register_sci(s, 0);
 }
 
-static Property rx62n_properties[] = {
+static const Property rx62n_properties[] = {
     DEFINE_PROP_LINK("main-bus", RX62NState, sysmem, TYPE_MEMORY_REGION,
                      MemoryRegion *),
     DEFINE_PROP_BOOL("load-kernel", RX62NState, kernel, false),
     DEFINE_PROP_UINT32("xtal-frequency-hz", RX62NState, xtal_freq_hz, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void rx62n_class_init(ObjectClass *klass, void *data)
+static void rx62n_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -271,7 +272,7 @@ static void rx62n_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, rx62n_properties);
 }
 
-static void r5f562n7_class_init(ObjectClass *oc, void *data)
+static void r5f562n7_class_init(ObjectClass *oc, const void *data)
 {
     RX62NClass *rxc = RX62N_MCU_CLASS(oc);
 
@@ -280,7 +281,7 @@ static void r5f562n7_class_init(ObjectClass *oc, void *data)
     rxc->data_flash_size = 32 * KiB;
 };
 
-static void r5f562n8_class_init(ObjectClass *oc, void *data)
+static void r5f562n8_class_init(ObjectClass *oc, const void *data)
 {
     RX62NClass *rxc = RX62N_MCU_CLASS(oc);
 

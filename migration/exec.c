@@ -18,29 +18,44 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/type-helpers.h"
+#include "qemu/error-report.h"
 #include "channel.h"
 #include "exec.h"
 #include "migration.h"
 #include "io/channel-command.h"
 #include "trace.h"
+#include "qemu/cutils.h"
 
-
-void exec_start_outgoing_migration(MigrationState *s, const char *command, Error **errp)
+#ifdef WIN32
+const char *exec_get_cmd_path(void)
 {
-    QIOChannel *ioc;
-    const char *argv[] = { "/bin/sh", "-c", command, NULL };
+    g_autofree char *detected_path = g_new(char, MAX_PATH);
+    if (GetSystemDirectoryA(detected_path, MAX_PATH) == 0) {
+        warn_report("Could not detect cmd.exe path, using default.");
+        return "C:\\Windows\\System32\\cmd.exe";
+    }
+    pstrcat(detected_path, MAX_PATH, "\\cmd.exe");
+    return g_steal_pointer(&detected_path);
+}
+#endif
 
-    trace_migration_exec_outgoing(command);
-    ioc = QIO_CHANNEL(qio_channel_command_new_spawn(argv,
-                                                    O_RDWR,
-                                                    errp));
+QIOChannel *exec_connect_outgoing(MigrationState *s, strList *command,
+                                  Error **errp)
+{
+    QIOChannel *ioc = NULL;
+    g_auto(GStrv) argv = strv_from_str_list(command);
+    const char * const *args = (const char * const *) argv;
+    g_autofree char *new_command = g_strjoinv(" ", (char **)argv);
+
+    trace_migration_exec_outgoing(new_command);
+    ioc = QIO_CHANNEL(qio_channel_command_new_spawn(args, O_RDWR, errp));
     if (!ioc) {
-        return;
+        return NULL;
     }
 
     qio_channel_set_name(ioc, "migration-exec-outgoing");
-    migration_channel_connect(s, ioc, NULL, NULL);
-    object_unref(OBJECT(ioc));
+    return ioc;
 }
 
 static gboolean exec_accept_incoming_migration(QIOChannel *ioc,
@@ -52,15 +67,15 @@ static gboolean exec_accept_incoming_migration(QIOChannel *ioc,
     return G_SOURCE_REMOVE;
 }
 
-void exec_start_incoming_migration(const char *command, Error **errp)
+void exec_connect_incoming(strList *command, Error **errp)
 {
     QIOChannel *ioc;
-    const char *argv[] = { "/bin/sh", "-c", command, NULL };
+    g_auto(GStrv) argv = strv_from_str_list(command);
+    const char * const *args = (const char * const *) argv;
+    g_autofree char *new_command = g_strjoinv(" ", (char **)argv);
 
-    trace_migration_exec_incoming(command);
-    ioc = QIO_CHANNEL(qio_channel_command_new_spawn(argv,
-                                                    O_RDWR,
-                                                    errp));
+    trace_migration_exec_incoming(new_command);
+    ioc = QIO_CHANNEL(qio_channel_command_new_spawn(args, O_RDWR, errp));
     if (!ioc) {
         return;
     }

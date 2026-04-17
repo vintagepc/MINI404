@@ -25,8 +25,8 @@
 #ifndef SDHCI_H
 #define SDHCI_H
 
-#include "hw/pci/pci.h"
-#include "hw/sysbus.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/sysbus.h"
 #include "hw/sd/sd.h"
 #include "qom/object.h"
 
@@ -98,12 +98,13 @@ struct SDHCIState {
     uint32_t quirks;
     uint8_t sd_spec_version;
     uint8_t uhs_mode;
-    uint8_t vendor;        /* For vendor specific functionality */
+    /*
+     * Write Protect pin default active low for detecting SD card
+     * to be protected. Set wp_inverted to invert the signal.
+     */
+    bool wp_inverted;
 };
 typedef struct SDHCIState SDHCIState;
-
-#define SDHCI_VENDOR_NONE       0
-#define SDHCI_VENDOR_IMX        1
 
 /*
  * Controller does not provide transfer-complete interrupt when not
@@ -121,6 +122,9 @@ DECLARE_INSTANCE_CHECKER(SDHCIState, PCI_SDHCI,
 #define TYPE_SYSBUS_SDHCI "generic-sdhci"
 DECLARE_INSTANCE_CHECKER(SDHCIState, SYSBUS_SDHCI,
                          TYPE_SYSBUS_SDHCI)
+
+#define TYPE_FSL_ESDHC_BE "fsl-esdhc-be"
+#define TYPE_FSL_ESDHC_LE "fsl-esdhc-le"
 
 #define TYPE_IMX_USDHC "imx-usdhc"
 

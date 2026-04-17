@@ -18,7 +18,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -135,17 +135,17 @@ static const VMStateDescription exynos4210_clk_vmstate = {
     .name = TYPE_EXYNOS4210_CLK,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(reg, Exynos4210ClkState, EXYNOS4210_REGS_NUM),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void exynos4210_clk_class_init(ObjectClass *klass, void *data)
+static void exynos4210_clk_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = exynos4210_clk_reset;
+    device_class_set_legacy_reset(dc, exynos4210_clk_reset);
     dc->vmsd = &exynos4210_clk_vmstate;
 }
 

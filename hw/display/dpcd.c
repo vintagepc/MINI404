@@ -135,17 +135,17 @@ static const VMStateDescription vmstate_dpcd = {
     .name = TYPE_DPCD,
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8_ARRAY_V(dpcd_info, DPCDState, DPCD_READABLE_AREA, 0),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void dpcd_class_init(ObjectClass *oc, void *data)
+static void dpcd_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
-    dc->reset = dpcd_reset;
+    device_class_set_legacy_reset(dc, dpcd_reset);
     dc->vmsd = &vmstate_dpcd;
 }
 

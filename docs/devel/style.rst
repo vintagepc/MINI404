@@ -204,7 +204,14 @@ Declarations
 
 Mixed declarations (interleaving statements and declarations within
 blocks) are generally not allowed; declarations should be at the beginning
-of blocks.
+of blocks. To avoid accidental re-use it is permissible to declare
+loop variables inside for loops:
+
+.. code-block:: c
+
+    for (int i = 0; i < ARRAY_SIZE(thing); i++) {
+        /* do something loopy */
+    }
 
 Every now and then, an exception is made for declarations inside a
 #ifdef or #ifndef block: if the code looks nicer, such declarations can
@@ -292,6 +299,27 @@ that QEMU depends on.
 
 Do not include "qemu/osdep.h" from header files since the .c file will have
 already included it.
+
+Headers should normally include everything they need beyond osdep.h.
+If exceptions are needed for some reason, they must be documented in
+the header.  If all that's needed from a header is typedefs, consider
+putting those into qemu/typedefs.h instead of including the header.
+
+Cyclic inclusion is forbidden.
+
+Generative Includes
+-------------------
+
+QEMU makes fairly extensive use of the macro pre-processor to
+instantiate multiple similar functions. While such abuse of the macro
+processor isn't discouraged it can make debugging and code navigation
+harder. You should consider carefully if the same effect can be
+achieved by making it easy for the compiler to constant fold or using
+python scripting to generate grep friendly code.
+
+If you do use template header files they should be named with the
+``.c.inc`` or ``.h.inc`` suffix to make it clear they are being
+included for expansion.
 
 C types
 =======
@@ -388,6 +416,26 @@ definitions instead of typedefs in headers and function prototypes; this
 avoids problems with duplicated typedefs and reduces the need to include
 headers from other headers.
 
+Bitfields
+---------
+
+C bitfields can be a cause of non-portability issues, especially under windows
+where `MSVC has a different way to lay them out than GCC
+<https://gcc.gnu.org/onlinedocs/gcc/x86-Type-Attributes.html>`_, or where
+endianness matters.
+
+For this reason, we disallow usage of bitfields in packed structures and in any
+structures which are supposed to exactly match a specific layout in guest
+memory. Some existing code may use it, and we carefully ensured the layout was
+the one expected.
+
+We also suggest avoiding bitfields even in structures where the exact
+layout does not matter, unless you can show that they provide a significant
+usability benefit.
+
+We encourage the usage of ``include/hw/core/registerfields.h`` as a safe replacement
+for bitfields.
+
 Reserved namespaces in C and POSIX
 ----------------------------------
 
@@ -398,8 +446,8 @@ Low level memory management
 ===========================
 
 Use of the ``malloc/free/realloc/calloc/valloc/memalign/posix_memalign``
-APIs is not allowed in the QEMU codebase. Instead of these routines,
-use the GLib memory allocation routines
+or ``alloca/g_alloca/g_newa/g_newa0`` APIs is not allowed in the QEMU codebase.
+Instead of these routines, use the GLib memory allocation routines
 ``g_malloc/g_malloc0/g_new/g_new0/g_realloc/g_free``
 or QEMU's ``qemu_memalign/qemu_blockalign/qemu_vfree`` APIs.
 
@@ -546,7 +594,8 @@ For example, instead of
 
 .. code-block:: c
 
-    int somefunc(void) {
+    int somefunc(void)
+    {
         int ret = -1;
         char *foo = g_strdup_printf("foo%", "wibble");
         GList *bar = .....
@@ -567,7 +616,8 @@ Using g_autofree/g_autoptr enables the code to be written as:
 
 .. code-block:: c
 
-    int somefunc(void) {
+    int somefunc(void)
+    {
         g_autofree char *foo = g_strdup_printf("foo%", "wibble");
         g_autoptr (GList) bar = .....
 
@@ -592,7 +642,8 @@ are still some caveats to beware of
 
 .. code-block:: c
 
-    char *somefunc(void) {
+    char *somefunc(void)
+    {
         g_autofree char *foo = g_strdup_printf("foo%", "wibble");
         g_autoptr (GList) bar = .....
 
@@ -606,6 +657,97 @@ are still some caveats to beware of
 
 QEMU Specific Idioms
 ********************
+
+QEMU Object Model Declarations
+==============================
+
+The QEMU Object Model (QOM) provides a framework for handling objects
+in the base C language. The first declaration of a storage or class
+structure should always be the parent and leave a visual space between
+that declaration and the new code. It is also useful to separate
+backing for properties (options driven by the user) and internal state
+to make navigation easier.
+
+For a storage structure the first declaration should always be called
+"parent_obj" and for a class structure the first member should always
+be called "parent_class" as below:
+
+.. code-block:: c
+
+    struct MyDeviceState {
+        DeviceState parent_obj;
+
+        /* Properties */
+        int prop_a;
+        char *prop_b;
+        /* Other stuff */
+        int internal_state;
+    };
+
+    struct MyDeviceClass {
+        DeviceClass parent_class;
+
+        void (*new_fn1)(void);
+        bool (*new_fn2)(CPUState *);
+    };
+
+Note that there is no need to provide typedefs for QOM structures
+since these are generated automatically by the QOM declaration macros.
+See :ref:`qom` for more details.
+
+QEMU GUARD macros
+=================
+
+QEMU provides a number of ``_GUARD`` macros intended to make the
+handling of multiple exit paths easier. For example using
+``QEMU_LOCK_GUARD`` to take a lock will ensure the lock is released on
+exit from the function.
+
+.. code-block:: c
+
+    static int my_critical_function(SomeState *s, void *data)
+    {
+        QEMU_LOCK_GUARD(&s->lock);
+        do_thing1(data);
+        if (check_state2(data)) {
+            return -1;
+        }
+        do_thing3(data);
+        return 0;
+    }
+
+will ensure s->lock is released however the function is exited. The
+equivalent code without _GUARD macro makes us to carefully put
+qemu_mutex_unlock() on all exit points:
+
+.. code-block:: c
+
+    static int my_critical_function(SomeState *s, void *data)
+    {
+        qemu_mutex_lock(&s->lock);
+        do_thing1(data);
+        if (check_state2(data)) {
+            qemu_mutex_unlock(&s->lock);
+            return -1;
+        }
+        do_thing3(data);
+        qemu_mutex_unlock(&s->lock);
+        return 0;
+    }
+
+There are often ``WITH_`` forms of macros which more easily wrap
+around a block inside a function.
+
+.. code-block:: c
+
+    WITH_RCU_READ_LOCK_GUARD() {
+        QTAILQ_FOREACH_RCU(kid, &bus->children, sibling) {
+            err = do_the_thing(kid->child);
+            if (err < 0) {
+                return err;
+            }
+        }
+    }
 
 Error handling and reporting
 ============================

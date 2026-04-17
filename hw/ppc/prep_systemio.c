@@ -24,22 +24,22 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/isa/isa.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "qom/object.h"
 #include "qemu/error-report.h" /* for error_report() */
 #include "qemu/module.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "cpu.h"
 #include "trace.h"
 
 #define TYPE_PREP_SYSTEMIO "prep-systemio"
 OBJECT_DECLARE_SIMPLE_TYPE(PrepSystemIoState, PREP_SYSTEMIO)
 
-/* Bit as defined in PowerPC Reference Plaform v1.1, sect. 6.1.5, p. 132 */
+/* Bit as defined in PowerPC Reference Platform v1.1, sect. 6.1.5, p. 132 */
 #define PREP_BIT(n) (1 << (7 - (n)))
 
 struct PrepSystemIoState {
@@ -277,7 +277,7 @@ static const VMStateDescription vmstate_prep_systemio = {
     .name = "prep_systemio",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(sreset, PrepSystemIoState),
         VMSTATE_UINT8(system_control, PrepSystemIoState),
         VMSTATE_UINT8(iomap_type, PrepSystemIoState),
@@ -285,13 +285,12 @@ static const VMStateDescription vmstate_prep_systemio = {
     },
 };
 
-static Property prep_systemio_properties[] = {
+static const Property prep_systemio_properties[] = {
     DEFINE_PROP_UINT8("ibm-planar-id", PrepSystemIoState, ibm_planar_id, 0),
     DEFINE_PROP_UINT8("equipment", PrepSystemIoState, equipment, 0),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void prep_systemio_class_initfn(ObjectClass *klass, void *data)
+static void prep_systemio_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

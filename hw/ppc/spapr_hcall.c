@@ -1,17 +1,20 @@
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
 #include "qapi/error.h"
-#include "sysemu/hw_accel.h"
-#include "sysemu/runstate.h"
+#include "system/hw_accel.h"
+#include "system/runstate.h"
+#include "system/tcg.h"
 #include "qemu/log.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
-#include "exec/exec-all.h"
+#include "exec/translation-block.h"
+#include "exec/target_page.h"
 #include "helper_regs.h"
 #include "hw/ppc/ppc.h"
 #include "hw/ppc/spapr.h"
 #include "hw/ppc/spapr_cpu_core.h"
+#include "hw/ppc/spapr_nested.h"
 #include "mmu-hash64.h"
 #include "cpu-models.h"
 #include "trace.h"
@@ -21,6 +24,7 @@
 #include "hw/ppc/spapr_numa.h"
 #include "mmu-book3s-v3.h"
 #include "hw/mem/memory-device.h"
+#include "exec/cpu-common.h"
 
 bool is_ram_address(SpaprMachineState *spapr, hwaddr addr)
 {
@@ -30,7 +34,7 @@ bool is_ram_address(SpaprMachineState *spapr, hwaddr addr)
     if (addr < machine->ram_size) {
         return true;
     }
-    if ((addr >= dms->base)
+    if (dms && (addr >= dms->base)
         && ((addr - dms->base) < memory_region_size(&dms->mr))) {
         return true;
     }
@@ -121,9 +125,11 @@ static target_ulong h_resize_hpt_prepare(PowerPCCPU *cpu,
 
     if (kvm_enabled()) {
         return H_HARDWARE;
+    } else if (tcg_enabled()) {
+        return vhyp_mmu_resize_hpt_prepare(cpu, spapr, shift);
+    } else {
+        g_assert_not_reached();
     }
-
-    return softmmu_resize_hpt_prepare(cpu, spapr, shift);
 }
 
 static void do_push_sregs_to_kvm_pr(CPUState *cs, run_on_cpu_data data)
@@ -189,9 +195,11 @@ static target_ulong h_resize_hpt_commit(PowerPCCPU *cpu,
 
     if (kvm_enabled()) {
         return H_HARDWARE;
+    } else if (tcg_enabled()) {
+        return vhyp_mmu_resize_hpt_commit(cpu, spapr, flags, shift);
+    } else {
+        g_assert_not_reached();
     }
-
-    return softmmu_resize_hpt_commit(cpu, spapr, flags, shift);
 }
 
 
@@ -293,8 +301,10 @@ static target_ulong h_page_init(PowerPCCPU *cpu, SpaprMachineState *spapr,
     if (flags & (H_ICACHE_SYNCHRONIZE | H_ICACHE_INVALIDATE)) {
         if (kvm_enabled()) {
             kvmppc_icbi_range(cpu, pdst, len);
+        } else if (tcg_enabled()) {
+            tb_invalidate_phys_range(CPU(cpu), dst, dst + len - 1);
         } else {
-            tb_flush(CPU(cpu));
+            g_assert_not_reached();
         }
     }
 
@@ -500,8 +510,8 @@ static target_ulong h_cede(PowerPCCPU *cpu, SpaprMachineState *spapr,
     if (!cpu_has_work(cs)) {
         cs->halted = 1;
         cs->exception_index = EXCP_HLT;
-        cs->exit_request = 1;
         ppc_maybe_interrupt(env);
+        cpu_exit(cs);
     }
 
     return H_SUCCESS;
@@ -522,8 +532,8 @@ static target_ulong h_confer_self(PowerPCCPU *cpu)
     }
     cs->halted = 1;
     cs->exception_index = EXCP_HALTED;
-    cs->exit_request = 1;
     ppc_maybe_interrupt(&cpu->env);
+    cpu_exit(cs);
 
     return H_SUCCESS;
 }
@@ -572,6 +582,8 @@ static target_ulong h_confer(PowerPCCPU *cpu, SpaprMachineState *spapr,
     CPUState *cs = CPU(cpu);
     SpaprCpuState *spapr_cpu;
 
+    assert(tcg_enabled()); /* KVM will have handled this */
+
     /*
      * -1 means confer to all other CPUs without dispatch counter check,
      *  otherwise it's a targeted confer.
@@ -613,8 +625,7 @@ static target_ulong h_confer(PowerPCCPU *cpu, SpaprMachineState *spapr,
     }
 
     cs->exception_index = EXCP_YIELD;
-    cs->exit_request = 1;
-    cpu_loop_exit(cs);
+    cpu_exit(cs);
 
     return H_SUCCESS;
 }
@@ -787,6 +798,62 @@ static target_ulong h_logical_dcbf(PowerPCCPU *cpu, SpaprMachineState *spapr,
     return H_SUCCESS;
 }
 
+static target_ulong h_set_mode_resource_set_ciabr(PowerPCCPU *cpu,
+                                                  SpaprMachineState *spapr,
+                                                  target_ulong mflags,
+                                                  target_ulong value1,
+                                                  target_ulong value2)
+{
+    CPUPPCState *env = &cpu->env;
+
+    assert(tcg_enabled()); /* KVM will have handled this */
+
+    if (mflags) {
+        return H_UNSUPPORTED_FLAG;
+    }
+    if (value2) {
+        return H_P4;
+    }
+    if ((value1 & PPC_BITMASK(62, 63)) == 0x3) {
+        return H_P3;
+    }
+
+    ppc_store_ciabr(env, value1);
+
+    return H_SUCCESS;
+}
+
+static target_ulong h_set_mode_resource_set_dawr(PowerPCCPU *cpu,
+                                                 SpaprMachineState *spapr,
+                                                 target_ulong mflags,
+                                                 target_ulong resource,
+                                                 target_ulong value1,
+                                                 target_ulong value2)
+{
+    CPUPPCState *env = &cpu->env;
+
+    assert(tcg_enabled()); /* KVM will have handled this */
+
+    if (mflags) {
+        return H_UNSUPPORTED_FLAG;
+    }
+    if (value2 & PPC_BIT(61)) {
+        return H_P4;
+    }
+
+    if (resource == H_SET_MODE_RESOURCE_SET_DAWR0) {
+        ppc_store_dawr0(env, value1);
+        ppc_store_dawrx0(env, value2);
+    } else if (resource == H_SET_MODE_RESOURCE_SET_DAWR1) {
+        ppc_store_dawr1(env, value1);
+        ppc_store_dawrx1(env, value2);
+    } else {
+        g_assert_not_reached();
+    }
+
+    return H_SUCCESS;
+}
+
 static target_ulong h_set_mode_resource_le(PowerPCCPU *cpu,
                                            SpaprMachineState *spapr,
                                            target_ulong mflags,
@@ -816,30 +883,32 @@ static target_ulong h_set_mode_resource_le(PowerPCCPU *cpu,
 }
 
 static target_ulong h_set_mode_resource_addr_trans_mode(PowerPCCPU *cpu,
+                                                        SpaprMachineState *spapr,
                                                         target_ulong mflags,
                                                         target_ulong value1,
                                                         target_ulong value2)
 {
-    PowerPCCPUClass *pcc = POWERPC_CPU_GET_CLASS(cpu);
-
-    if (!(pcc->insns_flags2 & PPC2_ISA207S)) {
-        return H_P2;
-    }
     if (value1) {
         return H_P3;
     }
+
     if (value2) {
         return H_P4;
     }
 
-    if (mflags == 1) {
-        /* AIL=1 is reserved in POWER8/POWER9/POWER10 */
+    /*
+     * AIL-1 is not architected, and AIL-2 is not supported by QEMU spapr.
+     * It is supported for faithful emulation of bare metal systems, but for
+     * compatibility concerns we leave it out of the pseries machine.
+     */
+    if (mflags != 0 && mflags != 3) {
         return H_UNSUPPORTED_FLAG;
     }
 
-    if (mflags == 2 && (pcc->insns_flags2 & PPC2_ISA310)) {
-        /* AIL=2 is reserved in POWER10 (ISA v3.1) */
-        return H_UNSUPPORTED_FLAG;
+    if (mflags == 3) {
+        if (!spapr_get_cap(spapr, SPAPR_CAP_AIL_MODE_3)) {
+            return H_UNSUPPORTED_FLAG;
+        }
     }
 
     spapr_set_all_lpcrs(mflags << LPCR_AIL_SHIFT, LPCR_AIL);
@@ -854,11 +923,20 @@ static target_ulong h_set_mode(PowerPCCPU *cpu, SpaprMachineState *spapr,
     target_ulong ret = H_P2;
 
     switch (resource) {
+    case H_SET_MODE_RESOURCE_SET_CIABR:
+        ret = h_set_mode_resource_set_ciabr(cpu, spapr, args[0], args[2],
+                                            args[3]);
+        break;
+    case H_SET_MODE_RESOURCE_SET_DAWR0:
+    case H_SET_MODE_RESOURCE_SET_DAWR1:
+        ret = h_set_mode_resource_set_dawr(cpu, spapr, args[0], args[1],
+                                           args[2], args[3]);
+        break;
     case H_SET_MODE_RESOURCE_LE:
         ret = h_set_mode_resource_le(cpu, spapr, args[0], args[2], args[3]);
         break;
     case H_SET_MODE_RESOURCE_ADDR_TRANS_MODE:
-        ret = h_set_mode_resource_addr_trans_mode(cpu, args[0],
+        ret = h_set_mode_resource_addr_trans_mode(cpu, spapr, args[0],
                                                   args[2], args[3]);
         break;
     }
@@ -904,7 +982,6 @@ static void spapr_check_setup_free_hpt(SpaprMachineState *spapr,
         /* RADIX->HASH || NOTHING->HASH : Allocate HPT */
         spapr_setup_hpt(spapr);
     }
-    return;
 }
 
 #define FLAGS_MASK              0x01FULL
@@ -1399,15 +1476,10 @@ static target_ulong h_update_dt(PowerPCCPU *cpu, SpaprMachineState *spapr,
     target_ulong dt = ppc64_phys_to_real(args[0]);
     struct fdt_header hdr = { 0 };
     unsigned cb;
-    SpaprMachineClass *smc = SPAPR_MACHINE_GET_CLASS(spapr);
     void *fdt;
 
     cpu_physical_memory_read(dt, &hdr, sizeof(hdr));
     cb = fdt32_to_cpu(hdr.totalsize);
-
-    if (!smc->update_dt_enabled) {
-        return H_SUCCESS;
-    }
 
     /* Check that the fdt did not grow out of proportion */
     if (cb > spapr->fdt_initial_size * 2) {
@@ -1461,6 +1533,28 @@ void spapr_register_hypercall(target_ulong opcode, spapr_hcall_fn fn)
     *slot = fn;
 }
 
+void spapr_unregister_hypercall(target_ulong opcode)
+{
+    spapr_hcall_fn *slot;
+
+    if (opcode <= MAX_HCALL_OPCODE) {
+        assert((opcode & 0x3) == 0);
+
+        slot = &papr_hypercall_table[opcode / 4];
+    } else if (opcode >= SVM_HCALL_BASE && opcode <= SVM_HCALL_MAX) {
+        /* we only have SVM-related hcall numbers assigned in multiples of 4 */
+        assert((opcode & 0x3) == 0);
+
+        slot = &svm_hypercall_table[(opcode - SVM_HCALL_BASE) / 4];
+    } else {
+        assert((opcode >= KVMPPC_HCALL_BASE) && (opcode <= KVMPPC_HCALL_MAX));
+
+        slot = &kvmppc_hypercall_table[opcode - KVMPPC_HCALL_BASE];
+    }
+
+    *slot = NULL;
+}
+
 target_ulong spapr_hypercall(PowerPCCPU *cpu, target_ulong opcode,
                              target_ulong *args)
 {
@@ -1495,361 +1589,15 @@ target_ulong spapr_hypercall(PowerPCCPU *cpu, target_ulong opcode,
 }
 
 #ifdef CONFIG_TCG
-#define PRTS_MASK      0x1f
-
-static target_ulong h_set_ptbl(PowerPCCPU *cpu,
-                               SpaprMachineState *spapr,
-                               target_ulong opcode,
-                               target_ulong *args)
-{
-    target_ulong ptcr = args[0];
-
-    if (!spapr_get_cap(spapr, SPAPR_CAP_NESTED_KVM_HV)) {
-        return H_FUNCTION;
-    }
-
-    if ((ptcr & PRTS_MASK) + 12 - 4 > 12) {
-        return H_PARAMETER;
-    }
-
-    spapr->nested_ptcr = ptcr; /* Save new partition table */
-
-    return H_SUCCESS;
-}
-
-static target_ulong h_tlb_invalidate(PowerPCCPU *cpu,
-                                     SpaprMachineState *spapr,
-                                     target_ulong opcode,
-                                     target_ulong *args)
-{
-    /*
-     * The spapr virtual hypervisor nested HV implementation retains no L2
-     * translation state except for TLB. And the TLB is always invalidated
-     * across L1<->L2 transitions, so nothing is required here.
-     */
-
-    return H_SUCCESS;
-}
-
-static target_ulong h_copy_tofrom_guest(PowerPCCPU *cpu,
-                                        SpaprMachineState *spapr,
-                                        target_ulong opcode,
-                                        target_ulong *args)
-{
-    /*
-     * This HCALL is not required, L1 KVM will take a slow path and walk the
-     * page tables manually to do the data copy.
-     */
-    return H_FUNCTION;
-}
-
-/*
- * When this handler returns, the environment is switched to the L2 guest
- * and TCG begins running that. spapr_exit_nested() performs the switch from
- * L2 back to L1 and returns from the H_ENTER_NESTED hcall.
- */
-static target_ulong h_enter_nested(PowerPCCPU *cpu,
-                                   SpaprMachineState *spapr,
-                                   target_ulong opcode,
-                                   target_ulong *args)
-{
-    PowerPCCPUClass *pcc = POWERPC_CPU_GET_CLASS(cpu);
-    CPUState *cs = CPU(cpu);
-    CPUPPCState *env = &cpu->env;
-    SpaprCpuState *spapr_cpu = spapr_cpu_state(cpu);
-    target_ulong hv_ptr = args[0];
-    target_ulong regs_ptr = args[1];
-    target_ulong hdec, now = cpu_ppc_load_tbl(env);
-    target_ulong lpcr, lpcr_mask;
-    struct kvmppc_hv_guest_state *hvstate;
-    struct kvmppc_hv_guest_state hv_state;
-    struct kvmppc_pt_regs *regs;
-    hwaddr len;
-    uint64_t cr;
-    int i;
-
-    if (spapr->nested_ptcr == 0) {
-        return H_NOT_AVAILABLE;
-    }
-
-    len = sizeof(*hvstate);
-    hvstate = address_space_map(CPU(cpu)->as, hv_ptr, &len, false,
-                                MEMTXATTRS_UNSPECIFIED);
-    if (len != sizeof(*hvstate)) {
-        address_space_unmap(CPU(cpu)->as, hvstate, len, 0, false);
-        return H_PARAMETER;
-    }
-
-    memcpy(&hv_state, hvstate, len);
-
-    address_space_unmap(CPU(cpu)->as, hvstate, len, len, false);
-
-    /*
-     * We accept versions 1 and 2. Version 2 fields are unused because TCG
-     * does not implement DAWR*.
-     */
-    if (hv_state.version > HV_GUEST_STATE_VERSION) {
-        return H_PARAMETER;
-    }
-
-    spapr_cpu->nested_host_state = g_try_new(CPUPPCState, 1);
-    if (!spapr_cpu->nested_host_state) {
-        return H_NO_MEM;
-    }
-
-    memcpy(spapr_cpu->nested_host_state, env, sizeof(CPUPPCState));
-
-    len = sizeof(*regs);
-    regs = address_space_map(CPU(cpu)->as, regs_ptr, &len, false,
-                                MEMTXATTRS_UNSPECIFIED);
-    if (!regs || len != sizeof(*regs)) {
-        address_space_unmap(CPU(cpu)->as, regs, len, 0, false);
-        g_free(spapr_cpu->nested_host_state);
-        return H_P2;
-    }
-
-    len = sizeof(env->gpr);
-    assert(len == sizeof(regs->gpr));
-    memcpy(env->gpr, regs->gpr, len);
-
-    env->lr = regs->link;
-    env->ctr = regs->ctr;
-    cpu_write_xer(env, regs->xer);
-
-    cr = regs->ccr;
-    for (i = 7; i >= 0; i--) {
-        env->crf[i] = cr & 15;
-        cr >>= 4;
-    }
-
-    env->msr = regs->msr;
-    env->nip = regs->nip;
-
-    address_space_unmap(CPU(cpu)->as, regs, len, len, false);
-
-    env->cfar = hv_state.cfar;
-
-    assert(env->spr[SPR_LPIDR] == 0);
-    env->spr[SPR_LPIDR] = hv_state.lpid;
-
-    lpcr_mask = LPCR_DPFD | LPCR_ILE | LPCR_AIL | LPCR_LD | LPCR_MER;
-    lpcr = (env->spr[SPR_LPCR] & ~lpcr_mask) | (hv_state.lpcr & lpcr_mask);
-    lpcr |= LPCR_HR | LPCR_UPRT | LPCR_GTSE | LPCR_HVICE | LPCR_HDICE;
-    lpcr &= ~LPCR_LPES0;
-    env->spr[SPR_LPCR] = lpcr & pcc->lpcr_mask;
-
-    env->spr[SPR_PCR] = hv_state.pcr;
-    /* hv_state.amor is not used */
-    env->spr[SPR_DPDES] = hv_state.dpdes;
-    env->spr[SPR_HFSCR] = hv_state.hfscr;
-    hdec = hv_state.hdec_expiry - now;
-    spapr_cpu->nested_tb_offset = hv_state.tb_offset;
-    /* TCG does not implement DAWR*, CIABR, PURR, SPURR, IC, VTB, HEIR SPRs*/
-    env->spr[SPR_SRR0] = hv_state.srr0;
-    env->spr[SPR_SRR1] = hv_state.srr1;
-    env->spr[SPR_SPRG0] = hv_state.sprg[0];
-    env->spr[SPR_SPRG1] = hv_state.sprg[1];
-    env->spr[SPR_SPRG2] = hv_state.sprg[2];
-    env->spr[SPR_SPRG3] = hv_state.sprg[3];
-    env->spr[SPR_BOOKS_PID] = hv_state.pidr;
-    env->spr[SPR_PPR] = hv_state.ppr;
-
-    cpu_ppc_hdecr_init(env);
-    cpu_ppc_store_hdecr(env, hdec);
-
-    /*
-     * The hv_state.vcpu_token is not needed. It is used by the KVM
-     * implementation to remember which L2 vCPU last ran on which physical
-     * CPU so as to invalidate process scope translations if it is moved
-     * between physical CPUs. For now TLBs are always flushed on L1<->L2
-     * transitions so this is not a problem.
-     *
-     * Could validate that the same vcpu_token does not attempt to run on
-     * different L1 vCPUs at the same time, but that would be a L1 KVM bug
-     * and it's not obviously worth a new data structure to do it.
-     */
-
-    env->tb_env->tb_offset += spapr_cpu->nested_tb_offset;
-    spapr_cpu->in_nested = true;
-
-    hreg_compute_hflags(env);
-    ppc_maybe_interrupt(env);
-    tlb_flush(cs);
-    env->reserve_addr = -1; /* Reset the reservation */
-
-    /*
-     * The spapr hcall helper sets env->gpr[3] to the return value, but at
-     * this point the L1 is not returning from the hcall but rather we
-     * start running the L2, so r3 must not be clobbered, so return env->gpr[3]
-     * to leave it unchanged.
-     */
-    return env->gpr[3];
-}
-
-void spapr_exit_nested(PowerPCCPU *cpu, int excp)
-{
-    CPUState *cs = CPU(cpu);
-    CPUPPCState *env = &cpu->env;
-    SpaprCpuState *spapr_cpu = spapr_cpu_state(cpu);
-    target_ulong r3_return = env->excp_vectors[excp]; /* hcall return value */
-    target_ulong hv_ptr = spapr_cpu->nested_host_state->gpr[4];
-    target_ulong regs_ptr = spapr_cpu->nested_host_state->gpr[5];
-    struct kvmppc_hv_guest_state *hvstate;
-    struct kvmppc_pt_regs *regs;
-    hwaddr len;
-    uint64_t cr;
-    int i;
-
-    assert(spapr_cpu->in_nested);
-
-    cpu_ppc_hdecr_exit(env);
-
-    len = sizeof(*hvstate);
-    hvstate = address_space_map(CPU(cpu)->as, hv_ptr, &len, true,
-                                MEMTXATTRS_UNSPECIFIED);
-    if (len != sizeof(*hvstate)) {
-        address_space_unmap(CPU(cpu)->as, hvstate, len, 0, true);
-        r3_return = H_PARAMETER;
-        goto out_restore_l1;
-    }
-
-    hvstate->cfar = env->cfar;
-    hvstate->lpcr = env->spr[SPR_LPCR];
-    hvstate->pcr = env->spr[SPR_PCR];
-    hvstate->dpdes = env->spr[SPR_DPDES];
-    hvstate->hfscr = env->spr[SPR_HFSCR];
-
-    if (excp == POWERPC_EXCP_HDSI) {
-        hvstate->hdar = env->spr[SPR_HDAR];
-        hvstate->hdsisr = env->spr[SPR_HDSISR];
-        hvstate->asdr = env->spr[SPR_ASDR];
-    } else if (excp == POWERPC_EXCP_HISI) {
-        hvstate->asdr = env->spr[SPR_ASDR];
-    }
-
-    /* HEIR should be implemented for HV mode and saved here. */
-    hvstate->srr0 = env->spr[SPR_SRR0];
-    hvstate->srr1 = env->spr[SPR_SRR1];
-    hvstate->sprg[0] = env->spr[SPR_SPRG0];
-    hvstate->sprg[1] = env->spr[SPR_SPRG1];
-    hvstate->sprg[2] = env->spr[SPR_SPRG2];
-    hvstate->sprg[3] = env->spr[SPR_SPRG3];
-    hvstate->pidr = env->spr[SPR_BOOKS_PID];
-    hvstate->ppr = env->spr[SPR_PPR];
-
-    /* Is it okay to specify write length larger than actual data written? */
-    address_space_unmap(CPU(cpu)->as, hvstate, len, len, true);
-
-    len = sizeof(*regs);
-    regs = address_space_map(CPU(cpu)->as, regs_ptr, &len, true,
-                                MEMTXATTRS_UNSPECIFIED);
-    if (!regs || len != sizeof(*regs)) {
-        address_space_unmap(CPU(cpu)->as, regs, len, 0, true);
-        r3_return = H_P2;
-        goto out_restore_l1;
-    }
-
-    len = sizeof(env->gpr);
-    assert(len == sizeof(regs->gpr));
-    memcpy(regs->gpr, env->gpr, len);
-
-    regs->link = env->lr;
-    regs->ctr = env->ctr;
-    regs->xer = cpu_read_xer(env);
-
-    cr = 0;
-    for (i = 0; i < 8; i++) {
-        cr |= (env->crf[i] & 15) << (4 * (7 - i));
-    }
-    regs->ccr = cr;
-
-    if (excp == POWERPC_EXCP_MCHECK ||
-        excp == POWERPC_EXCP_RESET ||
-        excp == POWERPC_EXCP_SYSCALL) {
-        regs->nip = env->spr[SPR_SRR0];
-        regs->msr = env->spr[SPR_SRR1] & env->msr_mask;
-    } else {
-        regs->nip = env->spr[SPR_HSRR0];
-        regs->msr = env->spr[SPR_HSRR1] & env->msr_mask;
-    }
-
-    /* Is it okay to specify write length larger than actual data written? */
-    address_space_unmap(CPU(cpu)->as, regs, len, len, true);
-
-out_restore_l1:
-    memcpy(env->gpr, spapr_cpu->nested_host_state->gpr, sizeof(env->gpr));
-    env->lr = spapr_cpu->nested_host_state->lr;
-    env->ctr = spapr_cpu->nested_host_state->ctr;
-    memcpy(env->crf, spapr_cpu->nested_host_state->crf, sizeof(env->crf));
-    env->cfar = spapr_cpu->nested_host_state->cfar;
-    env->xer = spapr_cpu->nested_host_state->xer;
-    env->so = spapr_cpu->nested_host_state->so;
-    env->ov = spapr_cpu->nested_host_state->ov;
-    env->ov32 = spapr_cpu->nested_host_state->ov32;
-    env->ca32 = spapr_cpu->nested_host_state->ca32;
-    env->msr = spapr_cpu->nested_host_state->msr;
-    env->nip = spapr_cpu->nested_host_state->nip;
-
-    assert(env->spr[SPR_LPIDR] != 0);
-    env->spr[SPR_LPCR] = spapr_cpu->nested_host_state->spr[SPR_LPCR];
-    env->spr[SPR_LPIDR] = spapr_cpu->nested_host_state->spr[SPR_LPIDR];
-    env->spr[SPR_PCR] = spapr_cpu->nested_host_state->spr[SPR_PCR];
-    env->spr[SPR_DPDES] = 0;
-    env->spr[SPR_HFSCR] = spapr_cpu->nested_host_state->spr[SPR_HFSCR];
-    env->spr[SPR_SRR0] = spapr_cpu->nested_host_state->spr[SPR_SRR0];
-    env->spr[SPR_SRR1] = spapr_cpu->nested_host_state->spr[SPR_SRR1];
-    env->spr[SPR_SPRG0] = spapr_cpu->nested_host_state->spr[SPR_SPRG0];
-    env->spr[SPR_SPRG1] = spapr_cpu->nested_host_state->spr[SPR_SPRG1];
-    env->spr[SPR_SPRG2] = spapr_cpu->nested_host_state->spr[SPR_SPRG2];
-    env->spr[SPR_SPRG3] = spapr_cpu->nested_host_state->spr[SPR_SPRG3];
-    env->spr[SPR_BOOKS_PID] = spapr_cpu->nested_host_state->spr[SPR_BOOKS_PID];
-    env->spr[SPR_PPR] = spapr_cpu->nested_host_state->spr[SPR_PPR];
-
-    /*
-     * Return the interrupt vector address from H_ENTER_NESTED to the L1
-     * (or error code).
-     */
-    env->gpr[3] = r3_return;
-
-    env->tb_env->tb_offset -= spapr_cpu->nested_tb_offset;
-    spapr_cpu->in_nested = false;
-
-    hreg_compute_hflags(env);
-    ppc_maybe_interrupt(env);
-    tlb_flush(cs);
-    env->reserve_addr = -1; /* Reset the reservation */
-
-    g_free(spapr_cpu->nested_host_state);
-    spapr_cpu->nested_host_state = NULL;
-}
-
-static void hypercall_register_nested(void)
-{
-    spapr_register_hypercall(KVMPPC_H_SET_PARTITION_TABLE, h_set_ptbl);
-    spapr_register_hypercall(KVMPPC_H_ENTER_NESTED, h_enter_nested);
-    spapr_register_hypercall(KVMPPC_H_TLB_INVALIDATE, h_tlb_invalidate);
-    spapr_register_hypercall(KVMPPC_H_COPY_TOFROM_GUEST, h_copy_tofrom_guest);
-}
-
 static void hypercall_register_softmmu(void)
 {
     /* DO NOTHING */
 }
 #else
-void spapr_exit_nested(PowerPCCPU *cpu, int excp)
-{
-    g_assert_not_reached();
-}
-
 static target_ulong h_softmmu(PowerPCCPU *cpu, SpaprMachineState *spapr,
                             target_ulong opcode, target_ulong *args)
 {
     g_assert_not_reached();
-}
-
-static void hypercall_register_nested(void)
-{
-    /* DO NOTHING */
 }
 
 static void hypercall_register_softmmu(void)
@@ -1900,7 +1648,7 @@ static void hypercall_register_types(void)
     spapr_register_hypercall(H_GET_CPU_CHARACTERISTICS,
                              h_get_cpu_characteristics);
 
-    /* "debugger" hcalls (also used by SLOF). Note: We do -not- differenciate
+    /* "debugger" hcalls (also used by SLOF). Note: We do -not- differentiate
      * here between the "CI" and the "CACHE" variants, they will use whatever
      * mapping attributes qemu is using. When using KVM, the kernel will
      * enforce the attributes more strongly
@@ -1920,8 +1668,6 @@ static void hypercall_register_types(void)
     spapr_register_hypercall(KVMPPC_H_CAS, h_client_architecture_support);
 
     spapr_register_hypercall(KVMPPC_H_UPDATE_DT, h_update_dt);
-
-    hypercall_register_nested();
 }
 
 type_init(hypercall_register_types)

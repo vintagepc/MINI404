@@ -1,3 +1,5 @@
+.. _qemu-nbd:
+
 =====================================
 QEMU Disk Network Block Device Server
 =====================================
@@ -154,6 +156,11 @@ driver options if :option:`--image-opts` is specified.
   Set the NBD volume export description, as a human-readable
   string.
 
+.. option:: --handshake-limit=N
+
+  Set the timeout for a client to successfully complete its handshake
+  to N seconds (default 10), or 0 for no limit.
+
 .. option:: -L, --list
 
   Connect as a client and list all details about the exports exposed by
@@ -197,7 +204,9 @@ driver options if :option:`--image-opts` is specified.
 
 .. option:: -v, --verbose
 
-  Display extra debugging information.
+  Display extra debugging information. This option also keeps the original
+  *STDERR* stream open if the ``qemu-nbd`` process is daemonized due to
+  other options like :option:`--fork` or :option:`-c`.
 
 .. option:: -h, --help
 

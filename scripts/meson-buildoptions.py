@@ -25,35 +25,59 @@ import textwrap
 import shlex
 import sys
 
+# Options with nonstandard names (e.g. --with/--without) or OS-dependent
+# defaults.  Try not to add any.
 SKIP_OPTIONS = {
     "default_devices",
     "fuzzing_engine",
-    "qemu_suffix",
-    "smbd",
 }
 
+# Options whose name doesn't match the option for backwards compatibility
+# reasons, because Meson gives them a funny name, or both
 OPTION_NAMES = {
     "b_coverage": "gcov",
     "b_lto": "lto",
+    "coroutine_backend": "with-coroutine",
+    "debug": "debug-info",
     "malloc": "enable-malloc",
     "pkgversion": "with-pkgversion",
     "qemu_firmwarepath": "firmwarepath",
+    "qemu_suffix": "with-suffix",
     "trace_backends": "enable-trace-backends",
     "trace_file": "with-trace-file",
 }
 
+# Options that configure autodetects, even though meson defines them as boolean
+AUTO_OPTIONS = {
+    "plugins",
+    "werror",
+}
+
+# Options that configure prints help for, so we can skip
+CONFIGURE_HELP = {
+    "gdb",
+}
+
+# Builtin options that should be definable via configure.  Some of the others
+# we really do not want (e.g. c_args is defined via the native file, not
+# via -D, because it's a mix of CFLAGS and --extra-cflags); for specific
+# cases "../configure -D" can be used as an escape hatch.
 BUILTIN_OPTIONS = {
     "b_coverage",
     "b_lto",
+    "bindir",
     "datadir",
+    "debug",
     "includedir",
     "libdir",
     "libexecdir",
     "localedir",
     "localstatedir",
     "mandir",
+    "prefix",
     "strip",
     "sysconfdir",
+    "werror",
 }
 
 LINE_WIDTH = 76
@@ -61,7 +85,10 @@ LINE_WIDTH = 76
 
 # Convert the default value of an option to the string used in
 # the help message
-def value_to_help(value):
+def get_help(opt):
+    if opt["name"] == "libdir":
+        return 'system default'
+    value = opt["value"]
     if isinstance(value, list):
         return ",".join(value)
     if isinstance(value, bool):
@@ -88,14 +115,14 @@ def sh_print(line=""):
 def help_line(left, opt, indent, long):
     right = f'{opt["description"]}'
     if long:
-        value = value_to_help(opt["value"])
-        if value != "auto" and value != "":
+        value = get_help(opt)
+        if value not in {"", "auto"}:
             right += f" [{value}]"
     if "choices" in opt and long:
         choices = "/".join(sorted(opt["choices"]))
         right += f" (choices: {choices})"
-    for x in wrap("  " + left, right, indent):
-        sh_print(x)
+    for line in wrap("  " + left, right, indent):
+        sh_print(line)
 
 
 # Return whether the option (a dictionary) can be used with
@@ -122,18 +149,18 @@ def require_arg(opt):
     return not ({"enabled", "disabled"}.intersection(opt["choices"]))
 
 
-def filter_options(json):
-    if ":" in json["name"]:
+def filter_options(opt):
+    if ":" in opt["name"]:
         return False
-    if json["section"] == "user":
-        return json["name"] not in SKIP_OPTIONS
+    if opt["section"] == "user":
+        return opt["name"] not in SKIP_OPTIONS
     else:
-        return json["name"] in BUILTIN_OPTIONS
+        return opt["name"] in BUILTIN_OPTIONS
 
 
-def load_options(json):
-    json = [x for x in json if filter_options(x)]
-    return sorted(json, key=lambda x: x["name"])
+def load_options(opts):
+    opts = [opt for opt in opts if filter_options(opt)]
+    return sorted(opts, key=lambda opt: opt["name"])
 
 
 def cli_option(opt):
@@ -162,15 +189,18 @@ def cli_metavar(opt):
 
 def print_help(options):
     print("meson_options_help() {")
+    feature_opts = []
     for opt in sorted(options, key=cli_help_key):
         key = cli_help_key(opt)
         # The first section includes options that have an arguments,
         # and booleans (i.e., only one of enable/disable makes sense)
-        if require_arg(opt):
+        if opt["name"] in CONFIGURE_HELP:
+            pass
+        elif require_arg(opt):
             metavar = cli_metavar(opt)
             left = f"--{key}={metavar}"
             help_line(left, opt, 27, True)
-        elif opt["type"] == "boolean":
+        elif opt["type"] == "boolean" and opt["name"] not in AUTO_OPTIONS:
             left = f"--{key}"
             help_line(left, opt, 27, False)
         elif allow_arg(opt):
@@ -179,16 +209,17 @@ def print_help(options):
             else:
                 left = f"--{key}=CHOICE"
             help_line(left, opt, 27, True)
+        else:
+            feature_opts.append(opt)
 
     sh_print()
     sh_print("Optional features, enabled with --enable-FEATURE and")
     sh_print("disabled with --disable-FEATURE, default is enabled if available")
     sh_print("(unless built with --without-default-features):")
     sh_print()
-    for opt in options:
-        key = opt["name"].replace("_", "-")
-        if opt["type"] != "boolean" and not allow_arg(opt):
-            help_line(key, opt, 18, False)
+    for opt in sorted(feature_opts, key=cli_option):
+        key = cli_option(opt)
+        help_line(key, opt, 18, False)
     print("}")
 
 
@@ -199,7 +230,7 @@ def print_parse(options):
         key = cli_option(opt)
         name = opt["name"]
         if require_arg(opt):
-            if opt["type"] == "array" and not "choices" in opt:
+            if opt["type"] == "array" and "choices" not in opt:
                 print(f'    --{key}=*) quote_sh "-D{name}=$(meson_option_build_array $2)" ;;')
             else:
                 print(f'    --{key}=*) quote_sh "-D{name}=$2" ;;')
@@ -218,7 +249,18 @@ def print_parse(options):
     print("}")
 
 
-options = load_options(json.load(sys.stdin))
-print("# This file is generated by meson-buildoptions.py, do not edit!")
-print_help(options)
-print_parse(options)
+def main():
+    json_data = sys.stdin.read()
+    try:
+        options = load_options(json.loads(json_data))
+    except:
+        print("Failure in scripts/meson-buildoptions.py parsing stdin as json",
+              file=sys.stderr)
+        print(json_data, file=sys.stderr)
+        sys.exit(1)
+    print("# This file is generated by meson-buildoptions.py, do not edit!")
+    print_help(options)
+    print_parse(options)
+
+
+sys.exit(main())

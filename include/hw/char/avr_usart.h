@@ -22,7 +22,7 @@
 #ifndef HW_CHAR_AVR_USART_H
 #define HW_CHAR_AVR_USART_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
 
@@ -34,7 +34,7 @@
 #define USART_BRRH 0x05
 #define USART_BRRL 0x04
 
-/* Relevant bits in regiters. */
+/* Relevant bits in registers. */
 #define USART_CSRA_RXC    (1 << 7)
 #define USART_CSRA_TXC    (1 << 6)
 #define USART_CSRA_DRE    (1 << 5)
@@ -66,7 +66,7 @@ struct AVRUsartState {
     /* <public> */
     MemoryRegion mmio;
 
-    CharBackend chr;
+    CharFrontend chr;
 
     bool enabled;
 

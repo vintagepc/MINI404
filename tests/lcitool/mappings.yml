@@ -1,0 +1,32 @@
+mappings:
+  # Too old on Ubuntu 22.04; we install it from cargo instead
+  bindgen:
+    Ubuntu2204:
+
+  meson:
+    # Use Meson from PyPI wherever Rust is enabled
+    Debian:
+    Fedora:
+    Ubuntu:
+
+  python3-tomli:
+    # test using tomllib
+    apk:
+    Fedora:
+    Debian12:
+
+  rust:
+    Debian12: rustc-web
+    Ubuntu2204: rustc-1.83
+    Ubuntu2404: rustc-1.83
+
+pypi_mappings:
+  # Request more recent version
+  meson:
+    default: meson==1.8.1
+
+  # Drop packages that need devel headers
+  python3-tomli:
+    apk:
+    Fedora:
+    Debian12:

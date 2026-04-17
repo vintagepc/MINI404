@@ -3,6 +3,7 @@ packages:
  - alsa
  - bash
  - bc
+ - bindgen
  - bison
  - brlapi
  - bzip2
@@ -12,6 +13,7 @@ packages:
  - clang
  - cmocka
  - column
+ - coreutils
  - ctags
  - cyrus-sasl
  - daxctl
@@ -22,39 +24,41 @@ packages:
  - findutils
  - flex
  - fuse3
- - g++
  - gcc
+ - gcc-native
  - gcovr
  - gettext
- - genisoimage
  - glib2
  - glib2-native
  - glib2-static
  - glusterfs
  - gnutls
  - gtk3
+ - gtk-vnc
  - hostname
  - json-c
  - libaio
- - libattr
  - libasan
+ - libattr
  - libbpf
  - libc-static
  - libcacard
  - libcap-ng
+ - libcbor
+ - libclang-rt
  - libcurl
  - libdrm
  - libepoxy
  - libfdt
  - libffi
  - libgcrypt
- - libibumad
  - libibverbs
  - libiscsi
  - libjemalloc
  - libjpeg
  - libnfs
  - libnuma
+ - libpipewire-dev
  - libpmem
  - libpng
  - librbd
@@ -69,53 +73,61 @@ packages:
  - liburing
  - libusbx
  - libvdeplug
+ - libxdp
  - libzstd
  - llvm
  - lttng-ust
  - lzo
- - netcat
- - nettle
- - ninja
- - nsis
  - make
  - mesa-libgbm
  - meson
+ - mtools
  - ncursesw
+ - nettle
+ - ninja
+ - nsis
  - pam
  - pcre-static
- - perl
  - pixman
  - pkg-config
  - pulseaudio
  - python3
- - python3-PyYAML
  - python3-numpy
  - python3-opencv
  - python3-pillow
  - python3-pip
+ - python3-PyYAML
+ - python3-setuptools
  - python3-sphinx
  - python3-sphinx-rtd-theme
+ - python3-tomli
  - python3-venv
+ - python3-wheel
  - rpm2cpio
+ - rust
+ - rust-std
  - sdl2
  - sdl2-image
  - sed
  - snappy
  - sndio
+ - socat
  - sparse
  - spice-protocol
  - spice-server
  - ssh-client
+ - swtpm
  - systemd
  - tar
  - tesseract
  - tesseract-eng
- - texinfo
  - usbredir
  - virglrenderer
  - vte
+ - vulkan-tools
  - which
  - xen
- - xfsprogs
+ - xorriso
  - zlib
  - zlib-static
+ - zstdtools

@@ -13,20 +13,56 @@
 # the array type in the main schema, even if it is unused outside of the
 # storage daemon.
 
+##
+# ************
+# Introduction
+# ************
+#
+# This manual describes the commands and events supported by the QEMU
+# storage daemon QMP.
+#
+# For locating a particular item, please see the `qapi-qsd-index`.
+#
+# The following notation is used in examples:
+#
+# .. qmp-example::
+#
+#   -> ... text sent by client (commands) ...
+#   <- ... text sent by server (command responses and events) ...
+#
+# Example text is formatted for readability.  However, in real
+# protocol usage, its commonly emitted as a single line.
+#
+# Please refer to the
+# :doc:`QEMU Machine Protocol Specification </interop/qmp-spec>`
+# for the general format of commands, responses, and events.
+##
+
+
 { 'include': '../../qapi/pragma.json' }
 
+# Documentation generated with qapi-gen.py is in source order, with
+# included sub-schemas inserted at the first include directive
+# (subsequent include directives have no effect).  To get a sane and
+# stable order, it's best to include each sub-schema just once, or
+# include it first right here.
+
+{ 'include': '../../qapi/common.json' }
+{ 'include': '../../qapi/sockets.json' }
+{ 'include': '../../qapi/crypto.json' }
+{ 'include': '../../qapi/job.json' }
+
 ##
-# = Block devices
+# *************
+# Block devices
+# *************
 ##
 { 'include': '../../qapi/block-core.json' }
 { 'include': '../../qapi/block-export.json' }
+
 { 'include': '../../qapi/char.json' }
-{ 'include': '../../qapi/common.json' }
-{ 'include': '../../qapi/control.json' }
-{ 'include': '../../qapi/crypto.json' }
-{ 'include': '../../qapi/introspect.json' }
-{ 'include': '../../qapi/job.json' }
 { 'include': '../../qapi/authz.json' }
-{ 'include': '../../qapi/qom.json' }
-{ 'include': '../../qapi/sockets.json' }
 { 'include': '../../qapi/transaction.json' }
+{ 'include': '../../qapi/control.json' }
+{ 'include': '../../qapi/introspect.json' }
+{ 'include': '../../qapi/qom.json' }

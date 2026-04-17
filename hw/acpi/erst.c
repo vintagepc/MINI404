@@ -11,20 +11,20 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/qdev-core.h"
-#include "exec/memory.h"
+#include "hw/core/qdev.h"
+#include "system/memory.h"
 #include "qom/object.h"
-#include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "qom/object_interfaces.h"
 #include "qemu/error-report.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/acpi-defs.h"
 #include "hw/acpi/aml-build.h"
 #include "hw/acpi/bios-linker-loader.h"
-#include "exec/address-spaces.h"
-#include "sysemu/hostmem.h"
+#include "system/address-spaces.h"
+#include "system/hostmem.h"
 #include "hw/acpi/erst.h"
 #include "trace.h"
 
@@ -932,7 +932,7 @@ static const VMStateDescription erst_vmstate  = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = erst_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(operation, ERSTDeviceState),
         VMSTATE_UINT8(busy_status, ERSTDeviceState),
         VMSTATE_UINT8(command_status, ERSTDeviceState),
@@ -947,6 +947,7 @@ static const VMStateDescription erst_vmstate  = {
 
 static void erst_realizefn(PCIDevice *pci_dev, Error **errp)
 {
+    ERRP_GUARD();
     ERSTDeviceState *s = ACPIERST(pci_dev);
 
     trace_acpi_erst_realizefn_in();
@@ -964,9 +965,15 @@ static void erst_realizefn(PCIDevice *pci_dev, Error **errp)
 
     /* HostMemoryBackend size will be multiple of PAGE_SIZE */
     s->storage_size = object_property_get_int(OBJECT(s->hostmem), "size", errp);
+    if (*errp) {
+        return;
+    }
 
     /* Initialize backend storage and record_count */
     check_erst_backend_storage(s, errp);
+    if (*errp) {
+        return;
+    }
 
     /* BAR 0: Programming registers */
     memory_region_init_io(&s->iomem_mr, OBJECT(pci_dev), &erst_reg_ops, s,
@@ -977,6 +984,9 @@ static void erst_realizefn(PCIDevice *pci_dev, Error **errp)
     memory_region_init_ram(&s->exchange_mr, OBJECT(pci_dev),
                             "erst.exchange",
                             le32_to_cpu(s->header->record_size), errp);
+    if (*errp) {
+        return;
+    }
     pci_register_bar(pci_dev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY,
                         &s->exchange_mr);
 
@@ -1001,15 +1011,14 @@ static void erst_reset(DeviceState *dev)
     trace_acpi_erst_reset_out(le32_to_cpu(s->header->record_count));
 }
 
-static Property erst_properties[] = {
+static const Property erst_properties[] = {
     DEFINE_PROP_LINK(ACPI_ERST_MEMDEV_PROP, ERSTDeviceState, hostmem,
                      TYPE_MEMORY_BACKEND, HostMemoryBackend *),
     DEFINE_PROP_UINT32(ACPI_ERST_RECORD_SIZE_PROP, ERSTDeviceState,
                      default_record_size, ERST_RECORD_SIZE),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void erst_class_init(ObjectClass *klass, void *data)
+static void erst_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -1020,7 +1029,7 @@ static void erst_class_init(ObjectClass *klass, void *data)
     k->device_id = PCI_DEVICE_ID_REDHAT_ACPI_ERST;
     k->revision = 0x00;
     k->class_id = PCI_CLASS_OTHERS;
-    dc->reset = erst_reset;
+    device_class_set_legacy_reset(dc, erst_reset);
     dc->vmsd = &erst_vmstate;
     dc->user_creatable = true;
     dc->hotpluggable = false;
@@ -1035,7 +1044,7 @@ static const TypeInfo erst_type_info = {
     .parent        = TYPE_PCI_DEVICE,
     .class_init    = erst_class_init,
     .instance_size = sizeof(ERSTDeviceState),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { }
     }

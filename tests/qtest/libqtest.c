@@ -24,16 +24,23 @@
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif /* __linux__ */
+#ifdef __FreeBSD__
+#include <sys/procctl.h>
+#endif /* __FreeBSD__ */
 
 #include "libqtest.h"
 #include "libqmp.h"
+#include "qemu/accel.h"
+#include "qemu/bswap.h"
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
+#include "qemu/exit-with-parent.h"
 #include "qemu/sockets.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qjson.h"
-#include "qapi/qmp/qlist.h"
-#include "qapi/qmp/qstring.h"
+#include "qobject/qdict.h"
+#include "qobject/qjson.h"
+#include "qobject/qlist.h"
+#include "qobject/qstring.h"
+#include "qobject/qbool.h"
 
 #define MAX_IRQ 256
 
@@ -48,6 +55,8 @@
 # define DEV_STDERR "2"
 # define DEV_NULL   "nul"
 #endif
+
+#define WAITPID_TIMEOUT 30
 
 typedef void (*QTestSendFn)(QTestState *s, const char *buf);
 typedef void (*ExternalSendFn)(void *s, const char *buf);
@@ -69,6 +78,8 @@ struct QTestState
 {
     int fd;
     int qmp_fd;
+    int sock;
+    int qmpsock;
     pid_t qemu_pid;  /* our child QEMU process */
     int wstatus;
 #ifdef _WIN32
@@ -81,10 +92,13 @@ struct QTestState
     GString *rx;
     QTestTransportOps ops;
     GList *pending_events;
+    QTestQMPEventCallback eventCB;
+    void *eventData;
 };
 
 static GHookList abrt_hooks;
 static void (*sighandler_old)(int);
+static bool silence_spawn_log;
 
 static int qtest_query_target_endianness(QTestState *s);
 
@@ -109,7 +123,7 @@ static int socket_accept(int sock)
     socklen_t addrlen;
     int ret;
     /*
-     * timeout unit of blocking receive calls is different among platfoms.
+     * timeout unit of blocking receive calls is different among platforms.
      * It's in seconds on non-Windows platforms but milliseconds on Windows.
      */
 #ifndef _WIN32
@@ -123,7 +137,7 @@ static int socket_accept(int sock)
                    (void *)&timeout, sizeof(timeout))) {
         fprintf(stderr, "%s failed to set SO_RCVTIMEO: %s\n",
                 __func__, strerror(errno));
-        closesocket(sock);
+        close(sock);
         return -1;
     }
 
@@ -134,9 +148,14 @@ static int socket_accept(int sock)
     if (ret == -1) {
         fprintf(stderr, "%s failed: %s\n", __func__, strerror(errno));
     }
-    closesocket(sock);
+    close(sock);
 
     return ret;
+}
+
+pid_t qtest_pid(QTestState *s)
+{
+    return s->qemu_pid;
 }
 
 bool qtest_probe_child(QTestState *s)
@@ -157,6 +176,7 @@ bool qtest_probe_child(QTestState *s)
         CloseHandle((HANDLE)pid);
 #endif
         s->qemu_pid = -1;
+        qtest_remove_abrt_handler(s);
     }
     return false;
 }
@@ -168,6 +188,8 @@ void qtest_set_expected_status(QTestState *s, int status)
 
 static void qtest_check_status(QTestState *s)
 {
+    assert(s->qemu_pid == -1);
+
     /*
      * Check whether qemu exited with expected exit status; anything else is
      * fishy and should be logged with as much detail as possible.
@@ -199,22 +221,58 @@ static void qtest_check_status(QTestState *s)
 #endif
 }
 
+void qtest_system_reset_nowait(QTestState *s)
+{
+    /* Request the system reset, but do not wait for it to complete */
+    qtest_qmp_assert_success(s, "{'execute': 'system_reset' }");
+}
+
+void qtest_system_reset(QTestState *s)
+{
+    qtest_system_reset_nowait(s);
+    /*
+     * Wait for the RESET event, which is sent once the system reset
+     * has actually completed.
+     */
+    qtest_qmp_eventwait(s, "RESET");
+}
+
 void qtest_wait_qemu(QTestState *s)
 {
+    if (s->qemu_pid != -1) {
 #ifndef _WIN32
-    pid_t pid;
+        pid_t pid;
+        uint64_t end;
 
-    TFR(pid = waitpid(s->qemu_pid, &s->wstatus, 0));
-    assert(pid == s->qemu_pid);
+        /* poll for a while until sending SIGKILL */
+        end = g_get_monotonic_time() + WAITPID_TIMEOUT * G_TIME_SPAN_SECOND;
+
+        do {
+            pid = waitpid(s->qemu_pid, &s->wstatus, WNOHANG);
+            if (pid != 0) {
+                break;
+            }
+            g_usleep(100 * 1000);
+        } while (g_get_monotonic_time() < end);
+
+        if (pid == 0) {
+            kill(s->qemu_pid, SIGKILL);
+            pid = RETRY_ON_EINTR(waitpid(s->qemu_pid, &s->wstatus, 0));
+        }
+
+        assert(pid == s->qemu_pid);
 #else
-    DWORD ret;
+        DWORD ret;
 
-    ret = WaitForSingleObject((HANDLE)s->qemu_pid, INFINITE);
-    assert(ret == WAIT_OBJECT_0);
-    GetExitCodeProcess((HANDLE)s->qemu_pid, &s->exit_code);
-    CloseHandle((HANDLE)s->qemu_pid);
+        ret = WaitForSingleObject((HANDLE)s->qemu_pid, INFINITE);
+        assert(ret == WAIT_OBJECT_0);
+        GetExitCodeProcess((HANDLE)s->qemu_pid, &s->exit_code);
+        CloseHandle((HANDLE)s->qemu_pid);
 #endif
 
+        s->qemu_pid = -1;
+        qtest_remove_abrt_handler(s);
+    }
     qtest_check_status(s);
 }
 
@@ -228,7 +286,6 @@ void qtest_kill_qemu(QTestState *s)
         TerminateProcess((HANDLE)s->qemu_pid, s->expected_status);
 #endif
         qtest_wait_qemu(s);
-        s->qemu_pid = -1;
         return;
     }
 
@@ -290,6 +347,11 @@ void qtest_add_abrt_handler(GHookFunc fn, const void *data)
 void qtest_remove_abrt_handler(void *data)
 {
     GHook *hook = g_hook_find_data(&abrt_hooks, TRUE, data);
+
+    if (!hook) {
+        return;
+    }
+
     g_hook_destroy_link(&abrt_hooks, hook);
 
     /* Uninstall SIGABRT handler on last instance */
@@ -298,9 +360,16 @@ void qtest_remove_abrt_handler(void *data)
     }
 }
 
-static const char *qtest_qemu_binary(void)
+const char *qtest_qemu_binary(const char *var)
 {
     const char *qemu_bin;
+
+    if (var) {
+        qemu_bin = getenv(var);
+        if (qemu_bin) {
+            return qemu_bin;
+        }
+    }
 
     qemu_bin = getenv("QTEST_QEMU_BINARY");
     if (!qemu_bin) {
@@ -343,26 +412,93 @@ static pid_t qtest_create_process(char *cmd)
 }
 #endif /* _WIN32 */
 
-QTestState *qtest_init_without_qmp_handshake(const char *extra_args)
+static QTestState *qtest_create_test_state(int pid)
+{
+    QTestState *s = g_new0(QTestState, 1);
+
+    s->qemu_pid = pid;
+    qtest_add_abrt_handler(kill_qemu_hook_func, s);
+    return s;
+}
+
+static QTestState *qtest_spawn_qemu(const char *qemu_bin, const char *args,
+                                    void *opaque)
+{
+    int pid;
+    g_autoptr(GString) command = g_string_new("");
+
+    g_string_printf(command, CMD_EXEC "%s %s", qemu_bin, args);
+
+    if (!silence_spawn_log) {
+        g_test_message("starting QEMU: %s", command->str);
+    }
+
+#ifndef _WIN32
+    pid = fork();
+    if (pid == 0) {
+        execlp("/bin/sh", "sh", "-c", command->str, NULL);
+        exit(1);
+    }
+#else
+    pid = qtest_create_process(command->str);
+#endif /* _WIN32 */
+
+    return qtest_create_test_state(pid);
+}
+
+static char *qtest_socket_path(const char *suffix)
+{
+    return g_strdup_printf("%s/qtest-%d.%s", g_get_tmp_dir(), getpid(), suffix);
+}
+
+gchar *qtest_qemu_args(const char *extra_args)
+{
+    g_autofree gchar *socket_path = qtest_socket_path("sock");
+    g_autofree gchar *qmp_socket_path = qtest_socket_path("qmp");
+    const char *trace = g_getenv("QTEST_TRACE");
+    g_autofree char *tracearg = trace ? g_strdup_printf("-trace %s ", trace) :
+                                        g_strdup("");
+    gchar *args = g_strdup_printf(
+                      "%s"
+                      "-qtest unix:%s "
+                      "-qtest-log %s "
+                      "-chardev socket,path=%s,id=char0 "
+                      "-mon chardev=char0,mode=control "
+                      "-display none "
+                      "-audio none "
+                      "%s"
+                      "%s"
+                      " -accel qtest",
+
+                      tracearg,
+                      socket_path,
+                      getenv("QTEST_LOG") ? DEV_STDERR : DEV_NULL,
+                      qmp_socket_path,
+                      can_exit_with_parent() ?
+                      "-run-with exit-with-parent=on " : "",
+                      extra_args ?: "");
+
+    return args;
+}
+
+typedef QTestState *(*qtest_qemu_spawn_func)(const char *qemu_bin,
+                                             const char *extra_args,
+                                             void *opaque);
+
+static QTestState *qtest_init_internal(const char *qemu_bin,
+                                       const char *extra_args,
+                                       bool do_connect,
+                                       qtest_qemu_spawn_func spawn,
+                                       void *opaque)
 {
     QTestState *s;
     int sock, qmpsock, i;
-    gchar *socket_path;
-    gchar *qmp_socket_path;
-    gchar *command;
-    const char *qemu_binary = qtest_qemu_binary();
-    const char *trace = g_getenv("QTEST_TRACE");
-    g_autofree char *tracearg = trace ?
-        g_strdup_printf("-trace %s ", trace) : g_strdup("");
+    g_autofree gchar *socket_path = qtest_socket_path("sock");
+    g_autofree gchar *qmp_socket_path = qtest_socket_path("qmp");
+    g_autofree gchar *args = qtest_qemu_args(extra_args);
 
-    s = g_new(QTestState, 1);
-
-    socket_path = g_strdup_printf("%s/qtest-%d.sock",
-                                  g_get_tmp_dir(), getpid());
-    qmp_socket_path = g_strdup_printf("%s/qtest-%d.qmp",
-                                      g_get_tmp_dir(), getpid());
-
-    /* It's possible that if an earlier test run crashed it might
+    /*
+     * It's possible that if an earlier test run crashed it might
      * have left a stale unix socket lying around. Delete any
      * stale old socket to avoid spurious test failures with
      * tests/libqtest.c:70:init_socket: assertion failed (ret != -1): (-1 != -1)
@@ -374,72 +510,23 @@ QTestState *qtest_init_without_qmp_handshake(const char *extra_args)
     sock = init_socket(socket_path);
     qmpsock = init_socket(qmp_socket_path);
 
+    s = spawn(qemu_bin, args, opaque);
+
     qtest_client_set_rx_handler(s, qtest_client_socket_recv_line);
     qtest_client_set_tx_handler(s, qtest_client_socket_send);
-
-    qtest_add_abrt_handler(kill_qemu_hook_func, s);
-
-    command = g_strdup_printf(CMD_EXEC "%s %s"
-                              "-qtest unix:%s "
-                              "-qtest-log %s "
-                              "-chardev socket,path=%s,id=char0 "
-                              "-mon chardev=char0,mode=control "
-                              "-display none "
-                              "%s"
-                              " -accel qtest",
-                              qemu_binary, tracearg, socket_path,
-                              getenv("QTEST_LOG") ? DEV_STDERR : DEV_NULL,
-                              qmp_socket_path,
-                              extra_args ?: "");
-
-    g_test_message("starting QEMU: %s", command);
-
-    s->pending_events = NULL;
-    s->wstatus = 0;
-    s->expected_status = 0;
-#ifndef _WIN32
-    s->qemu_pid = fork();
-    if (s->qemu_pid == 0) {
-#ifdef __linux__
-        /*
-         * Although we register a ABRT handler to kill off QEMU
-         * when g_assert() triggers, we want an extra safety
-         * net. The QEMU process might be non-functional and
-         * thus not have responded to SIGTERM. The test script
-         * might also have crashed with SEGV, in which case the
-         * cleanup handlers won't ever run.
-         *
-         * This PR_SET_PDEATHSIG setup will ensure any remaining
-         * QEMU will get terminated with SIGKILL in these cases.
-         */
-        prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0);
-#endif /* __linux__ */
-        if (!g_setenv("QEMU_AUDIO_DRV", "none", true)) {
-            exit(1);
-        }
-        execlp("/bin/sh", "sh", "-c", command, NULL);
-        exit(1);
-    }
-#else
-    s->qemu_pid = qtest_create_process(command);
-#endif /* _WIN32 */
-
-    g_free(command);
-    s->fd = socket_accept(sock);
-    if (s->fd >= 0) {
-        s->qmp_fd = socket_accept(qmpsock);
-    }
-    unlink(socket_path);
-    unlink(qmp_socket_path);
-    g_free(socket_path);
-    g_free(qmp_socket_path);
-
-    g_assert(s->fd >= 0 && s->qmp_fd >= 0);
 
     s->rx = g_string_new("");
     for (i = 0; i < MAX_IRQ; i++) {
         s->irq_level[i] = false;
         s->pulsed[i] = false;
+    }
+
+    s->fd = -1;
+    s->qmp_fd = -1;
+    s->sock = sock;
+    s->qmpsock = qmpsock;
+    if (do_connect) {
+        qtest_connect(s);
     }
 
     /*
@@ -456,24 +543,89 @@ QTestState *qtest_init_without_qmp_handshake(const char *extra_args)
     }
 #endif
 
+   return s;
+}
+
+void qtest_connect(QTestState *s)
+{
+    g_autofree gchar *socket_path = qtest_socket_path("sock");
+    g_autofree gchar *qmp_socket_path = qtest_socket_path("qmp");
+
+    g_assert(s->sock >= 0 && s->qmpsock >= 0);
+    s->fd = socket_accept(s->sock);
+    if (s->fd >= 0) {
+        s->qmp_fd = socket_accept(s->qmpsock);
+    }
+    unlink(socket_path);
+    unlink(qmp_socket_path);
+    g_assert(s->fd >= 0 && s->qmp_fd >= 0);
+    s->sock = s->qmpsock = -1;
     /* ask endianness of the target */
-
     s->big_endian = qtest_query_target_endianness(s);
+}
 
+QTestState *qtest_init_without_qmp_handshake(const char *extra_args)
+{
+    return qtest_init_internal(qtest_qemu_binary(NULL), extra_args, true,
+                               qtest_spawn_qemu, NULL);
+}
+
+void qtest_qmp_handshake(QTestState *s, QList *capabilities)
+{
+    /* Read the QMP greeting and then do the handshake */
+    QDict *greeting = qtest_qmp_receive(s);
+    qobject_unref(greeting);
+
+    if (capabilities) {
+        qtest_qmp_assert_success(s,
+                                 "{ 'execute': 'qmp_capabilities', "
+                                 "'arguments': { 'enable': %p } }",
+                                 qobject_ref(capabilities));
+    } else {
+        qtest_qmp_assert_success(s, "{ 'execute': 'qmp_capabilities' }");
+    }
+}
+
+QTestState *qtest_init_ext(const char *var, const char *extra_args,
+                           QList *capabilities, bool do_connect)
+{
+    QTestState *s = qtest_init_internal(qtest_qemu_binary(var), extra_args,
+                                        do_connect, qtest_spawn_qemu, NULL);
+
+    if (do_connect) {
+        qtest_qmp_handshake(s, capabilities);
+    } else {
+        /*
+         * If the connection is delayed, the capabilities must be set
+         * at that moment.
+         */
+        assert(!capabilities);
+    }
+    return s;
+}
+
+static QTestState *qtest_attach_qemu(const char *qemu_bin,
+                                     const char *extra_args,
+                                     void *opaque)
+{
+    int pid = *(int *)opaque;
+    return qtest_create_test_state(pid);
+}
+
+QTestState *qtest_init_after_exec(QTestState *qts)
+{
+    void *opaque = (void *)&qts->qemu_pid;
+    QTestState *s;
+
+    s = qtest_init_internal(NULL, NULL, true, qtest_attach_qemu, opaque);
+    qts->qemu_pid = -1;
+    qtest_qmp_handshake(s, NULL);
     return s;
 }
 
 QTestState *qtest_init(const char *extra_args)
 {
-    QTestState *s = qtest_init_without_qmp_handshake(extra_args);
-    QDict *greeting;
-
-    /* Read the QMP greeting and then do the handshake */
-    greeting = qtest_qmp_receive(s);
-    qobject_unref(greeting);
-    qobject_unref(qtest_qmp(s, "{ 'execute': 'qmp_capabilities' }"));
-
-    return s;
+    return qtest_init_ext(NULL, extra_args, NULL, true);
 }
 
 QTestState *qtest_vinitf(const char *fmt, va_list ap)
@@ -530,8 +682,8 @@ void qtest_quit(QTestState *s)
     qtest_remove_abrt_handler(s);
 
     qtest_kill_qemu(s);
-    closesocket(s->fd);
-    closesocket(s->qmp_fd);
+    close(s->fd);
+    close(s->qmp_fd);
     g_string_free(s->rx, true);
 
     for (GList *it = s->pending_events; it != NULL; it = it->next) {
@@ -672,13 +824,21 @@ QDict *qtest_qmp_receive(QTestState *s)
         if (!qdict_get_try_str(response, "event")) {
             return response;
         }
-        /* Stash the event for a later consumption */
-        s->pending_events = g_list_append(s->pending_events, response);
+
+        if (!s->eventCB ||
+            !s->eventCB(s, qdict_get_str(response, "event"),
+                        response, s->eventData)) {
+            /* Stash the event for a later consumption */
+            s->pending_events = g_list_append(s->pending_events, response);
+        } else {
+            qobject_unref(response);
+        }
     }
 }
 
 QDict *qtest_qmp_receive_dict(QTestState *s)
 {
+    g_assert(s->qmp_fd >= 0);
     return qmp_fd_receive(s->qmp_fd);
 }
 
@@ -694,9 +854,7 @@ int qtest_socket_server(const char *socket_path)
     addr.sun_family = AF_UNIX;
     snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", socket_path);
 
-    do {
-        ret = bind(sock, (struct sockaddr *)&addr, sizeof(addr));
-    } while (ret == -1 && errno == EINTR);
+    ret = RETRY_ON_EINTR(bind(sock, (struct sockaddr *)&addr, sizeof(addr)));
     g_assert_cmpint(ret, !=, -1);
     ret = listen(sock, 1);
     g_assert_cmpint(ret, !=, -1);
@@ -708,12 +866,14 @@ int qtest_socket_server(const char *socket_path)
 void qtest_qmp_vsend_fds(QTestState *s, int *fds, size_t fds_num,
                          const char *fmt, va_list ap)
 {
+    g_assert(s->qmp_fd >= 0);
     qmp_fd_vsend_fds(s->qmp_fd, fds, fds_num, fmt, ap);
 }
 #endif
 
 void qtest_qmp_vsend(QTestState *s, const char *fmt, va_list ap)
 {
+    g_assert(s->qmp_fd >= 0);
     qmp_fd_vsend(s->qmp_fd, fmt, ap);
 }
 
@@ -774,9 +934,17 @@ void qtest_qmp_send_raw(QTestState *s, const char *fmt, ...)
 {
     va_list ap;
 
+    g_assert(s->qmp_fd >= 0);
     va_start(ap, fmt);
     qmp_fd_vsend_raw(s->qmp_fd, fmt, ap);
     va_end(ap);
+}
+
+void qtest_qmp_set_event_callback(QTestState *s,
+                                  QTestQMPEventCallback cb, void *opaque)
+{
+    s->eventCB = cb;
+    s->eventData = opaque;
 }
 
 QDict *qtest_qmp_event_ref(QTestState *s, const char *event)
@@ -852,7 +1020,7 @@ char *qtest_hmp(QTestState *s, const char *fmt, ...)
 
 const char *qtest_get_arch(void)
 {
-    const char *qemu = qtest_qemu_binary();
+    const char *qemu = qtest_qemu_binary(NULL);
     const char *end = strrchr(qemu, '-');
 
     if (!end) {
@@ -870,15 +1038,61 @@ const char *qtest_get_arch(void)
     return end + 1;
 }
 
+static bool qtest_qom_has_concrete_type(const char *parent_typename,
+                                        const char *child_typename,
+                                        QList **cached_list)
+{
+    QList *list = cached_list ? *cached_list : NULL;
+    const QListEntry *p;
+    QObject *qobj;
+    QString *qstr;
+    QDict *devinfo;
+
+    if (!list) {
+        QDict *resp;
+        QDict *args;
+        QTestState *qts = qtest_init("-machine none");
+
+        args = qdict_new();
+        qdict_put_bool(args, "abstract", false);
+        qdict_put_str(args, "implements", parent_typename);
+
+        resp = qtest_qmp(qts, "{'execute': 'qom-list-types', 'arguments': %p }",
+                         args);
+        g_assert(qdict_haskey(resp, "return"));
+        list = qdict_get_qlist(resp, "return");
+        qobject_ref(list);
+        qobject_unref(resp);
+
+        qtest_quit(qts);
+
+        if (cached_list) {
+            *cached_list = list;
+        }
+    }
+
+    for (p = qlist_first(list); p; p = qlist_next(p)) {
+        devinfo = qobject_to(QDict, qlist_entry_obj(p));
+        g_assert(devinfo);
+
+        qobj = qdict_get(devinfo, "name");
+        g_assert(qobj);
+        qstr = qobject_to(QString, qobj);
+        g_assert(qstr);
+        if (g_str_equal(qstring_get_str(qstr), child_typename)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool qtest_has_accel(const char *accel_name)
 {
-    if (g_str_equal(accel_name, "tcg")) {
-#if defined(CONFIG_TCG)
-        return true;
-#else
-        return false;
-#endif
-    } else if (g_str_equal(accel_name, "kvm")) {
+    static QList *list;
+    g_autofree char *accel_type = NULL;
+
+    if (g_str_equal(accel_name, "kvm")) {
         int i;
         const char *arch = qtest_get_arch();
         const char *targets[] = { CONFIG_KVM_TARGETS };
@@ -890,11 +1104,12 @@ bool qtest_has_accel(const char *accel_name)
                 }
             }
         }
-    } else {
-        /* not implemented */
-        g_assert_not_reached();
+        return false;
     }
-    return false;
+
+    accel_type = g_strconcat(accel_name, ACCEL_CLASS_SUFFIX, NULL);
+
+    return qtest_qom_has_concrete_type("accel", accel_type, &list);
 }
 
 bool qtest_get_irq(QTestState *s, int num)
@@ -969,6 +1184,12 @@ void qtest_irq_intercept_out(QTestState *s, const char *qom_path)
     qtest_rsp(s);
 }
 
+void qtest_irq_intercept_out_named(QTestState *s, const char *qom_path, const char *name)
+{
+    qtest_sendf(s, "irq_intercept_out %s %s\n", qom_path, name);
+    qtest_rsp(s);
+}
+
 void qtest_irq_intercept_in(QTestState *s, const char *qom_path)
 {
     qtest_sendf(s, "irq_intercept_in %s\n", qom_path);
@@ -1004,12 +1225,12 @@ void qtest_outb(QTestState *s, uint16_t addr, uint8_t value)
 
 void qtest_outw(QTestState *s, uint16_t addr, uint16_t value)
 {
-    qtest_out(s, "outw", addr, value);
+    qtest_out(s, "outw", addr, qtest_big_endian(s) ? bswap16(value) : value);
 }
 
 void qtest_outl(QTestState *s, uint16_t addr, uint32_t value)
 {
-    qtest_out(s, "outl", addr, value);
+    qtest_out(s, "outl", addr, qtest_big_endian(s) ? bswap32(value) : value);
 }
 
 static uint32_t qtest_in(QTestState *s, const char *cmd, uint16_t addr)
@@ -1034,12 +1255,16 @@ uint8_t qtest_inb(QTestState *s, uint16_t addr)
 
 uint16_t qtest_inw(QTestState *s, uint16_t addr)
 {
-    return qtest_in(s, "inw", addr);
+    uint16_t v = qtest_in(s, "inw", addr);
+
+    return qtest_big_endian(s) ? bswap16(v) : v;
 }
 
 uint32_t qtest_inl(QTestState *s, uint16_t addr)
 {
-    return qtest_in(s, "inl", addr);
+    uint32_t v = qtest_in(s, "inl", addr);
+
+    return qtest_big_endian(s) ? bswap32(v) : v;
 }
 
 static void qtest_write(QTestState *s, const char *cmd, uint64_t addr,
@@ -1148,6 +1373,33 @@ uint64_t qtest_rtas_call(QTestState *s, const char *name,
     return 0;
 }
 
+static void qtest_rsp_csr(QTestState *s, uint64_t *val)
+{
+    gchar **args;
+    uint64_t ret;
+    int rc;
+
+    args = qtest_rsp_args(s, 3);
+
+    rc = qemu_strtou64(args[1], NULL, 16, &ret);
+    g_assert(rc == 0);
+    rc = qemu_strtou64(args[2], NULL, 16, val);
+    g_assert(rc == 0);
+
+    g_strfreev(args);
+}
+
+uint64_t qtest_csr_call(QTestState *s, const char *name,
+                         uint64_t cpu, int csr,
+                         uint64_t *val)
+{
+    qtest_sendf(s, "csr %s 0x%"PRIx64" %d 0x%"PRIx64"\n",
+                    name, cpu, csr, *val);
+
+    qtest_rsp_csr(s, val);
+    return 0;
+}
+
 void qtest_add_func(const char *str, void (*fn)(void))
 {
     gchar *path = g_strdup_printf("/%s/%s", qtest_get_arch(), str);
@@ -1230,24 +1482,140 @@ void qtest_memset(QTestState *s, uint64_t addr, uint8_t pattern, size_t size)
     qtest_rsp(s);
 }
 
-void qtest_qmp_assert_success(QTestState *qts, const char *fmt, ...)
+QDict *qtest_vqmp_assert_failure_ref(QTestState *qts,
+                                     const char *fmt, va_list args)
 {
-    va_list ap;
     QDict *response;
+    QDict *ret;
 
-    va_start(ap, fmt);
-    response = qtest_vqmp(qts, fmt, ap);
-    va_end(ap);
+    response = qtest_vqmp(qts, fmt, args);
+
+    g_assert(response);
+    if (!qdict_haskey(response, "error")) {
+        g_autoptr(GString) s = qobject_to_json_pretty(QOBJECT(response), true);
+        g_test_message("%s", s->str);
+    }
+    g_assert(qdict_haskey(response, "error"));
+    g_assert(!qdict_haskey(response, "return"));
+    ret = qdict_get_qdict(response, "error");
+    qobject_ref(ret);
+    qobject_unref(response);
+
+    return ret;
+}
+
+QDict *qtest_vqmp_assert_success_ref(QTestState *qts,
+                                     const char *fmt, va_list args)
+{
+    QDict *response;
+    QDict *ret;
+
+    response = qtest_vqmp(qts, fmt, args);
 
     g_assert(response);
     if (!qdict_haskey(response, "return")) {
-        GString *s = qobject_to_json_pretty(QOBJECT(response), true);
+        g_autoptr(GString) s = qobject_to_json_pretty(QOBJECT(response), true);
         g_test_message("%s", s->str);
-        g_string_free(s, true);
     }
     g_assert(qdict_haskey(response, "return"));
+    ret = qdict_get_qdict(response, "return");
+    qobject_ref(ret);
+    qobject_unref(response);
+
+    return ret;
+}
+
+void qtest_vqmp_assert_success(QTestState *qts,
+                               const char *fmt, va_list args)
+{
+    QDict *response;
+
+    response = qtest_vqmp_assert_success_ref(qts, fmt, args);
+
     qobject_unref(response);
 }
+
+#ifndef _WIN32
+QDict *qtest_vqmp_fds_assert_success_ref(QTestState *qts, int *fds, size_t nfds,
+                                         const char *fmt, va_list args)
+{
+    QDict *response;
+    QDict *ret;
+
+    response = qtest_vqmp_fds(qts, fds, nfds, fmt, args);
+
+    g_assert(response);
+    if (!qdict_haskey(response, "return")) {
+        g_autoptr(GString) s = qobject_to_json_pretty(QOBJECT(response), true);
+        g_test_message("%s", s->str);
+    }
+    g_assert(qdict_haskey(response, "return"));
+    ret = qdict_get_qdict(response, "return");
+    qobject_ref(ret);
+    qobject_unref(response);
+
+    return ret;
+}
+
+void qtest_vqmp_fds_assert_success(QTestState *qts, int *fds, size_t nfds,
+                                   const char *fmt, va_list args)
+{
+    QDict *response;
+    response = qtest_vqmp_fds_assert_success_ref(qts, fds, nfds, fmt, args);
+    qobject_unref(response);
+}
+#endif /* !_WIN32 */
+
+QDict *qtest_qmp_assert_failure_ref(QTestState *qts, const char *fmt, ...)
+{
+    QDict *response;
+    va_list ap;
+
+    va_start(ap, fmt);
+    response = qtest_vqmp_assert_failure_ref(qts, fmt, ap);
+    va_end(ap);
+    return response;
+}
+
+QDict *qtest_qmp_assert_success_ref(QTestState *qts, const char *fmt, ...)
+{
+    QDict *response;
+    va_list ap;
+    va_start(ap, fmt);
+    response = qtest_vqmp_assert_success_ref(qts, fmt, ap);
+    va_end(ap);
+    return response;
+}
+
+void qtest_qmp_assert_success(QTestState *qts, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    qtest_vqmp_assert_success(qts, fmt, ap);
+    va_end(ap);
+}
+
+#ifndef _WIN32
+QDict *qtest_qmp_fds_assert_success_ref(QTestState *qts, int *fds, size_t nfds,
+                                        const char *fmt, ...)
+{
+    QDict *response;
+    va_list ap;
+    va_start(ap, fmt);
+    response = qtest_vqmp_fds_assert_success_ref(qts, fds, nfds, fmt, ap);
+    va_end(ap);
+    return response;
+}
+
+void qtest_qmp_fds_assert_success(QTestState *qts, int *fds, size_t nfds,
+                                  const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    qtest_vqmp_fds_assert_success(qts, fds, nfds, fmt, ap);
+    va_end(ap);
+}
+#endif /* !_WIN32 */
 
 bool qtest_big_endian(QTestState *s)
 {
@@ -1304,13 +1672,33 @@ struct MachInfo {
     char *alias;
 };
 
+struct CpuModel {
+    char *name;
+    char *alias_of;
+    bool deprecated;
+};
+
+static void qtest_free_machine_list(struct MachInfo *machines)
+{
+    if (machines) {
+        for (int i = 0; machines[i].name != NULL; i++) {
+            g_free(machines[i].name);
+            g_free(machines[i].alias);
+        }
+
+        g_free(machines);
+    }
+}
+
 /*
  * Returns an array with pointers to the available machine names.
  * The terminating entry has the name set to NULL.
  */
-static struct MachInfo *qtest_get_machines(void)
+static struct MachInfo *qtest_get_machines(const char *var)
 {
     static struct MachInfo *machines;
+    static char *qemu_bin;
+    const char *new_qemu_bin;
     QDict *response, *minfo;
     QList *list;
     const QListEntry *p;
@@ -1319,11 +1707,23 @@ static struct MachInfo *qtest_get_machines(void)
     QTestState *qts;
     int idx;
 
+    new_qemu_bin = qtest_qemu_binary(var);
+    if (g_strcmp0(qemu_bin, new_qemu_bin)) {
+        g_free(qemu_bin);
+        qemu_bin = g_strdup(new_qemu_bin);
+
+        /* new qemu, clear the cache */
+        qtest_free_machine_list(machines);
+        machines = NULL;
+    }
+
     if (machines) {
         return machines;
     }
 
-    qts = qtest_init("-machine none");
+    silence_spawn_log = !g_test_verbose();
+
+    qts = qtest_init_ext(var, "-machine none", NULL, true);
     response = qtest_qmp(qts, "{ 'execute': 'query-machines' }");
     g_assert(response);
     list = qdict_get_qlist(response, "return");
@@ -1354,8 +1754,86 @@ static struct MachInfo *qtest_get_machines(void)
     qtest_quit(qts);
     qobject_unref(response);
 
+    silence_spawn_log = false;
+
     memset(&machines[idx], 0, sizeof(struct MachInfo)); /* Terminating entry */
     return machines;
+}
+
+static struct CpuModel *qtest_get_cpu_models(void)
+{
+    static struct CpuModel *cpus;
+    QDict *response, *minfo;
+    QList *list;
+    const QListEntry *p;
+    QObject *qobj;
+    QString *qstr;
+    QBool *qbool;
+    QTestState *qts;
+    int idx;
+
+    if (cpus) {
+        return cpus;
+    }
+
+    silence_spawn_log = !g_test_verbose();
+
+    qts = qtest_init_ext(NULL, "-machine none", NULL, true);
+    response = qtest_qmp(qts, "{ 'execute': 'query-cpu-definitions' }");
+    g_assert(response);
+    list = qdict_get_qlist(response, "return");
+    g_assert(list);
+
+    cpus = g_new0(struct CpuModel, qlist_size(list) + 1);
+
+    for (p = qlist_first(list), idx = 0; p; p = qlist_next(p), idx++) {
+        minfo = qobject_to(QDict, qlist_entry_obj(p));
+        g_assert(minfo);
+
+        qobj = qdict_get(minfo, "name");
+        g_assert(qobj);
+        qstr = qobject_to(QString, qobj);
+        g_assert(qstr);
+        cpus[idx].name = g_strdup(qstring_get_str(qstr));
+
+        qobj = qdict_get(minfo, "alias_of");
+        if (qobj) { /* old machines do not report aliases */
+            qstr = qobject_to(QString, qobj);
+            g_assert(qstr);
+            cpus[idx].alias_of = g_strdup(qstring_get_str(qstr));
+        } else {
+            cpus[idx].alias_of = NULL;
+        }
+
+        qobj = qdict_get(minfo, "deprecated");
+        qbool = qobject_to(QBool, qobj);
+        g_assert(qbool);
+        cpus[idx].deprecated = qbool_get_bool(qbool);
+    }
+
+    qtest_quit(qts);
+    qobject_unref(response);
+
+    silence_spawn_log = false;
+
+    return cpus;
+}
+
+bool qtest_has_cpu_model(const char *cpu)
+{
+    struct CpuModel *cpus;
+    int i;
+
+    cpus = qtest_get_cpu_models();
+
+    for (i = 0; cpus[i].name != NULL; i++) {
+        if (g_str_equal(cpu, cpus[i].name) ||
+            (cpus[i].alias_of && g_str_equal(cpu, cpus[i].alias_of))) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void qtest_cb_for_every_machine(void (*cb)(const char *machine),
@@ -1364,12 +1842,16 @@ void qtest_cb_for_every_machine(void (*cb)(const char *machine),
     struct MachInfo *machines;
     int i;
 
-    machines = qtest_get_machines();
+    machines = qtest_get_machines(NULL);
 
     for (i = 0; machines[i].name != NULL; i++) {
         /* Ignore machines that cannot be used for qtests */
         if (!strncmp("xenfv", machines[i].name, 5) ||
-            g_str_equal("xenpv", machines[i].name)) {
+            g_str_equal("xenpv", machines[i].name) ||
+            g_str_equal("xenpvh", machines[i].name) ||
+            g_str_equal("vmapple", machines[i].name) ||
+            g_str_equal("nitro", machines[i].name) ||
+            g_str_equal("nitro-enclave", machines[i].name)) {
             continue;
         }
         if (!skip_old_versioned ||
@@ -1379,12 +1861,28 @@ void qtest_cb_for_every_machine(void (*cb)(const char *machine),
     }
 }
 
-bool qtest_has_machine(const char *machine)
+char *qtest_resolve_machine_alias(const char *var, const char *alias)
 {
     struct MachInfo *machines;
     int i;
 
-    machines = qtest_get_machines();
+    machines = qtest_get_machines(var);
+
+    for (i = 0; machines[i].name != NULL; i++) {
+        if (machines[i].alias && g_str_equal(alias, machines[i].alias)) {
+            return g_strdup(machines[i].name);
+        }
+    }
+
+    return NULL;
+}
+
+bool qtest_has_machine_with_env(const char *var, const char *machine)
+{
+    struct MachInfo *machines;
+    int i;
+
+    machines = qtest_get_machines(var);
 
     for (i = 0; machines[i].name != NULL; i++) {
         if (g_str_equal(machine, machines[i].name) ||
@@ -1396,48 +1894,16 @@ bool qtest_has_machine(const char *machine)
     return false;
 }
 
+bool qtest_has_machine(const char *machine)
+{
+    return qtest_has_machine_with_env(NULL, machine);
+}
+
 bool qtest_has_device(const char *device)
 {
     static QList *list;
-    const QListEntry *p;
-    QObject *qobj;
-    QString *qstr;
-    QDict *devinfo;
-    int idx;
 
-    if (!list) {
-        QDict *resp;
-        QDict *args;
-        QTestState *qts = qtest_init("-machine none");
-
-        args = qdict_new();
-        qdict_put_bool(args, "abstract", false);
-        qdict_put_str(args, "implements", "device");
-
-        resp = qtest_qmp(qts, "{'execute': 'qom-list-types', 'arguments': %p }",
-                         args);
-        g_assert(qdict_haskey(resp, "return"));
-        list = qdict_get_qlist(resp, "return");
-        qobject_ref(list);
-        qobject_unref(resp);
-
-        qtest_quit(qts);
-    }
-
-    for (p = qlist_first(list), idx = 0; p; p = qlist_next(p), idx++) {
-        devinfo = qobject_to(QDict, qlist_entry_obj(p));
-        g_assert(devinfo);
-
-        qobj = qdict_get(devinfo, "name");
-        g_assert(qobj);
-        qstr = qobject_to(QString, qobj);
-        g_assert(qstr);
-        if (g_str_equal(qstring_get_str(qstr), device)) {
-            return true;
-        }
-    }
-
-    return false;
+    return qtest_qom_has_concrete_type("device", device, &list);
 }
 
 /*
@@ -1454,6 +1920,10 @@ void qtest_qmp_device_add_qdict(QTestState *qts, const char *drv,
     resp = qtest_qmp(qts, "{'execute': 'device_add', 'arguments': %p}", args);
     g_assert(resp);
     g_assert(!qdict_haskey(resp, "event")); /* We don't expect any events */
+    if (qdict_haskey(resp, "error")) {
+        fprintf(stderr, "error: %s\n",
+            qdict_get_str(qdict_get_qdict(resp, "error"), "desc"));
+    }
     g_assert(!qdict_haskey(resp, "error"));
     qobject_unref(resp);
 }
@@ -1475,13 +1945,28 @@ void qtest_qmp_device_add(QTestState *qts, const char *driver, const char *id,
     qobject_unref(args);
 }
 
-#ifndef _WIN32
 void qtest_qmp_add_client(QTestState *qts, const char *protocol, int fd)
 {
     QDict *resp;
 
+#ifdef WIN32
+    WSAPROTOCOL_INFOW info;
+    g_autofree char *info64  = NULL;
+    SOCKET s;
+
+    assert(fd_is_socket(fd));
+    s = _get_osfhandle(fd);
+    if (WSADuplicateSocketW(s, GetProcessId((HANDLE)qts->qemu_pid), &info) == SOCKET_ERROR) {
+        g_autofree char *emsg = g_win32_error_message(WSAGetLastError());
+        g_error("WSADuplicateSocketW failed: %s", emsg);
+    }
+    info64 = g_base64_encode((guchar *)&info, sizeof(info));
+    resp = qtest_qmp(qts, "{'execute': 'get-win32-socket',"
+                     "'arguments': {'fdname': 'fdname', 'info': %s}}", info64);
+#else
     resp = qtest_qmp_fds(qts, &fd, 1, "{'execute': 'getfd',"
                          "'arguments': {'fdname': 'fdname'}}");
+#endif
     g_assert(resp);
     g_assert(!qdict_haskey(resp, "event")); /* We don't expect any events */
     g_assert(!qdict_haskey(resp, "error"));
@@ -1495,7 +1980,6 @@ void qtest_qmp_add_client(QTestState *qts, const char *protocol, int fd)
     g_assert(!qdict_haskey(resp, "error"));
     qobject_unref(resp);
 }
-#endif
 
 /*
  * Generic hot-unplugging test via the device_del QMP command.
@@ -1571,7 +2055,7 @@ QTestState *qtest_inproc_init(QTestState **s, bool log, const char* arch,
 
     qtest_client_set_rx_handler(qts, qtest_client_inproc_recv_line);
 
-    /* send() may not have a matching protoype, so use a type-safe wrapper */
+    /* send() may not have a matching prototype, so use a type-safe wrapper */
     qts->ops.external_send = send;
     qtest_client_set_tx_handler(qts, send_wrapper);
 
@@ -1582,7 +2066,11 @@ QTestState *qtest_inproc_init(QTestState **s, bool log, const char* arch,
      * way, qtest_get_arch works for inproc qtest.
      */
     gchar *bin_path = g_strconcat("/qemu-system-", arch, NULL);
-    g_setenv("QTEST_QEMU_BINARY", bin_path, 0);
+    if (!g_setenv("QTEST_QEMU_BINARY", bin_path, 0)) {
+        fprintf(stderr,
+                "Could not set environment variable QTEST_QEMU_BINARY\n");
+        exit(1);
+    }
     g_free(bin_path);
 
     return qts;
@@ -1596,7 +2084,6 @@ void qtest_client_inproc_recv(void *opaque, const char *str)
         qts->rx = g_string_new(NULL);
     }
     g_string_append(qts->rx, str);
-    return;
 }
 
 void qtest_qom_set_bool(QTestState *s, const char *path, const char *property,
@@ -1621,4 +2108,56 @@ bool qtest_qom_get_bool(QTestState *s, const char *path, const char *property)
     qobject_unref(r);
 
     return b;
+}
+
+bool have_qemu_img(void)
+{
+    char *rpath;
+    const char *path = getenv("QTEST_QEMU_IMG");
+    if (!path) {
+        return false;
+    }
+
+    rpath = realpath(path, NULL);
+    if (!rpath) {
+        return false;
+    } else {
+        free(rpath);
+        return true;
+    }
+}
+
+bool mkimg(const char *file, const char *fmt, unsigned size_mb)
+{
+    gchar *cli;
+    bool ret;
+    int rc;
+    GError *err = NULL;
+    char *qemu_img_path;
+    gchar *out, *out2;
+    char *qemu_img_abs_path;
+
+    qemu_img_path = getenv("QTEST_QEMU_IMG");
+    if (!qemu_img_path) {
+        return false;
+    }
+    qemu_img_abs_path = realpath(qemu_img_path, NULL);
+    if (!qemu_img_abs_path) {
+        return false;
+    }
+
+    cli = g_strdup_printf("%s create -f %s %s %uM", qemu_img_abs_path,
+                          fmt, file, size_mb);
+    ret = g_spawn_command_line_sync(cli, &out, &out2, &rc, &err);
+    if (err || !g_spawn_check_exit_status(rc, &err)) {
+        fprintf(stderr, "%s\n", err->message);
+        g_error_free(err);
+    }
+
+    g_free(out);
+    g_free(out2);
+    g_free(cli);
+    free(qemu_img_abs_path);
+
+    return ret && !err;
 }

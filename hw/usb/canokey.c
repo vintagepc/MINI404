@@ -4,7 +4,7 @@
  * Copyright (c) 2021-2022 Canokeys.org <contact@canokeys.org>
  * Written by Hongren (Zenithal) Zheng <i@zenithal.me>
  *
- * This code is licensed under the Apache-2.0.
+ * This code is licensed under the GPL v2 or later.
  */
 
 #include "qemu/osdep.h"
@@ -12,8 +12,8 @@
 
 #include "qemu/module.h"
 #include "qapi/error.h"
-#include "hw/usb.h"
-#include "hw/qdev-properties.h"
+#include "hw/usb/usb.h"
+#include "hw/core/qdev-properties.h"
 #include "trace.h"
 #include "desc.h"
 #include "canokey.h"
@@ -197,8 +197,8 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
     switch (p->pid) {
     case USB_TOKEN_OUT:
         trace_canokey_handle_data_out(ep_out, p->iov.size);
-        usb_packet_copy(p, key->ep_out_buffer[ep_out], p->iov.size);
         out_pos = 0;
+        /* segment packet into (possibly multiple) ep_out */
         while (out_pos != p->iov.size) {
             /*
              * key->ep_out[ep_out] set by prepare_receive
@@ -207,8 +207,8 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
              * to be the buffer length
              */
             out_len = MIN(p->iov.size - out_pos, key->ep_out_size[ep_out]);
-            memcpy(key->ep_out[ep_out],
-                    key->ep_out_buffer[ep_out] + out_pos, out_len);
+            /* usb_packet_copy would update the pos offset internally */
+            usb_packet_copy(p, key->ep_out[ep_out], out_len);
             out_pos += out_len;
             /* update ep_out_size to actual len */
             key->ep_out_size[ep_out] = out_len;
@@ -296,12 +296,11 @@ static void canokey_unrealize(USBDevice *base)
     trace_canokey_unrealize();
 }
 
-static Property canokey_properties[] = {
+static const Property canokey_properties[] = {
     DEFINE_PROP_STRING("file", CanoKeyState, file),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void canokey_class_init(ObjectClass *klass, void *data)
+static void canokey_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     USBDeviceClass *uc = USB_DEVICE_CLASS(klass);

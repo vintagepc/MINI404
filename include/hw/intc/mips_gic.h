@@ -13,7 +13,7 @@
 
 #include "qemu/units.h"
 #include "hw/timer/mips_gictimer.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "cpu.h"
 #include "qom/object.h"
 /*
@@ -211,8 +211,8 @@ struct MIPSGICState {
     /* GIC VP Timer */
     MIPSGICTimerState *gic_timer;
 
-    int32_t num_vps;
-    int32_t num_irq;
+    uint32_t num_vps;
+    uint32_t num_irq;
 };
 
 #endif /* MIPS_GIC_H */

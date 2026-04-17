@@ -1,25 +1,6 @@
 #ifndef SPARC_TARGET_SYSCALL_H
 #define SPARC_TARGET_SYSCALL_H
 
-#if defined(TARGET_SPARC64) && !defined(TARGET_ABI32)
-struct target_pt_regs {
-    abi_ulong u_regs[16];
-    abi_ulong tstate;
-    abi_ulong pc;
-    abi_ulong npc;
-    uint32_t y;
-    uint32_t magic;
-};
-#else
-struct target_pt_regs {
-    abi_ulong psr;
-    abi_ulong pc;
-    abi_ulong npc;
-    abi_ulong y;
-    abi_ulong u_regs[16];
-};
-#endif
-
 #ifdef TARGET_SPARC64
 # define UNAME_MACHINE "sparc64"
 #else
@@ -50,11 +31,7 @@ static inline abi_ulong target_shmlba(CPUSPARCState *env)
 #ifdef TARGET_SPARC64
     return MAX(TARGET_PAGE_SIZE, 16 * 1024);
 #else
-    if (!(env->def.features & CPU_FEATURE_FLUSH)) {
-        return 64 * 1024;
-    } else {
-        return 256 * 1024;
-    }
+    return 256 * 1024;
 #endif
 }
 

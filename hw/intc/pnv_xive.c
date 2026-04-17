@@ -1,10 +1,9 @@
 /*
  * QEMU PowerPC XIVE interrupt controller model
  *
- * Copyright (c) 2017-2019, IBM Corporation.
+ * Copyright (c) 2017-2024, IBM Corporation.
  *
- * This code is licensed under the GPL version 2 or later. See the
- * COPYING file in the top-level directory.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include "qemu/osdep.h"
@@ -12,17 +11,17 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "target/ppc/cpu.h"
-#include "sysemu/cpus.h"
-#include "sysemu/dma.h"
-#include "sysemu/reset.h"
-#include "monitor/monitor.h"
+#include "system/cpus.h"
+#include "system/dma.h"
+#include "system/reset.h"
 #include "hw/ppc/fdt.h"
 #include "hw/ppc/pnv.h"
+#include "hw/ppc/pnv_chip.h"
 #include "hw/ppc/pnv_core.h"
 #include "hw/ppc/pnv_xscom.h"
 #include "hw/ppc/pnv_xive.h"
 #include "hw/ppc/xive_regs.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/ppc/ppc.h"
 #include "trace.h"
 
@@ -81,28 +80,6 @@ static uint8_t pnv_xive_block_id(PnvXive *xive)
     }
 
     return blk;
-}
-
-/*
- * Remote access to controllers. HW uses MMIOs. For now, a simple scan
- * of the chips is good enough.
- *
- * TODO: Block scope support
- */
-static PnvXive *pnv_xive_get_remote(uint8_t blk)
-{
-    PnvMachineState *pnv = PNV_MACHINE(qdev_get_machine());
-    int i;
-
-    for (i = 0; i < pnv->num_chips; i++) {
-        Pnv9Chip *chip9 = PNV9_CHIP(pnv->chips[i]);
-        PnvXive *xive = &chip9->xive;
-
-        if (pnv_xive_block_id(xive) == blk) {
-            return xive;
-        }
-    }
-    return NULL;
 }
 
 /*
@@ -208,6 +185,42 @@ static uint64_t pnv_xive_vst_addr_indirect(PnvXive *xive, uint32_t type,
     return pnv_xive_vst_addr_direct(xive, type, vsd, (idx % vst_per_page));
 }
 
+/*
+ * This is a simplified model of operation forwarding on a remote IC.
+ *
+ * A PC MMIO address is built to identify the NVT structure. The load
+ * on the remote IC will return the address of the structure in RAM,
+ * which will then be used by pnv_xive_vst_write/read to perform the
+ * RAM operation.
+ */
+static uint64_t pnv_xive_vst_addr_remote(PnvXive *xive, uint32_t type,
+                                         uint64_t vsd, uint8_t blk,
+                                         uint32_t idx)
+{
+    const XiveVstInfo *info = &vst_infos[type];
+    uint64_t remote_addr = vsd & VSD_ADDRESS_MASK;
+    uint64_t vst_addr;
+    MemTxResult result;
+
+    if (type != VST_TSEL_VPDT) {
+        xive_error(xive, "VST: invalid access on remote VST %s %x/%x !?",
+                   info->name, blk, idx);
+        return 0;
+    }
+
+    remote_addr |= ((uint64_t)idx) << xive->pc_shift;
+
+    vst_addr = address_space_ldq_be(&address_space_memory, remote_addr,
+                                    MEMTXATTRS_UNSPECIFIED, &result);
+    if (result != MEMTX_OK) {
+        xive_error(xive, "VST: read failed at @0x%"  HWADDR_PRIx
+                   " for NVT %x/%x\n", remote_addr, blk, idx);
+        return 0;
+    }
+
+    return vst_addr;
+}
+
 static uint64_t pnv_xive_vst_addr(PnvXive *xive, uint32_t type, uint8_t blk,
                                   uint32_t idx)
 {
@@ -224,9 +237,7 @@ static uint64_t pnv_xive_vst_addr(PnvXive *xive, uint32_t type, uint8_t blk,
 
     /* Remote VST access */
     if (GETFIELD(VSD_MODE, vsd) == VSD_MODE_FORWARD) {
-        xive = pnv_xive_get_remote(blk);
-
-        return xive ? pnv_xive_vst_addr(xive, type, blk, idx) : 0;
+        return pnv_xive_vst_addr_remote(xive, type, vsd, blk, idx);
     }
 
     if (VSD_INDIRECT & vsd) {
@@ -241,12 +252,20 @@ static int pnv_xive_vst_read(PnvXive *xive, uint32_t type, uint8_t blk,
 {
     const XiveVstInfo *info = &vst_infos[type];
     uint64_t addr = pnv_xive_vst_addr(xive, type, blk, idx);
+    MemTxResult result;
 
     if (!addr) {
         return -1;
     }
 
-    cpu_physical_memory_read(addr, data, info->size);
+    result = address_space_read(&address_space_memory, addr,
+                                MEMTXATTRS_UNSPECIFIED, data,
+                                info->size);
+    if (result != MEMTX_OK) {
+        xive_error(xive, "VST: read failed at @0x%" HWADDR_PRIx
+                   " for VST %s %x/%x\n", addr, info->name, blk, idx);
+        return -1;
+    }
     return 0;
 }
 
@@ -257,16 +276,27 @@ static int pnv_xive_vst_write(PnvXive *xive, uint32_t type, uint8_t blk,
 {
     const XiveVstInfo *info = &vst_infos[type];
     uint64_t addr = pnv_xive_vst_addr(xive, type, blk, idx);
+    MemTxResult result;
 
     if (!addr) {
         return -1;
     }
 
     if (word_number == XIVE_VST_WORD_ALL) {
-        cpu_physical_memory_write(addr, data, info->size);
+        result = address_space_write(&address_space_memory, addr,
+                                     MEMTXATTRS_UNSPECIFIED, data,
+                                     info->size);
     } else {
-        cpu_physical_memory_write(addr + word_number * 4,
-                                  data + word_number * 4, 4);
+        result = address_space_write(&address_space_memory,
+                                     addr + word_number * 4,
+                                     MEMTXATTRS_UNSPECIFIED,
+                                     data + word_number * 4, 4);
+    }
+
+    if (result != MEMTX_OK) {
+        xive_error(xive, "VST: write failed at @0x%" HWADDR_PRIx
+                    "for VST %s %x/%x\n", addr, info->name, blk, idx);
+        return -1;
     }
     return 0;
 }
@@ -274,12 +304,26 @@ static int pnv_xive_vst_write(PnvXive *xive, uint32_t type, uint8_t blk,
 static int pnv_xive_get_end(XiveRouter *xrtr, uint8_t blk, uint32_t idx,
                             XiveEND *end)
 {
+    PnvXive *xive = PNV_XIVE(xrtr);
+
+    if (pnv_xive_block_id(xive) != blk) {
+        xive_error(xive, "VST: END %x/%x is remote !?", blk, idx);
+        return -1;
+    }
+
     return pnv_xive_vst_read(PNV_XIVE(xrtr), VST_TSEL_EQDT, blk, idx, end);
 }
 
 static int pnv_xive_write_end(XiveRouter *xrtr, uint8_t blk, uint32_t idx,
                               XiveEND *end, uint8_t word_number)
 {
+    PnvXive *xive = PNV_XIVE(xrtr);
+
+    if (pnv_xive_block_id(xive) != blk) {
+        xive_error(xive, "VST: END %x/%x is remote !?", blk, idx);
+        return -1;
+    }
+
     return pnv_xive_vst_write(PNV_XIVE(xrtr), VST_TSEL_EQDT, blk, idx, end,
                               word_number);
 }
@@ -426,14 +470,13 @@ static bool pnv_xive_is_cpu_enabled(PnvXive *xive, PowerPCCPU *cpu)
     return xive->regs[reg >> 3] & PPC_BIT(bit);
 }
 
-static int pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
-                              uint8_t nvt_blk, uint32_t nvt_idx,
-                              bool cam_ignore, uint8_t priority,
-                              uint32_t logic_serv, XiveTCTXMatch *match)
+static bool pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
+                               uint8_t nvt_blk, uint32_t nvt_idx,
+                               bool crowd, bool cam_ignore, uint8_t priority,
+                               uint32_t logic_serv, XiveTCTXMatch *match)
 {
     PnvXive *xive = PNV_XIVE(xptr);
     PnvChip *chip = xive->chip;
-    int count = 0;
     int i, j;
 
     for (i = 0; i < chip->nr_cores; i++) {
@@ -455,7 +498,8 @@ static int pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
              * Check the thread context CAM lines and record matches.
              */
             ring = xive_presenter_tctx_match(xptr, tctx, format, nvt_blk,
-                                             nvt_idx, cam_ignore, logic_serv);
+                                             nvt_idx, cam_ignore,
+                                             logic_serv);
             /*
              * Save the context and follow on to catch duplicates, that we
              * don't support yet.
@@ -465,17 +509,28 @@ static int pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
                     qemu_log_mask(LOG_GUEST_ERROR, "XIVE: already found a "
                                   "thread context NVT %x/%x\n",
                                   nvt_blk, nvt_idx);
-                    return -1;
+                    match->count++;
+                    continue;
                 }
 
                 match->ring = ring;
                 match->tctx = tctx;
-                count++;
+                match->count++;
             }
         }
     }
 
-    return count;
+    return !!match->count;
+}
+
+static uint32_t pnv_xive_presenter_get_config(XivePresenter *xptr)
+{
+    uint32_t cfg = 0;
+
+    /* TIMA GEN1 is all P9 knows */
+    cfg |= XIVE_PRESENTER_GEN1_TIMA_OS;
+
+    return cfg;
 }
 
 static uint8_t pnv_xive_get_block_id(XiveRouter *xrtr)
@@ -932,7 +987,7 @@ static void pnv_xive_ic_reg_write(void *opaque, hwaddr offset,
      */
     case VC_SBC_CONFIG: /* Store EOI configuration */
         /*
-         * Configure store EOI if required by firwmare (skiboot has removed
+         * Configure store EOI if required by firmware (skiboot has removed
          * support recently though)
          */
         if (val & (VC_SBC_CONF_CPLX_CIST | VC_SBC_CONF_CIST_BOTH)) {
@@ -1338,6 +1393,50 @@ static const MemoryRegionOps pnv_xive_ic_reg_ops = {
 #define PNV_XIVE_SYNC_PUSH          0xf00 /* Sync push context */
 #define PNV_XIVE_SYNC_VPC           0xf80 /* Sync remove VPC store */
 
+static void pnv_xive_end_notify(XiveRouter *xrtr, XiveEAS *eas)
+{
+    PnvXive *xive = PNV_XIVE(xrtr);
+    uint8_t end_blk = xive_get_field64(EAS_END_BLOCK, eas->w);
+    uint32_t end_idx = xive_get_field64(EAS_END_INDEX, eas->w);
+    uint32_t end_data = xive_get_field64(EAS_END_DATA, eas->w);
+    uint64_t end_vsd = xive->vsds[VST_TSEL_EQDT][end_blk];
+
+    switch (GETFIELD(VSD_MODE, end_vsd)) {
+    case VSD_MODE_EXCLUSIVE:
+        /* Perform the END notification on the local IC. */
+        xive_router_end_notify(xrtr, eas);
+        break;
+
+    case VSD_MODE_FORWARD: {
+        MemTxResult result;
+        uint64_t notif_port = end_vsd & VSD_ADDRESS_MASK;
+        uint64_t data = XIVE_TRIGGER_END | XIVE_TRIGGER_PQ |
+            be64_to_cpu(eas->w);
+
+        /* Forward the store on the remote IC notify page. */
+        address_space_stq_be(&address_space_memory, notif_port, data,
+                             MEMTXATTRS_UNSPECIFIED, &result);
+        if (result != MEMTX_OK) {
+            xive_error(xive, "IC: Forward notif END %x/%x [%x] failed @%"
+                       HWADDR_PRIx, end_blk, end_idx, end_data, notif_port);
+            return;
+        }
+        break;
+    }
+
+    case VSD_MODE_INVALID:
+    default:
+        /* Set FIR */
+        xive_error(xive, "IC: Invalid END VSD for block %x", end_blk);
+        return;
+    }
+}
+
+/*
+ * The notify page can either be used to receive trigger events from
+ * the HW controllers (PHB, PSI) or to reroute interrupts between
+ * Interrupt controllers.
+ */
 static void pnv_xive_ic_hw_trigger(PnvXive *xive, hwaddr addr, uint64_t val)
 {
     uint8_t blk;
@@ -1346,8 +1445,8 @@ static void pnv_xive_ic_hw_trigger(PnvXive *xive, hwaddr addr, uint64_t val)
     trace_pnv_xive_ic_hw_trigger(addr, val);
 
     if (val & XIVE_TRIGGER_END) {
-        xive_error(xive, "IC: END trigger at @0x%"HWADDR_PRIx" data 0x%"PRIx64,
-                   addr, val);
+        val = cpu_to_be64(val);
+        pnv_xive_end_notify(XIVE_ROUTER(xive), (XiveEAS *) &val);
         return;
     }
 
@@ -1692,16 +1791,20 @@ static const MemoryRegionOps pnv_xive_vc_ops = {
 };
 
 /*
- * Presenter Controller MMIO region. The Virtualization Controller
- * updates the IPB in the NVT table when required. Not modeled.
+ * Presenter Controller MMIO region. Points to the NVT sets.
+ *
+ * HW implements all possible mem ops to the underlying NVT structure
+ * but QEMU does not need to be so precise. The model implementation
+ * simply returns the RAM address of the NVT structure which is then
+ * used by pnv_xive_vst_write/read to perform the RAM operation.
  */
-static uint64_t pnv_xive_pc_read(void *opaque, hwaddr addr,
-                                 unsigned size)
+static uint64_t pnv_xive_pc_read(void *opaque, hwaddr offset, unsigned size)
 {
     PnvXive *xive = PNV_XIVE(opaque);
+    uint32_t nvt_idx = offset >> xive->pc_shift;
+    uint8_t blk = pnv_xive_block_id(xive); /* TODO: VDT -> block xlate */
 
-    xive_error(xive, "PC: invalid read @%"HWADDR_PRIx, addr);
-    return -1;
+    return pnv_xive_vst_addr(xive, VST_TSEL_VPDT, blk, nvt_idx);
 }
 
 static void pnv_xive_pc_write(void *opaque, hwaddr addr,
@@ -1727,7 +1830,7 @@ static const MemoryRegionOps pnv_xive_pc_ops = {
 };
 
 static void xive_nvt_pic_print_info(XiveNVT *nvt, uint32_t nvt_idx,
-                                    Monitor *mon)
+                                    GString *buf)
 {
     uint8_t  eq_blk = xive_get_field32(NVT_W1_EQ_BLOCK, nvt->w1);
     uint32_t eq_idx = xive_get_field32(NVT_W1_EQ_INDEX, nvt->w1);
@@ -1736,12 +1839,12 @@ static void xive_nvt_pic_print_info(XiveNVT *nvt, uint32_t nvt_idx,
         return;
     }
 
-    monitor_printf(mon, "  %08x end:%02x/%04x IPB:%02x\n", nvt_idx,
-                   eq_blk, eq_idx,
-                   xive_get_field32(NVT_W4_IPB, nvt->w4));
+    g_string_append_printf(buf, "  %08x end:%02x/%04x IPB:%02x\n",
+                           nvt_idx, eq_blk, eq_idx,
+                           xive_get_field32(NVT_W4_IPB, nvt->w4));
 }
 
-void pnv_xive_pic_print_info(PnvXive *xive, Monitor *mon)
+void pnv_xive_pic_print_info(PnvXive *xive, GString *buf)
 {
     XiveRouter *xrtr = XIVE_ROUTER(xive);
     uint8_t blk = pnv_xive_block_id(xive);
@@ -1754,39 +1857,40 @@ void pnv_xive_pic_print_info(PnvXive *xive, Monitor *mon)
     int i;
     uint64_t xive_nvt_per_subpage;
 
-    monitor_printf(mon, "XIVE[%x] #%d Source %08x .. %08x\n", chip_id, blk,
-                   srcno0, srcno0 + nr_ipis - 1);
-    xive_source_pic_print_info(&xive->ipi_source, srcno0, mon);
+    g_string_append_printf(buf, "XIVE[%x] #%d Source %08x .. %08x\n",
+                           chip_id, blk, srcno0, srcno0 + nr_ipis - 1);
+    xive_source_pic_print_info(&xive->ipi_source, srcno0, buf);
 
-    monitor_printf(mon, "XIVE[%x] #%d EAT %08x .. %08x\n", chip_id, blk,
-                   srcno0, srcno0 + nr_ipis - 1);
+    g_string_append_printf(buf, "XIVE[%x] #%d EAT %08x .. %08x\n",
+                           chip_id, blk, srcno0, srcno0 + nr_ipis - 1);
     for (i = 0; i < nr_ipis; i++) {
         if (xive_router_get_eas(xrtr, blk, i, &eas)) {
             break;
         }
         if (!xive_eas_is_masked(&eas)) {
-            xive_eas_pic_print_info(&eas, i, mon);
+            xive_eas_pic_print_info(&eas, i, buf);
         }
     }
 
-    monitor_printf(mon, "XIVE[%x] #%d ENDT\n", chip_id, blk);
+    g_string_append_printf(buf, "XIVE[%x] #%d ENDT\n", chip_id, blk);
     i = 0;
     while (!xive_router_get_end(xrtr, blk, i, &end)) {
-        xive_end_pic_print_info(&end, i++, mon);
+        xive_end_pic_print_info(&end, i++, buf);
     }
 
-    monitor_printf(mon, "XIVE[%x] #%d END Escalation EAT\n", chip_id, blk);
+    g_string_append_printf(buf, "XIVE[%x] #%d END Escalation EAT\n",
+                           chip_id, blk);
     i = 0;
     while (!xive_router_get_end(xrtr, blk, i, &end)) {
-        xive_end_eas_pic_print_info(&end, i++, mon);
+        xive_end_eas_pic_print_info(&end, i++, buf);
     }
 
-    monitor_printf(mon, "XIVE[%x] #%d NVTT %08x .. %08x\n", chip_id, blk,
-                   0, XIVE_NVT_COUNT - 1);
+    g_string_append_printf(buf, "XIVE[%x] #%d NVTT %08x .. %08x\n",
+                           chip_id, blk, 0, XIVE_NVT_COUNT - 1);
     xive_nvt_per_subpage = pnv_xive_vst_per_subpage(xive, VST_TSEL_VPDT);
     for (i = 0; i < XIVE_NVT_COUNT; i += xive_nvt_per_subpage) {
         while (!xive_router_get_nvt(xrtr, blk, i, &nvt)) {
-            xive_nvt_pic_print_info(&nvt, i++, mon);
+            xive_nvt_pic_print_info(&nvt, i++, buf);
         }
     }
 }
@@ -1887,6 +1991,7 @@ static void pnv_xive_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&xive->ic_notify_mmio, OBJECT(dev),
                           &pnv_xive_ic_notify_ops,
                           xive, "xive-ic-notify", 1 << xive->ic_shift);
+    xive->ic_notify_mmio.disable_reentrancy_guard = true;
 
     /* The Pervasive LSI trigger and EOI pages (not modeled) */
     memory_region_init_io(&xive->ic_lsi_mmio, OBJECT(dev), &pnv_xive_ic_lsi_ops,
@@ -1922,6 +2027,7 @@ static void pnv_xive_realize(DeviceState *dev, Error **errp)
     /* Presenter Controller MMIO region (not modeled) */
     memory_region_init_io(&xive->pc_mmio, OBJECT(xive), &pnv_xive_pc_ops, xive,
                           "xive-pc", PNV9_XIVE_PC_SIZE);
+    xive->pc_mmio.disable_reentrancy_guard = true;
 
     /* Thread Interrupt Management Area (Direct) */
     memory_region_init_io(&xive->tm_mmio, OBJECT(xive), &pnv_xive_tm_ops,
@@ -1953,17 +2059,16 @@ static int pnv_xive_dt_xscom(PnvXScomInterface *dev, void *fdt,
     return 0;
 }
 
-static Property pnv_xive_properties[] = {
+static const Property pnv_xive_properties[] = {
     DEFINE_PROP_UINT64("ic-bar", PnvXive, ic_base, 0),
     DEFINE_PROP_UINT64("vc-bar", PnvXive, vc_base, 0),
     DEFINE_PROP_UINT64("pc-bar", PnvXive, pc_base, 0),
     DEFINE_PROP_UINT64("tm-bar", PnvXive, tm_base, 0),
     /* The PnvChip id identifies the XIVE interrupt controller. */
     DEFINE_PROP_LINK("chip", PnvXive, chip, TYPE_PNV_CHIP, PnvChip *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pnv_xive_class_init(ObjectClass *klass, void *data)
+static void pnv_xive_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PnvXScomInterfaceClass *xdc = PNV_XSCOM_INTERFACE_CLASS(klass);
@@ -1987,9 +2092,11 @@ static void pnv_xive_class_init(ObjectClass *klass, void *data)
     xrc->get_nvt = pnv_xive_get_nvt;
     xrc->write_nvt = pnv_xive_write_nvt;
     xrc->get_block_id = pnv_xive_get_block_id;
+    xrc->end_notify = pnv_xive_end_notify;
 
     xnc->notify = pnv_xive_notify;
     xpc->match_nvt  = pnv_xive_match_nvt;
+    xpc->get_config = pnv_xive_presenter_get_config;
 };
 
 static const TypeInfo pnv_xive_info = {
@@ -1999,7 +2106,7 @@ static const TypeInfo pnv_xive_info = {
     .instance_size = sizeof(PnvXive),
     .class_init    = pnv_xive_class_init,
     .class_size    = sizeof(PnvXiveClass),
-    .interfaces    = (InterfaceInfo[]) {
+    .interfaces    = (const InterfaceInfo[]) {
         { TYPE_PNV_XSCOM_INTERFACE },
         { }
     }

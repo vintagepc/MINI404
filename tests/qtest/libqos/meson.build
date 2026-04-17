@@ -30,8 +30,8 @@ libqos_srcs = files(
         'i2c.c',
         'i2c-imx.c',
         'i2c-omap.c',
+        'igb.c',
         'sdhci.c',
-        'tpci200.c',
         'virtio.c',
         'virtio-balloon.c',
         'virtio-blk.c',
@@ -45,12 +45,12 @@ libqos_srcs = files(
         'virtio-serial.c',
         'virtio-iommu.c',
         'virtio-gpio.c',
+        'virtio-scmi.c',
         'generic-pcihost.c',
 
         # qgraph machines:
         'aarch64-xlnx-zcu102-machine.c',
         'arm-imx25-pdk-machine.c',
-        'arm-n800-machine.c',
         'arm-raspi2-machine.c',
         'arm-sabrelite-machine.c',
         'arm-smdkc210-machine.c',
@@ -58,14 +58,26 @@ libqos_srcs = files(
         'arm-xilinx-zynq-a9-machine.c',
         'ppc64_pseries-machine.c',
         'x86_64_pc-machine.c',
+        'riscv-virt-machine.c',
+        'loongarch-virt-machine.c',
+
+        # SMMU:
+        'qos-iommu-testdev.c',
+        'qos-smmuv3.c',
 )
 
 if have_virtfs
   libqos_srcs += files('virtio-9p.c', 'virtio-9p-client.c')
 endif
 
+if config_all_devices.has_key('CONFIG_RISCV_IOMMU')
+  libqos_srcs += files('riscv-iommu.c', 'qos-riscv-iommu.c')
+endif
+if config_all_devices.has_key('CONFIG_TPCI200')
+  libqos_srcs += files('tpci200.c')
+endif
+
 libqos = static_library('qos', libqos_srcs + genh,
-                        name_suffix: 'fa',
                         build_by_default: false)
 
-qos = declare_dependency(link_whole: libqos)
+qos = declare_dependency(objects: libqos.extract_all_objects(recursive: false))

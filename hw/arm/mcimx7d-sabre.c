@@ -15,10 +15,12 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/arm/fsl-imx7.h"
-#include "hw/boards.h"
-#include "hw/qdev-properties.h"
+#include "hw/arm/boot.h"
+#include "hw/arm/machines-qom.h"
+#include "hw/core/boards.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
-#include "sysemu/qtest.h"
+#include "system/qtest.h"
 
 static void mcimx7d_sabre_init(MachineState *machine)
 {
@@ -41,6 +43,8 @@ static void mcimx7d_sabre_init(MachineState *machine)
 
     s = FSL_IMX7(object_new(TYPE_FSL_IMX7));
     object_property_add_child(OBJECT(machine), "soc", OBJECT(s));
+    object_property_set_bool(OBJECT(s), "fec2-phy-connected", false,
+                             &error_fatal);
     qdev_realize(DEVICE(s), NULL, &error_fatal);
 
     memory_region_add_subregion(get_system_memory(), FSL_IMX7_MMDC_ADDR,
@@ -71,5 +75,7 @@ static void mcimx7d_sabre_machine_init(MachineClass *mc)
     mc->init = mcimx7d_sabre_init;
     mc->max_cpus = FSL_IMX7_NUM_CPUS;
     mc->default_ram_id = "mcimx7d-sabre.ram";
+    mc->auto_create_sdcard = true;
 }
-DEFINE_MACHINE("mcimx7d-sabre", mcimx7d_sabre_machine_init)
+
+DEFINE_MACHINE_ARM("mcimx7d-sabre", mcimx7d_sabre_machine_init)

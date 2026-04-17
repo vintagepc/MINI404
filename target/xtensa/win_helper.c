@@ -27,11 +27,9 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "qemu/main-loop.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "qemu/host-utils.h"
-#include "exec/exec-all.h"
 
 static void copy_window_from_phys(CPUXtensaState *env,
                                   uint32_t window, uint32_t phys, uint32_t n)

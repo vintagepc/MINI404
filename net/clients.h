@@ -29,6 +29,10 @@
 int net_init_dump(const Netdev *netdev, const char *name,
                   NetClientState *peer, Error **errp);
 
+#ifdef CONFIG_PASST
+int net_init_passt(const Netdev *netdev, const char *name,
+                   NetClientState *peer, Error **errp);
+#endif
 #ifdef CONFIG_SLIRP
 int net_init_slirp(const Netdev *netdev, const char *name,
                    NetClientState *peer, Error **errp);
@@ -61,6 +65,11 @@ int net_init_vde(const Netdev *netdev, const char *name,
 
 #ifdef CONFIG_NETMAP
 int net_init_netmap(const Netdev *netdev, const char *name,
+                    NetClientState *peer, Error **errp);
+#endif
+
+#ifdef CONFIG_AF_XDP
+int net_init_af_xdp(const Netdev *netdev, const char *name,
                     NetClientState *peer, Error **errp);
 #endif
 

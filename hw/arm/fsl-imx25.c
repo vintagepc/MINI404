@@ -25,9 +25,10 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/arm/fsl-imx25.h"
-#include "sysemu/sysemu.h"
-#include "hw/qdev-properties.h"
+#include "system/system.h"
+#include "hw/core/qdev-properties.h"
 #include "chardev/char.h"
+#include "target/arm/cpu-qom.h"
 
 #define IMX25_ESDHC_CAPABILITIES     0x07e20000
 
@@ -67,7 +68,8 @@ static void fsl_imx25_init(Object *obj)
     }
 
     for (i = 0; i < FSL_IMX25_NUM_ESDHCS; i++) {
-        object_initialize_child(obj, "sdhc[*]", &s->esdhc[i], TYPE_IMX_USDHC);
+        object_initialize_child(obj, "sdhc[*]", &s->esdhc[i],
+                                TYPE_FSL_ESDHC_LE);
     }
 
     for (i = 0; i < FSL_IMX25_NUM_USBS; i++) {
@@ -81,7 +83,6 @@ static void fsl_imx25_realize(DeviceState *dev, Error **errp)
 {
     FslIMX25State *s = FSL_IMX25(dev);
     uint8_t i;
-    Error *err = NULL;
 
     if (!qdev_realize(DEVICE(&s->cpu), NULL, errp)) {
         return;
@@ -169,8 +170,9 @@ static void fsl_imx25_realize(DeviceState *dev, Error **errp)
                                             epit_table[i].irq));
     }
 
-    object_property_set_uint(OBJECT(&s->fec), "phy-num", s->phy_num, &err);
-    qdev_set_nic_properties(DEVICE(&s->fec), &nd_table[0]);
+    object_property_set_uint(OBJECT(&s->fec), "phy-num", s->phy_num,
+                             &error_abort);
+    qemu_configure_nic_device(DEVICE(&s->fec), true, NULL);
 
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->fec), errp)) {
         return;
@@ -238,12 +240,8 @@ static void fsl_imx25_realize(DeviceState *dev, Error **errp)
             { FSL_IMX25_ESDHC2_ADDR, FSL_IMX25_ESDHC2_IRQ },
         };
 
-        object_property_set_uint(OBJECT(&s->esdhc[i]), "sd-spec-version", 2,
-                                 &error_abort);
         object_property_set_uint(OBJECT(&s->esdhc[i]), "capareg",
                                  IMX25_ESDHC_CAPABILITIES, &error_abort);
-        object_property_set_uint(OBJECT(&s->esdhc[i]), "vendor",
-                                 SDHCI_VENDOR_IMX, &error_abort);
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->esdhc[i]), errp)) {
             return;
         }
@@ -280,28 +278,22 @@ static void fsl_imx25_realize(DeviceState *dev, Error **errp)
                                                        FSL_IMX25_WDT_IRQ));
 
     /* initialize 2 x 16 KB ROM */
-    memory_region_init_rom(&s->rom[0], OBJECT(dev), "imx25.rom0",
-                           FSL_IMX25_ROM0_SIZE, &err);
-    if (err) {
-        error_propagate(errp, err);
+    if (!memory_region_init_rom(&s->rom[0], OBJECT(dev), "imx25.rom0",
+                                FSL_IMX25_ROM0_SIZE, errp)) {
         return;
     }
     memory_region_add_subregion(get_system_memory(), FSL_IMX25_ROM0_ADDR,
                                 &s->rom[0]);
-    memory_region_init_rom(&s->rom[1], OBJECT(dev), "imx25.rom1",
-                           FSL_IMX25_ROM1_SIZE, &err);
-    if (err) {
-        error_propagate(errp, err);
+    if (!memory_region_init_rom(&s->rom[1], OBJECT(dev), "imx25.rom1",
+                                FSL_IMX25_ROM1_SIZE, errp)) {
         return;
     }
     memory_region_add_subregion(get_system_memory(), FSL_IMX25_ROM1_ADDR,
                                 &s->rom[1]);
 
     /* initialize internal RAM (128 KB) */
-    memory_region_init_ram(&s->iram, NULL, "imx25.iram", FSL_IMX25_IRAM_SIZE,
-                           &err);
-    if (err) {
-        error_propagate(errp, err);
+    if (!memory_region_init_ram(&s->iram, NULL, "imx25.iram",
+                                FSL_IMX25_IRAM_SIZE, errp)) {
         return;
     }
     memory_region_add_subregion(get_system_memory(), FSL_IMX25_IRAM_ADDR,
@@ -314,12 +306,11 @@ static void fsl_imx25_realize(DeviceState *dev, Error **errp)
                                 &s->iram_alias);
 }
 
-static Property fsl_imx25_properties[] = {
+static const Property fsl_imx25_properties[] = {
     DEFINE_PROP_UINT32("fec-phy-num", FslIMX25State, phy_num, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void fsl_imx25_class_init(ObjectClass *oc, void *data)
+static void fsl_imx25_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

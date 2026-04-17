@@ -28,11 +28,9 @@
 #include "ui/console.h"
 
 #if defined(CONFIG_OPENGL) && defined(CONFIG_GBM)
-# if SPICE_SERVER_VERSION >= 0x000d01 /* release 0.13.1 */
 #  define HAVE_SPICE_GL 1
 #  include "ui/egl-helpers.h"
 #  include "ui/egl-context.h"
-# endif
 #endif
 
 #define NUM_MEMSLOTS 8
@@ -44,7 +42,7 @@
 #define NUM_MEMSLOTS_GROUPS 2
 
 /*
- * Internal enum to differenciate between options for
+ * Internal enum to differentiate between options for
  * io calls that have a sync (old) version and an _async (new)
  * version:
  *  QXL_SYNC: use the old version
@@ -123,6 +121,7 @@ struct SimpleSpiceDisplay {
     QEMUBH *gl_unblock_bh;
     QEMUTimer *gl_unblock_timer;
     QemuGLShader *gls;
+    GLuint gl_surface_mem_obj;
     int gl_updates;
     bool have_scanout;
     bool have_surface;
@@ -134,6 +133,9 @@ struct SimpleSpiceDisplay {
     egl_fb guest_fb;
     egl_fb blit_fb;
     egl_fb cursor_fb;
+    bool backing_y_0_top;
+    bool blit_scanout_texture;
+    bool new_scanout_texture;
     bool have_hot;
 #endif
 };
@@ -153,6 +155,8 @@ struct SimpleSpiceCursor {
 };
 
 extern bool spice_opengl;
+extern bool spice_remote_client;
+extern int spice_max_refresh_rate;
 
 int qemu_spice_rect_is_empty(const QXLRect* r);
 void qemu_spice_rect_union(QXLRect *dest, const QXLRect *r);

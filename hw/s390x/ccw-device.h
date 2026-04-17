@@ -12,7 +12,7 @@
 #ifndef HW_S390X_CCW_DEVICE_H
 #define HW_S390X_CCW_DEVICE_H
 #include "qom/object.h"
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "hw/s390x/css.h"
 #include "hw/s390x/css-bridge.h"
 
@@ -26,6 +26,8 @@ struct CcwDevice {
     CssDevId dev_id;
     /* The actual busid of the virtual subchannel. */
     CssDevId subch_id;
+    /* If set, use this loadparm value when device is boot target */
+    uint8_t loadparm[8];
 };
 typedef struct CcwDevice CcwDevice;
 
@@ -36,7 +38,7 @@ extern const VMStateDescription vmstate_ccw_dev;
 struct CCWDeviceClass {
     DeviceClass parent_class;
     void (*unplug)(HotplugHandler *, DeviceState *, Error **);
-    void (*realize)(CcwDevice *, Error **);
+    bool (*realize)(CcwDevice *, Error **);
     void (*refill_ids)(CcwDevice *);
 };
 
@@ -48,5 +50,10 @@ static inline CcwDevice *to_ccw_dev_fast(DeviceState *d)
 #define TYPE_CCW_DEVICE "ccw-device"
 
 OBJECT_DECLARE_TYPE(CcwDevice, CCWDeviceClass, CCW_DEVICE)
+
+extern const PropertyInfo ccw_loadparm;
+
+#define DEFINE_PROP_CCW_LOADPARM(_n, _s, _f) \
+    DEFINE_PROP(_n, _s, _f, ccw_loadparm, typeof(uint8_t[8]))
 
 #endif

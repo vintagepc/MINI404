@@ -24,15 +24,16 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/mips/mips.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
+#include "exec/cpu-common.h"
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "trace.h"
 #include "qom/object.h"
 
@@ -568,7 +569,7 @@ static const VMStateDescription vmstate_rc4030 = {
     .name = "rc4030",
     .version_id = 3,
     .post_load = rc4030_post_load,
-    .fields = (VMStateField []) {
+    .fields = (const VMStateField []) {
         VMSTATE_UINT32(config, rc4030State),
         VMSTATE_UINT32(invalid_address_register, rc4030State),
         VMSTATE_UINT32_2DARRAY(dma_regs, rc4030State, 8, 4),
@@ -701,13 +702,13 @@ static void rc4030_unrealize(DeviceState *dev)
     object_unparent(OBJECT(&s->dma_mr));
 }
 
-static void rc4030_class_init(ObjectClass *klass, void *class_data)
+static void rc4030_class_init(ObjectClass *klass, const void *class_data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = rc4030_realize;
     dc->unrealize = rc4030_unrealize;
-    dc->reset = rc4030_reset;
+    device_class_set_legacy_reset(dc, rc4030_reset);
     dc->vmsd = &vmstate_rc4030;
 }
 
@@ -720,7 +721,7 @@ static const TypeInfo rc4030_info = {
 };
 
 static void rc4030_iommu_memory_region_class_init(ObjectClass *klass,
-                                                  void *data)
+                                                  const void *data)
 {
     IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
 

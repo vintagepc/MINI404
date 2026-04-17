@@ -17,14 +17,14 @@
 #include "crypto/hmac.h"
 #include "hmacpriv.h"
 
-static int qcrypto_hmac_alg_map[QCRYPTO_HASH_ALG__MAX] = {
-    [QCRYPTO_HASH_ALG_MD5] = G_CHECKSUM_MD5,
-    [QCRYPTO_HASH_ALG_SHA1] = G_CHECKSUM_SHA1,
-    [QCRYPTO_HASH_ALG_SHA256] = G_CHECKSUM_SHA256,
-    [QCRYPTO_HASH_ALG_SHA512] = G_CHECKSUM_SHA512,
-    [QCRYPTO_HASH_ALG_SHA224] = -1,
-    [QCRYPTO_HASH_ALG_SHA384] = -1,
-    [QCRYPTO_HASH_ALG_RIPEMD160] = -1,
+static int qcrypto_hmac_alg_map[QCRYPTO_HASH_ALGO__MAX] = {
+    [QCRYPTO_HASH_ALGO_MD5] = G_CHECKSUM_MD5,
+    [QCRYPTO_HASH_ALGO_SHA1] = G_CHECKSUM_SHA1,
+    [QCRYPTO_HASH_ALGO_SHA256] = G_CHECKSUM_SHA256,
+    [QCRYPTO_HASH_ALGO_SHA512] = G_CHECKSUM_SHA512,
+    [QCRYPTO_HASH_ALGO_SHA224] = -1,
+    [QCRYPTO_HASH_ALGO_SHA384] = -1,
+    [QCRYPTO_HASH_ALGO_RIPEMD160] = -1,
 };
 
 typedef struct QCryptoHmacGlib QCryptoHmacGlib;
@@ -32,7 +32,7 @@ struct QCryptoHmacGlib {
     GHmac *ghmac;
 };
 
-bool qcrypto_hmac_supports(QCryptoHashAlgorithm alg)
+bool qcrypto_hmac_supports(QCryptoHashAlgo alg)
 {
     if (alg < G_N_ELEMENTS(qcrypto_hmac_alg_map) &&
         qcrypto_hmac_alg_map[alg] != -1) {
@@ -42,7 +42,7 @@ bool qcrypto_hmac_supports(QCryptoHashAlgorithm alg)
     return false;
 }
 
-void *qcrypto_hmac_ctx_new(QCryptoHashAlgorithm alg,
+void *qcrypto_hmac_ctx_new(QCryptoHashAlgo alg,
                            const uint8_t *key, size_t nkey,
                            Error **errp)
 {
@@ -50,7 +50,7 @@ void *qcrypto_hmac_ctx_new(QCryptoHashAlgorithm alg,
 
     if (!qcrypto_hmac_supports(alg)) {
         error_setg(errp, "Unsupported hmac algorithm %s",
-                   QCryptoHashAlgorithm_str(alg));
+                   QCryptoHashAlgo_str(alg));
         return NULL;
     }
 
@@ -104,7 +104,9 @@ qcrypto_glib_hmac_bytesv(QCryptoHmac *hmac,
         return -1;
     }
 
-    if (*resultlen == 0) {
+    if (resultlen == NULL) {
+        return 0;
+    } else if (*resultlen == 0) {
         *resultlen = ret;
         *result = g_new0(uint8_t, *resultlen);
     } else if (*resultlen != ret) {

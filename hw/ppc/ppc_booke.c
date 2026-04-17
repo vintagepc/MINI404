@@ -24,13 +24,24 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
 #include "qemu/timer.h"
-#include "sysemu/reset.h"
-#include "sysemu/runstate.h"
-#include "hw/loader.h"
+#include "system/reset.h"
+#include "system/runstate.h"
+#include "hw/core/loader.h"
 #include "kvm_ppc.h"
 
+void booke_set_tlb(ppcemb_tlb_t *tlb, target_ulong va, hwaddr pa,
+                   target_ulong size)
+{
+    tlb->attr = 0;
+    tlb->prot = PAGE_RWX << 4 | PAGE_VALID;
+    tlb->size = size;
+    tlb->EPN = va & TARGET_PAGE_MASK;
+    tlb->RPN = pa & TARGET_PAGE_MASK;
+    tlb->PID = 0;
+}
 
 /* Timer Control Register */
 
@@ -341,7 +352,12 @@ void ppc_booke_timers_init(PowerPCCPU *cpu, uint32_t freq, uint32_t flags)
     booke_timer = g_new0(booke_timer_t, 1);
 
     cpu->env.tb_env = tb_env;
-    tb_env->flags = flags | PPC_TIMER_BOOKE | PPC_DECR_ZERO_TRIGGERED;
+    if (flags & PPC_TIMER_PPE) {
+        /* PPE's use a modified version of the booke behavior */
+        tb_env->flags = flags | PPC_DECR_UNDERFLOW_TRIGGERED;
+    } else {
+        tb_env->flags = flags | PPC_TIMER_BOOKE | PPC_DECR_ZERO_TRIGGERED;
+    }
 
     tb_env->tb_freq    = freq;
     tb_env->decr_freq  = freq;

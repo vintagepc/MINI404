@@ -25,9 +25,9 @@
 #ifndef ETSEC_H
 #define ETSEC_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "net/net.h"
-#include "hw/ptimer.h"
+#include "hw/core/ptimer.h"
 #include "qom/object.h"
 
 /* Buffer Descriptors */
@@ -75,23 +75,6 @@ typedef struct eTSEC_rxtx_bd {
 #define FCB_TX_CIP     (1 << 2)
 #define FCB_TX_CTU     (1 << 1)
 #define FCB_TX_NPH     (1 << 0)
-
-/* PHY Status Register */
-#define MII_SR_EXTENDED_CAPS     0x0001    /* Extended register capabilities */
-#define MII_SR_JABBER_DETECT     0x0002    /* Jabber Detected */
-#define MII_SR_LINK_STATUS       0x0004    /* Link Status 1 = link */
-#define MII_SR_AUTONEG_CAPS      0x0008    /* Auto Neg Capable */
-#define MII_SR_REMOTE_FAULT      0x0010    /* Remote Fault Detect */
-#define MII_SR_AUTONEG_COMPLETE  0x0020    /* Auto Neg Complete */
-#define MII_SR_PREAMBLE_SUPPRESS 0x0040    /* Preamble may be suppressed */
-#define MII_SR_EXTENDED_STATUS   0x0100    /* Ext. status info in Reg 0x0F */
-#define MII_SR_100T2_HD_CAPS     0x0200    /* 100T2 Half Duplex Capable */
-#define MII_SR_100T2_FD_CAPS     0x0400    /* 100T2 Full Duplex Capable */
-#define MII_SR_10T_HD_CAPS       0x0800    /* 10T   Half Duplex Capable */
-#define MII_SR_10T_FD_CAPS       0x1000    /* 10T   Full Duplex Capable */
-#define MII_SR_100X_HD_CAPS      0x2000    /* 100X  Half Duplex Capable */
-#define MII_SR_100X_FD_CAPS      0x4000    /* 100X  Full Duplex Capable */
-#define MII_SR_100T4_CAPS        0x8000    /* 100T4 Capable */
 
 /* eTSEC */
 
@@ -147,7 +130,6 @@ struct eTSEC {
     /* Whether we should flush the rx queue when buffer becomes available. */
     bool need_flush;
 };
-typedef struct eTSEC eTSEC;
 
 #define TYPE_ETSEC_COMMON "eTSEC"
 OBJECT_DECLARE_SIMPLE_TYPE(eTSEC, ETSEC_COMMON)

@@ -1,7 +1,7 @@
 #ifndef HW_INTEL_HDA_H
 #define HW_INTEL_HDA_H
 
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "qom/object.h"
 
 /* --------------------------------------------------------------------- */
@@ -31,7 +31,7 @@ struct HDACodecBus {
 struct HDACodecDeviceClass {
     DeviceClass parent_class;
 
-    int (*init)(HDACodecDevice *dev);
+    void (*init)(HDACodecDevice *dev, Error **errp);
     void (*exit)(HDACodecDevice *dev);
     void (*command)(HDACodecDevice *dev, uint32_t nid, uint32_t data);
     void (*stream)(HDACodecDevice *dev, uint32_t stnr, bool running, bool output);

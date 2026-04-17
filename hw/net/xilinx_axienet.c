@@ -23,18 +23,17 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/sysbus.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "net/net.h"
 #include "net/checksum.h"
 
-#include "hw/hw.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/stream.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/stream.h"
 #include "qom/object.h"
 
 #define DPHY(x)
@@ -142,6 +141,10 @@ tdk_write(struct PHY *phy, unsigned int req, unsigned int data)
     regnum = req & 0x1f;
     DPHY(qemu_log("%s reg[%d] = %x\n", __func__, regnum, data));
     switch (regnum) {
+        case 2:
+        case 3:
+            /* Writes to PHY Identification registers are disallowed */
+            break;
         default:
             phy->regs[regnum] = data;
             break;
@@ -524,7 +527,7 @@ static uint64_t enet_read(void *opaque, hwaddr addr, unsigned size)
             if (addr < ARRAY_SIZE(s->regs)) {
                 r = s->regs[addr];
             }
-            DENET(qemu_log("%s addr=" TARGET_FMT_plx " v=%x\n",
+            DENET(qemu_log("%s addr=" HWADDR_FMT_plx " v=%x\n",
                             __func__, addr * 4, r));
             break;
     }
@@ -630,7 +633,7 @@ static void enet_write(void *opaque, hwaddr addr,
             break;
 
         default:
-            DENET(qemu_log("%s addr=" TARGET_FMT_plx " v=%x\n",
+            DENET(qemu_log("%s addr=" HWADDR_FMT_plx " v=%x\n",
                            __func__, addr * 4, (unsigned)value));
             if (addr < ARRAY_SIZE(s->regs)) {
                 s->regs[addr] = value;
@@ -848,7 +851,7 @@ static ssize_t eth_rx(NetClientState *nc, const uint8_t *buf, size_t size)
     axienet_eth_rx_notify(s);
 
     enet_update_irq(s);
-    return size;
+    return s->rxpos;
 }
 
 static size_t
@@ -968,7 +971,8 @@ static void xilinx_enet_realize(DeviceState *dev, Error **errp)
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
     s->nic = qemu_new_nic(&net_xilinx_enet_info, &s->conf,
-                          object_get_typename(OBJECT(dev)), dev->id, s);
+                          object_get_typename(OBJECT(dev)), dev->id,
+                          &dev->mem_reentrancy_guard, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
 
     tdk_init(&s->TEMAC.phy);
@@ -996,7 +1000,7 @@ static void xilinx_enet_init(Object *obj)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static Property xilinx_enet_properties[] = {
+static const Property xilinx_enet_properties[] = {
     DEFINE_PROP_UINT32("phyaddr", XilinxAXIEnet, c_phyaddr, 7),
     DEFINE_PROP_UINT32("rxmem", XilinxAXIEnet, c_rxmem, 0x1000),
     DEFINE_PROP_UINT32("txmem", XilinxAXIEnet, c_txmem, 0x1000),
@@ -1005,27 +1009,27 @@ static Property xilinx_enet_properties[] = {
                      tx_data_dev, TYPE_STREAM_SINK, StreamSink *),
     DEFINE_PROP_LINK("axistream-control-connected", XilinxAXIEnet,
                      tx_control_dev, TYPE_STREAM_SINK, StreamSink *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void xilinx_enet_class_init(ObjectClass *klass, void *data)
+static void xilinx_enet_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = xilinx_enet_realize;
     device_class_set_props(dc, xilinx_enet_properties);
-    dc->reset = xilinx_axienet_reset;
+    device_class_set_legacy_reset(dc, xilinx_axienet_reset);
 }
 
 static void xilinx_enet_control_stream_class_init(ObjectClass *klass,
-                                                  void *data)
+                                                  const void *data)
 {
     StreamSinkClass *ssc = STREAM_SINK_CLASS(klass);
 
     ssc->push = xilinx_axienet_control_stream_push;
 }
 
-static void xilinx_enet_data_stream_class_init(ObjectClass *klass, void *data)
+static void xilinx_enet_data_stream_class_init(ObjectClass *klass,
+                                               const void *data)
 {
     StreamSinkClass *ssc = STREAM_SINK_CLASS(klass);
 
@@ -1045,7 +1049,7 @@ static const TypeInfo xilinx_enet_data_stream_info = {
     .parent        = TYPE_OBJECT,
     .instance_size = sizeof(XilinxAXIEnetStreamSink),
     .class_init    = xilinx_enet_data_stream_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
             { TYPE_STREAM_SINK },
             { }
     }
@@ -1056,7 +1060,7 @@ static const TypeInfo xilinx_enet_control_stream_info = {
     .parent        = TYPE_OBJECT,
     .instance_size = sizeof(XilinxAXIEnetStreamSink),
     .class_init    = xilinx_enet_control_stream_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
             { TYPE_STREAM_SINK },
             { }
     }

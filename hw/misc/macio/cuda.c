@@ -24,16 +24,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
-#include "hw/input/adb.h"
-#include "hw/misc/mos6522.h"
 #include "hw/misc/macio/cuda.h"
-#include "qapi/error.h"
 #include "qemu/timer.h"
-#include "sysemu/runstate.h"
-#include "sysemu/rtc.h"
+#include "system/runstate.h"
+#include "system/rtc.h"
 #include "qapi/error.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
@@ -490,7 +487,7 @@ static const VMStateDescription vmstate_cuda = {
     .name = "cuda",
     .version_id = 6,
     .minimum_version_id = 6,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(mos6522_cuda.parent_obj, CUDAState, 0, vmstate_mos6522,
                        MOS6522State),
         VMSTATE_UINT8(last_b, CUDAState),
@@ -557,17 +554,16 @@ static void cuda_init(Object *obj)
               DEVICE(obj), "adb.0");
 }
 
-static Property cuda_properties[] = {
+static const Property cuda_properties[] = {
     DEFINE_PROP_UINT64("timebase-frequency", CUDAState, tb_frequency, 0),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void cuda_class_init(ObjectClass *oc, void *data)
+static void cuda_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     dc->realize = cuda_realize;
-    dc->reset = cuda_reset;
+    device_class_set_legacy_reset(dc, cuda_reset);
     dc->vmsd = &vmstate_cuda;
     device_class_set_props(dc, cuda_properties);
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
@@ -589,24 +585,26 @@ static void mos6522_cuda_portB_write(MOS6522State *s)
     cuda_update(cs);
 }
 
-static void mos6522_cuda_reset(DeviceState *dev)
+static void mos6522_cuda_reset_hold(Object *obj, ResetType type)
 {
-    MOS6522State *ms = MOS6522(dev);
+    MOS6522State *ms = MOS6522(obj);
     MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(ms);
 
-    mdc->parent_reset(dev);
+    if (mdc->parent_phases.hold) {
+        mdc->parent_phases.hold(obj, type);
+    }
 
     ms->timers[0].frequency = CUDA_TIMER_FREQ;
     ms->timers[1].frequency = (SCALE_US * 6000) / 4700;
 }
 
-static void mos6522_cuda_class_init(ObjectClass *oc, void *data)
+static void mos6522_cuda_class_init(ObjectClass *oc, const void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(oc);
+    ResettableClass *rc = RESETTABLE_CLASS(oc);
     MOS6522DeviceClass *mdc = MOS6522_CLASS(oc);
 
-    device_class_set_parent_reset(dc, mos6522_cuda_reset,
-                                  &mdc->parent_reset);
+    resettable_class_set_parent_phases(rc, NULL, mos6522_cuda_reset_hold,
+                                       NULL, &mdc->parent_phases);
     mdc->portB_write = mos6522_cuda_portB_write;
     mdc->get_timer1_counter_value = cuda_get_counter_value;
     mdc->get_timer2_counter_value = cuda_get_counter_value;

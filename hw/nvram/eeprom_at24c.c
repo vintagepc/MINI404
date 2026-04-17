@@ -10,11 +10,13 @@
 #include "qemu/osdep.h"
 
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "hw/i2c/i2c.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
-#include "sysemu/block-backend.h"
+#include "hw/nvram/eeprom_at24c.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
+#include "system/block-backend.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 
@@ -26,13 +28,8 @@
 #define DPRINTK(FMT, ...) do {} while (0)
 #endif
 
-#define ERR(FMT, ...) fprintf(stderr, TYPE_AT24C_EE " : " FMT, \
-                            ## __VA_ARGS__)
-
 #define TYPE_AT24C_EE "at24c-eeprom"
-typedef struct EEPROMState EEPROMState;
-DECLARE_INSTANCE_CHECKER(EEPROMState, AT24C_EE,
-                         TYPE_AT24C_EE)
+OBJECT_DECLARE_SIMPLE_TYPE(EEPROMState, AT24C_EE)
 
 struct EEPROMState {
     I2CSlave parent_obj;
@@ -41,15 +38,25 @@ struct EEPROMState {
     uint16_t cur;
     /* total size in bytes */
     uint32_t rsize;
+    /*
+     * address byte number
+     *  for  24c01, 24c02 size <= 256 byte, use only 1 byte
+     *  otherwise size > 256, use 2 byte
+     */
+    uint8_t asize;
+
     bool writable;
     /* cells changed since last START? */
     bool changed;
-    /* during WRITE, # of address bytes transfered */
+    /* during WRITE, # of address bytes transferred */
     uint8_t haveaddr;
 
     uint8_t *mem;
 
     BlockBackend *blk;
+
+    const uint8_t *init_rom;
+    uint32_t init_rom_size;
 };
 
 static
@@ -67,8 +74,7 @@ int at24c_eeprom_event(I2CSlave *s, enum i2c_event event)
         if (ee->blk && ee->changed) {
             int ret = blk_pwrite(ee->blk, 0, ee->rsize, ee->mem, 0);
             if (ret < 0) {
-                ERR(TYPE_AT24C_EE
-                        " : failed to write backing file\n");
+                error_report("%s: failed to write backing file", __func__);
             }
             DPRINTK("Wrote to backing file\n");
         }
@@ -88,7 +94,11 @@ uint8_t at24c_eeprom_recv(I2CSlave *s)
     EEPROMState *ee = AT24C_EE(s);
     uint8_t ret;
 
-    if (ee->haveaddr == 1) {
+    /*
+     * If got the byte address but not completely with address size
+     * will return the invalid value
+     */
+    if (ee->haveaddr > 0 && ee->haveaddr < ee->asize) {
         return 0xff;
     }
 
@@ -105,11 +115,11 @@ int at24c_eeprom_send(I2CSlave *s, uint8_t data)
 {
     EEPROMState *ee = AT24C_EE(s);
 
-    if (ee->haveaddr < 2) {
+    if (ee->haveaddr < ee->asize) {
         ee->cur <<= 8;
         ee->cur |= data;
         ee->haveaddr++;
-        if (ee->haveaddr == 2) {
+        if (ee->haveaddr == ee->asize) {
             ee->cur %= ee->rsize;
             DPRINTK("Set pointer %04x\n", ee->cur);
         }
@@ -129,9 +139,38 @@ int at24c_eeprom_send(I2CSlave *s, uint8_t data)
     return 0;
 }
 
+I2CSlave *at24c_eeprom_init(I2CBus *bus, uint8_t address, uint32_t rom_size)
+{
+    return at24c_eeprom_init_rom(bus, address, rom_size, NULL, 0);
+}
+
+I2CSlave *at24c_eeprom_init_rom(I2CBus *bus, uint8_t address, uint32_t rom_size,
+                                const uint8_t *init_rom, uint32_t init_rom_size)
+{
+    EEPROMState *s;
+
+    s = AT24C_EE(i2c_slave_new(TYPE_AT24C_EE, address));
+
+    qdev_prop_set_uint32(DEVICE(s), "rom-size", rom_size);
+
+    /* TODO: Model init_rom with QOM properties. */
+    s->init_rom = init_rom;
+    s->init_rom_size = init_rom_size;
+
+    i2c_slave_realize_and_unref(I2C_SLAVE(s), bus, &error_abort);
+
+    return I2C_SLAVE(s);
+}
+
 static void at24c_eeprom_realize(DeviceState *dev, Error **errp)
 {
     EEPROMState *ee = AT24C_EE(dev);
+
+    if (ee->init_rom_size > ee->rsize) {
+        error_setg(errp, "%s: init rom is larger than rom: %u > %u",
+                   TYPE_AT24C_EE, ee->init_rom_size, ee->rsize);
+        return;
+    }
 
     if (ee->blk) {
         int64_t len = blk_getlength(ee->blk);
@@ -153,16 +192,29 @@ static void at24c_eeprom_realize(DeviceState *dev, Error **errp)
 
     ee->mem = g_malloc0(ee->rsize);
 
-    memset(ee->mem, 0, ee->rsize);
-
     if (ee->blk) {
         int ret = blk_pread(ee->blk, 0, ee->rsize, ee->mem, 0);
 
         if (ret < 0) {
-            ERR(TYPE_AT24C_EE
-                    " : Failed initial sync with backing file\n");
+            error_setg(errp, "%s: Failed initial sync with backing file",
+                       TYPE_AT24C_EE);
+            return;
         }
         DPRINTK("Reset read backing file\n");
+    } else if (ee->init_rom) {
+        memcpy(ee->mem, ee->init_rom, MIN(ee->init_rom_size, ee->rsize));
+    }
+
+    /*
+     * If address size didn't define with property set
+     *   value is 0 as default, setting it by Rom size detecting.
+     */
+    if (ee->asize == 0) {
+        if (ee->rsize <= 256) {
+            ee->asize = 1;
+        } else {
+            ee->asize = 2;
+        }
     }
 }
 
@@ -174,14 +226,19 @@ void at24c_eeprom_reset(DeviceState *state)
     ee->changed = false;
     ee->cur = 0;
     ee->haveaddr = 0;
-    // WTF.. I disabled this because real EEPROMS do not erase themselves on reset. ~VintagePC
 }
+
+static const Property at24c_eeprom_props[] = {
+    DEFINE_PROP_UINT32("rom-size", EEPROMState, rsize, 0),
+    DEFINE_PROP_UINT8("address-size", EEPROMState, asize, 0),
+    DEFINE_PROP_BOOL("writable", EEPROMState, writable, true),
+    DEFINE_PROP_DRIVE("drive", EEPROMState, blk),
+};
 
 static const VMStateDescription vmstate_eeprom_at24c = {
     .name = TYPE_AT24C_EE,
     .version_id = 1,
     .minimum_version_id = 1,
-  //  .post_load = at24c_eeprom_post_load,
     .fields = (VMStateField[]) {
         VMSTATE_I2C_SLAVE(parent_obj, EEPROMState),
         VMSTATE_UINT16(cur, EEPROMState),
@@ -195,15 +252,8 @@ static const VMStateDescription vmstate_eeprom_at24c = {
     } 
 };
 
-static Property at24c_eeprom_props[] = {
-    DEFINE_PROP_UINT32("rom-size", EEPROMState, rsize, 0),
-    DEFINE_PROP_BOOL("writable", EEPROMState, writable, true),
-    DEFINE_PROP_DRIVE("drive", EEPROMState, blk),
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static
-void at24c_eeprom_class_init(ObjectClass *klass, void *data)
+void at24c_eeprom_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
@@ -215,7 +265,7 @@ void at24c_eeprom_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &vmstate_eeprom_at24c;
 
     device_class_set_props(dc, at24c_eeprom_props);
-    dc->reset = at24c_eeprom_reset;
+    device_class_set_legacy_reset(dc, at24c_eeprom_reset);
 }
 
 static

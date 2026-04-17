@@ -16,7 +16,7 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/pci/pcie_port.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 static void rp_aer_vector_update(PCIDevice *d)
 {
@@ -43,9 +43,10 @@ static void rp_write_config(PCIDevice *d, uint32_t address,
     pcie_aer_root_write_config(d, address, val, len, root_cmd);
 }
 
-static void rp_reset(DeviceState *qdev)
+static void rp_reset_hold(Object *obj, ResetType type)
 {
-    PCIDevice *d = PCI_DEVICE(qdev);
+    PCIDevice *d = PCI_DEVICE(obj);
+    DeviceState *qdev = DEVICE(obj);
 
     rp_aer_vector_update(d);
     pcie_cap_root_reset(d);
@@ -116,7 +117,7 @@ static void rp_realize(PCIDevice *d, Error **errp)
     pcie_aer_root_init(d);
     rp_aer_vector_update(d);
 
-    if (rpc->acs_offset && !s->disable_acs) {
+    if (rpc->acs_offset) {
         pcie_acs_init(d, rpc->acs_offset);
     }
     return;
@@ -147,11 +148,9 @@ static void rp_exit(PCIDevice *d)
     pci_bridge_exitfn(d);
 }
 
-static Property rp_props[] = {
+static const Property rp_props[] = {
     DEFINE_PROP_BIT(COMPAT_PROP_PCP, PCIDevice, cap_present,
                     QEMU_PCIE_SLTCAP_PCP_BITNR, true),
-    DEFINE_PROP_BOOL("disable-acs", PCIESlot, disable_acs, false),
-    DEFINE_PROP_END_OF_LIST()
 };
 
 static void rp_instance_post_init(Object *obj)
@@ -167,17 +166,17 @@ static void rp_instance_post_init(Object *obj)
     }
 }
 
-static void rp_class_init(ObjectClass *klass, void *data)
+static void rp_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
 
-    k->is_bridge = true;
     k->config_write = rp_write_config;
     k->realize = rp_realize;
     k->exit = rp_exit;
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
-    dc->reset = rp_reset;
+    rc->phases.hold = rp_reset_hold;
     device_class_set_props(dc, rp_props);
 }
 
@@ -188,7 +187,7 @@ static const TypeInfo rp_info = {
     .class_init    = rp_class_init,
     .abstract      = true,
     .class_size = sizeof(PCIERootPortClass),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_PCIE_DEVICE },
         { }
     },

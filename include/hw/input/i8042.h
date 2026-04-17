@@ -9,7 +9,7 @@
 #define HW_INPUT_I8042_H
 
 #include "hw/isa/isa.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/input/ps2.h"
 #include "qom/object.h"
 
@@ -89,7 +89,6 @@ struct MMIOKBDState {
 
 
 void i8042_isa_mouse_fake_event(ISAKBDState *isa);
-void i8042_setup_a20_line(ISADevice *dev, qemu_irq a20_out);
 
 static inline bool i8042_present(void)
 {

@@ -36,6 +36,7 @@
 #include "hw/mem/nvdimm.h"
 #include "qemu/nvdimm-utils.h"
 #include "trace.h"
+#include "exec/cpu-common.h"
 
 /*
  * define Byte Addressable Persistent Memory (PM) Region according to
@@ -535,7 +536,7 @@ nvdimm_dsm_no_payload(uint32_t func_ret_status, hwaddr dsm_mem_addr)
 
 #define NVDIMM_QEMU_RSVD_HANDLE_ROOT         0x10000
 
-/* Read FIT data, defined in docs/specs/acpi_nvdimm.txt. */
+/* Read FIT data, defined in docs/specs/acpi_nvdimm.rst. */
 static void nvdimm_dsm_func_read_fit(NVDIMMState *state, NvdimmDsmIn *in,
                                      hwaddr dsm_mem_addr)
 {
@@ -670,7 +671,8 @@ static void nvdimm_dsm_label_size(NVDIMMDevice *nvdimm, hwaddr dsm_mem_addr)
 }
 
 static uint32_t nvdimm_rw_label_data_check(NVDIMMDevice *nvdimm,
-                                           uint32_t offset, uint32_t length)
+                                           uint32_t offset, uint32_t length,
+                                           bool is_write)
 {
     uint32_t ret = NVDIMM_DSM_RET_STATUS_INVALID;
 
@@ -688,6 +690,10 @@ static uint32_t nvdimm_rw_label_data_check(NVDIMMDevice *nvdimm,
         trace_acpi_nvdimm_label_xfer_exceed(length,
                                             nvdimm_get_max_xfer_label_size());
         return ret;
+    }
+
+    if (is_write && nvdimm->readonly) {
+        return NVDIMM_DSM_RET_STATUS_UNSUPPORT;
     }
 
     return NVDIMM_DSM_RET_STATUS_SUCCESS;
@@ -713,7 +719,7 @@ static void nvdimm_dsm_get_label_data(NVDIMMDevice *nvdimm, NvdimmDsmIn *in,
                                  get_label_data->length);
 
     status = nvdimm_rw_label_data_check(nvdimm, get_label_data->offset,
-                                        get_label_data->length);
+                                        get_label_data->length, false);
     if (status != NVDIMM_DSM_RET_STATUS_SUCCESS) {
         nvdimm_dsm_no_payload(status, dsm_mem_addr);
         return;
@@ -752,7 +758,7 @@ static void nvdimm_dsm_set_label_data(NVDIMMDevice *nvdimm, NvdimmDsmIn *in,
                                   set_label_data->length);
 
     status = nvdimm_rw_label_data_check(nvdimm, set_label_data->offset,
-                                        set_label_data->length);
+                                        set_label_data->length, true);
     if (status != NVDIMM_DSM_RET_STATUS_SUCCESS) {
         nvdimm_dsm_no_payload(status, dsm_mem_addr);
         return;
@@ -1097,7 +1103,7 @@ static void nvdimm_build_common_dsm(Aml *dev,
      * be treated as an integer. Moreover, the integer size depends on
      * DSDT tables revision number. If revision number is < 2, integer
      * size is 32 bits, otherwise it is 64 bits.
-     * Because of this CreateField() canot be used if RLEN < Integer Size.
+     * Because of this CreateField() cannot be used if RLEN < Integer Size.
      *
      * Also please note that APCI ASL operator SizeOf() doesn't support
      * Integer and there isn't any other way to figure out the Integer

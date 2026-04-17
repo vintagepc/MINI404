@@ -54,6 +54,7 @@ static ssize_t qio_channel_buffer_readv(QIOChannel *ioc,
                                         size_t niov,
                                         int **fds,
                                         size_t *nfds,
+                                        int flags,
                                         Error **errp)
 {
     QIOChannelBuffer *bioc = QIO_CHANNEL_BUFFER(ioc);
@@ -224,7 +225,7 @@ static GSource *qio_channel_buffer_create_watch(QIOChannel *ioc,
 
 
 static void qio_channel_buffer_class_init(ObjectClass *klass,
-                                          void *class_data G_GNUC_UNUSED)
+                                          const void *class_data G_GNUC_UNUSED)
 {
     QIOChannelClass *ioc_klass = QIO_CHANNEL_CLASS(klass);
 

@@ -62,16 +62,16 @@
 #define ZRLE_ENCODE_TILE     ZRLE_CONCAT2(zrle_encode_tile,  ZRLE_ENCODE_SUFFIX)
 #define ZRLE_WRITE_PALETTE   ZRLE_CONCAT2(zrle_write_palette,ZRLE_ENCODE_SUFFIX)
 
-static void ZRLE_ENCODE_TILE(VncState *vs, ZRLE_PIXEL *data, int w, int h,
-                             int zywrle_level);
+static void ZRLE_ENCODE_TILE(VncState *vs, VncZrle *zrle, ZRLE_PIXEL *data,
+                             int w, int h, int zywrle_level);
 
 #if ZRLE_BPP != 8
 #include "vnc-enc-zywrle-template.c"
 #endif
 
 
-static void ZRLE_ENCODE(VncState *vs, int x, int y, int w, int h,
-                        int zywrle_level)
+static void ZRLE_ENCODE(VncState *vs, VncZrle *zrle,
+                        int x, int y, int w, int h, int zywrle_level)
 {
     int ty;
 
@@ -87,16 +87,16 @@ static void ZRLE_ENCODE(VncState *vs, int x, int y, int w, int h,
 
             tw = MIN(VNC_ZRLE_TILE_WIDTH, x + w - tx);
 
-            buf = zrle_convert_fb(vs, tx, ty, tw, th, ZRLE_BPP);
-            ZRLE_ENCODE_TILE(vs, buf, tw, th, zywrle_level);
+            buf = zrle_convert_fb(vs, zrle, tx, ty, tw, th, ZRLE_BPP);
+            ZRLE_ENCODE_TILE(vs, zrle, buf, tw, th, zywrle_level);
         }
     }
 }
 
-static void ZRLE_ENCODE_TILE(VncState *vs, ZRLE_PIXEL *data, int w, int h,
-                             int zywrle_level)
+static void ZRLE_ENCODE_TILE(VncState *vs, VncZrle *zrle, ZRLE_PIXEL *data,
+                             int w, int h, int zywrle_level)
 {
-    VncPalette *palette = &vs->zrle->palette;
+    VncPalette *palette = &zrle->palette;
 
     int runs = 0;
     int single_pixels = 0;
@@ -110,7 +110,7 @@ static void ZRLE_ENCODE_TILE(VncState *vs, ZRLE_PIXEL *data, int w, int h,
     ZRLE_PIXEL *end = ptr + h * w;
     *end = ~*(end-1); /* one past the end is different so the while loop ends */
 
-    /* Real limit is 127 but we wan't a way to know if there is more than 127 */
+    /* Real limit is 127 but we want a way to know if there is more than 127 */
     palette_init(palette, 256, ZRLE_BPP);
 
     while (ptr < end) {
@@ -153,10 +153,11 @@ static void ZRLE_ENCODE_TILE(VncState *vs, ZRLE_PIXEL *data, int w, int h,
     }
 
     if (use_rle) {
-        ZRLE_PIXEL *ptr = data;
-        ZRLE_PIXEL *end = ptr + w * h;
         ZRLE_PIXEL *run_start;
         ZRLE_PIXEL pix;
+
+        ptr = data;
+        end = ptr + w * h;
 
         while (ptr < end) {
             int len;
@@ -198,7 +199,7 @@ static void ZRLE_ENCODE_TILE(VncState *vs, ZRLE_PIXEL *data, int w, int h,
         }
     } else if (use_palette) { /* no RLE */
         int bppp;
-        ZRLE_PIXEL *ptr = data;
+        ptr = data;
 
         /* packed pixels */
 
@@ -235,14 +236,12 @@ static void ZRLE_ENCODE_TILE(VncState *vs, ZRLE_PIXEL *data, int w, int h,
 #if ZRLE_BPP != 8
         if (zywrle_level > 0 && !(zywrle_level & 0x80)) {
             ZYWRLE_ANALYZE(data, data, w, h, w, zywrle_level, vs->zywrle.buf);
-            ZRLE_ENCODE_TILE(vs, data, w, h, zywrle_level | 0x80);
+            ZRLE_ENCODE_TILE(vs, zrle, data, w, h, zywrle_level | 0x80);
         }
         else
 #endif
         {
 #ifdef ZRLE_COMPACT_PIXEL
-            ZRLE_PIXEL *ptr;
-
             for (ptr = data; ptr < data + w * h; ptr++) {
                 ZRLE_WRITE_PIXEL(vs, *ptr);
             }

@@ -13,7 +13,8 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "sysemu/memory_mapping.h"
+#include "system/memory_mapping.h"
+#include "system/memory.h"
 
 /* PAE Paging or IA-32e Paging */
 static void walk_pte(MemoryMappingList *list, AddressSpace *as,
@@ -34,7 +35,7 @@ static void walk_pte(MemoryMappingList *list, AddressSpace *as,
         }
 
         start_paddr = (pte & ~0xfff) & ~(0x1ULL << 63);
-        if (cpu_physical_memory_is_io(start_paddr)) {
+        if (address_space_is_io(as, start_paddr)) {
             /* I/O region */
             continue;
         }
@@ -64,7 +65,7 @@ static void walk_pte2(MemoryMappingList *list, AddressSpace *as,
         }
 
         start_paddr = pte & ~0xfff;
-        if (cpu_physical_memory_is_io(start_paddr)) {
+        if (address_space_is_io(as, start_paddr)) {
             /* I/O region */
             continue;
         }
@@ -99,7 +100,7 @@ static void walk_pde(MemoryMappingList *list, AddressSpace *as,
         if (pde & PG_PSE_MASK) {
             /* 2 MB page */
             start_paddr = (pde & ~0x1fffff) & ~(0x1ULL << 63);
-            if (cpu_physical_memory_is_io(start_paddr)) {
+            if (address_space_is_io(as, start_paddr)) {
                 /* I/O region */
                 continue;
             }
@@ -141,7 +142,7 @@ static void walk_pde2(MemoryMappingList *list, AddressSpace *as,
              */
             high_paddr = ((hwaddr)(pde & 0x1fe000) << 19);
             start_paddr = (pde & ~0x3fffff) | high_paddr;
-            if (cpu_physical_memory_is_io(start_paddr)) {
+            if (address_space_is_io(as, start_paddr)) {
                 /* I/O region */
                 continue;
             }
@@ -202,7 +203,7 @@ static void walk_pdpe(MemoryMappingList *list, AddressSpace *as,
         if (pdpe & PG_PSE_MASK) {
             /* 1 GB page */
             start_paddr = (pdpe & ~0x3fffffff) & ~(0x1ULL << 63);
-            if (cpu_physical_memory_is_io(start_paddr)) {
+            if (address_space_is_io(as, start_paddr)) {
                 /* I/O region */
                 continue;
             }
@@ -266,7 +267,7 @@ static void walk_pml5e(MemoryMappingList *list, AddressSpace *as,
 }
 #endif
 
-void x86_cpu_get_memory_mapping(CPUState *cs, MemoryMappingList *list,
+bool x86_cpu_get_memory_mapping(CPUState *cs, MemoryMappingList *list,
                                 Error **errp)
 {
     X86CPU *cpu = X86_CPU(cs);
@@ -275,7 +276,7 @@ void x86_cpu_get_memory_mapping(CPUState *cs, MemoryMappingList *list,
 
     if (!cpu_paging_enabled(cs)) {
         /* paging is disabled */
-        return;
+        return true;
     }
 
     a20_mask = x86_get_a20_mask(env);
@@ -310,5 +311,7 @@ void x86_cpu_get_memory_mapping(CPUState *cs, MemoryMappingList *list,
         pse = !!(env->cr[4] & CR4_PSE_MASK);
         walk_pde2(list, cs->as, pde_addr, a20_mask, pse);
     }
+
+    return true;
 }
 

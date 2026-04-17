@@ -10,16 +10,18 @@
 #ifndef PCI_HOST_PNV_PHB4_H
 #define PCI_HOST_PNV_PHB4_H
 
-#include "hw/pci/pcie_host.h"
-#include "hw/pci/pcie_port.h"
+#include "hw/pci-host/pnv_phb.h"
+#include "hw/pci/pci_bus.h"
+#include "hw/ppc/pnv.h"
+#include "hw/ppc/pnv_nest_pervasive.h"
 #include "hw/ppc/xive.h"
 #include "qom/object.h"
 
-typedef struct PnvPhb4PecState PnvPhb4PecState;
+
+#define TYPE_PNV_PHB4 "pnv-phb4"
+OBJECT_DECLARE_SIMPLE_TYPE(PnvPHB4, PNV_PHB4)
+
 typedef struct PnvPhb4PecStack PnvPhb4PecStack;
-typedef struct PnvPHB4 PnvPHB4;
-typedef struct PnvPHB PnvPHB;
-typedef struct PnvChip PnvChip;
 
 /*
  * We have one such address space wrapper per possible device under
@@ -60,9 +62,6 @@ OBJECT_DECLARE_SIMPLE_TYPE(PnvPHB4RootBus, PNV_PHB4_ROOT_BUS)
 /*
  * PHB4 PCIe Host Bridge for PowerNV machines (POWER9)
  */
-#define TYPE_PNV_PHB4 "pnv-phb4"
-OBJECT_DECLARE_SIMPLE_TYPE(PnvPHB4, PNV_PHB4)
-
 #define PNV_PHB4_MAX_LSIs          8
 #define PNV_PHB4_MAX_INTs          4096
 #define PNV_PHB4_MAX_MIST          (PNV_PHB4_MAX_INTs >> 2)
@@ -119,7 +118,7 @@ struct PnvPHB4 {
     MemoryRegion pci_regs_mr;
 
     /* Nest registers */
-#define PHB4_PEC_NEST_STK_REGS_COUNT  0x17
+#define PHB4_PEC_NEST_STK_REGS_COUNT  0x18
     uint64_t nest_regs[PHB4_PEC_NEST_STK_REGS_COUNT];
     MemoryRegion nest_regs_mr;
 
@@ -157,8 +156,9 @@ struct PnvPHB4 {
     QLIST_HEAD(, PnvPhb4DMASpace) dma_spaces;
 };
 
-void pnv_phb4_pic_print_info(PnvPHB4 *phb, Monitor *mon);
+void pnv_phb4_pic_print_info(PnvPHB4 *phb, GString *buf);
 int pnv_phb4_pec_get_phb_id(PnvPhb4PecState *pec, int stack_index);
+PnvPhb4PecState *pnv_pec_add_phb(PnvChip *chip, PnvPHB *phb, Error **errp);
 void pnv_phb4_bus_init(DeviceState *dev, PnvPHB4 *phb);
 extern const MemoryRegionOps pnv_phb4_xscom_ops;
 
@@ -175,7 +175,8 @@ struct PnvPhb4PecState {
     uint32_t index;
     uint32_t chip_id;
 
-    MemoryRegion *system_memory;
+    /* Pervasive chiplet control */
+    PnvNestChipletPervasive nest_pervasive;
 
     /* Nest registers, excuding per-stack */
 #define PHB4_PEC_NEST_REGS_COUNT    0xf
@@ -189,6 +190,8 @@ struct PnvPhb4PecState {
 
     /* PHBs */
     uint32_t num_phbs;
+#define MAX_PHBS_PER_PEC        3
+    PnvPHB *phbs[MAX_PHBS_PER_PEC];
 
     PnvChip *chip;
 };
@@ -197,6 +200,7 @@ struct PnvPhb4PecState {
 struct PnvPhb4PecClass {
     DeviceClass parent_class;
 
+    uint32_t (*xscom_cplt_base)(PnvPhb4PecState *pec);
     uint32_t (*xscom_nest_base)(PnvPhb4PecState *pec);
     uint32_t xscom_nest_size;
     uint32_t (*xscom_pci_base)(PnvPhb4PecState *pec);
@@ -218,8 +222,7 @@ struct PnvPhb4PecClass {
 #define PNV_PHB5(obj) \
     OBJECT_CHECK(PnvPhb4, (obj), TYPE_PNV_PHB5)
 
-#define PNV_PHB5_VERSION           0x000000a500000001ull
-#define PNV_PHB5_DEVICE_ID         0x0652
+#define PNV_PHB5_VERSION           0x000000a500000002ull
 
 #define TYPE_PNV_PHB5_PEC "pnv-phb5-pec"
 #define PNV_PHB5_PEC(obj) \

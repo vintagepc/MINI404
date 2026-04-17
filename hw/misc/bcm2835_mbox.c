@@ -12,7 +12,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/misc/bcm2835_mbox.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
@@ -257,7 +257,7 @@ static const VMStateDescription vmstate_bcm2835_mbox_box = {
     .name = TYPE_BCM2835_MBOX "_box",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(reg, BCM2835Mbox, MBOX_SIZE),
         VMSTATE_UINT32(count, BCM2835Mbox),
         VMSTATE_UINT32(status, BCM2835Mbox),
@@ -271,7 +271,7 @@ static const VMStateDescription vmstate_bcm2835_mbox = {
     .name = TYPE_BCM2835_MBOX,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields      = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL_ARRAY(available, BCM2835MboxState, MBOX_CHAN_COUNT),
         VMSTATE_STRUCT_ARRAY(mbox, BCM2835MboxState, 2, 1,
                              vmstate_bcm2835_mbox_box, BCM2835Mbox),
@@ -314,12 +314,12 @@ static void bcm2835_mbox_realize(DeviceState *dev, Error **errp)
     bcm2835_mbox_reset(dev);
 }
 
-static void bcm2835_mbox_class_init(ObjectClass *klass, void *data)
+static void bcm2835_mbox_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = bcm2835_mbox_realize;
-    dc->reset = bcm2835_mbox_reset;
+    device_class_set_legacy_reset(dc, bcm2835_mbox_reset);
     dc->vmsd = &vmstate_bcm2835_mbox;
 }
 

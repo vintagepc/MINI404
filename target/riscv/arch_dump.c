@@ -1,4 +1,5 @@
-/* Support for writing ELF notes for RISC-V architectures
+/*
+ * Support for writing ELF notes for RISC-V architectures
  *
  * Copyright (C) 2021 Huawei Technologies Co., Ltd
  *
@@ -18,7 +19,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "elf.h"
-#include "sysemu/dump.h"
+#include "system/dump.h"
 
 /* struct user_regs_struct from arch/riscv/include/uapi/asm/ptrace.h */
 struct riscv64_user_regs {
@@ -180,8 +181,8 @@ int cpu_get_dump_info(ArchDumpInfo *info,
     info->d_class = ELFCLASS32;
 #endif
 
-    info->d_endian = (env->mstatus & MSTATUS_UBE) != 0
-                     ? ELFDATA2MSB : ELFDATA2LSB;
+    info->d_endian = (env->mstatus & MSTATUS_UBE) != 0 ?
+                     ELFDATA2MSB : ELFDATA2LSB;
 
     return 0;
 }

@@ -1,10 +1,14 @@
 #ifndef INT128_H
 #define INT128_H
 
-#include "qemu/bswap.h"
-
-#ifdef CONFIG_INT128
+/*
+ * With TCI, we need to use libffi for interfacing with TCG helpers.
+ * But libffi does not support __int128_t, and therefore cannot pass
+ * or return values of this type, force use of the Int128 struct.
+ */
+#if defined(CONFIG_INT128) && !defined(CONFIG_TCG_INTERPRETER)
 typedef __int128_t Int128;
+typedef __int128_t __attribute__((aligned(16))) Int128Aligned;
 
 static inline Int128 int128_make64(uint64_t a)
 {
@@ -183,7 +187,8 @@ static inline Int128 bswap128(Int128 a)
 #if __has_builtin(__builtin_bswap128)
     return __builtin_bswap128(a);
 #else
-    return int128_make128(bswap64(int128_gethi(a)), bswap64(int128_getlo(a)));
+    return int128_make128(__builtin_bswap64(int128_gethi(a)),
+                          __builtin_bswap64(int128_getlo(a)));
 #endif
 }
 
@@ -219,6 +224,7 @@ static inline Int128 int128_rems(Int128 a, Int128 b)
 #else /* !CONFIG_INT128 */
 
 typedef struct Int128 Int128;
+typedef struct Int128 __attribute__((aligned(16))) Int128Aligned;
 
 /*
  * We guarantee that the in-memory byte representation of an
@@ -444,7 +450,7 @@ static inline void int128_subfrom(Int128 *a, Int128 b)
 
 static inline Int128 bswap128(Int128 a)
 {
-    return int128_make128(bswap64(a.hi), bswap64(a.lo));
+    return int128_make128(__builtin_bswap64(a.hi), __builtin_bswap64(a.lo));
 }
 
 static inline int clz128(Int128 a)
@@ -460,8 +466,7 @@ Int128 int128_divu(Int128, Int128);
 Int128 int128_remu(Int128, Int128);
 Int128 int128_divs(Int128, Int128);
 Int128 int128_rems(Int128, Int128);
-
-#endif /* CONFIG_INT128 */
+#endif /* CONFIG_INT128 && !CONFIG_TCG_INTERPRETER */
 
 static inline void bswap128s(Int128 *s)
 {
@@ -471,5 +476,20 @@ static inline void bswap128s(Int128 *s)
 #define UINT128_MAX int128_make128(~0LL, ~0LL)
 #define INT128_MAX int128_make128(UINT64_MAX, INT64_MAX)
 #define INT128_MIN int128_make128(0, INT64_MIN)
+
+/*
+ * When compiler supports a 128-bit type, define a combination of
+ * a possible structure and the native types.  Ease parameter passing
+ * via use of the transparent union extension.
+ */
+#ifdef CONFIG_INT128_TYPE
+typedef union {
+    __uint128_t u;
+    __int128_t i;
+    Int128 s;
+} Int128Alias __attribute__((transparent_union));
+#else
+typedef Int128 Int128Alias;
+#endif /* CONFIG_INT128_TYPE */
 
 #endif /* INT128_H */

@@ -26,10 +26,10 @@
 
 #include "qemu/osdep.h"
 #include "hw/dma/xlnx-zynq-devcfg.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "qemu/bitops.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 
@@ -333,7 +333,7 @@ static const VMStateDescription vmstate_xlnx_zynq_devcfg_dma_cmd = {
     .name = "xlnx_zynq_devcfg_dma_cmd",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(src_addr, XlnxZynqDevcfgDMACmd),
         VMSTATE_UINT32(dest_addr, XlnxZynqDevcfgDMACmd),
         VMSTATE_UINT32(src_len, XlnxZynqDevcfgDMACmd),
@@ -346,7 +346,7 @@ static const VMStateDescription vmstate_xlnx_zynq_devcfg = {
     .name = "xlnx_zynq_devcfg",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT_ARRAY(dma_cmd_fifo, XlnxZynqDevcfg,
                              XLNX_ZYNQ_DEVCFG_DMA_CMD_FIFO_LEN, 0,
                              vmstate_xlnx_zynq_devcfg_dma_cmd,
@@ -372,7 +372,7 @@ static void xlnx_zynq_devcfg_init(Object *obj)
                               s->regs_info, s->regs,
                               &xlnx_zynq_devcfg_reg_ops,
                               XLNX_ZYNQ_DEVCFG_ERR_DEBUG,
-                              XLNX_ZYNQ_DEVCFG_R_MAX);
+                              XLNX_ZYNQ_DEVCFG_R_MAX * 4);
     memory_region_add_subregion(&s->iomem,
                                 A_CTRL,
                                 &reg_array->mem);
@@ -380,11 +380,11 @@ static void xlnx_zynq_devcfg_init(Object *obj)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static void xlnx_zynq_devcfg_class_init(ObjectClass *klass, void *data)
+static void xlnx_zynq_devcfg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = xlnx_zynq_devcfg_reset;
+    device_class_set_legacy_reset(dc, xlnx_zynq_devcfg_reset);
     dc->vmsd = &vmstate_xlnx_zynq_devcfg;
 }
 

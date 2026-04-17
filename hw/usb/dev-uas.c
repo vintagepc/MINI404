@@ -18,10 +18,10 @@
 #include "qemu/module.h"
 #include "qemu/log.h"
 
-#include "hw/usb.h"
+#include "hw/usb/usb.h"
 #include "migration/vmstate.h"
 #include "desc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/scsi/scsi.h"
 #include "scsi/constants.h"
 #include "qom/object.h"
@@ -109,9 +109,11 @@ typedef struct {
 #define UAS_STREAM_BM_ATTR  4
 #define UAS_MAX_STREAMS     (1 << UAS_STREAM_BM_ATTR)
 
-typedef struct UASDevice UASDevice;
 typedef struct UASRequest UASRequest;
 typedef struct UASStatus UASStatus;
+
+#define TYPE_USB_UAS "usb-uas"
+OBJECT_DECLARE_SIMPLE_TYPE(UASDevice, USB_UAS)
 
 struct UASDevice {
     USBDevice                 dev;
@@ -132,9 +134,6 @@ struct UASDevice {
     USBPacket                 *data3[UAS_MAX_STREAMS + 1];
     USBPacket                 *status3[UAS_MAX_STREAMS + 1];
 };
-
-#define TYPE_USB_UAS "usb-uas"
-OBJECT_DECLARE_SIMPLE_TYPE(UASDevice, USB_UAS)
 
 struct UASRequest {
     uint16_t     tag;
@@ -791,7 +790,7 @@ static void usb_uas_task(UASDevice *uas, uas_iu *iu)
 
     case UAS_TMF_LOGICAL_UNIT_RESET:
         trace_usb_uas_tmf_logical_unit_reset(uas->dev.addr, tag, lun);
-        qdev_reset_all(&dev->qdev);
+        device_cold_reset(&dev->qdev);
         usb_uas_queue_response(uas, tag, UAS_RC_TMF_COMPLETE);
         break;
 
@@ -914,7 +913,6 @@ static void usb_uas_handle_data(USBDevice *dev, USBPacket *p)
 err_stream:
     error_report("%s: invalid stream %d", __func__, p->stream);
     p->status = USB_RET_STALL;
-    return;
 }
 
 static void usb_uas_unrealize(USBDevice *dev)
@@ -937,7 +935,8 @@ static void usb_uas_realize(USBDevice *dev, Error **errp)
 
     QTAILQ_INIT(&uas->results);
     QTAILQ_INIT(&uas->requests);
-    uas->status_bh = qemu_bh_new(usb_uas_send_status_bh, uas);
+    uas->status_bh = qemu_bh_new_guarded(usb_uas_send_status_bh, uas,
+                                         &d->mem_reentrancy_guard);
 
     dev->flags |= (1 << USB_DEV_FLAG_IS_SCSI_STORAGE);
     scsi_bus_init(&uas->bus, sizeof(uas->bus), DEVICE(dev), &usb_uas_scsi_info);
@@ -946,18 +945,17 @@ static void usb_uas_realize(USBDevice *dev, Error **errp)
 static const VMStateDescription vmstate_usb_uas = {
     .name = "usb-uas",
     .unmigratable = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_USB_DEVICE(dev, UASDevice),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property uas_properties[] = {
+static const Property uas_properties[] = {
     DEFINE_PROP_UINT32("log-scsi-req", UASDevice, requestlog, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void usb_uas_class_initfn(ObjectClass *klass, void *data)
+static void usb_uas_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     USBDeviceClass *uc = USB_DEVICE_CLASS(klass);

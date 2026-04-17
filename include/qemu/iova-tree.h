@@ -15,7 +15,7 @@
  * Currently the iova tree will only allow to keep ranges
  * information, and no extra user data is allowed for each element.  A
  * benefit is that we can merge adjacent ranges internally within the
- * tree.  It can save a lot of memory when the ranges are splitted but
+ * tree.  It can save a lot of memory when the ranges are split but
  * mostly continuous.
  *
  * Note that current implementation does not provide any thread
@@ -23,7 +23,7 @@
  * for the thread safety issue.
  */
 
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "exec/hwaddr.h"
 
 #define  IOVA_OK           (0)
@@ -39,6 +39,28 @@ typedef struct DMAMap {
     IOMMUAccessFlags perm;
 } QEMU_PACKED DMAMap;
 typedef gboolean (*iova_tree_iterator)(DMAMap *map);
+
+/**
+ * gpa_tree_new:
+ *
+ * Create a new GPA->IOVA tree.
+ *
+ * Returns: the tree point on success, or NULL otherwise.
+ */
+IOVATree *gpa_tree_new(void);
+
+/**
+ * gpa_tree_insert:
+ *
+ * @tree: The GPA->IOVA tree we're inserting the mapping to
+ * @map: The GPA->IOVA mapping to insert
+ *
+ * Inserts a GPA range to the GPA->IOVA tree. If there are overlapped
+ * ranges, IOVA_ERR_OVERLAP will be returned.
+ *
+ * Return: 0 if successful, < 0 otherwise.
+ */
+int gpa_tree_insert(IOVATree *tree, const DMAMap *map);
 
 /**
  * iova_tree_new:
@@ -110,31 +132,6 @@ const DMAMap *iova_tree_find(const IOVATree *tree, const DMAMap *map);
  * concurrent deletion in progress).
  */
 const DMAMap *iova_tree_find_iova(const IOVATree *tree, const DMAMap *map);
-
-/**
- * iova_tree_find_address:
- *
- * @tree: the iova tree to search from
- * @iova: the iova address to find
- *
- * Similar to iova_tree_find(), but it tries to find mapping with
- * range iova=iova & size=0.
- *
- * Return: same as iova_tree_find().
- */
-const DMAMap *iova_tree_find_address(const IOVATree *tree, hwaddr iova);
-
-/**
- * iova_tree_foreach:
- *
- * @tree: the iova tree to iterate on
- * @iterator: the interator for the mappings, return true to stop
- *
- * Iterate over the iova tree.
- *
- * Return: 1 if found any overlap, 0 if not, <0 if error.
- */
-void iova_tree_foreach(IOVATree *tree, iova_tree_iterator iterator);
 
 /**
  * iova_tree_alloc_map:

@@ -15,24 +15,21 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-
-struct Error
-{
-    char *msg;
-    ErrorClass err_class;
-    const char *src, *func;
-    int line;
-    GString *hint;
-};
+#include "qapi/error-internal.h"
 
 Error *error_abort;
 Error *error_fatal;
 
-static void error_handle_fatal(Error **errp, Error *err)
+static void error_handle(Error **errp, Error *err)
 {
     if (errp == &error_abort) {
-        fprintf(stderr, "Unexpected error in %s() at %s:%d:\n",
-                err->func, err->src, err->line);
+        if (err->func) {
+            fprintf(stderr, "Unexpected error in %s() at %.*s:%d:\n",
+                    err->func, err->src_len, err->src, err->line);
+        } else {
+            fprintf(stderr, "Unexpected error at %.*s:%d:\n",
+		    err->src_len, err->src, err->line);
+        }
         error_report("%s", error_get_pretty(err));
         if (err->hint) {
             error_printf("%s", err->hint->str);
@@ -43,8 +40,14 @@ static void error_handle_fatal(Error **errp, Error *err)
         error_report_err(err);
         exit(1);
     }
+    if (errp && !*errp) {
+        *errp = err;
+    } else {
+        error_free(err);
+    }
 }
 
+G_GNUC_PRINTF(6, 0)
 static void error_setv(Error **errp,
                        const char *src, int line, const char *func,
                        ErrorClass err_class, const char *fmt, va_list ap,
@@ -66,12 +69,12 @@ static void error_setv(Error **errp,
         g_free(msg);
     }
     err->err_class = err_class;
+    err->src_len = -1;
     err->src = src;
     err->line = line;
     err->func = func;
 
-    error_handle_fatal(errp, err);
-    *errp = err;
+    error_handle(errp, err);
 
     errno = saved_errno;
 }
@@ -239,6 +242,17 @@ void warn_report_err(Error *err)
     error_free(err);
 }
 
+bool warn_report_err_once_cond(bool *printed, Error *err)
+{
+    if (*printed) {
+        error_free(err);
+        return false;
+    }
+    *printed = true;
+    warn_report_err(err);
+    return true;
+}
+
 void error_reportf_err(Error *err, const char *fmt, ...)
 {
     va_list ap;
@@ -283,12 +297,7 @@ void error_propagate(Error **dst_errp, Error *local_err)
     if (!local_err) {
         return;
     }
-    error_handle_fatal(dst_errp, local_err);
-    if (dst_errp && !*dst_errp) {
-        *dst_errp = local_err;
-    } else {
-        error_free(local_err);
-    }
+    error_handle(dst_errp, local_err);
 }
 
 void error_propagate_prepend(Error **dst_errp, Error *err,

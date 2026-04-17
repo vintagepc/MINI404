@@ -27,20 +27,21 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "sysemu/device_tree.h"
-#include "sysemu/runstate.h"
+#include "system/device_tree.h"
+#include "system/runstate.h"
 
 #include "hw/ppc/fdt.h"
 #include "hw/ppc/spapr.h"
 #include "hw/ppc/spapr_vio.h"
 #include "hw/pci/pci.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/pci-host/spapr.h"
 #include "hw/ppc/spapr_drc.h"
 #include "qemu/help_option.h"
 #include "qemu/bcd.h"
 #include "qemu/main-loop.h"
 #include "hw/ppc/spapr_ovec.h"
+#include "exec/cpu-common.h"
 #include <libfdt.h>
 #include "migration/blocker.h"
 
@@ -645,8 +646,7 @@ static void spapr_hotplug_req_event(uint8_t hp_id, uint8_t hp_action,
         /* we shouldn't be signaling hotplug events for resources
          * that don't support them
          */
-        g_assert(false);
-        return;
+        g_assert_not_reached();
     }
 
     if (hp_id == RTAS_LOG_V6_HP_ID_DRC_COUNT) {
@@ -899,7 +899,7 @@ void spapr_mce_req_event(PowerPCCPU *cpu, bool recovered)
             }
             return;
         }
-        qemu_cond_wait_iothread(&spapr->fwnmi_machine_check_interlock_cond);
+        qemu_cond_wait_bql(&spapr->fwnmi_machine_check_interlock_cond);
         if (spapr->fwnmi_machine_check_addr == -1) {
             /*
              * If the machine was reset while waiting for the interlock,
@@ -920,7 +920,11 @@ void spapr_mce_req_event(PowerPCCPU *cpu, bool recovered)
      * fails when running with -only-migrate.  A proper interface to
      * delay migration completion for a bit could avoid that.
      */
-    ret = migrate_add_blocker(spapr->fwnmi_migration_blocker, NULL);
+    error_setg(&spapr->fwnmi_migration_blocker,
+        "A machine check is being handled during migration. The handler"
+        "may run and log hardware error on the destination");
+
+    ret = migrate_add_blocker(&spapr->fwnmi_migration_blocker, NULL);
     if (ret == -EBUSY) {
         warn_report("Received a fwnmi while migration was in progress");
     }
@@ -1038,20 +1042,14 @@ void spapr_clear_pending_hotplug_events(SpaprMachineState *spapr)
 
 void spapr_events_init(SpaprMachineState *spapr)
 {
-    int epow_irq = SPAPR_IRQ_EPOW;
-
-    if (SPAPR_MACHINE_GET_CLASS(spapr)->legacy_irq_allocation) {
-        epow_irq = spapr_irq_findone(spapr, &error_fatal);
-    }
-
-    spapr_irq_claim(spapr, epow_irq, false, &error_fatal);
+    spapr_irq_claim(spapr, SPAPR_IRQ_EPOW, false, &error_fatal);
 
     QTAILQ_INIT(&spapr->pending_events);
 
     spapr->event_sources = spapr_event_sources_new();
 
     spapr_event_sources_register(spapr->event_sources, EVENT_CLASS_EPOW,
-                                 epow_irq);
+                                 SPAPR_IRQ_EPOW);
 
     /* NOTE: if machine supports modern/dedicated hotplug event source,
      * we add it to the device-tree unconditionally. This means we may
@@ -1062,16 +1060,10 @@ void spapr_events_init(SpaprMachineState *spapr)
      * checking that it's enabled.
      */
     if (spapr->use_hotplug_event_source) {
-        int hp_irq = SPAPR_IRQ_HOTPLUG;
-
-        if (SPAPR_MACHINE_GET_CLASS(spapr)->legacy_irq_allocation) {
-            hp_irq = spapr_irq_findone(spapr, &error_fatal);
-        }
-
-        spapr_irq_claim(spapr, hp_irq, false, &error_fatal);
+        spapr_irq_claim(spapr, SPAPR_IRQ_HOTPLUG, false, &error_fatal);
 
         spapr_event_sources_register(spapr->event_sources, EVENT_CLASS_HOT_PLUG,
-                                     hp_irq);
+                                     SPAPR_IRQ_HOTPLUG);
     }
 
     spapr->epow_notifier.notify = spapr_powerdown_req;

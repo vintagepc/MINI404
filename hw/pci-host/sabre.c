@@ -25,19 +25,19 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/pci_bus.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/pci-bridge/simba.h"
 #include "hw/pci-host/sabre.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "trace.h"
 
 /*
@@ -111,6 +111,10 @@ static AddressSpace *sabre_pci_dma_iommu(PCIBus *bus, void *opaque, int devfn)
 
     return &is->iommu_as;
 }
+
+static const PCIIOMMUOps sabre_iommu_ops = {
+    .get_address_space = sabre_pci_dma_iommu,
+};
 
 static void sabre_config_write(void *opaque, hwaddr addr,
                                uint64_t val, unsigned size)
@@ -384,17 +388,15 @@ static void sabre_realize(DeviceState *dev, Error **errp)
     /* IOMMU */
     memory_region_add_subregion_overlap(&s->sabre_config, 0x200,
                     sysbus_mmio_get_region(SYS_BUS_DEVICE(s->iommu), 0), 1);
-    pci_setup_iommu(phb->bus, sabre_pci_dma_iommu, s->iommu);
+    pci_setup_iommu(phb->bus, &sabre_iommu_ops, s->iommu);
 
     /* APB secondary busses */
-    pci_dev = pci_new_multifunction(PCI_DEVFN(1, 0), true,
-                                    TYPE_SIMBA_PCI_BRIDGE);
+    pci_dev = pci_new_multifunction(PCI_DEVFN(1, 0), TYPE_SIMBA_PCI_BRIDGE);
     s->bridgeB = PCI_BRIDGE(pci_dev);
     pci_bridge_map_irq(s->bridgeB, "pciB", pci_simbaB_map_irq);
     pci_realize_and_unref(pci_dev, phb->bus, &error_fatal);
 
-    pci_dev = pci_new_multifunction(PCI_DEVFN(1, 1), true,
-                                    TYPE_SIMBA_PCI_BRIDGE);
+    pci_dev = pci_new_multifunction(PCI_DEVFN(1, 1), TYPE_SIMBA_PCI_BRIDGE);
     s->bridgeA = PCI_BRIDGE(pci_dev);
     pci_bridge_map_irq(s->bridgeA, "pciA", pci_simbaA_map_irq);
     pci_realize_and_unref(pci_dev, phb->bus, &error_fatal);
@@ -454,7 +456,7 @@ static void sabre_pci_realize(PCIDevice *d, Error **errp)
                  PCI_STATUS_DEVSEL_MEDIUM);
 }
 
-static void sabre_pci_class_init(ObjectClass *klass, void *data)
+static void sabre_pci_class_init(ObjectClass *klass, const void *data)
 {
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -475,7 +477,7 @@ static const TypeInfo sabre_pci_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(SabrePCIState),
     .class_init    = sabre_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },
@@ -490,21 +492,19 @@ static char *sabre_ofw_unit_address(const SysBusDevice *dev)
                (uint32_t)(s->special_base & 0xffffffff));
 }
 
-static Property sabre_properties[] = {
+static const Property sabre_properties[] = {
     DEFINE_PROP_UINT64("special-base", SabreState, special_base, 0),
     DEFINE_PROP_UINT64("mem-base", SabreState, mem_base, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void sabre_class_init(ObjectClass *klass, void *data)
+static void sabre_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     SysBusDeviceClass *sbc = SYS_BUS_DEVICE_CLASS(klass);
 
     dc->realize = sabre_realize;
-    dc->reset = sabre_reset;
+    device_class_set_legacy_reset(dc, sabre_reset);
     device_class_set_props(dc, sabre_properties);
-    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->fw_name = "pci";
     sbc->explicit_ofw_unit_address = sabre_ofw_unit_address;
 }

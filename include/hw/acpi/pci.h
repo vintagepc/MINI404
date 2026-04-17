@@ -27,6 +27,7 @@
 #define HW_ACPI_PCI_H
 
 #include "hw/acpi/bios-linker-loader.h"
+#include "hw/acpi/acpi_aml_interface.h"
 
 typedef struct AcpiMcfgInfo {
     uint64_t base;
@@ -35,5 +36,12 @@ typedef struct AcpiMcfgInfo {
 
 void build_mcfg(GArray *table_data, BIOSLinker *linker, AcpiMcfgInfo *info,
                 const char *oem_id, const char *oem_table_id);
-Aml *aml_pci_device_dsm(void);
+
+void build_pci_bridge_aml(AcpiDevAmlIf *adev, Aml *scope);
+
+void build_srat_generic_affinity_structures(GArray *table_data);
+
+Aml *build_pci_host_bridge_osc_method(bool enable_native_pcie_hotplug);
+Aml *build_pci_bridge_edsm(void);
+
 #endif

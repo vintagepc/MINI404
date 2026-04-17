@@ -40,12 +40,12 @@
 #include "trace.h"
 #include "hw/timer/sse-timer.h"
 #include "hw/timer/sse-counter.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/registerfields.h"
-#include "hw/clock.h"
-#include "hw/qdev-clock.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/clock.h"
+#include "hw/core/qdev-clock.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 
 REG32(CNTPCT_LO, 0x0)
@@ -428,7 +428,7 @@ static const VMStateDescription sse_timer_vmstate = {
     .name = "sse-timer",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER(timer, SSETimer),
         VMSTATE_UINT32(cntfrq, SSETimer),
         VMSTATE_UINT32(cntp_ctl, SSETimer),
@@ -440,18 +440,17 @@ static const VMStateDescription sse_timer_vmstate = {
     }
 };
 
-static Property sse_timer_properties[] = {
+static const Property sse_timer_properties[] = {
     DEFINE_PROP_LINK("counter", SSETimer, counter, TYPE_SSE_COUNTER, SSECounter *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void sse_timer_class_init(ObjectClass *klass, void *data)
+static void sse_timer_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = sse_timer_realize;
     dc->vmsd = &sse_timer_vmstate;
-    dc->reset = sse_timer_reset;
+    device_class_set_legacy_reset(dc, sse_timer_reset);
     device_class_set_props(dc, sse_timer_properties);
 }
 

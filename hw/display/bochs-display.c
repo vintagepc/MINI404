@@ -8,8 +8,8 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/units.h"
-#include "hw/pci/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/display/bochs-vbe.h"
 #include "hw/display/edid.h"
@@ -61,7 +61,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(BochsDisplayState, BOCHS_DISPLAY)
 
 static const VMStateDescription vmstate_bochs_display = {
     .name = "bochs-display",
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(pci, BochsDisplayState),
         VMSTATE_UINT16_ARRAY(vbe_regs, BochsDisplayState, VBE_DISPI_INDEX_NB),
         VMSTATE_BOOL(big_endian_fb, BochsDisplayState),
@@ -164,7 +164,7 @@ static int bochs_display_get_mode(BochsDisplayState *s,
     memset(mode, 0, sizeof(*mode));
     switch (vbe[VBE_DISPI_INDEX_BPP]) {
     case 16:
-        /* best effort: support native endianess only */
+        /* best effort: support native endianness only */
         mode->format = PIXMAN_r5g6b5;
         mode->bytepp = 2;
         break;
@@ -345,14 +345,13 @@ static void bochs_display_exit(PCIDevice *dev)
     graphic_console_close(s->con);
 }
 
-static Property bochs_display_properties[] = {
+static const Property bochs_display_properties[] = {
     DEFINE_PROP_SIZE("vgamem", BochsDisplayState, vgamem, 16 * MiB),
     DEFINE_PROP_BOOL("edid", BochsDisplayState, enable_edid, true),
     DEFINE_EDID_PROPERTIES(BochsDisplayState, edid_info),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void bochs_display_class_init(ObjectClass *klass, void *data)
+static void bochs_display_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -375,7 +374,7 @@ static const TypeInfo bochs_display_type_info = {
     .instance_size  = sizeof(BochsDisplayState),
     .instance_init  = bochs_display_init,
     .class_init     = bochs_display_class_init,
-    .interfaces     = (InterfaceInfo[]) {
+    .interfaces     = (const InterfaceInfo[]) {
         { INTERFACE_PCIE_DEVICE },
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },

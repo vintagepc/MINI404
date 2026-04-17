@@ -16,6 +16,8 @@ test_qapi_outputs = [
   'test-qapi-events-sub-sub-module.h',
   'test-qapi-events.c',
   'test-qapi-events.h',
+  'test-qapi-features.c',
+  'test-qapi-features.h',
   'test-qapi-init-commands.c',
   'test-qapi-init-commands.h',
   'test-qapi-introspect.c',
@@ -68,28 +70,17 @@ test_deps = {
   'test-qht-par': qht_bench,
 }
 
-if have_tools and have_vhost_user and 'CONFIG_LINUX' in config_host
-  executable('vhost-user-bridge',
-             sources: files('vhost-user-bridge.c'),
-             dependencies: [qemuutil, vhost_user])
-endif
+subdir('decode')
 
-test('decodetree', sh,
-     args: [ files('decode/check.sh'), config_host['PYTHON'], files('../scripts/decodetree.py') ],
-     workdir: meson.current_source_dir() / 'decode',
-     suite: 'decodetree')
-
-if 'CONFIG_TCG' in config_all
+if 'CONFIG_TCG' in config_all_accel
   subdir('fp')
+  subdir('tcg/plugins')
 endif
 
-if get_option('tcg').allowed()
-  if 'CONFIG_PLUGIN' in config_host
-    subdir('plugin')
-  endif
-endif
-
+subdir('audio')
 subdir('unit')
 subdir('qapi-schema')
 subdir('qtest')
-subdir('migration')
+subdir('migration-stress')
+subdir('functional')
+subdir('tracetool')

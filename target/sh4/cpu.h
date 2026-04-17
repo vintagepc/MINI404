@@ -21,7 +21,9 @@
 #define SH4_CPU_H
 
 #include "cpu-qom.h"
+#include "exec/cpu-common.h"
 #include "exec/cpu-defs.h"
+#include "exec/cpu-interrupt.h"
 #include "qemu/cpu-float.h"
 
 /* CPU Subtypes */
@@ -107,25 +109,23 @@
                                   TB_FLAG_GUSA_MASK)
 
 typedef struct tlb_t {
-    uint32_t vpn;		/* virtual page number */
-    uint32_t ppn;		/* physical page number */
-    uint32_t size;		/* mapped page size in bytes */
-    uint8_t asid;		/* address space identifier */
-    uint8_t v:1;		/* validity */
-    uint8_t sz:2;		/* page size */
-    uint8_t sh:1;		/* share status */
-    uint8_t c:1;		/* cacheability */
-    uint8_t pr:2;		/* protection key */
-    uint8_t d:1;		/* dirty */
-    uint8_t wt:1;		/* write through */
-    uint8_t sa:3;		/* space attribute (PCMCIA) */
-    uint8_t tc:1;		/* timing control */
+    uint32_t vpn;        /* virtual page number */
+    uint32_t ppn;        /* physical page number */
+    uint32_t size;       /* mapped page size in bytes */
+    uint8_t asid;        /* address space identifier */
+    uint8_t v:1;         /* validity */
+    uint8_t sz:2;        /* page size */
+    uint8_t sh:1;        /* share status */
+    uint8_t c:1;         /* cacheability */
+    uint8_t pr:2;        /* protection key */
+    uint8_t d:1;         /* dirty */
+    uint8_t wt:1;        /* write through */
+    uint8_t sa:3;        /* space attribute (PCMCIA) */
+    uint8_t tc:1;        /* timing control */
 } tlb_t;
 
 #define UTLB_SIZE 64
 #define ITLB_SIZE 4
-
-#define TARGET_INSN_START_EXTRA_WORDS 1
 
 enum sh_features {
     SH_FEATURE_SH4A = 1,
@@ -139,44 +139,54 @@ typedef struct memory_content {
 } memory_content;
 
 typedef struct CPUArchState {
-    uint32_t flags;		/* general execution flags */
-    uint32_t gregs[24];		/* general registers */
-    float32 fregs[32];		/* floating point registers */
+    uint32_t flags;             /* general execution flags */
+    uint32_t gregs[24];         /* general registers */
+    float32 fregs[32];          /* floating point registers */
     uint32_t sr;                /* status register (with T split out) */
     uint32_t sr_m;              /* M bit of status register */
     uint32_t sr_q;              /* Q bit of status register */
     uint32_t sr_t;              /* T bit of status register */
-    uint32_t ssr;		/* saved status register */
-    uint32_t spc;		/* saved program counter */
-    uint32_t gbr;		/* global base register */
-    uint32_t vbr;		/* vector base register */
-    uint32_t sgr;		/* saved global register 15 */
-    uint32_t dbr;		/* debug base register */
-    uint32_t pc;		/* program counter */
+    uint32_t ssr;               /* saved status register */
+    uint32_t spc;               /* saved program counter */
+    uint32_t gbr;               /* global base register */
+    uint32_t vbr;               /* vector base register */
+    uint32_t sgr;               /* saved global register 15 */
+    uint32_t dbr;               /* debug base register */
+    uint32_t pc;                /* program counter */
     uint32_t delayed_pc;        /* target of delayed branch */
     uint32_t delayed_cond;      /* condition of delayed branch */
-    uint32_t mach;		/* multiply and accumulate high */
-    uint32_t macl;		/* multiply and accumulate low */
-    uint32_t pr;		/* procedure register */
-    uint32_t fpscr;		/* floating point status/control register */
-    uint32_t fpul;		/* floating point communication register */
+    uint32_t pr;                /* procedure register */
+    uint32_t fpscr;             /* floating point status/control register */
+    uint32_t fpul;              /* floating point communication register */
+
+    /* multiply and accumulate: high, low and combined. */
+    union {
+        uint64_t mac;
+        struct {
+#if HOST_BIG_ENDIAN
+            uint32_t mach, macl;
+#else
+            uint32_t macl, mach;
+#endif
+        };
+    };
 
     /* float point status register */
     float_status fp_status;
 
     /* Those belong to the specific unit (SH7750) but are handled here */
-    uint32_t mmucr;		/* MMU control register */
-    uint32_t pteh;		/* page table entry high register */
-    uint32_t ptel;		/* page table entry low register */
-    uint32_t ptea;		/* page table entry assistance register */
+    uint32_t mmucr;             /* MMU control register */
+    uint32_t pteh;              /* page table entry high register */
+    uint32_t ptel;              /* page table entry low register */
+    uint32_t ptea;              /* page table entry assistance register */
     uint32_t ttb;               /* translation table base register */
-    uint32_t tea;		/* TLB exception address register */
-    uint32_t tra;		/* TRAPA exception register */
-    uint32_t expevt;		/* exception event register */
-    uint32_t intevt;		/* interrupt event register */
+    uint32_t tea;               /* TLB exception address register */
+    uint32_t tra;               /* TRAPA exception register */
+    uint32_t expevt;            /* exception event register */
+    uint32_t intevt;            /* interrupt event register */
 
-    tlb_t itlb[ITLB_SIZE];	/* instruction translation table */
-    tlb_t utlb[UTLB_SIZE];	/* unified translation table */
+    tlb_t itlb[ITLB_SIZE];      /* instruction translation table */
+    tlb_t utlb[UTLB_SIZE];      /* unified translation table */
 
     /* LDST = LOCK_ADDR != -1.  */
     uint32_t lock_addr;
@@ -186,13 +196,13 @@ typedef struct CPUArchState {
     struct {} end_reset_fields;
 
     /* Fields from here on are preserved over CPU reset. */
-    int id;			/* CPU model */
+    int id;                     /* CPU model */
 
     /* The features that we should emulate. See sh_features above.  */
     uint32_t features;
 
     void *intc_handle;
-    int in_sleep;		/* SR_BL ignored during sleep */
+    int in_sleep;               /* SR_BL ignored during sleep */
     memory_content *movcal_backup;
     memory_content **movcal_backup_tail;
 } CPUSH4State;
@@ -204,17 +214,33 @@ typedef struct CPUArchState {
  * A SuperH CPU.
  */
 struct ArchCPU {
-    /*< private >*/
     CPUState parent_obj;
-    /*< public >*/
 
-    CPUNegativeOffsetState neg;
     CPUSH4State env;
 };
 
+/**
+ * SuperHCPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_phases: The parent class' reset phase handlers.
+ * @pvr: Processor Version Register
+ * @prr: Processor Revision Register
+ * @cvr: Cache Version Register
+ *
+ * A SuperH CPU model.
+ */
+struct SuperHCPUClass {
+    CPUClass parent_class;
+
+    DeviceRealize parent_realize;
+    ResettablePhases parent_phases;
+
+    uint32_t pvr;
+    uint32_t prr;
+    uint32_t cvr;
+};
 
 void superh_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
-hwaddr superh_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 int superh_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int superh_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
 G_NORETURN void superh_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
@@ -222,9 +248,11 @@ G_NORETURN void superh_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
                                                uintptr_t retaddr);
 
 void sh4_translate_init(void);
-void sh4_cpu_list(void);
+void sh4_translate_code(CPUState *cs, TranslationBlock *tb,
+                        int *max_insns, vaddr pc, void *host_pc);
 
 #if !defined(CONFIG_USER_ONLY)
+hwaddr superh_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 bool superh_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                          MMUAccessType access_type, int mmu_idx,
                          bool probe, uintptr_t retaddr);
@@ -249,30 +277,14 @@ void cpu_sh4_write_mmaped_utlb_data(CPUSH4State *s, hwaddr addr,
                                     uint32_t mem_value);
 #endif
 
-int cpu_sh4_is_cached(CPUSH4State * env, target_ulong addr);
+int cpu_sh4_is_cached(CPUSH4State *env, uint32_t addr);
 
 void cpu_load_tlb(CPUSH4State * env);
 
-#define SUPERH_CPU_TYPE_SUFFIX "-" TYPE_SUPERH_CPU
-#define SUPERH_CPU_TYPE_NAME(model) model SUPERH_CPU_TYPE_SUFFIX
 #define CPU_RESOLVING_TYPE TYPE_SUPERH_CPU
-
-#define cpu_list sh4_cpu_list
 
 /* MMU modes definitions */
 #define MMU_USER_IDX 1
-static inline int cpu_mmu_index (CPUSH4State *env, bool ifetch)
-{
-    /* The instruction in a RTE delay slot is fetched in privileged
-       mode, but executed in user mode.  */
-    if (ifetch && (env->flags & TB_FLAG_DELAY_SLOT_RTE)) {
-        return 0;
-    } else {
-        return (env->sr & (1u << SR_MD)) == 0 ? 1 : 0;
-    }
-}
-
-#include "exec/cpu-all.h"
 
 /* MMU control register */
 #define MMUCR    0x1F000010
@@ -353,34 +365,19 @@ static inline int cpu_ptel_pr (uint32_t ptel)
 #define PTEA_TC        (1 << 3)
 #define cpu_ptea_tc(ptea) (((ptea) & PTEA_TC) >> 3)
 
-static inline target_ulong cpu_read_sr(CPUSH4State *env)
+static inline uint32_t cpu_read_sr(CPUSH4State *env)
 {
     return env->sr | (env->sr_m << SR_M) |
                      (env->sr_q << SR_Q) |
                      (env->sr_t << SR_T);
 }
 
-static inline void cpu_write_sr(CPUSH4State *env, target_ulong sr)
+static inline void cpu_write_sr(CPUSH4State *env, uint32_t sr)
 {
     env->sr_m = (sr >> SR_M) & 1;
     env->sr_q = (sr >> SR_Q) & 1;
     env->sr_t = (sr >> SR_T) & 1;
     env->sr = sr & ~((1u << SR_M) | (1u << SR_Q) | (1u << SR_T));
-}
-
-static inline void cpu_get_tb_cpu_state(CPUSH4State *env, target_ulong *pc,
-                                        target_ulong *cs_base, uint32_t *flags)
-{
-    *pc = env->pc;
-    /* For a gUSA region, notice the end of the region.  */
-    *cs_base = env->flags & TB_FLAG_GUSA_MASK ? env->gregs[0] : 0;
-    *flags = env->flags
-            | (env->fpscr & TB_FLAG_FPSCR_MASK)
-            | (env->sr & TB_FLAG_SR_MASK)
-            | (env->movcal_backup ? TB_FLAG_PENDING_MOVCA : 0); /* Bit 3 */
-#ifdef CONFIG_USER_ONLY
-    *flags |= TB_FLAG_UNALIGN * !env_cpu(env)->prctl_unalign_sigbus;
-#endif
 }
 
 #endif /* SH4_CPU_H */

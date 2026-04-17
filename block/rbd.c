@@ -18,15 +18,16 @@
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "block/qdict.h"
 #include "crypto/secret.h"
 #include "qemu/cutils.h"
-#include "sysemu/replay.h"
-#include "qapi/qmp/qstring.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qjson.h"
-#include "qapi/qmp/qlist.h"
+#include "system/replay.h"
+#include "qobject/qstring.h"
+#include "qobject/qdict.h"
+#include "qobject/qjson.h"
+#include "qobject/qlist.h"
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/qapi-visit-block-core.h"
 
@@ -71,6 +72,16 @@ static const char rbd_luks2_header_verification[
     'L', 'U', 'K', 'S', 0xBA, 0xBE, 0, 2
 };
 
+static const char rbd_layered_luks_header_verification[
+        RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN] = {
+    'R', 'B', 'D', 'L', 0xBA, 0xBE, 0, 1
+};
+
+static const char rbd_layered_luks2_header_verification[
+        RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN] = {
+    'R', 'B', 'D', 'L', 0xBA, 0xBE, 0, 2
+};
+
 typedef enum {
     RBD_AIO_READ,
     RBD_AIO_WRITE,
@@ -88,12 +99,18 @@ typedef struct BDRVRBDState {
     char *namespace;
     uint64_t image_size;
     uint64_t object_size;
+
+    /*
+     * If @bs->encrypted is true, this is the encryption format actually loaded
+     * at the librbd level. If it is false, it is the result of probing.
+     * RBD_IMAGE_ENCRYPTION_FORMAT__MAX means that encryption is not enabled and
+     * probing didn't find any known encryption header either.
+     */
+    RbdImageEncryptionFormat encryption_format;
 } BDRVRBDState;
 
 typedef struct RBDTask {
-    BlockDriverState *bs;
     Coroutine *co;
-    bool complete;
     int64_t ret;
 } RBDTask;
 
@@ -243,7 +260,6 @@ static void qemu_rbd_parse_filename(const char *filename, QDict *options,
 done:
     g_free(buf);
     qobject_unref(keypairs);
-    return;
 }
 
 static int qemu_rbd_set_auth(rados_t cluster, BlockdevOptionsRbd *opts,
@@ -356,11 +372,11 @@ static int qemu_rbd_convert_luks_create_options(
 
     if (luks_opts->has_cipher_alg) {
         switch (luks_opts->cipher_alg) {
-            case QCRYPTO_CIPHER_ALG_AES_128: {
+            case QCRYPTO_CIPHER_ALGO_AES_128: {
                 *alg = RBD_ENCRYPTION_ALGORITHM_AES128;
                 break;
             }
-            case QCRYPTO_CIPHER_ALG_AES_256: {
+            case QCRYPTO_CIPHER_ALGO_AES_256: {
                 *alg = RBD_ENCRYPTION_ALGORITHM_AES256;
                 break;
             }
@@ -385,7 +401,6 @@ static int qemu_rbd_encryption_format(rbd_image_t image,
 {
     int r = 0;
     g_autofree char *passphrase = NULL;
-    size_t passphrase_len;
     rbd_encryption_format_t format;
     rbd_encryption_options_t opts;
     rbd_encryption_luks1_format_options_t luks_opts;
@@ -407,12 +422,12 @@ static int qemu_rbd_encryption_format(rbd_image_t image,
             opts_size = sizeof(luks_opts);
             r = qemu_rbd_convert_luks_create_options(
                     qapi_RbdEncryptionCreateOptionsLUKS_base(&encrypt->u.luks),
-                    &luks_opts.alg, &passphrase, &passphrase_len, errp);
+                    &luks_opts.alg, &passphrase, &luks_opts.passphrase_size,
+                    errp);
             if (r < 0) {
                 return r;
             }
             luks_opts.passphrase = passphrase;
-            luks_opts.passphrase_size = passphrase_len;
             break;
         }
         case RBD_IMAGE_ENCRYPTION_FORMAT_LUKS2: {
@@ -423,12 +438,12 @@ static int qemu_rbd_encryption_format(rbd_image_t image,
             r = qemu_rbd_convert_luks_create_options(
                     qapi_RbdEncryptionCreateOptionsLUKS2_base(
                             &encrypt->u.luks2),
-                    &luks2_opts.alg, &passphrase, &passphrase_len, errp);
+                    &luks2_opts.alg, &passphrase, &luks2_opts.passphrase_size,
+                    errp);
             if (r < 0) {
                 return r;
             }
             luks2_opts.passphrase = passphrase;
-            luks2_opts.passphrase_size = passphrase_len;
             break;
         }
         default: {
@@ -461,15 +476,19 @@ static int qemu_rbd_encryption_format(rbd_image_t image,
     return 0;
 }
 
-static int qemu_rbd_encryption_load(rbd_image_t image,
+static int qemu_rbd_encryption_load(BlockDriverState *bs,
+                                    rbd_image_t image,
                                     RbdEncryptionOptions *encrypt,
                                     Error **errp)
 {
+    BDRVRBDState *s = bs->opaque;
     int r = 0;
     g_autofree char *passphrase = NULL;
-    size_t passphrase_len;
     rbd_encryption_luks1_format_options_t luks_opts;
     rbd_encryption_luks2_format_options_t luks2_opts;
+#ifdef LIBRBD_SUPPORTS_ENCRYPTION_LOAD2
+    rbd_encryption_luks_format_options_t luks_any_opts;
+#endif
     rbd_encryption_format_t format;
     rbd_encryption_options_t opts;
     size_t opts_size;
@@ -482,12 +501,11 @@ static int qemu_rbd_encryption_load(rbd_image_t image,
             opts_size = sizeof(luks_opts);
             r = qemu_rbd_convert_luks_options(
                     qapi_RbdEncryptionOptionsLUKS_base(&encrypt->u.luks),
-                    &passphrase, &passphrase_len, errp);
+                    &passphrase, &luks_opts.passphrase_size, errp);
             if (r < 0) {
                 return r;
             }
             luks_opts.passphrase = passphrase;
-            luks_opts.passphrase_size = passphrase_len;
             break;
         }
         case RBD_IMAGE_ENCRYPTION_FORMAT_LUKS2: {
@@ -497,14 +515,29 @@ static int qemu_rbd_encryption_load(rbd_image_t image,
             opts_size = sizeof(luks2_opts);
             r = qemu_rbd_convert_luks_options(
                     qapi_RbdEncryptionOptionsLUKS2_base(&encrypt->u.luks2),
-                    &passphrase, &passphrase_len, errp);
+                    &passphrase, &luks2_opts.passphrase_size, errp);
             if (r < 0) {
                 return r;
             }
             luks2_opts.passphrase = passphrase;
-            luks2_opts.passphrase_size = passphrase_len;
             break;
         }
+#ifdef LIBRBD_SUPPORTS_ENCRYPTION_LOAD2
+        case RBD_IMAGE_ENCRYPTION_FORMAT_LUKS_ANY: {
+            memset(&luks_any_opts, 0, sizeof(luks_any_opts));
+            format = RBD_ENCRYPTION_FORMAT_LUKS;
+            opts = &luks_any_opts;
+            opts_size = sizeof(luks_any_opts);
+            r = qemu_rbd_convert_luks_options(
+                    qapi_RbdEncryptionOptionsLUKSAny_base(&encrypt->u.luks_any),
+                    &passphrase, &luks_any_opts.passphrase_size, errp);
+            if (r < 0) {
+                return r;
+            }
+            luks_any_opts.passphrase = passphrase;
+            break;
+        }
+#endif
         default: {
             r = -ENOTSUP;
             error_setg_errno(
@@ -519,10 +552,177 @@ static int qemu_rbd_encryption_load(rbd_image_t image,
         error_setg_errno(errp, -r, "encryption load fail");
         return r;
     }
+    bs->encrypted = true;
+    s->encryption_format = encrypt->format;
 
     return 0;
 }
+
+#ifdef LIBRBD_SUPPORTS_ENCRYPTION_LOAD2
+static int qemu_rbd_encryption_load2(BlockDriverState *bs,
+                                     rbd_image_t image,
+                                     RbdEncryptionOptions *encrypt,
+                                     Error **errp)
+{
+    BDRVRBDState *s = bs->opaque;
+    int r = 0;
+    int encrypt_count = 1;
+    int i;
+    RbdEncryptionOptions *curr_encrypt;
+    rbd_encryption_spec_t *specs;
+    rbd_encryption_luks1_format_options_t *luks_opts;
+    rbd_encryption_luks2_format_options_t *luks2_opts;
+    rbd_encryption_luks_format_options_t *luks_any_opts;
+
+    /* count encryption options */
+    for (curr_encrypt = encrypt->parent; curr_encrypt;
+         curr_encrypt = curr_encrypt->parent) {
+        ++encrypt_count;
+    }
+
+    specs = g_new0(rbd_encryption_spec_t, encrypt_count);
+
+    curr_encrypt = encrypt;
+    for (i = 0; i < encrypt_count; ++i) {
+        switch (curr_encrypt->format) {
+            case RBD_IMAGE_ENCRYPTION_FORMAT_LUKS: {
+                specs[i].format = RBD_ENCRYPTION_FORMAT_LUKS1;
+
+                luks_opts = g_new0(rbd_encryption_luks1_format_options_t, 1);
+                specs[i].opts = luks_opts;
+                specs[i].opts_size = sizeof(*luks_opts);
+
+                r = qemu_rbd_convert_luks_options(
+                        qapi_RbdEncryptionOptionsLUKS_base(
+                                &curr_encrypt->u.luks),
+                        (char **)&luks_opts->passphrase,
+                        &luks_opts->passphrase_size,
+                        errp);
+                break;
+            }
+            case RBD_IMAGE_ENCRYPTION_FORMAT_LUKS2: {
+                specs[i].format = RBD_ENCRYPTION_FORMAT_LUKS2;
+
+                luks2_opts = g_new0(rbd_encryption_luks2_format_options_t, 1);
+                specs[i].opts = luks2_opts;
+                specs[i].opts_size = sizeof(*luks2_opts);
+
+                r = qemu_rbd_convert_luks_options(
+                        qapi_RbdEncryptionOptionsLUKS2_base(
+                                &curr_encrypt->u.luks2),
+                        (char **)&luks2_opts->passphrase,
+                        &luks2_opts->passphrase_size,
+                        errp);
+                break;
+            }
+            case RBD_IMAGE_ENCRYPTION_FORMAT_LUKS_ANY: {
+                specs[i].format = RBD_ENCRYPTION_FORMAT_LUKS;
+
+                luks_any_opts = g_new0(rbd_encryption_luks_format_options_t, 1);
+                specs[i].opts = luks_any_opts;
+                specs[i].opts_size = sizeof(*luks_any_opts);
+
+                r = qemu_rbd_convert_luks_options(
+                        qapi_RbdEncryptionOptionsLUKSAny_base(
+                                &curr_encrypt->u.luks_any),
+                        (char **)&luks_any_opts->passphrase,
+                        &luks_any_opts->passphrase_size,
+                        errp);
+                break;
+            }
+            default: {
+                r = -ENOTSUP;
+                error_setg_errno(
+                        errp, -r, "unknown image encryption format: %u",
+                        curr_encrypt->format);
+            }
+        }
+
+        if (r < 0) {
+            goto exit;
+        }
+
+        curr_encrypt = curr_encrypt->parent;
+    }
+
+    r = rbd_encryption_load2(image, specs, encrypt_count);
+    if (r < 0) {
+        error_setg_errno(errp, -r, "layered encryption load fail");
+        goto exit;
+    }
+    bs->encrypted = true;
+    s->encryption_format = encrypt->format;
+
+exit:
+    for (i = 0; i < encrypt_count; ++i) {
+        if (!specs[i].opts) {
+            break;
+        }
+
+        switch (specs[i].format) {
+            case RBD_ENCRYPTION_FORMAT_LUKS1: {
+                luks_opts = specs[i].opts;
+                g_free((void *)luks_opts->passphrase);
+                break;
+            }
+            case RBD_ENCRYPTION_FORMAT_LUKS2: {
+                luks2_opts = specs[i].opts;
+                g_free((void *)luks2_opts->passphrase);
+                break;
+            }
+            case RBD_ENCRYPTION_FORMAT_LUKS: {
+                luks_any_opts = specs[i].opts;
+                g_free((void *)luks_any_opts->passphrase);
+                break;
+            }
+        }
+
+        g_free(specs[i].opts);
+    }
+    g_free(specs);
+    return r;
+}
 #endif
+#endif
+
+/*
+ * For an image without encryption enabled on the rbd layer, probe the start of
+ * the image if it could be opened as an encrypted image so that we can display
+ * it when the user queries the node (most importantly in qemu-img).
+ *
+ * If the guest writes an encryption header to its disk after this probing, this
+ * won't be reflected when queried, but that's okay. There is no reason why the
+ * user should want to apply encryption at the rbd level while the image is
+ * still in use. This is just guest data.
+ */
+static void qemu_rbd_encryption_probe(BlockDriverState *bs)
+{
+    BDRVRBDState *s = bs->opaque;
+    char buf[RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN] = {0};
+    int r;
+
+    assert(s->encryption_format == RBD_IMAGE_ENCRYPTION_FORMAT__MAX);
+
+    r = rbd_read(s->image, 0,
+                 RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN, buf);
+    if (r < RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) {
+        return;
+    }
+
+    if (memcmp(buf, rbd_luks_header_verification,
+               RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) == 0) {
+        s->encryption_format = RBD_IMAGE_ENCRYPTION_FORMAT_LUKS;
+    } else if (memcmp(buf, rbd_luks2_header_verification,
+               RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) == 0) {
+        s->encryption_format = RBD_IMAGE_ENCRYPTION_FORMAT_LUKS2;
+    } else if (memcmp(buf, rbd_layered_luks_header_verification,
+               RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) == 0) {
+        s->encryption_format = RBD_IMAGE_ENCRYPTION_FORMAT_LUKS;
+    } else if (memcmp(buf, rbd_layered_luks2_header_verification,
+               RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) == 0) {
+        s->encryption_format = RBD_IMAGE_ENCRYPTION_FORMAT_LUKS2;
+    }
+}
 
 /* FIXME Deprecate and remove keypairs or make it available in QMP. */
 static int qemu_rbd_do_create(BlockdevCreateOptions *options,
@@ -536,13 +736,13 @@ static int qemu_rbd_do_create(BlockdevCreateOptions *options,
     int ret;
 
     assert(options->driver == BLOCKDEV_DRIVER_RBD);
-    if (opts->location->has_snapshot) {
+    if (opts->location->snapshot) {
         error_setg(errp, "Can't use snapshot name for image creation");
         return -EINVAL;
     }
 
 #ifndef LIBRBD_SUPPORTS_ENCRYPTION
-    if (opts->has_encrypt) {
+    if (opts->encrypt) {
         error_setg(errp, "RBD library does not support image encryption");
         return -ENOTSUP;
     }
@@ -574,7 +774,7 @@ static int qemu_rbd_do_create(BlockdevCreateOptions *options,
     }
 
 #ifdef LIBRBD_SUPPORTS_ENCRYPTION
-    if (opts->has_encrypt) {
+    if (opts->encrypt) {
         rbd_image_t image;
 
         ret = rbd_open(io_ctx, opts->location->image, &image, NULL);
@@ -686,7 +886,6 @@ static int coroutine_fn qemu_rbd_co_create_opts(BlockDriver *drv,
         goto exit;
     }
     rbd_opts->encrypt     = encrypt;
-    rbd_opts->has_encrypt = !!encrypt;
 
     /*
      * Caution: while qdict_get_try_str() is fine, getting non-string
@@ -697,11 +896,8 @@ static int coroutine_fn qemu_rbd_co_create_opts(BlockDriver *drv,
     loc = rbd_opts->location;
     loc->pool        = g_strdup(qdict_get_try_str(options, "pool"));
     loc->conf        = g_strdup(qdict_get_try_str(options, "conf"));
-    loc->has_conf    = !!loc->conf;
     loc->user        = g_strdup(qdict_get_try_str(options, "user"));
-    loc->has_user    = !!loc->user;
     loc->q_namespace = g_strdup(qdict_get_try_str(options, "namespace"));
-    loc->has_q_namespace = !!loc->q_namespace;
     loc->image       = g_strdup(qdict_get_try_str(options, "image"));
     keypairs         = qdict_get_try_str(options, "=keyvalue-pairs");
 
@@ -767,7 +963,6 @@ static int qemu_rbd_connect(rados_t *cluster, rados_ioctx_t *io_ctx,
             return -EINVAL;
         }
         opts->key_secret = g_strdup(secretid);
-        opts->has_key_secret = true;
     }
 
     mon_host = qemu_rbd_mon_host(opts, &local_err);
@@ -785,7 +980,7 @@ static int qemu_rbd_connect(rados_t *cluster, rados_ioctx_t *io_ctx,
 
     /* try default location when conf=NULL, but ignore failure */
     r = rados_conf_read_file(*cluster, opts->conf);
-    if (opts->has_conf && r < 0) {
+    if (opts->conf && r < 0) {
         error_setg_errno(errp, -r, "error reading conf file %s", opts->conf);
         goto failed_shutdown;
     }
@@ -833,7 +1028,7 @@ static int qemu_rbd_connect(rados_t *cluster, rados_ioctx_t *io_ctx,
     }
 
 #ifdef HAVE_RBD_NAMESPACE_EXISTS
-    if (opts->has_q_namespace && strlen(opts->q_namespace) > 0) {
+    if (opts->q_namespace && strlen(opts->q_namespace) > 0) {
         bool exists;
 
         r = rbd_namespace_exists(*io_ctx, opts->q_namespace, &exists);
@@ -991,9 +1186,19 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
         goto failed_open;
     }
 
-    if (opts->has_encrypt) {
+    s->encryption_format = RBD_IMAGE_ENCRYPTION_FORMAT__MAX;
+    if (opts->encrypt) {
 #ifdef LIBRBD_SUPPORTS_ENCRYPTION
-        r = qemu_rbd_encryption_load(s->image, opts->encrypt, errp);
+        if (opts->encrypt->parent) {
+#ifdef LIBRBD_SUPPORTS_ENCRYPTION_LOAD2
+            r = qemu_rbd_encryption_load2(bs, s->image, opts->encrypt, errp);
+#else
+            r = -ENOTSUP;
+            error_setg(errp, "RBD library does not support layered encryption");
+#endif
+        } else {
+            r = qemu_rbd_encryption_load(bs, s->image, opts->encrypt, errp);
+        }
         if (r < 0) {
             goto failed_post_open;
         }
@@ -1002,6 +1207,8 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
         error_setg(errp, "RBD library does not support image encryption");
         goto failed_post_open;
 #endif
+    } else {
+        qemu_rbd_encryption_probe(bs);
     }
 
     r = rbd_stat(s->image, &info, sizeof(info));
@@ -1016,7 +1223,9 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
     /* If we are using an rbd snapshot, we must be r/o, otherwise
      * leave as-is */
     if (s->snap != NULL) {
+        bdrv_graph_rdlock_main_loop();
         r = bdrv_apply_auto_read_only(bs, "rbd snapshots are read-only", errp);
+        bdrv_graph_rdunlock_main_loop();
         if (r < 0) {
             goto failed_post_open;
         }
@@ -1055,6 +1264,8 @@ static int qemu_rbd_reopen_prepare(BDRVReopenState *state,
 {
     BDRVRBDState *s = state->bs->opaque;
     int ret = 0;
+
+    GRAPH_RDLOCK_GUARD_MAINLOOP();
 
     if (s->snap && state->flags & BDRV_O_RDWR) {
         error_setg(errp,
@@ -1096,7 +1307,6 @@ static int qemu_rbd_resize(BlockDriverState *bs, uint64_t size)
 static void qemu_rbd_finish_bh(void *opaque)
 {
     RBDTask *task = opaque;
-    task->complete = true;
     aio_co_wake(task->co);
 }
 
@@ -1113,7 +1323,7 @@ static void qemu_rbd_completion_cb(rbd_completion_t c, RBDTask *task)
 {
     task->ret = rbd_aio_get_return_value(c);
     rbd_aio_release(c);
-    aio_bh_schedule_oneshot(bdrv_get_aio_context(task->bs),
+    aio_bh_schedule_oneshot(qemu_coroutine_get_aio_context(task->co),
                             qemu_rbd_finish_bh, task);
 }
 
@@ -1125,7 +1335,7 @@ static int coroutine_fn qemu_rbd_start_co(BlockDriverState *bs,
                                           RBDAIOCmd cmd)
 {
     BDRVRBDState *s = bs->opaque;
-    RBDTask task = { .bs = bs, .co = qemu_coroutine_self() };
+    RBDTask task = { .co = qemu_coroutine_self() };
     rbd_completion_t c;
     int r;
 
@@ -1138,7 +1348,7 @@ static int coroutine_fn qemu_rbd_start_co(BlockDriverState *bs,
          * operations that exceed the current size.
          */
         if (offset + bytes > s->image_size) {
-            int r = qemu_rbd_resize(bs, offset + bytes);
+            r = qemu_rbd_resize(bs, offset + bytes);
             if (r < 0) {
                 return r;
             }
@@ -1188,9 +1398,8 @@ static int coroutine_fn qemu_rbd_start_co(BlockDriverState *bs,
         return r;
     }
 
-    while (!task.complete) {
-        qemu_coroutine_yield();
-    }
+    /* Expect exactly a single wake from qemu_rbd_finish_bh() */
+    qemu_coroutine_yield();
 
     if (task.ret < 0) {
         error_report("rbd request failed: cmd %d offset %" PRIu64 " bytes %"
@@ -1244,7 +1453,8 @@ coroutine_fn qemu_rbd_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset,
 }
 #endif
 
-static int qemu_rbd_getinfo(BlockDriverState *bs, BlockDriverInfo *bdi)
+static int coroutine_fn
+qemu_rbd_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
 {
     BDRVRBDState *s = bs->opaque;
     bdi->cluster_size = s->object_size;
@@ -1256,17 +1466,6 @@ static ImageInfoSpecific *qemu_rbd_get_specific_info(BlockDriverState *bs,
 {
     BDRVRBDState *s = bs->opaque;
     ImageInfoSpecific *spec_info;
-    char buf[RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN] = {0};
-    int r;
-
-    if (s->image_size >= RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) {
-        r = rbd_read(s->image, 0,
-                     RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN, buf);
-        if (r < 0) {
-            error_setg_errno(errp, -r, "cannot read image start for probe");
-            return NULL;
-        }
-    }
 
     spec_info = g_new(ImageInfoSpecific, 1);
     *spec_info = (ImageInfoSpecific){
@@ -1274,18 +1473,13 @@ static ImageInfoSpecific *qemu_rbd_get_specific_info(BlockDriverState *bs,
         .u.rbd.data = g_new0(ImageInfoSpecificRbd, 1),
     };
 
-    if (memcmp(buf, rbd_luks_header_verification,
-               RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) == 0) {
-        spec_info->u.rbd.data->encryption_format =
-                RBD_IMAGE_ENCRYPTION_FORMAT_LUKS;
-        spec_info->u.rbd.data->has_encryption_format = true;
-    } else if (memcmp(buf, rbd_luks2_header_verification,
-               RBD_ENCRYPTION_LUKS_HEADER_VERIFICATION_LEN) == 0) {
-        spec_info->u.rbd.data->encryption_format =
-                RBD_IMAGE_ENCRYPTION_FORMAT_LUKS2;
-        spec_info->u.rbd.data->has_encryption_format = true;
+    if (s->encryption_format == RBD_IMAGE_ENCRYPTION_FORMAT__MAX) {
+        assert(!bs->encrypted);
     } else {
-        spec_info->u.rbd.data->has_encryption_format = false;
+        ImageInfoSpecificRbd *rbd_info = spec_info->u.rbd.data;
+
+        rbd_info->has_encryption_format = true;
+        rbd_info->encryption_format = s->encryption_format;
     }
 
     return spec_info;
@@ -1337,9 +1531,9 @@ static int qemu_rbd_diff_iterate_cb(uint64_t offs, size_t len,
 }
 
 static int coroutine_fn qemu_rbd_co_block_status(BlockDriverState *bs,
-                                                 bool want_zero, int64_t offset,
-                                                 int64_t bytes, int64_t *pnum,
-                                                 int64_t *map,
+                                                 unsigned int mode,
+                                                 int64_t offset, int64_t bytes,
+                                                 int64_t *pnum, int64_t *map,
                                                  BlockDriverState **file)
 {
     BDRVRBDState *s = bs->opaque;
@@ -1434,7 +1628,7 @@ static int coroutine_fn qemu_rbd_co_block_status(BlockDriverState *bs,
     return status;
 }
 
-static int64_t qemu_rbd_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn qemu_rbd_co_getlength(BlockDriverState *bs)
 {
     BDRVRBDState *s = bs->opaque;
     int r;
@@ -1648,17 +1842,18 @@ static const char *const qemu_rbd_strong_runtime_opts[] = {
 static BlockDriver bdrv_rbd = {
     .format_name            = "rbd",
     .instance_size          = sizeof(BDRVRBDState),
+
     .bdrv_parse_filename    = qemu_rbd_parse_filename,
-    .bdrv_file_open         = qemu_rbd_open,
+    .bdrv_open              = qemu_rbd_open,
     .bdrv_close             = qemu_rbd_close,
     .bdrv_reopen_prepare    = qemu_rbd_reopen_prepare,
     .bdrv_co_create         = qemu_rbd_co_create,
     .bdrv_co_create_opts    = qemu_rbd_co_create_opts,
     .bdrv_has_zero_init     = bdrv_has_zero_init_1,
-    .bdrv_get_info          = qemu_rbd_getinfo,
+    .bdrv_co_get_info       = qemu_rbd_co_get_info,
     .bdrv_get_specific_info = qemu_rbd_get_specific_info,
     .create_opts            = &qemu_rbd_create_opts,
-    .bdrv_getlength         = qemu_rbd_getlength,
+    .bdrv_co_getlength      = qemu_rbd_co_getlength,
     .bdrv_co_truncate       = qemu_rbd_co_truncate,
     .protocol_name          = "rbd",
 

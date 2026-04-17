@@ -2,7 +2,7 @@
 #define QEMU_HW_ESP_H
 
 #include "hw/scsi/scsi.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/fifo8.h"
 #include "qom/object.h"
 
@@ -14,7 +14,11 @@ typedef void (*ESPDMAMemoryReadWriteFunc)(void *opaque, uint8_t *buf, int len);
 #define ESP_FIFO_SZ 16
 #define ESP_CMDFIFO_SZ 32
 
-typedef struct ESPState ESPState;
+enum ESPASCMode {
+    ESP_ASC_MODE_DIS = 0,    /* Disconnected */
+    ESP_ASC_MODE_INI = 1,    /* Initiator */
+    ESP_ASC_MODE_TGT = 2     /* Target */
+};
 
 #define TYPE_ESP "esp"
 OBJECT_DECLARE_SIMPLE_TYPE(ESPState, ESP)
@@ -25,7 +29,8 @@ struct ESPState {
     uint8_t rregs[ESP_REGS];
     uint8_t wregs[ESP_REGS];
     qemu_irq irq;
-    qemu_irq irq_data;
+    qemu_irq drq_irq;
+    bool drq_state;
     uint8_t chip_id;
     bool tchi_written;
     int32_t ti_size;
@@ -39,9 +44,9 @@ struct ESPState {
     uint8_t cmdfifo_cdb_offset;
     uint8_t lun;
     uint32_t do_cmd;
+    uint8_t asc_mode;
 
-    bool data_in_ready;
-    uint8_t ti_cmd;
+    bool data_ready;
     int dma_enabled;
 
     uint32_t async_len;
@@ -51,7 +56,6 @@ struct ESPState {
     ESPDMAMemoryReadWriteFunc dma_memory_write;
     void *dma_opaque;
     void (*dma_cb)(ESPState *s);
-    uint8_t pdma_cb;
 
     uint8_t mig_version_id;
 
@@ -63,6 +67,8 @@ struct ESPState {
     uint8_t mig_ti_buf[ESP_FIFO_SZ];
     uint8_t mig_cmdbuf[ESP_CMDFIFO_SZ];
     uint32_t mig_cmdlen;
+
+    uint8_t mig_ti_cmd;
 };
 
 #define TYPE_SYSBUS_ESP "sysbus-esp"
@@ -105,6 +111,13 @@ struct SysBusESPState {
 #define CMD_DMA 0x80
 #define CMD_CMD 0x7f
 
+#define CMD_GRP_MASK 0x70
+
+#define CMD_GRP_MISC 0x00
+#define CMD_GRP_INIT 0x01
+#define CMD_GRP_TRGT 0x02
+#define CMD_GRP_DISC 0x04
+
 #define CMD_NOP      0x00
 #define CMD_FLUSH    0x01
 #define CMD_RESET    0x02
@@ -139,6 +152,7 @@ struct SysBusESPState {
 #define INTR_FC 0x08
 #define INTR_BS 0x10
 #define INTR_DC 0x20
+#define INTR_IL 0x40
 #define INTR_RST 0x80
 
 #define SEQ_0 0x0
@@ -149,15 +163,6 @@ struct SysBusESPState {
 
 #define TCHI_FAS100A 0x4
 #define TCHI_AM53C974 0x12
-
-/* PDMA callbacks */
-enum pdma_cb {
-    SATN_PDMA_CB = 0,
-    S_WITHOUT_SATN_PDMA_CB = 1,
-    SATN_STOP_PDMA_CB = 2,
-    WRITE_RESPONSE_PDMA_CB = 3,
-    DO_DMA_PDMA_CB = 4
-};
 
 void esp_dma_enable(ESPState *s, int irq, int level);
 void esp_request_cancelled(SCSIRequest *req);

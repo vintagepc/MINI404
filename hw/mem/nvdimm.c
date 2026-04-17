@@ -28,9 +28,9 @@
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "hw/mem/nvdimm.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/mem/memory-device.h"
-#include "sysemu/hostmem.h"
+#include "system/hostmem.h"
 
 static void nvdimm_get_label_size(Object *obj, Visitor *v, const char *name,
                                   void *opaque, Error **errp)
@@ -154,6 +154,9 @@ static void nvdimm_prepare_memory_region(NVDIMMDevice *nvdimm, Error **errp)
                    object_get_canonical_path_component(OBJECT(hostmem)));
         return;
     }
+    if (memory_region_is_rom(mr)) {
+        nvdimm->readonly = true;
+    }
 
     nvdimm->nvdimm_mr = g_new(MemoryRegion, 1);
     memory_region_init_alias(nvdimm->nvdimm_mr, OBJECT(dimm),
@@ -207,15 +210,16 @@ static void nvdimm_unrealize(PCDIMMDevice *dimm)
  * label read/write functions.
  */
 static void nvdimm_validate_rw_label_data(NVDIMMDevice *nvdimm, uint64_t size,
-                                        uint64_t offset)
+                                        uint64_t offset, bool is_write)
 {
     assert((nvdimm->label_size >= size + offset) && (offset + size > offset));
+    assert(!is_write || !nvdimm->readonly);
 }
 
 static void nvdimm_read_label_data(NVDIMMDevice *nvdimm, void *buf,
                                    uint64_t size, uint64_t offset)
 {
-    nvdimm_validate_rw_label_data(nvdimm, size, offset);
+    nvdimm_validate_rw_label_data(nvdimm, size, offset, false);
 
     memcpy(buf, nvdimm->label_data + offset, size);
 }
@@ -229,7 +233,7 @@ static void nvdimm_write_label_data(NVDIMMDevice *nvdimm, const void *buf,
                                             "pmem", NULL);
     uint64_t backend_offset;
 
-    nvdimm_validate_rw_label_data(nvdimm, size, offset);
+    nvdimm_validate_rw_label_data(nvdimm, size, offset, true);
 
     if (!is_pmem) {
         memcpy(nvdimm->label_data + offset, buf, size);
@@ -242,12 +246,11 @@ static void nvdimm_write_label_data(NVDIMMDevice *nvdimm, const void *buf,
     memory_region_set_dirty(mr, backend_offset, size);
 }
 
-static Property nvdimm_properties[] = {
+static const Property nvdimm_properties[] = {
     DEFINE_PROP_BOOL(NVDIMM_UNARMED_PROP, NVDIMMDevice, unarmed, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void nvdimm_class_init(ObjectClass *oc, void *data)
+static void nvdimm_class_init(ObjectClass *oc, const void *data)
 {
     PCDIMMDeviceClass *ddc = PC_DIMM_CLASS(oc);
     MemoryDeviceClass *mdc = MEMORY_DEVICE_CLASS(oc);

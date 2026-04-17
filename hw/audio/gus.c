@@ -25,22 +25,23 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
-#include "hw/audio/soundhw.h"
-#include "audio/audio.h"
-#include "hw/irq.h"
+#include "hw/audio/model.h"
+#include "qemu/audio.h"
+#include "hw/core/irq.h"
 #include "hw/isa/isa.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "gusemu.h"
-#include "gustate.h"
+#include "qemu/error-report.h"
 #include "qom/object.h"
 
-#define dolog(...) AUD_log ("audio", __VA_ARGS__)
-#ifdef DEBUG
-#define ldebug(...) dolog (__VA_ARGS__)
-#else
-#define ldebug(...)
-#endif
+#define DEBUG 0
+
+#define ldebug(fmt, ...) do { \
+        if (DEBUG) { \
+            error_report("gus: " fmt, ##__VA_ARGS__); \
+        } \
+    } while (0)
 
 #define TYPE_GUS "gus"
 OBJECT_DECLARE_SIMPLE_TYPE(GUSState, GUS)
@@ -48,7 +49,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GUSState, GUS)
 struct GUSState {
     ISADevice dev;
     GUSEmuState emu;
-    QEMUSoundCard card;
+    AudioBackend *audio_be;
     uint32_t freq;
     uint32_t port;
     int pos, left, shift, irqs;
@@ -86,7 +87,8 @@ static int write_audio (GUSState *s, int samples)
         int nbytes, wbytes, wsampl;
 
         nbytes = samples << s->shift;
-        wbytes = AUD_write (
+        wbytes = audio_be_write(
+            s->audio_be,
             s->voice,
             s->mixbuf + (pos << (s->shift - 1)),
             nbytes
@@ -154,14 +156,14 @@ int GUS_irqrequest (GUSEmuState *emu, int hwirq, int n)
     /* qemu_irq_lower (s->pic); */
     qemu_irq_raise (s->pic);
     s->irqs += n;
-    ldebug ("irqrequest %d %d %d\n", hwirq, n, s->irqs);
+    ldebug("irqrequest %d %d %d", hwirq, n, s->irqs);
     return n;
 }
 
 void GUS_irqclear (GUSEmuState *emu, int hwirq)
 {
     GUSState *s = emu->opaque;
-    ldebug ("irqclear %d %d\n", hwirq, s->irqs);
+    ldebug("irqclear %d %d", hwirq, s->irqs);
     qemu_irq_lower (s->pic);
     s->irqs -= 1;
 #ifdef IRQ_STORM
@@ -175,7 +177,7 @@ void GUS_dmarequest (GUSEmuState *emu)
 {
     GUSState *s = emu->opaque;
     IsaDmaClass *k = ISADMA_GET_CLASS(s->isa_dma);
-    ldebug ("dma request %d\n", der->gusdma);
+    ldebug("dma request %d", s->emu.gusdma);
     k->hold_DREQ(s->isa_dma, s->emu.gusdma);
 }
 
@@ -183,16 +185,16 @@ static int GUS_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 {
     GUSState *s = opaque;
     IsaDmaClass *k = ISADMA_GET_CLASS(s->isa_dma);
-    char tmpbuf[4096];
+    QEMU_UNINITIALIZED char tmpbuf[4096];
     int pos = dma_pos, mode, left = dma_len - dma_pos;
 
-    ldebug ("read DMA %#x %d\n", dma_pos, dma_len);
+    ldebug("read DMA 0x%x %d", dma_pos, dma_len);
     mode = k->has_autoinitialization(s->isa_dma, s->emu.gusdma);
     while (left) {
         int to_copy = MIN ((size_t) left, sizeof (tmpbuf));
         int copied;
 
-        ldebug ("left=%d to_copy=%d pos=%d\n", left, to_copy, pos);
+        ldebug("left=%d to_copy=%d pos=%d", left, to_copy, pos);
         copied = k->read_memory(s->isa_dma, nchan, tmpbuf, pos, to_copy);
         gus_dma_transferdata (&s->emu, tmpbuf, copied, left == copied);
         left -= copied;
@@ -209,7 +211,7 @@ static const VMStateDescription vmstate_gus = {
     .name = "gus",
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32 (pos, GUSState),
         VMSTATE_INT32 (left, GUSState),
         VMSTATE_INT32 (shift, GUSState),
@@ -236,25 +238,28 @@ static const MemoryRegionPortio gus_portio_list2[] = {
 static void gus_realizefn (DeviceState *dev, Error **errp)
 {
     ISADevice *d = ISA_DEVICE(dev);
+    ISABus *bus = isa_bus_from_device(d);
     GUSState *s = GUS (dev);
     IsaDmaClass *k;
     struct audsettings as;
 
-    s->isa_dma = isa_get_dma(isa_bus_from_device(d), s->emu.gusdma);
+    if (!audio_be_check(&s->audio_be, errp)) {
+        return;
+    }
+
+    s->isa_dma = isa_bus_get_dma(bus, s->emu.gusdma);
     if (!s->isa_dma) {
         error_setg(errp, "ISA controller does not support DMA");
         return;
     }
 
-    AUD_register_card ("gus", &s->card);
-
     as.freq = s->freq;
     as.nchannels = 2;
     as.fmt = AUDIO_FORMAT_S16;
-    as.endianness = AUDIO_HOST_ENDIANNESS;
+    as.big_endian = HOST_BIG_ENDIAN;
 
-    s->voice = AUD_open_out (
-        &s->card,
+    s->voice = audio_be_open_out(
+        s->audio_be,
         NULL,
         "gus",
         s,
@@ -263,13 +268,12 @@ static void gus_realizefn (DeviceState *dev, Error **errp)
         );
 
     if (!s->voice) {
-        AUD_remove_card (&s->card);
         error_setg(errp, "No voice");
         return;
     }
 
     s->shift = 2;
-    s->samples = AUD_get_buffer_size_out (s->voice) >> s->shift;
+    s->samples = audio_be_get_buffer_size_out(s->audio_be, s->voice) >> s->shift;
     s->mixbuf = g_malloc0 (s->samples << s->shift);
 
     isa_register_portio_list(d, &s->portio_list1, s->port,
@@ -282,21 +286,20 @@ static void gus_realizefn (DeviceState *dev, Error **errp)
     s->emu.himemaddr = s->himem;
     s->emu.gusdatapos = s->emu.himemaddr + 1024 * 1024 + 32;
     s->emu.opaque = s;
-    s->pic = isa_get_irq(d, s->emu.gusirq);
+    s->pic = isa_bus_get_irq(bus, s->emu.gusirq);
 
-    AUD_set_active_out (s->voice, 1);
+    audio_be_set_active_out(s->audio_be, s->voice, 1);
 }
 
-static Property gus_properties[] = {
-    DEFINE_AUDIO_PROPERTIES(GUSState, card),
+static const Property gus_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(GUSState, audio_be),
     DEFINE_PROP_UINT32 ("freq",    GUSState, freq,        44100),
     DEFINE_PROP_UINT32 ("iobase",  GUSState, port,        0x240),
     DEFINE_PROP_UINT32 ("irq",     GUSState, emu.gusirq,  7),
     DEFINE_PROP_UINT32 ("dma",     GUSState, emu.gusdma,  3),
-    DEFINE_PROP_END_OF_LIST (),
 };
 
-static void gus_class_initfn (ObjectClass *klass, void *data)
+static void gus_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS (klass);
 
@@ -317,7 +320,7 @@ static const TypeInfo gus_info = {
 static void gus_register_types (void)
 {
     type_register_static (&gus_info);
-    deprecated_register_soundhw("gus", "Gravis Ultrasound GF1", 1, TYPE_GUS);
+    audio_register_model("gus", "Gravis Ultrasound GF1", TYPE_GUS);
 }
 
 type_init (gus_register_types)

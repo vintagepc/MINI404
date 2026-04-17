@@ -97,7 +97,7 @@ time.
 
 - Persistent storage formats may impose their own requirements on bitmap names
   and namespaces. Presently, only qcow2 supports persistent bitmaps. See
-  docs/interop/qcow2.txt for more details on restrictions. Notably:
+  :doc:`qcow2` for more details on restrictions. Notably:
 
    - qcow2 bitmap names are limited to between 1 and 1023 bytes long.
 
@@ -166,9 +166,9 @@ Basic QMP Usage
 ---------------
 
 The primary interface to manipulating bitmap objects is via the QMP
-interface. If you are not familiar, see docs/interop/qmp-intro.txt for a broad
-overview, and `qemu-qmp-ref <qemu-qmp-ref.html>`_ for a full reference of all
-QMP commands.
+interface. If you are not familiar, see the :doc:`qmp-spec` for the
+protocol, and :doc:`qemu-qmp-ref` for a full reference of all QMP
+commands.
 
 Supported Commands
 ~~~~~~~~~~~~~~~~~~

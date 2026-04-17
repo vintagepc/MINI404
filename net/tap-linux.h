@@ -50,5 +50,16 @@
 #define TUN_F_TSO6    0x04    /* I can handle TSO for IPv6 packets */
 #define TUN_F_TSO_ECN 0x08    /* I can handle TSO with ECN bits. */
 #define TUN_F_UFO     0x10    /* I can handle UFO packets */
+#define TUN_F_USO4    0x20    /* I can handle USO for IPv4 packets */
+#define TUN_F_USO6    0x40    /* I can handle USO for IPv6 packets */
+
+/* I can handle TSO/USO for UDP tunneled packets */
+#define TUN_F_UDP_TUNNEL_GSO       0x080
+
+/*
+ * I can handle TSO/USO for UDP tunneled packets requiring csum offload for
+ * the outer header
+ */
+#define TUN_F_UDP_TUNNEL_GSO_CSUM  0x100
 
 #endif /* QEMU_TAP_LINUX_H */

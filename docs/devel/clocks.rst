@@ -46,8 +46,8 @@ Here is an example of clocks::
                                                 | +-------+    |
                                                 +--------------+
 
-Clocks are defined in the ``include/hw/clock.h`` header and device
-related functions are defined in the ``include/hw/qdev-clock.h``
+Clocks are defined in the ``include/hw/core/clock.h`` header and device
+related functions are defined in the ``include/hw/core/qdev-clock.h``
 header.
 
 The clock state
@@ -97,7 +97,7 @@ Note that it is possible to create a static array describing clock inputs and
 outputs. The function ``qdev_init_clocks()`` must be called with the array as
 parameter to initialize the clocks: it has the same behaviour as calling the
 ``qdev_init_clock_in/out()`` for each clock in the array. To ease the array
-construction, some macros are defined in ``include/hw/qdev-clock.h``.
+construction, some macros are defined in ``include/hw/core/qdev-clock.h``.
 As an example, the following creates 2 clocks to a device: one input and one
 output.
 
@@ -279,6 +279,10 @@ You can change the multiplier and divider of a clock at runtime,
 so you can use this to model clock controller devices which
 have guest-programmable frequency multipliers or dividers.
 
+Similarly to ``clock_set()``, ``clock_set_mul_div()`` returns ``true`` if
+the clock state was modified; that is, if the multiplier or the diviser
+or both were changed by the call.
+
 Note that ``clock_set_mul_div()`` does not automatically call
 ``clock_propagate()``. If you make a runtime change to the
 multiplier or divider you must call clock_propagate() yourself.
@@ -353,6 +357,12 @@ If you are only interested in the frequency for displaying it to
 humans (for instance in debugging), use ``clock_display_freq()``,
 which returns a prettified string-representation, e.g. "33.3 MHz".
 The caller must free the string with g_free() after use.
+
+It's also possible to retrieve the clock period from a QTest by
+accessing QOM property ``qtest-clock-period`` using a QMP command.
+This property is only present when the device is being run under
+the ``qtest`` accelerator; it is not available when QEMU is
+being run normally.
 
 Calculating expiry deadlines
 ----------------------------
@@ -502,7 +512,7 @@ This is typically used to migrate an input clock state. For example:
 
     VMStateDescription my_device_vmstate = {
         .name = "my_device",
-        .fields = (VMStateField[]) {
+        .fields = (const VMStateField[]) {
             [...], /* other migrated fields */
             VMSTATE_CLOCK(clk, MyDeviceState),
             VMSTATE_END_OF_LIST()

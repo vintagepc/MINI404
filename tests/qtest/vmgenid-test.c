@@ -10,16 +10,17 @@
 
 #include "qemu/osdep.h"
 #include "qemu/bitmap.h"
+#include "qemu/bswap.h"
 #include "qemu/uuid.h"
 #include "hw/acpi/acpi-defs.h"
 #include "boot-sector.h"
 #include "acpi-utils.h"
 #include "libqtest.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 
 #define VGID_GUID "324e6eaf-d1d1-4bf6-bf41-b9bb6c91fb87"
 #define VMGENID_GUID_OFFSET 40   /* allow space for
-                                  * OVMF SDT Header Probe Supressor
+                                  * OVMF SDT Header Probe Suppressor
                                   */
 #define RSDP_ADDR_INVALID 0x100000 /* RSDP must be below this address */
 
@@ -61,7 +62,7 @@ static uint32_t acpi_find_vgia(QTestState *qts)
 
             /* The GUID is written at a fixed offset into the fw_cfg file
              * in order to implement the "OVMF SDT Header probe suppressor"
-             * see docs/specs/vmgenid.txt for more details
+             * see docs/specs/vmgenid.rst for more details
              */
             guid_offset = le32_to_cpu(vgia_val) + VMGENID_GUID_OFFSET;
             g_free(table_aml);
@@ -165,12 +166,17 @@ int main(int argc, char **argv)
 {
     int ret;
 
+    g_test_init(&argc, &argv, NULL);
+
+    if (!qtest_has_accel("tcg") && !qtest_has_accel("kvm")) {
+        g_test_skip("No KVM or TCG accelerator available");
+        return 0;
+    }
+
     ret = boot_sector_init(disk);
     if (ret) {
         return ret;
     }
-
-    g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("/vmgenid/vmgenid/set-guid",
                    vmgenid_set_guid_test);

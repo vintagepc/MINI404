@@ -18,6 +18,9 @@
 
 #include "qemu/osdep.h"
 #include "trace.h"
+#include "io/channel-socket.h"
+#include "qapi/error.h"
+#include "qemu/units.h"
 #include "nbd-internal.h"
 
 /* Discard length bytes from channel.  Return -errno on failure and 0 on
@@ -47,17 +50,6 @@ int nbd_drop(QIOChannel *ioc, size_t size, Error **errp)
 }
 
 
-void nbd_tls_handshake(QIOTask *task,
-                       void *opaque)
-{
-    struct NBDTLSHandshakeData *data = opaque;
-
-    qio_task_propagate_error(task, &data->error);
-    data->complete = true;
-    g_main_loop_quit(data->loop);
-}
-
-
 const char *nbd_opt_lookup(uint32_t opt)
 {
     switch (opt) {
@@ -79,6 +71,8 @@ const char *nbd_opt_lookup(uint32_t opt)
         return "list meta context";
     case NBD_OPT_SET_META_CONTEXT:
         return "set meta context";
+    case NBD_OPT_EXTENDED_HEADERS:
+        return "extended headers";
     default:
         return "<unknown>";
     }
@@ -112,6 +106,10 @@ const char *nbd_rep_lookup(uint32_t rep)
         return "server shutting down";
     case NBD_REP_ERR_BLOCK_SIZE_REQD:
         return "block size required";
+    case NBD_REP_ERR_TOO_BIG:
+        return "option payload too big";
+    case NBD_REP_ERR_EXT_HEADER_REQD:
+        return "extended headers required";
     default:
         return "<unknown>";
     }
@@ -170,7 +168,9 @@ const char *nbd_reply_type_lookup(uint16_t type)
     case NBD_REPLY_TYPE_OFFSET_HOLE:
         return "hole";
     case NBD_REPLY_TYPE_BLOCK_STATUS:
-        return "block status";
+        return "block status (32-bit)";
+    case NBD_REPLY_TYPE_BLOCK_STATUS_EXT:
+        return "block status (64-bit)";
     case NBD_REPLY_TYPE_ERROR:
         return "generic error";
     case NBD_REPLY_TYPE_ERROR_OFFSET:
@@ -247,4 +247,46 @@ int nbd_errno_to_system_errno(int err)
         break;
     }
     return ret;
+}
+
+
+const char *nbd_mode_lookup(NBDMode mode)
+{
+    switch (mode) {
+    case NBD_MODE_OLDSTYLE:
+        return "oldstyle";
+    case NBD_MODE_EXPORT_NAME:
+        return "export name only";
+    case NBD_MODE_SIMPLE:
+        return "simple headers";
+    case NBD_MODE_STRUCTURED:
+        return "structured replies";
+    case NBD_MODE_EXTENDED:
+        return "extended headers";
+    default:
+        return "<unknown>";
+    }
+}
+
+/*
+ * Testing shows that 2m send buffer is optimal. Changing the receive buffer
+ * size has no effect on performance.
+ * On Linux we need to increase net.core.wmem_max to make this effective.
+ */
+#if defined(__APPLE__) || defined(__linux__)
+#define UNIX_STREAM_SOCKET_SEND_BUFFER_SIZE (2 * MiB)
+#endif
+
+void nbd_set_socket_send_buffer(QIOChannelSocket *sioc)
+{
+#ifdef UNIX_STREAM_SOCKET_SEND_BUFFER_SIZE
+    if (sioc->localAddr.ss_family == AF_UNIX) {
+        size_t size = UNIX_STREAM_SOCKET_SEND_BUFFER_SIZE;
+        Error *err = NULL;
+
+        if (qio_channel_socket_set_send_buffer(sioc, size, &err) < 0) {
+            warn_report_err(err);
+        }
+    }
+#endif /* UNIX_STREAM_SOCKET_SEND_BUFFER_SIZE */
 }

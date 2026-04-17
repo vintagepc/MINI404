@@ -24,11 +24,11 @@
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "qemu/log.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "elf.h"
-#include "hw/sysbus.h"
-#include "sysemu/kvm.h"
-#include "sysemu/device_tree.h"
+#include "hw/core/sysbus.h"
+#include "system/kvm.h"
+#include "system/device_tree.h"
 #include "kvm_ppc.h"
 #include "migration/vmstate.h"
 
@@ -50,7 +50,7 @@ static char *spapr_vio_get_dev_name(DeviceState *qdev)
     return g_strdup_printf("%s@%x", pc->dt_name, dev->reg);
 }
 
-static void spapr_vio_bus_class_init(ObjectClass *klass, void *data)
+static void spapr_vio_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
 
@@ -507,15 +507,6 @@ static void spapr_vio_busdev_realize(DeviceState *qdev, Error **errp)
 
     dev->irq = spapr_vio_reg_to_irq(dev->reg);
 
-    if (SPAPR_MACHINE_GET_CLASS(spapr)->legacy_irq_allocation) {
-        int irq = spapr_irq_findone(spapr, errp);
-
-        if (irq < 0) {
-            return;
-        }
-        dev->irq = irq;
-    }
-
     if (spapr_irq_claim(spapr, dev->irq, false, errp) < 0) {
         return;
     }
@@ -574,12 +565,13 @@ SpaprVioBus *spapr_vio_bus_init(void)
 
     /* Create bridge device */
     dev = qdev_new(TYPE_SPAPR_VIO_BRIDGE);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     /* Create bus on bridge device */
     qbus = qbus_new(TYPE_SPAPR_VIO_BUS, dev, "spapr-vio");
     bus = SPAPR_VIO_BUS(qbus);
     bus->next_reg = SPAPR_VIO_REG_BASE;
+
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     /* hcall-vio */
     spapr_register_hypercall(H_VIO_SIGNAL, h_vio_signal);
@@ -598,7 +590,7 @@ SpaprVioBus *spapr_vio_bus_init(void)
     return bus;
 }
 
-static void spapr_vio_bridge_class_init(ObjectClass *klass, void *data)
+static void spapr_vio_bridge_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -615,7 +607,7 @@ const VMStateDescription vmstate_spapr_vio = {
     .name = "spapr_vio",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         /* Sanity check */
         VMSTATE_UINT32_EQUAL(reg, SpaprVioDevice, NULL),
         VMSTATE_UINT32_EQUAL(irq, SpaprVioDevice, NULL),
@@ -630,11 +622,11 @@ const VMStateDescription vmstate_spapr_vio = {
     },
 };
 
-static void vio_spapr_device_class_init(ObjectClass *klass, void *data)
+static void vio_spapr_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     k->realize = spapr_vio_busdev_realize;
-    k->reset = spapr_vio_busdev_reset;
+    device_class_set_legacy_reset(k, spapr_vio_busdev_reset);
     k->bus_type = TYPE_SPAPR_VIO_BUS;
 }
 

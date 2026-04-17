@@ -29,7 +29,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/intc/aspeed_vic.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "qemu/bitops.h"
 #include "qemu/log.h"
@@ -326,7 +326,7 @@ static const VMStateDescription vmstate_aspeed_vic = {
     .name = "aspeed.new-vic",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(level, AspeedVICState),
         VMSTATE_UINT64(raw, AspeedVICState),
         VMSTATE_UINT64(select, AspeedVICState),
@@ -339,11 +339,11 @@ static const VMStateDescription vmstate_aspeed_vic = {
     }
 };
 
-static void aspeed_vic_class_init(ObjectClass *klass, void *data)
+static void aspeed_vic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = aspeed_vic_realize;
-    dc->reset = aspeed_vic_reset;
+    device_class_set_legacy_reset(dc, aspeed_vic_reset);
     dc->desc = "ASPEED Interrupt Controller (New)";
     dc->vmsd = &vmstate_aspeed_vic;
 }

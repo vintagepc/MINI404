@@ -25,16 +25,18 @@
 #ifndef HW_MISC_AUXBUS_H
 #define HW_MISC_AUXBUS_H
 
-#include "exec/memory.h"
-#include "hw/qdev-core.h"
+#include "system/memory.h"
+#include "hw/core/qdev.h"
 #include "qom/object.h"
 
-typedef struct AUXSlave AUXSlave;
 typedef enum AUXCommand AUXCommand;
 typedef enum AUXReply AUXReply;
 
 #define TYPE_AUXTOI2C "aux-to-i2c-bridge"
 OBJECT_DECLARE_SIMPLE_TYPE(AUXTOI2CState, AUXTOI2C)
+
+#define TYPE_AUX_SLAVE "aux-slave"
+OBJECT_DECLARE_SIMPLE_TYPE(AUXSlave, AUX_SLAVE)
 
 enum AUXCommand {
     WRITE_I2C = 0,
@@ -73,9 +75,6 @@ struct AUXBus {
     AddressSpace aux_addr_space;
 };
 
-#define TYPE_AUX_SLAVE "aux-slave"
-OBJECT_DECLARE_SIMPLE_TYPE(AUXSlave, AUX_SLAVE)
-
 struct AUXSlave {
     /* < private > */
     DeviceState parent_obj;
@@ -106,7 +105,7 @@ void aux_bus_realize(AUXBus *bus);
  *
  * Returns the reply of the request.
  *
- * @bus Ths bus where the request happen.
+ * @bus The bus where the request happen.
  * @cmd The command requested.
  * @address The 20bits address of the slave.
  * @len The length of the read or write.

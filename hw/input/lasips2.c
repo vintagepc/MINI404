@@ -23,15 +23,15 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "hw/input/ps2.h"
 #include "hw/input/lasips2.h"
 #include "exec/hwaddr.h"
 #include "trace.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "migration/vmstate.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qapi/error.h"
 
 
@@ -39,7 +39,7 @@ static const VMStateDescription vmstate_lasips2_port = {
     .name = "lasips2-port",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(control, LASIPS2Port),
         VMSTATE_UINT8(buf, LASIPS2Port),
         VMSTATE_BOOL(loopback_rbne, LASIPS2Port),
@@ -51,7 +51,7 @@ static const VMStateDescription vmstate_lasips2 = {
     .name = "lasips2",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(int_status, LASIPS2State),
         VMSTATE_STRUCT(kbd_port.parent_obj, LASIPS2State, 1,
                        vmstate_lasips2_port, LASIPS2Port),
@@ -306,7 +306,7 @@ static void lasips2_init(Object *obj)
                             "lasips2-port-input-irq", 2);
 }
 
-static void lasips2_class_init(ObjectClass *klass, void *data)
+static void lasips2_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -347,10 +347,15 @@ static void lasips2_port_init(Object *obj)
                             "ps2-input-irq", 1);
 }
 
-static void lasips2_port_class_init(ObjectClass *klass, void *data)
+static void lasips2_port_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    /*
+     * The PS/2 mouse port is integreal part of LASI and can not be
+     * created by users without LASI.
+     */
+    dc->user_creatable = false;
     dc->realize = lasips2_port_realize;
 }
 
@@ -392,11 +397,16 @@ static void lasips2_kbd_port_init(Object *obj)
     lp->lasips2 = container_of(s, LASIPS2State, kbd_port);
 }
 
-static void lasips2_kbd_port_class_init(ObjectClass *klass, void *data)
+static void lasips2_kbd_port_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     LASIPS2PortDeviceClass *lpdc = LASIPS2_PORT_CLASS(klass);
 
+    /*
+     * The PS/2 keyboard port is integreal part of LASI and can not be
+     * created by users without LASI.
+     */
+    dc->user_creatable = false;
     device_class_set_parent_realize(dc, lasips2_kbd_port_realize,
                                     &lpdc->parent_realize);
 }
@@ -437,7 +447,7 @@ static void lasips2_mouse_port_init(Object *obj)
     lp->lasips2 = container_of(s, LASIPS2State, mouse_port);
 }
 
-static void lasips2_mouse_port_class_init(ObjectClass *klass, void *data)
+static void lasips2_mouse_port_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     LASIPS2PortDeviceClass *lpdc = LASIPS2_PORT_CLASS(klass);

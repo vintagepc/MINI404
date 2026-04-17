@@ -14,14 +14,15 @@
 #include "qapi/visitor.h"
 #include "qemu/bitops.h"
 #include "qemu/error-report.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "hw/s390x/ioinst.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/s390x/css.h"
 #include "trace.h"
 #include "hw/s390x/s390_flic.h"
 #include "hw/s390x/s390-virtio-ccw.h"
 #include "hw/s390x/s390-ccw.h"
+#include "exec/cpu-common.h"
 
 typedef struct CrwContainer {
     CRW crw;
@@ -32,7 +33,7 @@ static const VMStateDescription vmstate_crw = {
     .name = "s390_crw",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16(flags, CRW),
         VMSTATE_UINT16(rsid, CRW),
         VMSTATE_END_OF_LIST()
@@ -43,7 +44,7 @@ static const VMStateDescription vmstate_crw_container = {
     .name = "s390_crw_container",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(crw, CrwContainer, 0, vmstate_crw, CRW),
         VMSTATE_END_OF_LIST()
     },
@@ -59,7 +60,7 @@ static const VMStateDescription vmstate_chp_info = {
     .name = "s390_chp_info",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(in_use, ChpInfo),
         VMSTATE_UINT8(type, ChpInfo),
         VMSTATE_UINT8(is_virtual, ChpInfo),
@@ -77,7 +78,7 @@ static const VMStateDescription vmstate_scsw = {
     .name = "s390_scsw",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16(flags, SCSW),
         VMSTATE_UINT16(ctrl, SCSW),
         VMSTATE_UINT32(cpa, SCSW),
@@ -92,7 +93,7 @@ static const VMStateDescription vmstate_pmcw = {
     .name = "s390_pmcw",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(intparm, PMCW),
         VMSTATE_UINT16(flags, PMCW),
         VMSTATE_UINT16(devno, PMCW),
@@ -113,7 +114,7 @@ static const VMStateDescription vmstate_schib = {
     .name = "s390_schib",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(pmcw, SCHIB, 0, vmstate_pmcw, PMCW),
         VMSTATE_STRUCT(scsw, SCHIB, 0, vmstate_scsw, SCSW),
         VMSTATE_UINT64(mba, SCHIB),
@@ -127,7 +128,7 @@ static const VMStateDescription vmstate_ccw1 = {
     .name = "s390_ccw1",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(cmd_code, CCW1),
         VMSTATE_UINT8(flags, CCW1),
         VMSTATE_UINT16(count, CCW1),
@@ -140,7 +141,7 @@ static const VMStateDescription vmstate_ciw = {
     .name = "s390_ciw",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(type, CIW),
         VMSTATE_UINT8(command, CIW),
         VMSTATE_UINT16(count, CIW),
@@ -152,7 +153,7 @@ static const VMStateDescription vmstate_sense_id = {
     .name = "s390_sense_id",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(reserved, SenseId),
         VMSTATE_UINT16(cu_type, SenseId),
         VMSTATE_UINT8(cu_model, SenseId),
@@ -168,7 +169,7 @@ static const VMStateDescription vmstate_orb = {
     .name = "s390_orb",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(intparm, ORB),
         VMSTATE_UINT16(ctrl0, ORB),
         VMSTATE_UINT8(lpm, ORB),
@@ -178,17 +179,11 @@ static const VMStateDescription vmstate_orb = {
     }
 };
 
-static bool vmstate_schdev_orb_needed(void *opaque)
-{
-    return css_migration_enabled();
-}
-
 static const VMStateDescription vmstate_schdev_orb = {
     .name = "s390_subch_dev/orb",
     .version_id = 1,
     .minimum_version_id = 1,
-    .needed = vmstate_schdev_orb_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(orb, SubchDev, 1, vmstate_orb, ORB),
         VMSTATE_END_OF_LIST()
     }
@@ -207,7 +202,7 @@ const VMStateDescription vmstate_subch_dev = {
     .minimum_version_id = 1,
     .post_load = subch_dev_post_load,
     .pre_save = subch_dev_pre_save,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8_EQUAL(cssid, SubchDev, "Bug!"),
         VMSTATE_UINT8_EQUAL(ssid, SubchDev, "Bug!"),
         VMSTATE_UINT16(migrated_schid, SubchDev),
@@ -223,7 +218,7 @@ const VMStateDescription vmstate_subch_dev = {
         VMSTATE_UINT8(ccw_no_data_cnt, SubchDev),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_schdev_orb,
         NULL
     }
@@ -264,12 +259,12 @@ static int pre_save_ind_addr(void *opaque)
     return 0;
 }
 
-const VMStateDescription vmstate_ind_addr_tmp = {
+static const VMStateDescription vmstate_ind_addr_tmp = {
     .name = "s390_ind_addr_tmp",
     .pre_save = pre_save_ind_addr,
     .post_load = post_load_ind_addr,
 
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32(len, IndAddrPtrTmp),
         VMSTATE_UINT64(addr, IndAddrPtrTmp),
         VMSTATE_END_OF_LIST()
@@ -278,7 +273,7 @@ const VMStateDescription vmstate_ind_addr_tmp = {
 
 const VMStateDescription vmstate_ind_addr = {
     .name = "s390_ind_addr_tmp",
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_WITH_TMP(IndAddr*, IndAddrPtrTmp, vmstate_ind_addr_tmp),
         VMSTATE_END_OF_LIST()
     }
@@ -293,7 +288,7 @@ static const VMStateDescription vmstate_css_img = {
     .name = "s390_css_img",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         /* Subchannel sets have no relevant state. */
         VMSTATE_STRUCT_ARRAY(chpids, CssImage, MAX_CHPID + 1, 0,
                              vmstate_chp_info, ChpInfo),
@@ -330,7 +325,7 @@ static const VMStateDescription vmstate_css = {
     .name = "s390_css",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_QTAILQ_V(pending_crws, ChannelSubSys, 1, vmstate_crw_container,
                          CrwContainer, sibling),
         VMSTATE_BOOL(sei_pending, ChannelSubSys),
@@ -388,25 +383,6 @@ static int subch_dev_post_load(void *opaque, int version_id)
         css_subch_assign(s->cssid, s->ssid, s->schid, s->devno, s);
     }
 
-    if (css_migration_enabled()) {
-        /* No compat voodoo to do ;) */
-        return 0;
-    }
-    /*
-     * Hack alert. If we don't migrate the channel subsystem status
-     * we still need to find out if the guest enabled mss/mcss-e.
-     * If the subchannel is enabled, it certainly was able to access it,
-     * so adjust the max_ssid/max_cssid values for relevant ssid/cssid
-     * values. This is not watertight, but better than nothing.
-     */
-    if (s->curr_status.pmcw.flags & PMCW_FLAGS_MASK_ENA) {
-        if (s->ssid) {
-            channel_subsys.max_ssid = MAX_SSID;
-        }
-        if (s->cssid != channel_subsys.default_cssid) {
-            channel_subsys.max_cssid = MAX_CSSID;
-        }
-    }
     return 0;
 }
 
@@ -644,8 +620,9 @@ void css_conditional_io_interrupt(SubchDev *sch)
     }
 }
 
-int css_do_sic(CPUS390XState *env, uint8_t isc, uint16_t mode)
+int css_do_sic(S390CPU *cpu, uint8_t isc, uint16_t mode)
 {
+    CPUS390XState *env = &cpu->env;
     S390FLICState *fs = s390_get_flic();
     S390FLICStateClass *fsc = s390_get_flic_class(fs);
     int r;
@@ -1606,27 +1583,25 @@ static void css_update_chnmon(SubchDev *sch)
         /* Format 1, per-subchannel area. */
         uint32_t count;
 
-        count = address_space_ldl(&address_space_memory,
-                                  sch->curr_status.mba,
-                                  MEMTXATTRS_UNSPECIFIED,
-                                  NULL);
+        count = address_space_ldl_be(&address_space_memory,
+                                     sch->curr_status.mba,
+                                     MEMTXATTRS_UNSPECIFIED, NULL);
         count++;
-        address_space_stl(&address_space_memory, sch->curr_status.mba, count,
-                          MEMTXATTRS_UNSPECIFIED, NULL);
+        address_space_stl_be(&address_space_memory, sch->curr_status.mba, count,
+                             MEMTXATTRS_UNSPECIFIED, NULL);
     } else {
         /* Format 0, global area. */
         uint32_t offset;
         uint16_t count;
 
         offset = sch->curr_status.pmcw.mbi << 5;
-        count = address_space_lduw(&address_space_memory,
-                                   channel_subsys.chnmon_area + offset,
-                                   MEMTXATTRS_UNSPECIFIED,
-                                   NULL);
+        count = address_space_lduw_be(&address_space_memory,
+                                      channel_subsys.chnmon_area + offset,
+                                      MEMTXATTRS_UNSPECIFIED, NULL);
         count++;
-        address_space_stw(&address_space_memory,
-                          channel_subsys.chnmon_area + offset, count,
-                          MEMTXATTRS_UNSPECIFIED, NULL);
+        address_space_stw_be(&address_space_memory,
+                             channel_subsys.chnmon_area + offset, count,
+                             MEMTXATTRS_UNSPECIFIED, NULL);
     }
 }
 
@@ -2458,7 +2433,7 @@ void css_reset(void)
 static void get_css_devid(Object *obj, Visitor *v, const char *name,
                           void *opaque, Error **errp)
 {
-    Property *prop = opaque;
+    const Property *prop = opaque;
     CssDevId *dev_id = object_field_prop_ptr(obj, prop);
     char buffer[] = "xx.x.xxxx";
     char *p = buffer;
@@ -2487,7 +2462,7 @@ static void get_css_devid(Object *obj, Visitor *v, const char *name,
 static void set_css_devid(Object *obj, Visitor *v, const char *name,
                           void *opaque, Error **errp)
 {
-    Property *prop = opaque;
+    const Property *prop = opaque;
     CssDevId *dev_id = object_field_prop_ptr(obj, prop);
     char *str;
     int num, n1, n2;
@@ -2518,7 +2493,7 @@ out:
 }
 
 const PropertyInfo css_devid_propinfo = {
-    .name = "str",
+    .type = "str",
     .description = "Identifier of an I/O device in the channel "
                    "subsystem, example: fe.1.23ab",
     .get = get_css_devid,
@@ -2526,7 +2501,7 @@ const PropertyInfo css_devid_propinfo = {
 };
 
 const PropertyInfo css_devid_ro_propinfo = {
-    .name = "str",
+    .type = "str",
     .description = "Read-only identifier of an I/O device in the channel "
                    "subsystem, example: fe.1.23ab",
     .get = get_css_devid,

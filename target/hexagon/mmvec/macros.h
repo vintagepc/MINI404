@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2022 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,32 +18,33 @@
 #ifndef HEXAGON_MMVEC_MACROS_H
 #define HEXAGON_MMVEC_MACROS_H
 
-#include "qemu/osdep.h"
 #include "qemu/host-utils.h"
 #include "arch.h"
 #include "mmvec/system_ext_mmvec.h"
+#include "accel/tcg/getpc.h"
+#include "accel/tcg/probe.h"
 
 #ifndef QEMU_GENERATE
-#define VdV      (*(MMVector *)(VdV_void))
-#define VsV      (*(MMVector *)(VsV_void))
-#define VuV      (*(MMVector *)(VuV_void))
-#define VvV      (*(MMVector *)(VvV_void))
-#define VwV      (*(MMVector *)(VwV_void))
-#define VxV      (*(MMVector *)(VxV_void))
-#define VyV      (*(MMVector *)(VyV_void))
+#define VdV      (*(MMVector *restrict)(VdV_void))
+#define VsV      (*(MMVector *restrict)(VsV_void))
+#define VuV      (*(MMVector *restrict)(VuV_void))
+#define VvV      (*(MMVector *restrict)(VvV_void))
+#define VwV      (*(MMVector *restrict)(VwV_void))
+#define VxV      (*(MMVector *restrict)(VxV_void))
+#define VyV      (*(MMVector *restrict)(VyV_void))
 
-#define VddV     (*(MMVectorPair *)(VddV_void))
-#define VuuV     (*(MMVectorPair *)(VuuV_void))
-#define VvvV     (*(MMVectorPair *)(VvvV_void))
-#define VxxV     (*(MMVectorPair *)(VxxV_void))
+#define VddV     (*(MMVectorPair *restrict)(VddV_void))
+#define VuuV     (*(MMVectorPair *restrict)(VuuV_void))
+#define VvvV     (*(MMVectorPair *restrict)(VvvV_void))
+#define VxxV     (*(MMVectorPair *restrict)(VxxV_void))
 
-#define QeV      (*(MMQReg *)(QeV_void))
-#define QdV      (*(MMQReg *)(QdV_void))
-#define QsV      (*(MMQReg *)(QsV_void))
-#define QtV      (*(MMQReg *)(QtV_void))
-#define QuV      (*(MMQReg *)(QuV_void))
-#define QvV      (*(MMQReg *)(QvV_void))
-#define QxV      (*(MMQReg *)(QxV_void))
+#define QeV      (*(MMQReg *restrict)(QeV_void))
+#define QdV      (*(MMQReg *restrict)(QdV_void))
+#define QsV      (*(MMQReg *restrict)(QsV_void))
+#define QtV      (*(MMQReg *restrict)(QtV_void))
+#define QuV      (*(MMQReg *restrict)(QuV_void))
+#define QvV      (*(MMQReg *restrict)(QvV_void))
+#define QxV      (*(MMQReg *restrict)(QxV_void))
 #endif
 
 #define LOG_VTCM_BYTE(VA, MASK, VAL, IDX) \
@@ -202,7 +203,7 @@
     } while (0)
 #define SCATTER_OP_WRITE_TO_MEM(TYPE) \
     do { \
-        uintptr_t ra = GETPC(); \
+        ra = GETPC(); \
         for (int i = 0; i < sizeof(MMVector); i += sizeof(TYPE)) { \
             if (test_bit(i, env->vtcm_log.mask)) { \
                 TYPE dst = 0; \
@@ -288,7 +289,7 @@
 #endif
 #ifdef QEMU_GENERATE
 #define fSTOREMMV(EA, SRC) \
-    gen_vreg_store(ctx, insn, pkt, EA, SRC##_off, insn->slot, true)
+    gen_vreg_store(ctx, EA, SRC##_off, insn->slot, true)
 #endif
 #ifdef QEMU_GENERATE
 #define fSTOREMMVQ(EA, SRC, MASK) \
@@ -300,7 +301,7 @@
 #endif
 #ifdef QEMU_GENERATE
 #define fSTOREMMVU(EA, SRC) \
-    gen_vreg_store(ctx, insn, pkt, EA, SRC##_off, insn->slot, false)
+    gen_vreg_store(ctx, EA, SRC##_off, insn->slot, false)
 #endif
 #define fVFOREACH(WIDTH, VAR) for (VAR = 0; VAR < fVELEM(WIDTH); VAR++)
 #define fVARRAY_ELEMENT_ACCESS(ARRAY, TYPE, INDEX) \
@@ -347,4 +348,11 @@
 #define fUARCH_NOTE_PUMP_2X()
 
 #define IV1DEAD()
+
+#define fGET10BIT(COE, VAL, POS) \
+    do { \
+        COE = (sextract32(VAL, 24 + 2 * POS, 2) << 8) | \
+               extract32(VAL, POS * 8, 8); \
+    } while (0);
+
 #endif

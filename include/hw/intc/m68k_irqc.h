@@ -10,7 +10,7 @@
 #ifndef M68K_IRQC_H
 #define M68K_IRQC_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_M68K_IRQC "m68k-irq-controller"
 #define M68K_IRQC(obj) OBJECT_CHECK(M68KIRQCState, (obj), \
@@ -33,6 +33,7 @@ typedef struct M68KIRQCState {
     SysBusDevice parent_obj;
 
     uint8_t ipr;
+    ArchCPU *cpu;
 
     /* statistics */
     uint64_t stats_irq_count[M68K_IRQC_LEVEL_NUM];

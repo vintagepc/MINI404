@@ -9,6 +9,7 @@ How to use the QAPI code generator
    This work is licensed under the terms of the GNU GPL, version 2 or
    later.  See the COPYING file in the top-level directory.
 
+.. _qapi:
 
 Introduction
 ============
@@ -167,6 +168,7 @@ Syntax::
                    '*doc-required': BOOL,
                    '*command-name-exceptions': [ STRING, ... ],
                    '*command-returns-exceptions': [ STRING, ... ],
+                   '*documentation-exceptions': [ STRING, ... ],
                    '*member-name-exceptions': [ STRING, ... ] } }
 
 The pragma directive lets you control optional generator behavior.
@@ -182,6 +184,10 @@ may contain ``"_"`` instead of ``"-"``.  Default is none.
 
 Pragma 'command-returns-exceptions' takes a list of commands that may
 violate the rules on permitted return types.  Default is none.
+
+Pragma 'documentation-exceptions' takes a list of types, commands, and
+events whose members / arguments need not be documented.  Default is
+none.
 
 Pragma 'member-name-exceptions' takes a list of types whose member
 names may contain uppercase letters, and ``"_"`` instead of ``"-"``.
@@ -223,7 +229,8 @@ These are of the form PREFIX_NAME, where PREFIX is derived from the
 enumeration type's name, and NAME from the value's name.  For the
 example above, the generator maps 'MyEnum' to MY_ENUM and 'value1' to
 VALUE1, resulting in the enumeration constant MY_ENUM_VALUE1.  The
-optional 'prefix' member overrides PREFIX.
+optional 'prefix' member overrides PREFIX.  This is rarely necessary,
+and should be used with restraint.
 
 The generated C enumeration constants have values 0, 1, ..., N-1 (in
 QAPI schema order), where N is the number of values.  There is an
@@ -545,7 +552,8 @@ Member 'allow-oob' declares whether the command supports out-of-band
  { 'command': 'migrate_recover',
    'data': { 'uri': 'str' }, 'allow-oob': true }
 
-See qmp-spec.txt for out-of-band execution syntax and semantics.
+See the :doc:`/interop/qmp-spec` for out-of-band execution syntax
+and semantics.
 
 Commands supporting out-of-band execution can still be executed
 in-band.
@@ -593,7 +601,7 @@ blocking the guest and other background operations.
 Coroutine safety can be hard to prove, similar to thread safety.  Common
 pitfalls are:
 
-- The global mutex isn't held across ``qemu_coroutine_yield()``, so
+- The BQL isn't held across ``qemu_coroutine_yield()``, so
   operations that used to assume that they execute atomically may have
   to be more careful to protect against changes in the global state.
 
@@ -638,9 +646,9 @@ Member 'event' names the event.  This is the event name used in the
 Client JSON Protocol.
 
 Member 'data' defines the event-specific data.  It defaults to an
-empty MEMBERS object.
+empty MEMBERS_ object.
 
-If 'data' is a MEMBERS object, then MEMBERS defines event-specific
+If 'data' is a MEMBERS_ object, then MEMBERS defines event-specific
 data just like a struct type's 'data' defines struct type members.
 
 If 'data' is a STRING, then STRING names a complex type whose members
@@ -685,9 +693,10 @@ change in the QMP syntax (usually by allowing values or operations
 that previously resulted in an error).  QMP clients may still need to
 know whether the extension is available.
 
-For this purpose, a list of features can be specified for a command or
-struct type.  Each list member can either be ``{ 'name': STRING, '*if':
-COND }``, or STRING, which is shorthand for ``{ 'name': STRING }``.
+For this purpose, a list of features can be specified for definitions,
+enumeration values, and struct members.  Each feature list member can
+either be ``{ 'name': STRING, '*if': COND }``, or STRING, which is
+shorthand for ``{ 'name': STRING }``.
 
 The optional 'if' member specifies a conditional.  See `Configuring
 the schema`_ below for more on this.
@@ -735,9 +744,8 @@ Types, commands, and events share a common namespace.  Therefore,
 generally speaking, type definitions should always use CamelCase for
 user-defined type names, while built-in types are lowercase.
 
-Type names ending with ``Kind`` or ``List`` are reserved for the
-generator, which uses them for implicit union enums and array types,
-respectively.
+Type names ending with ``List`` are reserved for the generator, which
+uses them for array types.
 
 Command names, member names within a type, and feature names should be
 all lower case with words separated by a hyphen.  However, some
@@ -755,8 +763,8 @@ Names beginning with ``x-`` used to signify "experimental".  This
 convention has been replaced by special feature "unstable".
 
 Pragmas ``command-name-exceptions`` and ``member-name-exceptions`` let
-you violate naming rules.  Use for new code is strongly discouraged. See
-`Pragma directives`_ for details.
+you violate naming rules.  Use for new code is strongly discouraged.
+See `Pragma directives`_ for details.
 
 
 Downstream extensions
@@ -778,8 +786,8 @@ Configuring the schema
 Syntax::
 
     COND = STRING
-         | { 'all: [ COND, ... ] }
-         | { 'any: [ COND, ... ] }
+         | { 'all': [ COND, ... ] }
+         | { 'any': [ COND, ... ] }
          | { 'not': COND }
 
 All definitions take an optional 'if' member.  Its value must be a
@@ -804,9 +812,8 @@ gets its generated code guarded like this::
  ... generated code ...
  #endif /* defined(HAVE_BAR) && defined(CONFIG_FOO) */
 
-Individual members of complex types, commands arguments, and
-event-specific data can also be made conditional.  This requires the
-longhand form of MEMBER.
+Individual members of complex types can also be made conditional.
+This requires the longhand form of MEMBER.
 
 Example: a struct type with unconditional member 'foo' and conditional
 member 'bar' ::
@@ -817,8 +824,8 @@ member 'bar' ::
 
 A union's discriminator may not be conditional.
 
-Likewise, individual enumeration values be conditional.  This requires
-the longhand form of ENUM-VALUE_.
+Likewise, individual enumeration values may be conditional.  This
+requires the longhand form of ENUM-VALUE_.
 
 Example: an enum type with unconditional value 'foo' and conditional
 value 'bar' ::
@@ -869,32 +876,42 @@ structuring content.
 Headings and subheadings
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-A free-form documentation comment containing a line which starts with
-some ``=`` symbols and then a space defines a section heading::
+Free-form documentation does not start with ``@SYMBOL`` and can contain
+arbitrary rST markup. Headings can be marked up using the standard rST
+syntax::
 
     ##
-    # = This is a top level heading
+    # *************************
+    # This is a level 2 heading
+    # *************************
     #
     # This is a free-form comment which will go under the
     # top level heading.
     ##
 
     ##
-    # == This is a second level heading
+    # This is a third level heading
+    # ==============================
+    #
+    # Level 4
+    # _______
+    #
+    # Level 5
+    # ^^^^^^^
+    #
+    # Level 6
+    # """""""
     ##
 
-A heading line must be the first line of the documentation
-comment block.
-
-Section headings must always be correctly nested, so you can only
-define a third-level heading inside a second-level heading, and so on.
+Level 1 headings are reserved for use by the generated documentation
+page itself, leaving level 2 as the highest level that should be used.
 
 
 Documentation markup
 ~~~~~~~~~~~~~~~~~~~~
 
 Documentation comments can use most rST markup.  In particular,
-a ``::`` literal block can be used for examples::
+a ``::`` literal block can be used for pre-formatted text::
 
     # ::
     #
@@ -924,14 +941,22 @@ first character of the first line.
 
 The usual ****strong****, *\*emphasized\** and ````literal```` markup
 should be used.  If you need a single literal ``*``, you will need to
-backslash-escape it.  As an extension beyond the usual rST syntax, you
-can also use ``@foo`` to reference a name in the schema; this is rendered
-the same way as ````foo````.
+backslash-escape it.
+
+Use ```foo``` to reference a definition in the schema.  This generates
+a link to the definition.  In the event that such a cross-reference is
+ambiguous, you can use `QAPI cross-reference roles
+<QAPI-domain-cross-references>` to disambiguate.
+
+Use @foo to reference a member description within the current
+definition.  This is an rST extension.  It is currently rendered the
+same way as ````foo````, but carries additional meaning.
 
 Example::
 
  ##
  # Some text foo with **bold** and *emphasis*
+ #
  # 1. with a list
  # 2. like that
  #
@@ -943,6 +968,11 @@ Example::
  #   -> do this
  #   <- get that
  ##
+
+For legibility, wrap text paragraphs so every line is at most 70
+characters long.
+
+Separate sentences with two spaces.
 
 
 Definition documentation
@@ -960,59 +990,106 @@ commands and events), member (for structs and unions), branch (for
 alternates), or value (for enums), a description of each feature (if
 any), and finally optional tagged sections.
 
-The description of an argument or feature 'name' starts with
-'\@name:'.  The description text can start on the line following the
-'\@name:', in which case it must not be indented at all.  It can also
-start on the same line as the '\@name:'.  In this case if it spans
-multiple lines then second and subsequent lines must be indented to
-line up with the first character of the first line of the
-description::
+Descriptions start with '\@name:'.  The description text must be
+indented like this::
 
- # @argone:
- # This is a two line description
- # in the first style.
- #
- # @argtwo: This is a two line description
- #          in the second style.
+ # @name: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed
+ #     do eiusmod tempor incididunt ut labore et dolore magna aliqua.
 
-The number of spaces between the ':' and the text is not significant.
+.. FIXME The parser accepts these things in almost any order.
 
-.. admonition:: FIXME
-
-   The parser accepts these things in almost any order.
-
-.. admonition:: FIXME
-
-   union branches should be described, too.
+.. FIXME union branches should be described, too.
 
 Extensions added after the definition was first released carry a
-'(since x.y.z)' comment.
+"(since x.y.z)" comment.
 
-The feature descriptions must be preceded by a line "Features:", like
-this::
+The feature descriptions must be preceded by a blank line and then a
+line "Features:", like this::
 
+  #
   # Features:
+  #
   # @feature: Description text
 
-A tagged section starts with one of the following words:
-"Note:"/"Notes:", "Since:", "Example"/"Examples", "Returns:", "TODO:".
-The section ends with the start of a new section.
+A tagged section begins with a paragraph that starts with one of the
+following words: "Since:", "Returns:", "Errors:", "TODO:".  It ends with
+the start of a new section.
 
-The text of a section can start on a new line, in
-which case it must not be indented at all.  It can also start
-on the same line as the 'Note:', 'Returns:', etc tag.  In this
-case if it spans multiple lines then second and subsequent
-lines must be indented to match the first, in the same way as
-multiline argument descriptions.
+The second and subsequent lines of tagged sections must be indented
+like this::
 
-A 'Since: x.y.z' tagged section lists the release that introduced the
+ # TODO: Ut enim ad minim veniam, quis nostrud exercitation ullamco
+ #     laboris nisi ut aliquip ex ea commodo consequat.
+ #
+ #     Duis aute irure dolor in reprehenderit in voluptate velit esse
+ #     cillum dolore eu fugiat nulla pariatur.
+
+"Returns" and "Errors" sections are only valid for commands.  They
+document the success and the error response, respectively.
+
+"Errors" sections should be formatted as an rST list, each entry
+detailing a relevant error condition.  For example::
+
+ # Errors:
+ #     - If @device does not exist, DeviceNotFound
+ #     - Any other error returns a GenericError.
+
+A "Since: x.y.z" tagged section lists the release that introduced the
 definition.
 
-An 'Example' or 'Examples' section is automatically rendered
-entirely as literal fixed-width text.  In other sections,
-the text is formatted, and rST markup can be used.
+"TODO" sections are not rendered (they are for developers, not users of
+QMP).  In other sections, the text is formatted, and rST markup can be
+used.
+
+QMP Examples can be added by using the ``.. qmp-example::`` directive.
+In its simplest form, this can be used to contain a single QMP code
+block which accepts standard JSON syntax with additional server
+directionality indicators (``->`` and ``<-``), and elisions.  An
+elision is commonly ``...``, but it can also be or a pair of ``...``
+with text in between.
+
+Optionally, a plaintext title may be provided by using the ``:title:``
+directive option.  If the title is omitted, the example title will
+default to "Example:".
+
+A simple QMP example::
+
+  # .. qmp-example::
+  #
+  #     -> { "execute": "query-name" }
+  #     <- { "return": { "name": "Fred" } }
+
+More complex or multi-step examples where exposition is needed before
+or between QMP code blocks can be created by using the ``:annotated:``
+directive option.  When using this option, nested QMP code blocks must
+be entered explicitly with rST's ``::`` syntax.
 
 For example::
+
+  # .. qmp-example::
+  #    :annotated:
+  #    :title: A more complex demonstration
+  #
+  #    This is a more complex example that can use
+  #    ``arbitrary rST syntax`` in its exposition::
+  #
+  #     -> { "execute": "query-block" }
+  #     <- { "return": [
+  #             {
+  #               "device": "ide0-hd0",
+  #               ...
+  #             }
+  #             ... more ...
+  #          ] }
+  #
+  #    Above, lengthy output has been omitted for brevity.
+
+Highlighting in non-QMP languages can be accomplished by using the
+``.. code-block:: lang`` directive, and non-highlighted text can be
+achieved by omitting the language argument.
+
+
+Examples of complete definition documentation::
 
  ##
  # @BlockStats:
@@ -1020,13 +1097,13 @@ For example::
  # Statistics of a virtual block device or a block backing device.
  #
  # @device: If the stats are for a virtual block device, the name
- #          corresponding to the virtual block device.
+ #     corresponding to the virtual block device.
  #
- # @node-name: The node name of the device. (since 2.3)
+ # @node-name: The node name of the device.  (Since 2.3)
  #
  # ... more members ...
  #
- # Since: 0.14.0
+ # Since: 0.14
  ##
  { 'struct': 'BlockStats',
    'data': {'*device': 'str', '*node-name': 'str',
@@ -1037,24 +1114,83 @@ For example::
  #
  # Query the @BlockStats for all virtual block devices.
  #
- # @query-nodes: If true, the command will query all the
- #               block nodes ... explain, explain ...  (since 2.3)
+ # @query-nodes: If true, the command will query all the block nodes
+ #     ... explain, explain ...
+ #     (Since 2.3)
  #
  # Returns: A list of @BlockStats for each virtual block devices.
  #
- # Since: 0.14.0
+ # Since: 0.14
  #
- # Example:
+ # .. qmp-example::
  #
- # -> { "execute": "query-blockstats" }
- # <- {
- #      ... lots of output ...
- #    }
- #
+ #     -> { "execute": "query-blockstats" }
+ #     <- {
+ #          ...
+ #        }
  ##
  { 'command': 'query-blockstats',
    'data': { '*query-nodes': 'bool' },
    'returns': ['BlockStats'] }
+
+
+Markup pitfalls
+~~~~~~~~~~~~~~~
+
+A blank line is required between list items and paragraphs.  Without
+it, the list may not be recognized, resulting in garbled output.  Good
+example::
+
+ # An event's state is modified if:
+ #
+ # - its name matches the @name pattern, and
+ # - if @vcpu is given, the event has the "vcpu" property.
+
+Without the blank line this would be a single paragraph.
+
+Indentation matters.  Bad example::
+
+ # @none: None (no memory side cache in this proximity domain,
+ #              or cache associativity unknown)
+ #     (since 5.0)
+
+The last line's de-indent is wrong.  The second and subsequent lines
+need to line up with each other, like this::
+
+ # @none: None (no memory side cache in this proximity domain,
+ #     or cache associativity unknown)
+ #     (since 5.0)
+
+Section tags are case-sensitive and end with a colon.  They are only
+recognized after a blank line.  Good example::
+
+ #
+ # Since: 7.1
+
+Bad examples (all ordinary paragraphs)::
+
+ # since: 7.1
+
+ # Since 7.1
+
+ # Since : 7.1
+
+Likewise, member descriptions require a colon.  Good example::
+
+ # @interface-id: Interface ID
+
+Bad examples (all ordinary paragraphs)::
+
+ # @interface-id   Interface ID
+
+ # @interface-id : Interface ID
+
+Undocumented members are not flagged, yet.  Instead, the generated
+documentation describes them as "Not documented".  Think twice before
+adding more undocumented members.
+
+When you change documentation comments, please check the generated
+documentation comes out as intended!
 
 
 Client JSON Protocol introspection
@@ -1157,9 +1293,8 @@ Example: the SchemaInfo for EVENT_C from section Events_ ::
     Type "q_obj-EVENT_C-arg" is an implicitly defined object type with
     the two members from the event's definition.
 
-The SchemaInfo for struct and union types has meta-type "object".
-
-The SchemaInfo for a struct type has variant member "members".
+The SchemaInfo for struct and union types has meta-type "object" and
+variant member "members".
 
 The SchemaInfo for a union type additionally has variant members "tag"
 and "variants".
@@ -1353,11 +1488,13 @@ As an example, we'll use the following schema, which describes a
 single complex user-defined type, along with command which takes a
 list of that type as a parameter, and returns a single element of that
 type.  The user is responsible for writing the implementation of
-qmp_my_command(); everything else is produced by the generator. ::
+qmp_my_command(); everything else is produced by the generator.
+
+::
 
     $ cat example-schema.json
     { 'struct': 'UserDefOne',
-      'data': { 'integer': 'int', '*string': 'str' } }
+      'data': { 'integer': 'int', '*string': 'str', '*flag': 'bool' } }
 
     { 'command': 'my-command',
       'data': { 'arg1': ['UserDefOne'] },
@@ -1410,8 +1547,9 @@ Example::
 
     struct UserDefOne {
         int64_t integer;
-        bool has_string;
         char *string;
+        bool has_flag;
+        bool flag;
     };
 
     void qapi_free_UserDefOne(UserDefOne *obj);
@@ -1523,11 +1661,18 @@ Example::
 
     bool visit_type_UserDefOne_members(Visitor *v, UserDefOne *obj, Error **errp)
     {
+        bool has_string = !!obj->string;
+
         if (!visit_type_int(v, "integer", &obj->integer, errp)) {
             return false;
         }
-        if (visit_optional(v, "string", &obj->has_string)) {
+        if (visit_optional(v, "string", &has_string)) {
             if (!visit_type_str(v, "string", &obj->string, errp)) {
+                return false;
+            }
+        }
+        if (visit_optional(v, "flag", &obj->has_flag)) {
+            if (!visit_type_bool(v, "flag", &obj->flag, errp)) {
                 return false;
             }
         }
@@ -1664,28 +1809,13 @@ Example::
     $ cat qapi-generated/example-qapi-commands.c
     [Uninteresting stuff omitted...]
 
-
-    static void qmp_marshal_output_UserDefOne(UserDefOne *ret_in,
-                                    QObject **ret_out, Error **errp)
-    {
-        Visitor *v;
-
-        v = qobject_output_visitor_new_qmp(ret_out);
-        if (visit_type_UserDefOne(v, "unused", &ret_in, errp)) {
-            visit_complete(v, ret_out);
-        }
-        visit_free(v);
-        v = qapi_dealloc_visitor_new();
-        visit_type_UserDefOne(v, "unused", &ret_in, NULL);
-        visit_free(v);
-    }
-
     void qmp_marshal_my_command(QDict *args, QObject **ret, Error **errp)
     {
         Error *err = NULL;
         bool ok = false;
         Visitor *v;
         UserDefOne *retval;
+        Visitor *ov;
         q_obj_my_command_arg arg = {0};
 
         v = qobject_input_visitor_new_qmp(QOBJECT(args));
@@ -1713,7 +1843,14 @@ Example::
             goto out;
         }
 
-        qmp_marshal_output_UserDefOne(retval, ret, errp);
+        ov = qobject_output_visitor_new_qmp(ret);
+        if (visit_type_UserDefOne(ov, "unused", &retval, errp)) {
+            visit_complete(ov, ret);
+        }
+        visit_free(ov);
+        ov = qapi_dealloc_visitor_new();
+        visit_type_UserDefOne(ov, "unused", &retval, NULL);
+        visit_free(ov);
 
         if (trace_event_get_state_backends(TRACE_QMP_EXIT_MY_COMMAND)) {
             g_autoptr(GString) ret_json = qobject_to_json(*ret);
@@ -1736,7 +1873,7 @@ Example::
     #ifndef EXAMPLE_QAPI_INIT_COMMANDS_H
     #define EXAMPLE_QAPI_INIT_COMMANDS_H
 
-    #include "qapi/qmp/dispatch.h"
+    #include "qapi/qmp-registry.h"
 
     void example_qmp_init_marshal(QmpCommandList *cmds);
 
@@ -1748,7 +1885,7 @@ Example::
         QTAILQ_INIT(cmds);
 
         qmp_register_command(cmds, "my-command",
-                             qmp_marshal_my_command, QCO_NO_OPTIONS);
+                             qmp_marshal_my_command, 0, 0);
     }
     [Uninteresting stuff omitted...]
 
@@ -1867,7 +2004,7 @@ Example::
     #ifndef EXAMPLE_QAPI_INTROSPECT_H
     #define EXAMPLE_QAPI_INTROSPECT_H
 
-    #include "qapi/qmp/qlit.h"
+    #include "qobject/qlit.h"
 
     extern const QLitObject example_qmp_schema_qlit;
 
@@ -1917,6 +2054,12 @@ Example::
                     { "type", QLIT_QSTR("str"), },
                     {}
                 })),
+                QLIT_QDICT(((QLitDictEntry[]) {
+                    { "default", QLIT_QNULL, },
+                    { "name", QLIT_QSTR("flag"), },
+                    { "type", QLIT_QSTR("bool"), },
+                    {}
+                })),
                 {}
             })), },
             { "meta-type", QLIT_QSTR("object"), },
@@ -1948,6 +2091,12 @@ Example::
             { "json-type", QLIT_QSTR("string"), },
             { "meta-type", QLIT_QSTR("builtin"), },
             { "name", QLIT_QSTR("str"), },
+            {}
+        })),
+        QLIT_QDICT(((QLitDictEntry[]) {
+            { "json-type", QLIT_QSTR("boolean"), },
+            { "meta-type", QLIT_QSTR("builtin"), },
+            { "name", QLIT_QSTR("bool"), },
             {}
         })),
         {}
