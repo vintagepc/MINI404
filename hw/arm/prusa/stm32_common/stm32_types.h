@@ -139,7 +139,8 @@
 
 #define TYPE_STM32F030_SPI _STM_F030_PART(spi)
 #define TYPE_STM32G070_SPI _STM_G070_PART(spi)
-#define TYPE_STM32F2xx_SPI _STM_F2xx_PART(spi)
+// v suffix is because this otherwise conflicts with the public SPI type in hw/ssi.
+#define TYPE_STM32F2xx_SPI _STM_F2xx_PART(spi-v)
 #define TYPE_STM32F4xx_SPI _STM_F4xx_PART(spi)
 
 #define TYPE_STM32F030_USART _STM_F030_PART(usart)

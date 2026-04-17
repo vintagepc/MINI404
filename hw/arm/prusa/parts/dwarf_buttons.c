@@ -102,7 +102,7 @@ static void dwarf_button_init(Object *obj)
 static void dwarf_button_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    dc->reset = dwarf_button_reset;
+    device_class_set_legacy_reset(dc, dwarf_button_reset);
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(oc);
     sc->ScriptHandler = dwarf_button_process_action;
 

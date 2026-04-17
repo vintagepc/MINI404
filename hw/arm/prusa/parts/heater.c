@@ -305,7 +305,7 @@ static const VMStateDescription vmstate_heater = {
 static void heater_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    dc->reset = heater_reset;
+    device_class_set_legacy_reset(dc, heater_reset);
     dc->vmsd = &vmstate_heater;
     device_class_set_props(dc, heater_properties);
 

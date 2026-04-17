@@ -39,6 +39,7 @@
 #include "stm32_common/stm32_common.h"
 #include "stm32_common/stm32_types.h"
 #include "hw/arm/armv7m.h"
+#include "qapi/qmp/qlist.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -48,14 +49,20 @@
 
 typedef struct mini_config_t {
     const char* flash_chip;
+    const char* flash_fn;
+    int flash_size;
 } mini_config_t;
 
 static const mini_config_t mini_100_cfg = {
-    .flash_chip = "w25q64jv"
+    .flash_chip = "w25q64jv",
+    .flash_fn = XFLASH_FN,
+    .flash_size = 8U*MiB
 };
 
 static const mini_config_t mini_014_cfg = {
-    .flash_chip = "w25w80d"
+    .flash_chip = "w25w80d",
+    .flash_fn = "Prusa_Mini_xflash_1M.bin",
+    .flash_size = 1U*MiB
 };
 
 static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg);
@@ -81,13 +88,16 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-	qdev_prop_set_uint32(otp, "len-otp-data",8);
-	qdev_prop_set_uint32(otp, "otp-data[1]",1081065844);
-	qdev_prop_set_uint32(otp, "otp-data[2]",0x56207942);
-	qdev_prop_set_uint32(otp, "otp-data[3]",0x61746e69);
-	qdev_prop_set_uint32(otp, "otp-data[4]",0x43506567);
-	qdev_prop_set_uint32(otp, "otp-data[6]",0x04040000);
-	qdev_prop_set_uint32(otp, "otp-data[7]",0x04040404);
+    QList *otp_list = qlist_new();
+    qlist_append_int(otp_list, 0);
+    qlist_append_int(otp_list, 1081065844);
+    qlist_append_int(otp_list, 0x56207942);
+    qlist_append_int(otp_list, 0x61746e69);
+    qlist_append_int(otp_list, 0x43506567);
+    qlist_append_int(otp_list, 0);
+    qlist_append_int(otp_list, 0x04040000);
+    qlist_append_int(otp_list, 0x04040404);
+    qdev_prop_set_array(otp, "otp-data", otp_list);
 
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
@@ -161,7 +171,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     {
         bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_SPI3), "ssi");
         dev = qdev_new(cfg->flash_chip);
-        blk = get_or_create_drive(IF_MTD, 0, XFLASH_FN, XFLASH_ID,  8U*MiB, &error_fatal);
+        blk = get_or_create_drive(IF_MTD, 0, cfg->flash_fn, XFLASH_ID,  cfg->flash_size, &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize_and_unref(dev, bus, &error_fatal);
         qemu_irq flash_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);

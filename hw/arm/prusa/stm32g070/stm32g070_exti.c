@@ -254,7 +254,7 @@ stm32_g070_exti_class_init(ObjectClass *klass, void *data)
 {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->vmsd = &vmstate_stm32g070_exti;
-	dc->reset = stm32_g070_exti_reset;
+	device_class_set_legacy_reset(dc, stm32_g070_exti_reset);
 	QEMU_BUILD_BUG_MSG(sizeof(stm32g070_exti_reginfo) != sizeof(stm32_reginfo_t[RI_END]), "Reginfo not sized correctly!");
 }
 

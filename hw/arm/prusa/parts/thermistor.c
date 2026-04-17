@@ -104,14 +104,14 @@ static void thermistor_update_output(ThermistorState *s) {
 				float delta = value - s->table[i+1];
 				tt = s->table[i] + (d_adc * (delta / d_temp));
 			}
-			int value = (((tt / s->oversampling)));
-			value <<=2; // Note - ADC takes full 12 bit input, but the tables are only 10-bit
-			qemu_set_irq(s->irq_value,value);
+			int ivalue = (((tt / s->oversampling)));
+			ivalue <<=2; // Note - ADC takes full 12 bit input, but the tables are only 10-bit
+			qemu_set_irq(s->irq_value,ivalue);
             if (s->table_index==21) {  // Special case for PT100 on HX717 - map ADC value to direct reading.
-                value = map(value, 0,0x3FF, -980000, 2070000)*125;
+                ivalue = map(ivalue, 0,0x3FF, -980000, 2070000)*125;
             }
-			qemu_set_irq(s->irq_value,value);
-			qemu_set_irq(s->value_x1000,value);
+			qemu_set_irq(s->irq_value,ivalue);
+			qemu_set_irq(s->value_x1000,ivalue);
             return;
 		}
 	}
@@ -302,7 +302,7 @@ static void thermistor_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = thermistor_reset;
+    device_class_set_legacy_reset(dc, thermistor_reset);
     dc->vmsd = &vmstate_thermistor;
     device_class_set_props(dc, thermistor_properties);
 
