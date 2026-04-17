@@ -406,7 +406,6 @@ static void qtest_process_command(CharFrontend *chr, gchar **words)
             }
             return;
         }
-
         QLIST_FOREACH(ngl, &dev->gpios, node) {
             /* We don't support inbound interception of named GPIOs yet */
             if (is_outbound) {
