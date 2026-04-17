@@ -2,7 +2,6 @@
  * QEMU model of the ZynqMP eFuse
  *
  * Copyright (c) 2015 Xilinx Inc.
- * Copyright (c) 2023 Advanced Micro Devices, Inc.
  *
  * Written by Edgar E. Iglesias <edgari@xilinx.com>
  *
@@ -770,9 +769,9 @@ static void zynqmp_efuse_register_reset(RegisterInfo *reg)
     register_reset(reg);
 }
 
-static void zynqmp_efuse_reset_hold(Object *obj, ResetType type)
+static void zynqmp_efuse_reset(DeviceState *dev)
 {
-    XlnxZynqMPEFuse *s = XLNX_ZYNQMP_EFUSE(obj);
+    XlnxZynqMPEFuse *s = XLNX_ZYNQMP_EFUSE(dev);
     unsigned int i;
 
     for (i = 0; i < ARRAY_SIZE(s->regs_info); ++i) {
@@ -803,8 +802,9 @@ static void zynqmp_efuse_init(Object *obj)
 {
     XlnxZynqMPEFuse *s = XLNX_ZYNQMP_EFUSE(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+    RegisterInfoArray *reg_array;
 
-    s->reg_array =
+    reg_array =
         register_init_block32(DEVICE(obj), zynqmp_efuse_regs_info,
                               ARRAY_SIZE(zynqmp_efuse_regs_info),
                               s->regs_info, s->regs,
@@ -812,22 +812,15 @@ static void zynqmp_efuse_init(Object *obj)
                               ZYNQMP_EFUSE_ERR_DEBUG,
                               R_MAX * 4);
 
-    sysbus_init_mmio(sbd, &s->reg_array->mem);
+    sysbus_init_mmio(sbd, &reg_array->mem);
     sysbus_init_irq(sbd, &s->irq);
-}
-
-static void zynqmp_efuse_finalize(Object *obj)
-{
-    XlnxZynqMPEFuse *s = XLNX_ZYNQMP_EFUSE(obj);
-
-    register_finalize_block(s->reg_array);
 }
 
 static const VMStateDescription vmstate_efuse = {
     .name = TYPE_XLNX_ZYNQMP_EFUSE,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, XlnxZynqMPEFuse, R_MAX),
         VMSTATE_END_OF_LIST(),
     }
@@ -844,9 +837,8 @@ static Property zynqmp_efuse_props[] = {
 static void zynqmp_efuse_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    ResettableClass *rc = RESETTABLE_CLASS(klass);
 
-    rc->phases.hold = zynqmp_efuse_reset_hold;
+    dc->reset = zynqmp_efuse_reset;
     dc->realize = zynqmp_efuse_realize;
     dc->vmsd = &vmstate_efuse;
     device_class_set_props(dc, zynqmp_efuse_props);
@@ -859,7 +851,6 @@ static const TypeInfo efuse_info = {
     .instance_size = sizeof(XlnxZynqMPEFuse),
     .class_init    = zynqmp_efuse_class_init,
     .instance_init = zynqmp_efuse_init,
-    .instance_finalize = zynqmp_efuse_finalize,
 };
 
 static void efuse_register_types(void)

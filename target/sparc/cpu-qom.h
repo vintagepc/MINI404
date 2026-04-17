@@ -1,5 +1,5 @@
 /*
- * QEMU SPARC CPU QOM header (target agnostic)
+ * QEMU SPARC CPU
  *
  * Copyright (c) 2012 SUSE LINUX Products GmbH
  *
@@ -21,6 +21,7 @@
 #define QEMU_SPARC_CPU_QOM_H
 
 #include "hw/core/cpu.h"
+#include "qom/object.h"
 
 #ifdef TARGET_SPARC64
 #define TYPE_SPARC_CPU "sparc64-cpu"
@@ -30,7 +31,23 @@
 
 OBJECT_DECLARE_CPU_TYPE(SPARCCPU, SPARCCPUClass, SPARC_CPU)
 
-#define SPARC_CPU_TYPE_SUFFIX "-" TYPE_SPARC_CPU
-#define SPARC_CPU_TYPE_NAME(model) model SPARC_CPU_TYPE_SUFFIX
+typedef struct sparc_def_t sparc_def_t;
+/**
+ * SPARCCPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_reset: The parent class' reset handler.
+ *
+ * A SPARC CPU model.
+ */
+struct SPARCCPUClass {
+    /*< private >*/
+    CPUClass parent_class;
+    /*< public >*/
+
+    DeviceRealize parent_realize;
+    DeviceReset parent_reset;
+    sparc_def_t *cpu_def;
+};
+
 
 #endif

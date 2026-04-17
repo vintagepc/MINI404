@@ -21,7 +21,6 @@
 #define TARGET_ARCH_H
 
 #include "qemu.h"
-#include "target/arm/cpu-features.h"
 
 void target_cpu_set_tls(CPUARMState *env, target_ulong newtls);
 target_ulong target_cpu_get_tls(CPUARMState *env);

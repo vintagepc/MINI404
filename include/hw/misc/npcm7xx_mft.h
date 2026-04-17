@@ -49,7 +49,7 @@
  * @max_rpm: The maximum rpm for fans. Order: A0, B0, A1, B1.
  * @duty: The duty cycles for fans, relative to NPCM7XX_PWM_MAX_DUTY.
  */
-struct NPCM7xxMFTState {
+typedef struct NPCM7xxMFTState {
     SysBusDevice parent;
 
     MemoryRegion iomem;
@@ -61,9 +61,10 @@ struct NPCM7xxMFTState {
 
     uint32_t    max_rpm[NPCM7XX_MFT_FANIN_COUNT];
     uint32_t    duty[NPCM7XX_MFT_FANIN_COUNT];
-};
+} NPCM7xxMFTState;
 
 #define TYPE_NPCM7XX_MFT "npcm7xx-mft"
-OBJECT_DECLARE_SIMPLE_TYPE(NPCM7xxMFTState, NPCM7XX_MFT)
+#define NPCM7XX_MFT(obj) \
+    OBJECT_CHECK(NPCM7xxMFTState, (obj), TYPE_NPCM7XX_MFT)
 
 #endif /* NPCM7XX_MFT_H */

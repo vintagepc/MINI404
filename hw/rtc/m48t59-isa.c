@@ -47,7 +47,7 @@ struct M48txxISAState {
 };
 
 struct M48txxISADeviceClass {
-    DeviceClass parent_class;
+    ISADeviceClass parent_class;
     M48txxInfo info;
 };
 
@@ -120,7 +120,7 @@ static void m48txx_isa_class_init(ObjectClass *klass, void *data)
     NvramClass *nc = NVRAM_CLASS(klass);
 
     dc->realize = m48t59_isa_realize;
-    device_class_set_legacy_reset(dc, m48t59_reset_isa);
+    dc->reset = m48t59_reset_isa;
     device_class_set_props(dc, m48t59_isa_properties);
     nc->read = m48txx_isa_read;
     nc->write = m48txx_isa_write;

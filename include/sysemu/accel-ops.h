@@ -10,7 +10,7 @@
 #ifndef ACCEL_OPS_H
 #define ACCEL_OPS_H
 
-#include "exec/cpu-common.h"
+#include "exec/hwaddr.h"
 #include "qom/object.h"
 
 #define ACCEL_OPS_SUFFIX "-ops"
@@ -20,12 +20,7 @@
 typedef struct AccelOpsClass AccelOpsClass;
 DECLARE_CLASS_CHECKERS(AccelOpsClass, ACCEL_OPS, TYPE_ACCEL_OPS)
 
-/**
- * struct AccelOpsClass - accelerator interfaces
- *
- * This structure is used to abstract accelerator differences from the
- * core CPU code. Not all have to be implemented.
- */
+/* cpus.c operations interface */
 struct AccelOpsClass {
     /*< private >*/
     ObjectClass parent_class;
@@ -35,7 +30,6 @@ struct AccelOpsClass {
     void (*ops_init)(AccelOpsClass *ops);
 
     bool (*cpus_are_resettable)(void);
-    void (*cpu_reset_hold)(CPUState *cpu);
 
     void (*create_vcpu_thread)(CPUState *cpu); /* MANDATORY NON-NULL */
     void (*kick_vcpu_thread)(CPUState *cpu);
@@ -49,25 +43,13 @@ struct AccelOpsClass {
 
     void (*handle_interrupt)(CPUState *cpu, int mask);
 
-    /**
-     * @get_virtual_clock: fetch virtual clock
-     * @set_virtual_clock: set virtual clock
-     *
-     * These allow the timer subsystem to defer to the accelerator to
-     * fetch time. The set function is needed if the accelerator wants
-     * to track the changes to time as the timer is warped through
-     * various timer events.
-     */
     int64_t (*get_virtual_clock)(void);
-    void (*set_virtual_clock)(int64_t time);
-
     int64_t (*get_elapsed_ticks)(void);
 
     /* gdbstub hooks */
     bool (*supports_guest_debug)(void);
-    int (*update_guest_debug)(CPUState *cpu);
-    int (*insert_breakpoint)(CPUState *cpu, int type, vaddr addr, vaddr len);
-    int (*remove_breakpoint)(CPUState *cpu, int type, vaddr addr, vaddr len);
+    int (*insert_breakpoint)(CPUState *cpu, int type, hwaddr addr, hwaddr len);
+    int (*remove_breakpoint)(CPUState *cpu, int type, hwaddr addr, hwaddr len);
     void (*remove_all_breakpoints)(CPUState *cpu);
 };
 

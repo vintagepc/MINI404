@@ -1,4 +1,4 @@
-/*
+ /*
  * QTest testcase for e1000e NIC
  *
  * Copyright (c) 2015 Ravello Systems LTD (http://ravellosystems.com)
@@ -27,7 +27,6 @@
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
 #include "libqos/pci-pc.h"
-#include "net/eth.h"
 #include "qemu/sockets.h"
 #include "qemu/iov.h"
 #include "qemu/module.h"
@@ -36,21 +35,17 @@
 #include "libqos/e1000e.h"
 #include "hw/net/e1000_regs.h"
 
-static const struct eth_header packet = {
-    .h_dest = E1000E_ADDRESS,
-    .h_source = E1000E_ADDRESS,
-};
-
 static void e1000e_send_verify(QE1000E *d, int *test_sockets, QGuestAllocator *alloc)
 {
     struct e1000_tx_desc descr;
+    static const int data_len = 64;
     char buffer[64];
     int ret;
     uint32_t recv_len;
 
     /* Prepare test data buffer */
-    uint64_t data = guest_alloc(alloc, sizeof(buffer));
-    memwrite(data, &packet, sizeof(packet));
+    uint64_t data = guest_alloc(alloc, data_len);
+    memwrite(data, "TEST", 5);
 
     /* Prepare TX descriptor */
     memset(&descr, 0, sizeof(descr));
@@ -59,7 +54,7 @@ static void e1000e_send_verify(QE1000E *d, int *test_sockets, QGuestAllocator *a
                                    E1000_TXD_CMD_EOP  |
                                    E1000_TXD_CMD_DEXT |
                                    E1000_TXD_DTYP_D   |
-                                   sizeof(buffer));
+                                   data_len);
 
     /* Put descriptor to the ring */
     e1000e_tx_ring_push(d, &descr);
@@ -74,9 +69,9 @@ static void e1000e_send_verify(QE1000E *d, int *test_sockets, QGuestAllocator *a
     /* Check data sent to the backend */
     ret = recv(test_sockets[0], &recv_len, sizeof(recv_len), 0);
     g_assert_cmpint(ret, == , sizeof(recv_len));
-    ret = recv(test_sockets[0], buffer, sizeof(buffer), 0);
-    g_assert_cmpint(ret, ==, sizeof(buffer));
-    g_assert_false(memcmp(buffer, &packet, sizeof(packet)));
+    ret = recv(test_sockets[0], buffer, 64, 0);
+    g_assert_cmpint(ret, >=, 5);
+    g_assert_cmpstr(buffer, == , "TEST");
 
     /* Free test data buffer */
     guest_free(alloc, data);
@@ -86,27 +81,28 @@ static void e1000e_receive_verify(QE1000E *d, int *test_sockets, QGuestAllocator
 {
     union e1000_rx_desc_extended descr;
 
-    struct eth_header test_iov = packet;
-    int len = htonl(sizeof(packet));
+    char test[] = "TEST";
+    int len = htonl(sizeof(test));
     struct iovec iov[] = {
         {
             .iov_base = &len,
             .iov_len = sizeof(len),
         },{
-            .iov_base = &test_iov,
-            .iov_len = sizeof(packet),
+            .iov_base = test,
+            .iov_len = sizeof(test),
         },
     };
 
+    static const int data_len = 64;
     char buffer[64];
     int ret;
 
     /* Send a dummy packet to device's socket*/
-    ret = iov_send(test_sockets[0], iov, 2, 0, sizeof(len) + sizeof(packet));
-    g_assert_cmpint(ret, == , sizeof(packet) + sizeof(len));
+    ret = iov_send(test_sockets[0], iov, 2, 0, sizeof(len) + sizeof(test));
+    g_assert_cmpint(ret, == , sizeof(test) + sizeof(len));
 
     /* Prepare test data buffer */
-    uint64_t data = guest_alloc(alloc, sizeof(buffer));
+    uint64_t data = guest_alloc(alloc, data_len);
 
     /* Prepare RX descriptor */
     memset(&descr, 0, sizeof(descr));
@@ -124,7 +120,7 @@ static void e1000e_receive_verify(QE1000E *d, int *test_sockets, QGuestAllocator
 
     /* Check data sent to the backend */
     memread(data, buffer, sizeof(buffer));
-    g_assert_false(memcmp(buffer, &packet, sizeof(packet)));
+    g_assert_cmpstr(buffer, == , "TEST");
 
     /* Free test data buffer */
     guest_free(alloc, data);

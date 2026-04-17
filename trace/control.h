@@ -90,6 +90,23 @@ static bool trace_event_is_pattern(const char *str);
 static uint32_t trace_event_get_id(TraceEvent *ev);
 
 /**
+ * trace_event_get_vcpu_id:
+ *
+ * Get the per-vCPU identifier of an event.
+ *
+ * Special value #TRACE_VCPU_EVENT_NONE means the event is not vCPU-specific
+ * (does not have the "vcpu" property).
+ */
+static uint32_t trace_event_get_vcpu_id(TraceEvent *ev);
+
+/**
+ * trace_event_is_vcpu:
+ *
+ * Whether this is a per-vCPU event.
+ */
+static bool trace_event_is_vcpu(TraceEvent *ev);
+
+/**
  * trace_event_get_name:
  *
  * Get the name of an event.
@@ -156,6 +173,21 @@ static bool trace_event_get_state_dynamic(TraceEvent *ev);
 void trace_event_set_state_dynamic(TraceEvent *ev, bool state);
 
 /**
+ * trace_event_set_vcpu_state_dynamic:
+ *
+ * Set the dynamic tracing state of an event for the given vCPU.
+ *
+ * Pre-condition: trace_event_get_vcpu_state_static(ev) == true
+ *
+ * Note: Changes for execution-time events with the 'tcg' property will not be
+ *       propagated until the next TB is executed (iff executing in TCG mode).
+ */
+void trace_event_set_vcpu_state_dynamic(CPUState *vcpu,
+                                        TraceEvent *ev, bool state);
+
+
+
+/**
  * trace_init_backends:
  *
  * Initialize the tracing backend.
@@ -172,6 +204,22 @@ bool trace_init_backends(void);
  * output file, and a file was specified with "-trace file=...".
  */
 void trace_init_file(void);
+
+/**
+ * trace_init_vcpu:
+ * @vcpu: Added vCPU.
+ *
+ * Set initial dynamic event state for a hot-plugged vCPU.
+ */
+void trace_init_vcpu(CPUState *vcpu);
+
+/**
+ * trace_fini_vcpu:
+ * @vcpu: Removed vCPU.
+ *
+ * Disable dynamic event state for a hot-unplugged vCPU.
+ */
+void trace_fini_vcpu(CPUState *vcpu);
 
 /**
  * trace_list_events:
@@ -197,11 +245,11 @@ extern QemuOptsList qemu_trace_opts;
 
 /**
  * trace_opt_parse:
- * @optstr: A string argument of --trace command line argument
+ * @optarg: A string argument of --trace command line argument
  *
  * Initialize tracing subsystem.
  */
-void trace_opt_parse(const char *optstr);
+void trace_opt_parse(const char *optarg);
 
 /**
  * trace_get_vcpu_event_count:

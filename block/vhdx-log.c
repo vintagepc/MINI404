@@ -20,7 +20,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "block/block-io.h"
 #include "block/block_int.h"
 #include "qemu/error-report.h"
 #include "qemu/bswap.h"
@@ -55,9 +54,8 @@ static const MSGUID zero_guid = { 0 };
 
 /* Allow peeking at the hdr entry at the beginning of the current
  * read index, without advancing the read index */
-static int GRAPH_RDLOCK
-vhdx_log_peek_hdr(BlockDriverState *bs, VHDXLogEntries *log,
-                  VHDXLogEntryHeader *hdr)
+static int vhdx_log_peek_hdr(BlockDriverState *bs, VHDXLogEntries *log,
+                             VHDXLogEntryHeader *hdr)
 {
     int ret = 0;
     uint64_t offset;
@@ -108,7 +106,7 @@ static int vhdx_log_inc_idx(uint32_t idx, uint64_t length)
 
 
 /* Reset the log to empty */
-static void GRAPH_RDLOCK vhdx_log_reset(BlockDriverState *bs, BDRVVHDXState *s)
+static void vhdx_log_reset(BlockDriverState *bs, BDRVVHDXState *s)
 {
     MSGUID guid = { 0 };
     s->log.read = s->log.write = 0;
@@ -128,10 +126,9 @@ static void GRAPH_RDLOCK vhdx_log_reset(BlockDriverState *bs, BDRVVHDXState *s)
  * not modified.
  *
  * 0 is returned on success, -errno otherwise.  */
-static int GRAPH_RDLOCK
-vhdx_log_read_sectors(BlockDriverState *bs, VHDXLogEntries *log,
-                      uint32_t *sectors_read, void *buffer,
-                      uint32_t num_sectors, bool peek)
+static int vhdx_log_read_sectors(BlockDriverState *bs, VHDXLogEntries *log,
+                                 uint32_t *sectors_read, void *buffer,
+                                 uint32_t num_sectors, bool peek)
 {
     int ret = 0;
     uint64_t offset;
@@ -171,10 +168,9 @@ exit:
  * It is assumed that 'buffer' is at least 4096*num_sectors large.
  *
  * 0 is returned on success, -errno otherwise */
-static int coroutine_fn GRAPH_RDLOCK
-vhdx_log_write_sectors(BlockDriverState *bs, VHDXLogEntries *log,
-                       uint32_t *sectors_written, void *buffer,
-                       uint32_t num_sectors)
+static int vhdx_log_write_sectors(BlockDriverState *bs, VHDXLogEntries *log,
+                                  uint32_t *sectors_written, void *buffer,
+                                  uint32_t num_sectors)
 {
     int ret = 0;
     uint64_t offset;
@@ -198,7 +194,8 @@ vhdx_log_write_sectors(BlockDriverState *bs, VHDXLogEntries *log,
             /* full */
             break;
         }
-        ret = bdrv_co_pwrite(bs->file, offset, VHDX_LOG_SECTOR_SIZE, buffer_tmp, 0);
+        ret = bdrv_pwrite(bs->file, offset, VHDX_LOG_SECTOR_SIZE, buffer_tmp,
+                          0);
         if (ret < 0) {
             goto exit;
         }
@@ -335,9 +332,9 @@ static int vhdx_compute_desc_sectors(uint32_t desc_cnt)
  * will allocate all the space for buffer, which must be NULL when
  * passed into this function. Each descriptor will also be validated,
  * and error returned if any are invalid. */
-static int GRAPH_RDLOCK
-vhdx_log_read_desc(BlockDriverState *bs, BDRVVHDXState *s, VHDXLogEntries *log,
-                   VHDXLogDescEntries **buffer, bool convert_endian)
+static int vhdx_log_read_desc(BlockDriverState *bs, BDRVVHDXState *s,
+                              VHDXLogEntries *log, VHDXLogDescEntries **buffer,
+                              bool convert_endian)
 {
     int ret = 0;
     uint32_t desc_sectors;
@@ -414,9 +411,8 @@ exit:
  * For a zero descriptor, it may describe multiple sectors to fill with zeroes.
  * In this case, it should be noted that zeroes are written to disk, and the
  * image file is not extended as a sparse file.  */
-static int GRAPH_RDLOCK
-vhdx_log_flush_desc(BlockDriverState *bs, VHDXLogDescriptor *desc,
-                    VHDXLogDataSector *data)
+static int vhdx_log_flush_desc(BlockDriverState *bs, VHDXLogDescriptor *desc,
+                               VHDXLogDataSector *data)
 {
     int ret = 0;
     uint64_t seq, file_offset;
@@ -487,8 +483,8 @@ exit:
  * file, and then set the log to 'empty' status once complete.
  *
  * The log entries should be validate prior to flushing */
-static int GRAPH_RDLOCK
-vhdx_log_flush(BlockDriverState *bs, BDRVVHDXState *s, VHDXLogSequence *logs)
+static int vhdx_log_flush(BlockDriverState *bs, BDRVVHDXState *s,
+                          VHDXLogSequence *logs)
 {
     int ret = 0;
     int i;
@@ -587,10 +583,9 @@ exit:
     return ret;
 }
 
-static int GRAPH_RDLOCK
-vhdx_validate_log_entry(BlockDriverState *bs, BDRVVHDXState *s,
-                        VHDXLogEntries *log, uint64_t seq,
-                        bool *valid, VHDXLogEntryHeader *entry)
+static int vhdx_validate_log_entry(BlockDriverState *bs, BDRVVHDXState *s,
+                                   VHDXLogEntries *log, uint64_t seq,
+                                   bool *valid, VHDXLogEntryHeader *entry)
 {
     int ret = 0;
     VHDXLogEntryHeader hdr;
@@ -667,8 +662,8 @@ free_and_exit:
 /* Search through the log circular buffer, and find the valid, active
  * log sequence, if any exists
  * */
-static int GRAPH_RDLOCK
-vhdx_log_search(BlockDriverState *bs, BDRVVHDXState *s, VHDXLogSequence *logs)
+static int vhdx_log_search(BlockDriverState *bs, BDRVVHDXState *s,
+                           VHDXLogSequence *logs)
 {
     int ret = 0;
     uint32_t tail;
@@ -857,9 +852,8 @@ static void vhdx_log_raw_to_le_sector(VHDXLogDescriptor *desc,
 }
 
 
-static int coroutine_fn GRAPH_RDLOCK
-vhdx_log_write(BlockDriverState *bs, BDRVVHDXState *s,
-               void *data, uint32_t length, uint64_t offset)
+static int vhdx_log_write(BlockDriverState *bs, BDRVVHDXState *s,
+                          void *data, uint32_t length, uint64_t offset)
 {
     int ret = 0;
     void *buffer = NULL;
@@ -929,7 +923,7 @@ vhdx_log_write(BlockDriverState *bs, BDRVVHDXState *s,
 
     sectors += partial_sectors;
 
-    file_length = bdrv_co_getlength(bs->file->bs);
+    file_length = bdrv_getlength(bs->file->bs);
     if (file_length < 0) {
         ret = file_length;
         goto exit;
@@ -976,8 +970,8 @@ vhdx_log_write(BlockDriverState *bs, BDRVVHDXState *s,
 
         if (i == 0 && leading_length) {
             /* partial sector at the front of the buffer */
-            ret = bdrv_co_pread(bs->file, file_offset, VHDX_LOG_SECTOR_SIZE,
-                                merged_sector, 0);
+            ret = bdrv_pread(bs->file, file_offset, VHDX_LOG_SECTOR_SIZE,
+                             merged_sector, 0);
             if (ret < 0) {
                 goto exit;
             }
@@ -986,9 +980,9 @@ vhdx_log_write(BlockDriverState *bs, BDRVVHDXState *s,
             sector_write = merged_sector;
         } else if (i == sectors - 1 && trailing_length) {
             /* partial sector at the end of the buffer */
-            ret = bdrv_co_pread(bs->file, file_offset + trailing_length,
-                                VHDX_LOG_SECTOR_SIZE - trailing_length,
-                                merged_sector + trailing_length, 0);
+            ret = bdrv_pread(bs->file, file_offset,
+                             VHDX_LOG_SECTOR_SIZE - trailing_length,
+                             merged_sector + trailing_length, 0);
             if (ret < 0) {
                 goto exit;
             }
@@ -1041,9 +1035,8 @@ exit:
 }
 
 /* Perform a log write, and then immediately flush the entire log */
-int coroutine_fn
-vhdx_log_write_and_flush(BlockDriverState *bs, BDRVVHDXState *s,
-                         void *data, uint32_t length, uint64_t offset)
+int vhdx_log_write_and_flush(BlockDriverState *bs, BDRVVHDXState *s,
+                             void *data, uint32_t length, uint64_t offset)
 {
     int ret = 0;
     VHDXLogSequence logs = { .valid = true,
@@ -1053,7 +1046,7 @@ vhdx_log_write_and_flush(BlockDriverState *bs, BDRVVHDXState *s,
 
     /* Make sure data written (new and/or changed blocks) is stable
      * on disk, before creating log entry */
-    ret = bdrv_co_flush(bs);
+    ret = bdrv_flush(bs);
     if (ret < 0) {
         goto exit;
     }
@@ -1065,7 +1058,7 @@ vhdx_log_write_and_flush(BlockDriverState *bs, BDRVVHDXState *s,
     logs.log = s->log;
 
     /* Make sure log is stable on disk */
-    ret = bdrv_co_flush(bs);
+    ret = bdrv_flush(bs);
     if (ret < 0) {
         goto exit;
     }

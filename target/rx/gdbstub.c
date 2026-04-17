@@ -17,11 +17,12 @@
  */
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "gdbstub/helpers.h"
+#include "exec/gdbstub.h"
 
 int rx_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
 {
-    CPURXState *env = cpu_env(cs);
+    RXCPU *cpu = RX_CPU(cs);
+    CPURXState *env = &cpu->env;
 
     switch (n) {
     case 0 ... 15:
@@ -52,7 +53,8 @@ int rx_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
 
 int rx_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
-    CPURXState *env = cpu_env(cs);
+    RXCPU *cpu = RX_CPU(cs);
+    CPURXState *env = &cpu->env;
     uint32_t psw;
     switch (n) {
     case 0 ... 15:

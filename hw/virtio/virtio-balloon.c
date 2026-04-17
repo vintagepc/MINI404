@@ -31,6 +31,7 @@
 #include "trace.h"
 #include "qemu/error-report.h"
 #include "migration/misc.h"
+#include "migration/migration.h"
 
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio-access.h"
@@ -167,33 +168,19 @@ static void balloon_deflate_page(VirtIOBalloon *balloon,
     }
 }
 
-/*
- * All stats upto VIRTIO_BALLOON_S_NR /must/ have a
- * non-NULL name declared here, since these are used
- * as keys for populating the QDict with stats
- */
 static const char *balloon_stat_names[] = {
    [VIRTIO_BALLOON_S_SWAP_IN] = "stat-swap-in",
    [VIRTIO_BALLOON_S_SWAP_OUT] = "stat-swap-out",
    [VIRTIO_BALLOON_S_MAJFLT] = "stat-major-faults",
    [VIRTIO_BALLOON_S_MINFLT] = "stat-minor-faults",
    [VIRTIO_BALLOON_S_MEMFREE] = "stat-free-memory",
-
    [VIRTIO_BALLOON_S_MEMTOT] = "stat-total-memory",
    [VIRTIO_BALLOON_S_AVAIL] = "stat-available-memory",
    [VIRTIO_BALLOON_S_CACHES] = "stat-disk-caches",
    [VIRTIO_BALLOON_S_HTLB_PGALLOC] = "stat-htlb-pgalloc",
    [VIRTIO_BALLOON_S_HTLB_PGFAIL] = "stat-htlb-pgfail",
-
-   [VIRTIO_BALLOON_S_OOM_KILL] = "stat-oom-kills",
-   [VIRTIO_BALLOON_S_ALLOC_STALL] = "stat-alloc-stalls",
-   [VIRTIO_BALLOON_S_ASYNC_SCAN] = "stat-async-scans",
-   [VIRTIO_BALLOON_S_DIRECT_SCAN] = "stat-direct-scans",
-   [VIRTIO_BALLOON_S_ASYNC_RECLAIM] = "stat-async-reclaims",
-
-   [VIRTIO_BALLOON_S_DIRECT_RECLAIM] = "stat-direct-reclaims",
+   [VIRTIO_BALLOON_S_NR] = NULL
 };
-G_STATIC_ASSERT(G_N_ELEMENTS(balloon_stat_names) == VIRTIO_BALLOON_S_NR);
 
 /*
  * reset_stats - Mark all items in the stats array as unset
@@ -254,34 +241,36 @@ static void balloon_stats_poll_cb(void *opaque)
 static void balloon_stats_get_all(Object *obj, Visitor *v, const char *name,
                                   void *opaque, Error **errp)
 {
+    Error *err = NULL;
     VirtIOBalloon *s = VIRTIO_BALLOON(obj);
-    bool ok = false;
     int i;
 
-    if (!visit_start_struct(v, name, NULL, 0, errp)) {
-        return;
+    if (!visit_start_struct(v, name, NULL, 0, &err)) {
+        goto out;
     }
-    if (!visit_type_int(v, "last-update", &s->stats_last_update, errp)) {
+    if (!visit_type_int(v, "last-update", &s->stats_last_update, &err)) {
         goto out_end;
     }
 
-    if (!visit_start_struct(v, "stats", NULL, 0, errp)) {
+    if (!visit_start_struct(v, "stats", NULL, 0, &err)) {
         goto out_end;
     }
     for (i = 0; i < VIRTIO_BALLOON_S_NR; i++) {
-        if (!visit_type_uint64(v, balloon_stat_names[i], &s->stats[i], errp)) {
+        if (!visit_type_uint64(v, balloon_stat_names[i], &s->stats[i], &err)) {
             goto out_nested;
         }
     }
-    ok = visit_check_struct(v, errp);
+    visit_check_struct(v, &err);
 out_nested:
     visit_end_struct(v, NULL);
 
-    if (ok) {
-        visit_check_struct(v, errp);
+    if (!err) {
+        visit_check_struct(v, &err);
     }
 out_end:
     visit_end_struct(v, NULL);
+out:
+    error_propagate(errp, err);
 }
 
 static void balloon_stats_get_poll_interval(Object *obj, Visitor *v,
@@ -645,8 +634,7 @@ static void virtio_balloon_free_page_done(VirtIOBalloon *s)
 }
 
 static int
-virtio_balloon_free_page_hint_notify(NotifierWithReturn *n, void *data,
-                                     Error **errp)
+virtio_balloon_free_page_hint_notify(NotifierWithReturn *n, void *data)
 {
     VirtIOBalloon *dev = container_of(n, VirtIOBalloon, free_page_hint_notify);
     VirtIODevice *vdev = VIRTIO_DEVICE(dev);
@@ -743,14 +731,37 @@ static void virtio_balloon_get_config(VirtIODevice *vdev, uint8_t *config_data)
     memcpy(config_data, &config, virtio_balloon_config_size(dev));
 }
 
+static int build_dimm_list(Object *obj, void *opaque)
+{
+    GSList **list = opaque;
+
+    if (object_dynamic_cast(obj, TYPE_PC_DIMM)) {
+        DeviceState *dev = DEVICE(obj);
+        if (dev->realized) { /* only realized DIMMs matter */
+            *list = g_slist_prepend(*list, dev);
+        }
+    }
+
+    object_child_foreach(obj, build_dimm_list, opaque);
+    return 0;
+}
+
 static ram_addr_t get_current_ram_size(void)
 {
-    MachineState *machine = MACHINE(qdev_get_machine());
-    if (machine->device_memory) {
-        return machine->ram_size + machine->device_memory->dimm_size;
-    } else {
-        return machine->ram_size;
+    GSList *list = NULL, *item;
+    ram_addr_t size = current_machine->ram_size;
+
+    build_dimm_list(qdev_get_machine(), &list);
+    for (item = list; item; item = g_slist_next(item)) {
+        Object *obj = OBJECT(item->data);
+        if (!strcmp(object_get_typename(obj), TYPE_PC_DIMM)) {
+            size += object_property_get_int(obj, PC_DIMM_SIZE_PROP,
+                                            &error_abort);
+        }
     }
+    g_slist_free(list);
+
+    return size;
 }
 
 static bool virtio_balloon_page_poison_support(void *opaque)
@@ -830,7 +841,7 @@ static const VMStateDescription vmstate_virtio_balloon_free_page_hint = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = virtio_balloon_free_page_support,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(free_page_hint_cmd_id, VirtIOBalloon),
         VMSTATE_UINT32(free_page_hint_status, VirtIOBalloon),
         VMSTATE_END_OF_LIST()
@@ -842,7 +853,7 @@ static const VMStateDescription vmstate_virtio_balloon_page_poison = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = virtio_balloon_page_poison_support,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(poison_val, VirtIOBalloon),
         VMSTATE_END_OF_LIST()
     }
@@ -853,12 +864,12 @@ static const VMStateDescription vmstate_virtio_balloon_device = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = virtio_balloon_post_load_device,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(num_pages, VirtIOBalloon),
         VMSTATE_UINT32(actual, VirtIOBalloon),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * const []) {
+    .subsections = (const VMStateDescription * []) {
         &vmstate_virtio_balloon_free_page_hint,
         &vmstate_virtio_balloon_page_poison,
         NULL
@@ -899,9 +910,8 @@ static void virtio_balloon_device_realize(DeviceState *dev, Error **errp)
         precopy_add_notifier(&s->free_page_hint_notify);
 
         object_ref(OBJECT(s->iothread));
-        s->free_page_bh = aio_bh_new_guarded(iothread_get_aio_context(s->iothread),
-                                             virtio_ballloon_get_free_page_hints, s,
-                                             &dev->mem_reentrancy_guard);
+        s->free_page_bh = aio_bh_new(iothread_get_aio_context(s->iothread),
+                                     virtio_ballloon_get_free_page_hints, s);
     }
 
     if (virtio_has_feature(s->host_features, VIRTIO_BALLOON_F_REPORTING)) {
@@ -1009,7 +1019,7 @@ static const VMStateDescription vmstate_virtio_balloon = {
     .name = "virtio-balloon",
     .minimum_version_id = 1,
     .version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_VIRTIO_DEVICE,
         VMSTATE_END_OF_LIST()
     },

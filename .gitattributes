@@ -2,8 +2,3 @@
 *.h.inc         diff=c
 *.m             diff=objc
 *.py            diff=python
-*.rs            diff=rust
-*.rs.inc        diff=rust
-Cargo.lock      diff=toml merge=binary
-
-*.patch         -text -whitespace

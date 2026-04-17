@@ -20,9 +20,8 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "qemu/log.h"
-#include "gdbstub/syscalls.h"
-#include "gdbstub/helpers.h"
-#include "semihosting/uaccess.h"
+#include "exec/gdbstub.h"
+#include "semihosting/softmmu-uaccess.h"
 #include "semihosting/semihost.h"
 #include "semihosting/console.h"
 #include "semihosting/syscalls.h"
@@ -126,7 +125,7 @@ static void report_fault(CPUMIPSState *env)
 
 static void uhi_cb(CPUState *cs, uint64_t ret, int err)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    CPUMIPSState *env = cs->env_ptr;
 
 #define E(N) case E##N: err = UHI_E##N; break
 
@@ -167,7 +166,7 @@ static void uhi_fstat_cb(CPUState *cs, uint64_t ret, int err)
     QEMU_BUILD_BUG_ON(sizeof(UHIStat) < sizeof(struct gdb_stat));
 
     if (!err) {
-        CPUMIPSState *env = cpu_env(cs);
+        CPUMIPSState *env = cs->env_ptr;
         target_ulong addr = env->active_tc.gpr[5];
         UHIStat *dst = lock_user(VERIFY_WRITE, addr, sizeof(UHIStat), 1);
         struct gdb_stat s;

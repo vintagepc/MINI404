@@ -45,9 +45,9 @@ void hyperv_x86_synic_update(X86CPU *cpu)
 
 static void async_synic_update(CPUState *cs, run_on_cpu_data data)
 {
-    bql_lock();
+    qemu_mutex_lock_iothread();
     hyperv_x86_synic_update(X86_CPU(cs));
-    bql_unlock();
+    qemu_mutex_unlock_iothread();
 }
 
 int kvm_hv_handle_exit(X86CPU *cpu, struct kvm_hyperv_exit *exit)
@@ -80,9 +80,8 @@ int kvm_hv_handle_exit(X86CPU *cpu, struct kvm_hyperv_exit *exit)
          * necessary because memory hierarchy is being changed
          */
         async_safe_run_on_cpu(CPU(cpu), async_synic_update, RUN_ON_CPU_NULL);
-        cpu_exit(CPU(cpu));
 
-        return EXCP_INTERRUPT;
+        return 0;
     case KVM_EXIT_HYPERV_HCALL: {
         uint16_t code = exit->u.hcall.input & 0xffff;
         bool fast = exit->u.hcall.input & HV_HYPERCALL_FAST;
@@ -149,9 +148,4 @@ int kvm_hv_handle_exit(X86CPU *cpu, struct kvm_hyperv_exit *exit)
     default:
         return -1;
     }
-}
-
-void hyperv_x86_set_vmbus_recommended_features_enabled(void)
-{
-    hyperv_set_vmbus_recommended_features_enabled();
 }

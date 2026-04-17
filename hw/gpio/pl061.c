@@ -87,7 +87,7 @@ static const VMStateDescription vmstate_pl061 = {
     .name = "pl061",
     .version_id = 4,
     .minimum_version_id = 4,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(locked, PL061State),
         VMSTATE_UINT32(data, PL061State),
         VMSTATE_UINT32(old_out_data, PL061State),
@@ -484,7 +484,7 @@ static void pl061_enter_reset(Object *obj, ResetType type)
     s->amsel = 0;
 }
 
-static void pl061_hold_reset(Object *obj, ResetType type)
+static void pl061_hold_reset(Object *obj)
 {
     PL061State *s = PL061(obj);
     int i, level;

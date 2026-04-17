@@ -26,7 +26,6 @@
 #ifndef CUDA_H
 #define CUDA_H
 
-#include "hw/input/adb.h"
 #include "hw/misc/mos6522.h"
 #include "qom/object.h"
 

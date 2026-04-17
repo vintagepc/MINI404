@@ -170,7 +170,7 @@ void qemu_clipboard_peer_release(QemuClipboardPeer *peer,
  *
  * @selection: clipboard selection.
  *
- * Return the current clipboard data & owner information.
+ * Return the current clipboard data & owner informations.
  */
 QemuClipboardInfo *qemu_clipboard_info(QemuClipboardSelection selection);
 

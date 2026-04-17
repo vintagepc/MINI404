@@ -39,7 +39,6 @@ Format specific information:
     compression type: COMPRESSION_TYPE
     encrypt:
         ivgen alg: plain64
-        detached header: false
         hash alg: sha256
         cipher alg: aes-256
         uuid: 00000000-0000-0000-0000-000000000000
@@ -85,7 +84,6 @@ Format specific information:
     compression type: COMPRESSION_TYPE
     encrypt:
         ivgen alg: plain64
-        detached header: false
         hash alg: sha256
         cipher alg: aes-256
         uuid: 00000000-0000-0000-0000-000000000000

@@ -41,8 +41,3 @@ def setup(sphinx):
         sphinx.add_lexer('QMP', QMPExampleLexer)
     except errors.VersionRequirementError:
         sphinx.add_lexer('QMP', QMPExampleLexer())
-
-    return dict(
-        parallel_read_safe = True,
-        parallel_write_safe = True
-    )

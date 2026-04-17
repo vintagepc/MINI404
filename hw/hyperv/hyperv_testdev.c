@@ -88,7 +88,8 @@ static TestSintRoute *sint_route_find(HypervTestDev *dev,
             return sint_route;
         }
     }
-    g_assert_not_reached();
+    assert(false);
+    return NULL;
 }
 
 static void sint_route_destroy(HypervTestDev *dev,
@@ -186,7 +187,7 @@ static void msg_conn_destroy(HypervTestDev *dev, uint8_t conn_id)
             return;
         }
     }
-    g_assert_not_reached();
+    assert(false);
 }
 
 static void evt_conn_handler(EventNotifier *notifier)
@@ -236,7 +237,7 @@ static void evt_conn_destroy(HypervTestDev *dev, uint8_t conn_id)
             return;
         }
     }
-    g_assert_not_reached();
+    assert(false);
 }
 
 static uint64_t hv_test_dev_read(void *opaque, hwaddr addr, unsigned size)

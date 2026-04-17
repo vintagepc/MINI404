@@ -145,12 +145,9 @@ static void platform_bus_map_mmio(PlatformBusDevice *pbus, SysBusDevice *sbdev,
      * the target device's memory region
      */
     for (off = 0; off < pbus->mmio_size; off += alignment) {
-        MemoryRegion *mr = memory_region_find(&pbus->mmio, off, size).mr;
-        if (!mr) {
+        if (!memory_region_find(&pbus->mmio, off, size).mr) {
             found_region = true;
             break;
-        } else {
-            memory_region_unref(mr);
         }
     }
 

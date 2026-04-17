@@ -51,8 +51,10 @@ do {                                        \
     unlock_user(p1, arg1, 0);               \
 } while (0)
 
-struct iovec *lock_iovec(int type, abi_ulong target_addr, int count, int copy);
-void unlock_iovec(struct iovec *vec, abi_ulong target_addr, int count, int copy);
+extern struct iovec *lock_iovec(int type, abi_ulong target_addr, int count,
+        int copy);
+extern void unlock_iovec(struct iovec *vec, abi_ulong target_addr, int count,
+        int copy);
 
 int safe_open(const char *path, int flags, mode_t mode);
 int safe_openat(int fd, const char *path, int flags, mode_t mode);
@@ -641,7 +643,7 @@ static abi_long do_bsd_readlink(CPUArchState *env, abi_long arg1,
     }
     if (strcmp(p1, "/proc/curproc/file") == 0) {
         CPUState *cpu = env_cpu(env);
-        TaskState *ts = get_task_state(cpu);
+        TaskState *ts = (TaskState *)cpu->opaque;
         strncpy(p2, ts->bprm->fullpath, arg3);
         ret = MIN((abi_long)strlen(ts->bprm->fullpath), arg3);
     } else {

@@ -47,7 +47,7 @@ static void write_dt(void *ptr, unsigned long addr, unsigned long limit,
 }
 
 static uint64_t *idt_table;
-
+#ifdef TARGET_X86_64
 static void set_gate64(void *ptr, unsigned int type, unsigned int dpl,
                        uint64_t addr, unsigned int sel)
 {
@@ -60,10 +60,8 @@ static void set_gate64(void *ptr, unsigned int type, unsigned int dpl,
     p[2] = tswap32(addr >> 32);
     p[3] = 0;
 }
-
-#ifdef TARGET_X86_64
 /* only dpl matters as we do only user space emulation */
-static void set_idt(int n, unsigned int dpl, bool is64)
+static void set_idt(int n, unsigned int dpl)
 {
     set_gate64(idt_table + n * 2, 0, dpl, 0, 0);
 }
@@ -80,13 +78,9 @@ static void set_gate(void *ptr, unsigned int type, unsigned int dpl,
 }
 
 /* only dpl matters as we do only user space emulation */
-static void set_idt(int n, unsigned int dpl, bool is64)
+static void set_idt(int n, unsigned int dpl)
 {
-    if (is64) {
-        set_gate64(idt_table + n * 2, 0, dpl, 0, 0);
-    } else {
-        set_gate(idt_table + n, 0, dpl, 0, 0);
-    }
+    set_gate(idt_table + n, 0, dpl, 0, 0);
 }
 #endif
 
@@ -172,7 +166,6 @@ static void emulate_vsyscall(CPUX86State *env)
     /*
      * Perform the syscall.  None of the vsyscalls should need restarting.
      */
-    get_task_state(env_cpu(env))->orig_ax = syscall;
     ret = do_syscall(env, syscall, env->regs[R_EDI], env->regs[R_ESI],
                      env->regs[R_EDX], env->regs[10], env->regs[8],
                      env->regs[9], 0, 0);
@@ -218,11 +211,7 @@ void cpu_loop(CPUX86State *env)
 
         switch(trapnr) {
         case 0x80:
-#ifndef TARGET_X86_64
-        case EXCP_SYSCALL:
-#endif
             /* linux syscall from int $0x80 */
-            get_task_state(cs)->orig_ax = env->regs[R_EAX];
             ret = do_syscall(env,
                              env->regs[R_EAX],
                              env->regs[R_EBX],
@@ -238,10 +227,9 @@ void cpu_loop(CPUX86State *env)
                 env->regs[R_EAX] = ret;
             }
             break;
-#ifdef TARGET_X86_64
+#ifndef TARGET_ABI32
         case EXCP_SYSCALL:
-            /* linux syscall from syscall instruction.  */
-            get_task_state(cs)->orig_ax = env->regs[R_EAX];
+            /* linux syscall from syscall instruction */
             ret = do_syscall(env,
                              env->regs[R_EAX],
                              env->regs[R_EDI],
@@ -257,6 +245,8 @@ void cpu_loop(CPUX86State *env)
                 env->regs[R_EAX] = ret;
             }
             break;
+#endif
+#ifdef TARGET_X86_64
         case EXCP_VSYSCALL:
             emulate_vsyscall(env);
             break;
@@ -324,38 +314,23 @@ void cpu_loop(CPUX86State *env)
     }
 }
 
-static void target_cpu_free(void *obj)
-{
-    target_munmap(cpu_env(obj)->gdt.base,
-                  sizeof(uint64_t) * TARGET_GDT_ENTRIES);
-    g_free(obj);
-}
-
 void target_cpu_copy_regs(CPUArchState *env, struct target_pt_regs *regs)
 {
-    CPUState *cpu = env_cpu(env);
-    bool is64 = (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM) != 0;
-    int i;
-
-    OBJECT(cpu)->free = target_cpu_free;
     env->cr[0] = CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK;
     env->hflags |= HF_PE_MASK | HF_CPL_MASK;
     if (env->features[FEAT_1_EDX] & CPUID_SSE) {
         env->cr[4] |= CR4_OSFXSR_MASK;
         env->hflags |= HF_OSFXSR_MASK;
     }
-
-    /* enable 64 bit mode if possible */
-    if (is64) {
-        env->cr[4] |= CR4_PAE_MASK;
-        env->efer |= MSR_EFER_LMA | MSR_EFER_LME;
-        env->hflags |= HF_LMA_MASK;
-    }
 #ifndef TARGET_ABI32
-    else {
+    /* enable 64 bit mode if possible */
+    if (!(env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM)) {
         fprintf(stderr, "The selected x86 CPU does not support 64 bit mode\n");
         exit(EXIT_FAILURE);
     }
+    env->cr[4] |= CR4_PAE_MASK;
+    env->efer |= MSR_EFER_LMA | MSR_EFER_LME;
+    env->hflags |= HF_LMA_MASK;
 #endif
 
     /* flags setup : we activate the IRQs by default as in user mode */
@@ -394,12 +369,27 @@ void target_cpu_copy_regs(CPUArchState *env, struct target_pt_regs *regs)
                                 PROT_READ|PROT_WRITE,
                                 MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
     idt_table = g2h_untagged(env->idt.base);
-    for (i = 0; i < 20; i++) {
-        set_idt(i, 0, is64);
-    }
-    set_idt(3, 3, is64);
-    set_idt(4, 3, is64);
-    set_idt(0x80, 3, is64);
+    set_idt(0, 0);
+    set_idt(1, 0);
+    set_idt(2, 0);
+    set_idt(3, 3);
+    set_idt(4, 3);
+    set_idt(5, 0);
+    set_idt(6, 0);
+    set_idt(7, 0);
+    set_idt(8, 0);
+    set_idt(9, 0);
+    set_idt(10, 0);
+    set_idt(11, 0);
+    set_idt(12, 0);
+    set_idt(13, 0);
+    set_idt(14, 0);
+    set_idt(15, 0);
+    set_idt(16, 0);
+    set_idt(17, 0);
+    set_idt(18, 0);
+    set_idt(19, 0);
+    set_idt(0x80, 3);
 
     /* linux segment setup */
     {

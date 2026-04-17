@@ -26,6 +26,7 @@
 #define HW_IBEX_UART_H
 
 #include "hw/sysbus.h"
+#include "hw/registerfields.h"
 #include "chardev/char-fe.h"
 #include "qemu/timer.h"
 #include "qom/object.h"

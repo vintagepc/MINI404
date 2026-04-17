@@ -227,7 +227,7 @@ int usb_desc_endpoint(const USBDescEndpoint *ep, int flags,
     }
 
     if (superlen) {
-        d = (void *)(dest + bLength);
+        USBDescriptor *d = (void *)(dest + bLength);
 
         d->bLength                       = 0x06;
         d->bDescriptorType               = USB_DT_ENDPOINT_COMPANION;

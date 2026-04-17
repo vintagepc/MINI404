@@ -11,10 +11,7 @@
 #ifndef WIN_DUMP_H
 #define WIN_DUMP_H
 
-#include "sysemu/dump.h"
-
-/* Check Windows dump availability for the current target */
-bool win_dump_available(Error **errp);
+#include "qemu/win_dump_defs.h"
 
 void create_win_dump(DumpState *s, Error **errp);
 

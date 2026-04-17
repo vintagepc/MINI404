@@ -1,7 +1,5 @@
 config SUN4U
     bool
-    default y
-    depends on SPARC64
     imply PCI_DEVICES
     imply SUNHME
     imply TEST_DEVICES
@@ -10,7 +8,6 @@ config SUN4U
     select ISA_BUS
     select FDC_ISA
     select SERIAL_ISA
-    select SERIAL_MM
     select PCI_SABRE
     select IDE_CMD646
     select PCKBD
@@ -19,8 +16,6 @@ config SUN4U
 
 config NIAGARA
     bool
-    default y
-    depends on SPARC64
     select EMPTY_SLOT
     select SUN4V_RTC
     select UNIMP

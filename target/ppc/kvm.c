@@ -32,6 +32,7 @@
 #include "sysemu/device_tree.h"
 #include "mmu-hash64.h"
 
+#include "hw/sysbus.h"
 #include "hw/ppc/spapr.h"
 #include "hw/ppc/spapr_cpu_core.h"
 #include "hw/hw.h"
@@ -39,7 +40,7 @@
 #include "migration/qemu-file-types.h"
 #include "sysemu/watchdog.h"
 #include "trace.h"
-#include "gdbstub/enums.h"
+#include "exec/gdbstub.h"
 #include "exec/memattrs.h"
 #include "exec/ram_addr.h"
 #include "sysemu/hostmem.h"
@@ -48,10 +49,6 @@
 #include "qemu/mmap-alloc.h"
 #include "elf.h"
 #include "sysemu/kvm_int.h"
-#include "sysemu/kvm.h"
-#include "hw/core/accel-cpu.h"
-
-#include CONFIG_DEVICES
 
 #define PROC_DEVTREE_CPU      "/proc/device-tree/cpus/"
 
@@ -75,6 +72,7 @@ static int cap_hior;
 static int cap_one_reg;
 static int cap_epr;
 static int cap_ppc_watchdog;
+static int cap_papr;
 static int cap_htab_fd;
 static int cap_fixup_hcalls;
 static int cap_htm;             /* Hardware transactional memory support */
@@ -91,13 +89,6 @@ static int cap_ppc_nested_kvm_hv;
 static int cap_large_decr;
 static int cap_fwnmi;
 static int cap_rpt_invalidate;
-static int cap_ail_mode_3;
-
-#ifdef CONFIG_PSERIES
-static int cap_papr;
-#else
-#define cap_papr (0)
-#endif
 
 static uint32_t debug_inst_opcode;
 
@@ -116,11 +107,6 @@ static bool kvmppc_is_pr(KVMState *ks)
 static int kvm_ppc_register_host_cpu_type(void);
 static void kvmppc_get_cpu_characteristics(KVMState *s);
 static int kvmppc_get_dec_bits(void);
-
-int kvm_arch_get_default_type(MachineState *ms)
-{
-    return 0;
-}
 
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
@@ -167,7 +153,6 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     }
 
     cap_rpt_invalidate = kvm_vm_check_extension(s, KVM_CAP_PPC_RPT_INVALIDATE);
-    cap_ail_mode_3 = kvm_vm_check_extension(s, KVM_CAP_PPC_AIL_MODE_3);
     kvm_ppc_register_host_cpu_type();
 
     return 0;
@@ -277,7 +262,7 @@ static void kvm_get_smmu_info(struct kvm_ppc_smmu_info *info, Error **errp)
                      "KVM failed to provide the MMU features it supports");
 }
 
-static struct ppc_radix_page_info *kvmppc_get_radix_page_info(void)
+struct ppc_radix_page_info *kvm_get_radix_page_info(void)
 {
     KVMState *s = KVM_STATE(current_accel());
     struct ppc_radix_page_info *radix_page_info;
@@ -555,7 +540,8 @@ static void kvm_sw_tlb_put(PowerPCCPU *cpu)
 
 static void kvm_get_one_spr(CPUState *cs, uint64_t id, int spr)
 {
-    CPUPPCState *env = cpu_env(cs);
+    PowerPCCPU *cpu = POWERPC_CPU(cs);
+    CPUPPCState *env = &cpu->env;
     /* Init 'val' to avoid "uninitialised value" Valgrind warnings */
     union {
         uint32_t u32;
@@ -589,7 +575,8 @@ static void kvm_get_one_spr(CPUState *cs, uint64_t id, int spr)
 
 static void kvm_put_one_spr(CPUState *cs, uint64_t id, int spr)
 {
-    CPUPPCState *env = cpu_env(cs);
+    PowerPCCPU *cpu = POWERPC_CPU(cs);
+    CPUPPCState *env = &cpu->env;
     union {
         uint32_t u32;
         uint64_t u64;
@@ -622,7 +609,8 @@ static void kvm_put_one_spr(CPUState *cs, uint64_t id, int spr)
 
 static int kvm_put_fp(CPUState *cs)
 {
-    CPUPPCState *env = cpu_env(cs);
+    PowerPCCPU *cpu = POWERPC_CPU(cs);
+    CPUPPCState *env = &cpu->env;
     struct kvm_one_reg reg;
     int i;
     int ret;
@@ -641,8 +629,8 @@ static int kvm_put_fp(CPUState *cs)
 
         for (i = 0; i < 32; i++) {
             uint64_t vsr[2];
-            uint64_t *fpr = cpu_fpr_ptr(env, i);
-            uint64_t *vsrl = cpu_vsrl_ptr(env, i);
+            uint64_t *fpr = cpu_fpr_ptr(&cpu->env, i);
+            uint64_t *vsrl = cpu_vsrl_ptr(&cpu->env, i);
 
 #if HOST_BIG_ENDIAN
             vsr[0] = float64_val(*fpr);
@@ -688,7 +676,8 @@ static int kvm_put_fp(CPUState *cs)
 
 static int kvm_get_fp(CPUState *cs)
 {
-    CPUPPCState *env = cpu_env(cs);
+    PowerPCCPU *cpu = POWERPC_CPU(cs);
+    CPUPPCState *env = &cpu->env;
     struct kvm_one_reg reg;
     int i;
     int ret;
@@ -709,8 +698,8 @@ static int kvm_get_fp(CPUState *cs)
 
         for (i = 0; i < 32; i++) {
             uint64_t vsr[2];
-            uint64_t *fpr = cpu_fpr_ptr(env, i);
-            uint64_t *vsrl = cpu_vsrl_ptr(env, i);
+            uint64_t *fpr = cpu_fpr_ptr(&cpu->env, i);
+            uint64_t *vsrl = cpu_vsrl_ptr(&cpu->env, i);
 
             reg.addr = (uintptr_t) &vsr;
             reg.id = vsx ? KVM_REG_PPC_VSR(i) : KVM_REG_PPC_FPR(i);
@@ -867,7 +856,9 @@ int kvmppc_put_books_sregs(PowerPCCPU *cpu)
     sregs.pvr = env->spr[SPR_PVR];
 
     if (cpu->vhyp) {
-        sregs.u.s.sdr1 = cpu->vhyp_class->encode_hpt_for_kvm_pr(cpu->vhyp);
+        PPCVirtualHypervisorClass *vhc =
+            PPC_VIRTUAL_HYPERVISOR_GET_CLASS(cpu->vhyp);
+        sregs.u.s.sdr1 = vhc->encode_hpt_for_kvm_pr(cpu->vhyp);
     } else {
         sregs.u.s.sdr1 = env->spr[SPR_SDR1];
     }
@@ -900,7 +891,7 @@ int kvmppc_put_books_sregs(PowerPCCPU *cpu)
     return kvm_vcpu_ioctl(CPU(cpu), KVM_SET_SREGS, &sregs);
 }
 
-int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
+int kvm_arch_put_registers(CPUState *cs, int level)
 {
     PowerPCCPU *cpu = POWERPC_CPU(cs);
     CPUPPCState *env = &cpu->env;
@@ -937,7 +928,10 @@ int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
         regs.gpr[i] = env->gpr[i];
     }
 
-    regs.cr = ppc_get_cr(env);
+    regs.cr = 0;
+    for (i = 0; i < 8; i++) {
+        regs.cr |= (env->crf[i] & 15) << (4 * (7 - i));
+    }
 
     ret = kvm_vcpu_ioctl(cs, KVM_SET_REGS, &regs);
     if (ret < 0) {
@@ -963,6 +957,8 @@ int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
     }
 
     if (cap_one_reg) {
+        int i;
+
         /*
          * We deliberately ignore errors here, for kernels which have
          * the ONE_REG calls, but don't support the specific
@@ -1205,11 +1201,12 @@ static int kvmppc_get_books_sregs(PowerPCCPU *cpu)
     return 0;
 }
 
-int kvm_arch_get_registers(CPUState *cs, Error **errp)
+int kvm_arch_get_registers(CPUState *cs)
 {
     PowerPCCPU *cpu = POWERPC_CPU(cs);
     CPUPPCState *env = &cpu->env;
     struct kvm_regs regs;
+    uint32_t cr;
     int i, ret;
 
     ret = kvm_vcpu_ioctl(cs, KVM_GET_REGS, &regs);
@@ -1217,7 +1214,12 @@ int kvm_arch_get_registers(CPUState *cs, Error **errp)
         return ret;
     }
 
-    ppc_set_cr(env, regs.cr);
+    cr = regs.cr;
+    for (i = 7; i >= 0; i--) {
+        env->crf[i] = cr & 15;
+        cr >>= 4;
+    }
+
     env->ctr = regs.ctr;
     env->lr = regs.lr;
     cpu_write_xer(env, regs.xer);
@@ -1263,6 +1265,8 @@ int kvm_arch_get_registers(CPUState *cs, Error **errp)
     }
 
     if (cap_one_reg) {
+        int i;
+
         /*
          * We deliberately ignore errors here, for kernels which have
          * the ONE_REG calls, but don't support the specific
@@ -1319,7 +1323,7 @@ int kvmppc_set_interrupt(PowerPCCPU *cpu, int irq, int level)
         return 0;
     }
 
-    if (!cap_interrupt_unset) {
+    if (!kvm_enabled() || !cap_interrupt_unset) {
         return 0;
     }
 
@@ -1448,15 +1452,15 @@ static int find_hw_watchpoint(target_ulong addr, int *flag)
     return -1;
 }
 
-int kvm_arch_insert_hw_breakpoint(vaddr addr, vaddr len, int type)
+int kvm_arch_insert_hw_breakpoint(target_ulong addr,
+                                  target_ulong len, int type)
 {
-    const unsigned breakpoint_index = nb_hw_breakpoint + nb_hw_watchpoint;
-    if (breakpoint_index >= ARRAY_SIZE(hw_debug_points)) {
+    if ((nb_hw_breakpoint + nb_hw_watchpoint) >= ARRAY_SIZE(hw_debug_points)) {
         return -ENOBUFS;
     }
 
-    hw_debug_points[breakpoint_index].addr = addr;
-    hw_debug_points[breakpoint_index].type = type;
+    hw_debug_points[nb_hw_breakpoint + nb_hw_watchpoint].addr = addr;
+    hw_debug_points[nb_hw_breakpoint + nb_hw_watchpoint].type = type;
 
     switch (type) {
     case GDB_BREAKPOINT_HW:
@@ -1492,7 +1496,8 @@ int kvm_arch_insert_hw_breakpoint(vaddr addr, vaddr len, int type)
     return 0;
 }
 
-int kvm_arch_remove_hw_breakpoint(vaddr addr, vaddr len, int type)
+int kvm_arch_remove_hw_breakpoint(target_ulong addr,
+                                  target_ulong len, int type)
 {
     int n;
 
@@ -1659,7 +1664,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     CPUPPCState *env = &cpu->env;
     int ret;
 
-    bql_lock();
+    qemu_mutex_lock_iothread();
 
     switch (run->exit_reason) {
     case KVM_EXIT_DCR:
@@ -1675,7 +1680,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         trace_kvm_handle_halt();
         ret = kvmppc_handle_halt(cpu);
         break;
-#if defined(CONFIG_PSERIES)
+#if defined(TARGET_PPC64)
     case KVM_EXIT_PAPR_HCALL:
         trace_kvm_handle_papr_hcall(run->papr_hcall.nr);
         run->papr_hcall.ret = spapr_hypercall(cpu,
@@ -1705,7 +1710,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         ret = 0;
         break;
 
-#if defined(CONFIG_PSERIES)
+#if defined(TARGET_PPC64)
     case KVM_EXIT_NMI:
         trace_kvm_handle_nmi_exception();
         ret = kvm_handle_nmi(cpu, run);
@@ -1718,7 +1723,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         break;
     }
 
-    bql_unlock();
+    qemu_mutex_unlock_iothread();
     return ret;
 }
 
@@ -1730,10 +1735,6 @@ int kvmppc_or_tsr_bits(PowerPCCPU *cpu, uint32_t tsr_bits)
         .id = KVM_REG_PPC_OR_TSR,
         .addr = (uintptr_t) &bits,
     };
-
-    if (!kvm_enabled()) {
-        return 0;
-    }
 
     return kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &reg);
 }
@@ -1748,10 +1749,6 @@ int kvmppc_clear_tsr_bits(PowerPCCPU *cpu, uint32_t tsr_bits)
         .addr = (uintptr_t) &bits,
     };
 
-    if (!kvm_enabled()) {
-        return 0;
-    }
-
     return kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &reg);
 }
 
@@ -1765,10 +1762,6 @@ int kvmppc_set_tcr(PowerPCCPU *cpu)
         .id = KVM_REG_PPC_TCR,
         .addr = (uintptr_t) &tcr,
     };
-
-    if (!kvm_enabled()) {
-        return 0;
-    }
 
     return kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &reg);
 }
@@ -2061,7 +2054,6 @@ void kvmppc_enable_h_rpt_invalidate(void)
     kvmppc_enable_hcall(kvm_state, H_RPT_INVALIDATE);
 }
 
-#ifdef CONFIG_PSERIES
 void kvmppc_set_papr(PowerPCCPU *cpu)
 {
     CPUState *cs = CPU(cpu);
@@ -2083,7 +2075,6 @@ void kvmppc_set_papr(PowerPCCPU *cpu)
      */
     cap_papr = 1;
 }
-#endif
 
 int kvmppc_set_compat(PowerPCCPU *cpu, uint32_t compat_pvr)
 {
@@ -2348,30 +2339,6 @@ static void alter_insns(uint64_t *word, uint64_t flags, bool on)
     }
 }
 
-static bool kvmppc_cpu_realize(CPUState *cs, Error **errp)
-{
-    int ret;
-    const char *vcpu_str = (cs->parent_obj.hotplugged == true) ?
-                           "hotplug" : "create";
-    cs->cpu_index = cpu_get_free_index();
-
-    POWERPC_CPU(cs)->vcpu_id = cs->cpu_index;
-
-    /* create and park to fail gracefully in case vcpu hotplug fails */
-    ret = kvm_create_and_park_vcpu(cs);
-    if (ret) {
-        /*
-         * This causes QEMU to terminate if initial CPU creation
-         * fails, and only CPU hotplug failure if the error happens
-         * there.
-         */
-        error_setg(errp, "%s: vcpu %s failed with %d",
-                         __func__, vcpu_str, ret);
-        return false;
-    }
-    return true;
-}
-
 static void kvmppc_host_cpu_class_init(ObjectClass *oc, void *data)
 {
     PowerPCCPUClass *pcc = POWERPC_CPU_CLASS(oc);
@@ -2397,7 +2364,18 @@ static void kvmppc_host_cpu_class_init(ObjectClass *oc, void *data)
     }
 
 #if defined(TARGET_PPC64)
-    pcc->radix_page_info = kvmppc_get_radix_page_info();
+    pcc->radix_page_info = kvm_get_radix_page_info();
+
+    if ((pcc->pvr & 0xffffff00) == CPU_POWERPC_POWER9_DD1) {
+        /*
+         * POWER9 DD1 has some bugs which make it not really ISA 3.00
+         * compliant.  More importantly, advertising ISA 3.00
+         * architected mode may prevent guests from activating
+         * necessary DD1 workarounds.
+         */
+        pcc->pcr_supported &= ~(PCR_COMPAT_3_00 | PCR_COMPAT_2_07
+                                | PCR_COMPAT_2_06 | PCR_COMPAT_2_05);
+    }
 #endif /* defined(TARGET_PPC64) */
 }
 
@@ -2592,11 +2570,6 @@ int kvmppc_has_cap_rpt_invalidate(void)
     return cap_rpt_invalidate;
 }
 
-bool kvmppc_supports_ail_3(void)
-{
-    return cap_ail_mode_3;
-}
-
 PowerPCCPUClass *kvm_ppc_get_host_cpu_class(void)
 {
     uint32_t host_pvr = mfpvr();
@@ -2706,7 +2679,7 @@ int kvmppc_get_htab_fd(bool write, uint64_t index, Error **errp)
 int kvmppc_save_htab(QEMUFile *f, int fd, size_t bufsize, int64_t max_ns)
 {
     int64_t starttime = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
-    g_autofree uint8_t *buf = g_malloc(bufsize);
+    uint8_t buf[bufsize];
     ssize_t rc;
 
     do {
@@ -2788,9 +2761,9 @@ void kvmppc_read_hptes(ppc_hash_pte64_t *hptes, hwaddr ptex, int n)
     while (i < n) {
         struct kvm_get_htab_header *hdr;
         int m = n < HPTES_PER_GROUP ? n : HPTES_PER_GROUP;
-        char buf[sizeof(*hdr) + HPTES_PER_GROUP * HASH_PTE_SIZE_64];
+        char buf[sizeof(*hdr) + m * HASH_PTE_SIZE_64];
 
-        rc = read(fd, buf, sizeof(*hdr) + m * HASH_PTE_SIZE_64);
+        rc = read(fd, buf, sizeof(buf));
         if (rc < 0) {
             hw_error("kvmppc_read_hptes: Unable to read HPTEs");
         }
@@ -2870,7 +2843,7 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
     return data & 0xffff;
 }
 
-#if defined(CONFIG_PSERIES)
+#if defined(TARGET_PPC64)
 int kvm_handle_nmi(PowerPCCPU *cpu, struct kvm_run *run)
 {
     uint16_t flags = run->flags & KVM_RUN_PPC_NMI_DISP_MASK;
@@ -2989,26 +2962,11 @@ void kvmppc_set_reg_tb_offset(PowerPCCPU *cpu, int64_t tb_offset)
     }
 }
 
+bool kvm_arch_cpu_check_are_resettable(void)
+{
+    return true;
+}
+
 void kvm_arch_accel_class_init(ObjectClass *oc)
 {
 }
-
-static void kvm_cpu_accel_class_init(ObjectClass *oc, void *data)
-{
-    AccelCPUClass *acc = ACCEL_CPU_CLASS(oc);
-
-    acc->cpu_target_realize = kvmppc_cpu_realize;
-}
-
-static const TypeInfo kvm_cpu_accel_type_info = {
-    .name = ACCEL_CPU_NAME("kvm"),
-
-    .parent = TYPE_ACCEL_CPU,
-    .class_init = kvm_cpu_accel_class_init,
-    .abstract = true,
-};
-static void kvm_cpu_accel_register_types(void)
-{
-    type_register_static(&kvm_cpu_accel_type_info);
-}
-type_init(kvm_cpu_accel_register_types);

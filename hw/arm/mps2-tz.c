@@ -48,7 +48,6 @@
 #include "qemu/units.h"
 #include "qemu/cutils.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qlist.h"
 #include "qemu/error-report.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/armv7m.h"
@@ -125,10 +124,6 @@ struct MPS2TZMachineClass {
     int uart_overflow_irq; /* number of the combined UART overflow IRQ */
     uint32_t init_svtor; /* init-svtor setting for SSE */
     uint32_t sram_addr_width; /* SRAM_ADDR_WIDTH setting for SSE */
-    uint32_t cpu0_mpu_ns; /* CPU0_MPU_NS setting for SSE */
-    uint32_t cpu0_mpu_s; /* CPU0_MPU_S setting for SSE */
-    uint32_t cpu1_mpu_ns; /* CPU1_MPU_NS setting for SSE */
-    uint32_t cpu1_mpu_s; /* CPU1_MPU_S setting for SSE */
     const RAMInfo *raminfo;
     const char *armsse_type;
     uint32_t boot_ram_size; /* size of ram at address 0; 0 == find in raminfo */
@@ -157,7 +152,7 @@ struct MPS2TZMachineState {
     TZMSC msc[4];
     CMSDKAPBUART uart[6];
     SplitIRQ sec_resp_splitter;
-    OrIRQState uart_irq_orgate;
+    qemu_or_irq uart_irq_orgate;
     DeviceState *lan9118;
     SplitIRQ cpu_irq_splitter[MPS2TZ_NUMIRQ_MAX];
     Clock *sysclk;
@@ -187,9 +182,6 @@ OBJECT_DECLARE_TYPE(MPS2TZMachineState, MPS2TZMachineClass, MPS2TZ_MACHINE)
 #else
 #define MPS3_DDR_SIZE (2 * GiB)
 #endif
-
-/* For cpu{0,1}_mpu_{ns,s}, means "leave at SSE's default value" */
-#define MPU_REGION_DEFAULT UINT32_MAX
 
 static const uint32_t an505_oscclk[] = {
     40000000,
@@ -435,7 +427,7 @@ static MemoryRegion *make_uart(MPS2TZMachineState *mms, void *opaque,
                                const char *name, hwaddr size,
                                const int *irqs, const PPCExtraData *extradata)
 {
-    /* The irq[] array is rx, tx, combined, in that order */
+    /* The irq[] array is tx, rx, combined, in that order */
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_GET_CLASS(mms);
     CMSDKAPBUART *uart = opaque;
     int i = uart - &mms->uart[0];
@@ -447,8 +439,8 @@ static MemoryRegion *make_uart(MPS2TZMachineState *mms, void *opaque,
     qdev_prop_set_uint32(DEVICE(uart), "pclk-frq", mmc->apb_periph_frq);
     sysbus_realize(SYS_BUS_DEVICE(uart), &error_fatal);
     s = SYS_BUS_DEVICE(uart);
-    sysbus_connect_irq(s, 0, get_sse_irq_in(mms, irqs[1]));
-    sysbus_connect_irq(s, 1, get_sse_irq_in(mms, irqs[0]));
+    sysbus_connect_irq(s, 0, get_sse_irq_in(mms, irqs[0]));
+    sysbus_connect_irq(s, 1, get_sse_irq_in(mms, irqs[1]));
     sysbus_connect_irq(s, 2, qdev_get_gpio_in(orgate_dev, i * 2));
     sysbus_connect_irq(s, 3, qdev_get_gpio_in(orgate_dev, i * 2 + 1));
     sysbus_connect_irq(s, 4, get_sse_irq_in(mms, irqs[2]));
@@ -462,7 +454,6 @@ static MemoryRegion *make_scc(MPS2TZMachineState *mms, void *opaque,
     MPS2SCC *scc = opaque;
     DeviceState *sccdev;
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_GET_CLASS(mms);
-    QList *oscclk;
     uint32_t i;
 
     object_initialize_child(OBJECT(mms), "scc", scc, TYPE_MPS2_SCC);
@@ -471,13 +462,11 @@ static MemoryRegion *make_scc(MPS2TZMachineState *mms, void *opaque,
     qdev_prop_set_uint32(sccdev, "scc-cfg4", 0x2);
     qdev_prop_set_uint32(sccdev, "scc-aid", 0x00200008);
     qdev_prop_set_uint32(sccdev, "scc-id", mmc->scc_id);
-
-    oscclk = qlist_new();
+    qdev_prop_set_uint32(sccdev, "len-oscclk", mmc->len_oscclk);
     for (i = 0; i < mmc->len_oscclk; i++) {
-        qlist_append_int(oscclk, mmc->oscclk[i]);
+        g_autofree char *propname = g_strdup_printf("oscclk[%u]", i);
+        qdev_prop_set_uint32(sccdev, propname, mmc->oscclk[i]);
     }
-    qdev_prop_set_array(sccdev, "oscclk", oscclk);
-
     sysbus_realize(SYS_BUS_DEVICE(scc), &error_fatal);
     return sysbus_mmio_get_region(SYS_BUS_DEVICE(sccdev), 0);
 }
@@ -503,12 +492,14 @@ static MemoryRegion *make_eth_dev(MPS2TZMachineState *mms, void *opaque,
                                   const PPCExtraData *extradata)
 {
     SysBusDevice *s;
+    NICInfo *nd = &nd_table[0];
 
     /* In hardware this is a LAN9220; the LAN9118 is software compatible
      * except that it doesn't support the checksum-offload feature.
      */
+    qemu_check_nic_model(nd, "lan9118");
     mms->lan9118 = qdev_new(TYPE_LAN9118);
-    qemu_configure_nic_device(mms->lan9118, true, NULL);
+    qdev_set_nic_properties(mms->lan9118, nd);
 
     s = SYS_BUS_DEVICE(mms->lan9118);
     sysbus_realize_and_unref(s, &error_fatal);
@@ -526,6 +517,7 @@ static MemoryRegion *make_eth_usb(MPS2TZMachineState *mms, void *opaque,
      * irqs[] is the ethernet IRQ.
      */
     SysBusDevice *s;
+    NICInfo *nd = &nd_table[0];
 
     memory_region_init(&mms->eth_usb_container, OBJECT(mms),
                        "mps2-tz-eth-usb-container", 0x200000);
@@ -534,8 +526,9 @@ static MemoryRegion *make_eth_usb(MPS2TZMachineState *mms, void *opaque,
      * In hardware this is a LAN9220; the LAN9118 is software compatible
      * except that it doesn't support the checksum-offload feature.
      */
+    qemu_check_nic_model(nd, "lan9118");
     mms->lan9118 = qdev_new(TYPE_LAN9118);
-    qemu_configure_nic_device(mms->lan9118, true, NULL);
+    qdev_set_nic_properties(mms->lan9118, nd);
 
     s = SYS_BUS_DEVICE(mms->lan9118);
     sysbus_realize_and_unref(s, &error_fatal);
@@ -809,6 +802,12 @@ static void mps2tz_common_init(MachineState *machine)
     int num_ppcs;
     int i;
 
+    if (strcmp(machine->cpu_type, mc->default_cpu_type) != 0) {
+        error_report("This board can only be used with CPU %s",
+                     mc->default_cpu_type);
+        exit(1);
+    }
+
     if (machine->ram_size != mc->default_ram_size) {
         char *sz = size_to_str(mc->default_ram_size);
         error_report("Invalid RAM size, should be %s", sz);
@@ -829,20 +828,6 @@ static void mps2tz_common_init(MachineState *machine)
                              OBJECT(system_memory), &error_abort);
     qdev_prop_set_uint32(iotkitdev, "EXP_NUMIRQ", mmc->numirq);
     qdev_prop_set_uint32(iotkitdev, "init-svtor", mmc->init_svtor);
-    if (mmc->cpu0_mpu_ns != MPU_REGION_DEFAULT) {
-        qdev_prop_set_uint32(iotkitdev, "CPU0_MPU_NS", mmc->cpu0_mpu_ns);
-    }
-    if (mmc->cpu0_mpu_s != MPU_REGION_DEFAULT) {
-        qdev_prop_set_uint32(iotkitdev, "CPU0_MPU_S", mmc->cpu0_mpu_s);
-    }
-    if (object_property_find(OBJECT(iotkitdev), "CPU1_MPU_NS")) {
-        if (mmc->cpu1_mpu_ns != MPU_REGION_DEFAULT) {
-            qdev_prop_set_uint32(iotkitdev, "CPU1_MPU_NS", mmc->cpu1_mpu_ns);
-        }
-        if (mmc->cpu1_mpu_s != MPU_REGION_DEFAULT) {
-            qdev_prop_set_uint32(iotkitdev, "CPU1_MPU_S", mmc->cpu1_mpu_s);
-        }
-    }
     qdev_prop_set_uint32(iotkitdev, "SRAM_ADDR_WIDTH", mmc->sram_addr_width);
     qdev_connect_clock_in(iotkitdev, "MAINCLK", mms->sysclk);
     qdev_connect_clock_in(iotkitdev, "S32KCLK", mms->s32kclk);
@@ -1220,7 +1205,7 @@ static void mps2_tz_idau_check(IDAUInterface *ii, uint32_t address,
 {
     /*
      * The MPS2 TZ FPGA images have IDAUs in them which are connected to
-     * the Master Security Controllers. These have the same logic as
+     * the Master Security Controllers. Thes have the same logic as
      * is used by the IoTKit for the IDAU connected to the CPU, except
      * that MSCs don't care about the NSC attribute.
      */
@@ -1254,7 +1239,7 @@ static void mps2_set_remap(Object *obj, const char *value, Error **errp)
     }
 }
 
-static void mps2_machine_reset(MachineState *machine, ResetType type)
+static void mps2_machine_reset(MachineState *machine, ShutdownCause reason)
 {
     MPS2TZMachineState *mms = MPS2TZ_MACHINE(machine);
 
@@ -1264,24 +1249,17 @@ static void mps2_machine_reset(MachineState *machine, ResetType type)
      * reset see the correct mapping.
      */
     remap_memory(mms, mms->remap);
-    qemu_devices_reset(type);
+    qemu_devices_reset(reason);
 }
 
 static void mps2tz_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     IDAUInterfaceClass *iic = IDAU_INTERFACE_CLASS(oc);
-    MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
 
     mc->init = mps2tz_common_init;
     mc->reset = mps2_machine_reset;
     iic->check = mps2_tz_idau_check;
-
-    /* Most machines leave these at the SSE defaults */
-    mmc->cpu0_mpu_ns = MPU_REGION_DEFAULT;
-    mmc->cpu0_mpu_s = MPU_REGION_DEFAULT;
-    mmc->cpu1_mpu_ns = MPU_REGION_DEFAULT;
-    mmc->cpu1_mpu_s = MPU_REGION_DEFAULT;
 }
 
 static void mps2tz_set_default_ram_info(MPS2TZMachineClass *mmc)
@@ -1308,10 +1286,6 @@ static void mps2tz_an505_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
-    static const char * const valid_cpu_types[] = {
-        ARM_CPU_TYPE_NAME("cortex-m33"),
-        NULL
-    };
 
     mc->desc = "ARM MPS2 with AN505 FPGA image for Cortex-M33";
     mc->default_cpus = 1;
@@ -1319,7 +1293,6 @@ static void mps2tz_an505_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN505;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
-    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41045050;
     mmc->sysclk_frq = 20 * 1000 * 1000; /* 20MHz */
     mmc->apb_periph_frq = mmc->sysclk_frq;
@@ -1342,10 +1315,6 @@ static void mps2tz_an521_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
-    static const char * const valid_cpu_types[] = {
-        ARM_CPU_TYPE_NAME("cortex-m33"),
-        NULL
-    };
 
     mc->desc = "ARM MPS2 with AN521 FPGA image for dual Cortex-M33";
     mc->default_cpus = 2;
@@ -1353,7 +1322,6 @@ static void mps2tz_an521_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN521;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
-    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41045210;
     mmc->sysclk_frq = 20 * 1000 * 1000; /* 20MHz */
     mmc->apb_periph_frq = mmc->sysclk_frq;
@@ -1376,10 +1344,6 @@ static void mps3tz_an524_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
-    static const char * const valid_cpu_types[] = {
-        ARM_CPU_TYPE_NAME("cortex-m33"),
-        NULL
-    };
 
     mc->desc = "ARM MPS3 with AN524 FPGA image for dual Cortex-M33";
     mc->default_cpus = 2;
@@ -1387,7 +1351,6 @@ static void mps3tz_an524_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN524;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
-    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41045240;
     mmc->sysclk_frq = 32 * 1000 * 1000; /* 32MHz */
     mmc->apb_periph_frq = mmc->sysclk_frq;
@@ -1415,10 +1378,6 @@ static void mps3tz_an547_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
-    static const char * const valid_cpu_types[] = {
-        ARM_CPU_TYPE_NAME("cortex-m55"),
-        NULL
-    };
 
     mc->desc = "ARM MPS3 with AN547 FPGA image for Cortex-M55";
     mc->default_cpus = 1;
@@ -1426,7 +1385,6 @@ static void mps3tz_an547_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN547;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m55");
-    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41055470;
     mmc->sysclk_frq = 32 * 1000 * 1000; /* 32MHz */
     mmc->apb_periph_frq = 25 * 1000 * 1000; /* 25MHz */
@@ -1438,7 +1396,6 @@ static void mps3tz_an547_class_init(ObjectClass *oc, void *data)
     mmc->numirq = 96;
     mmc->uart_overflow_irq = 48;
     mmc->init_svtor = 0x00000000;
-    mmc->cpu0_mpu_s = mmc->cpu0_mpu_ns = 16;
     mmc->sram_addr_width = 21;
     mmc->raminfo = an547_raminfo;
     mmc->armsse_type = TYPE_SSE300;

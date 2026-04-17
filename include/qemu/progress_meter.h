@@ -27,7 +27,7 @@
 #ifndef QEMU_PROGRESS_METER_H
 #define QEMU_PROGRESS_METER_H
 
-#include "qemu/thread.h"
+#include "qemu/lockable.h"
 
 typedef struct ProgressMeter {
     /**

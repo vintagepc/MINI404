@@ -77,7 +77,7 @@ DECLARE_OBJ_CHECKERS(GICv3State, KVMARMGICv3Class,
 struct KVMARMGICv3Class {
     ARMGICv3CommonClass parent_class;
     DeviceRealize parent_realize;
-    ResettablePhases parent_phases;
+    void (*parent_reset)(DeviceState *dev);
 };
 
 static void kvm_arm_gicv3_set_irq(void *opaque, int irq, int level)
@@ -703,16 +703,14 @@ static void arm_gicv3_icc_reset(CPUARMState *env, const ARMCPRegInfo *ri)
     c->icc_ctlr_el1[GICV3_S] = c->icc_ctlr_el1[GICV3_NS];
 }
 
-static void kvm_arm_gicv3_reset_hold(Object *obj, ResetType type)
+static void kvm_arm_gicv3_reset(DeviceState *dev)
 {
-    GICv3State *s = ARM_GICV3_COMMON(obj);
+    GICv3State *s = ARM_GICV3_COMMON(dev);
     KVMARMGICv3Class *kgc = KVM_ARM_GICV3_GET_CLASS(s);
 
     DPRINTF("Reset\n");
 
-    if (kgc->parent_phases.hold) {
-        kgc->parent_phases.hold(obj, type);
-    }
+    kgc->parent_reset(dev);
 
     if (s->migration_blocker) {
         DPRINTF("Cannot put kernel gic state, no kernel interface\n");
@@ -805,11 +803,6 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    if (s->nmi_support) {
-        error_setg(errp, "NMI is not supported with the in-kernel GIC");
-        return;
-    }
-
     gicv3_init_irqs_and_mmio(s, kvm_arm_gicv3_set_irq, NULL);
 
     for (i = 0; i < s->num_cpu; i++) {
@@ -883,7 +876,8 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
                                GICD_CTLR)) {
         error_setg(&s->migration_blocker, "This operating system kernel does "
                                           "not support vGICv3 migration");
-        if (migrate_add_blocker(&s->migration_blocker, errp) < 0) {
+        if (migrate_add_blocker(s->migration_blocker, errp) < 0) {
+            error_free(s->migration_blocker);
             return;
         }
     }
@@ -896,7 +890,6 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
 static void kvm_arm_gicv3_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    ResettableClass *rc = RESETTABLE_CLASS(klass);
     ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
     KVMARMGICv3Class *kgc = KVM_ARM_GICV3_CLASS(klass);
 
@@ -904,8 +897,7 @@ static void kvm_arm_gicv3_class_init(ObjectClass *klass, void *data)
     agcc->post_load = kvm_arm_gicv3_put;
     device_class_set_parent_realize(dc, kvm_arm_gicv3_realize,
                                     &kgc->parent_realize);
-    resettable_class_set_parent_phases(rc, NULL, kvm_arm_gicv3_reset_hold, NULL,
-                                       &kgc->parent_phases);
+    device_class_set_parent_reset(dc, kvm_arm_gicv3_reset, &kgc->parent_reset);
 }
 
 static const TypeInfo kvm_arm_gicv3_info = {

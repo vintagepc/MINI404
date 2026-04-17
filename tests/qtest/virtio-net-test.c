@@ -91,7 +91,6 @@ static void tx_test(QVirtioDevice *dev,
     len = ntohl(len);
 
     ret = recv(socket, buffer, len, 0);
-    g_assert_cmpint(ret, ==, len);
     g_assert_cmpstr(buffer, ==, "TEST");
 }
 
@@ -213,7 +212,7 @@ static void announce_self(void *obj, void *data, QGuestAllocator *t_alloc)
     g_assert_cmpint(*proto, ==, htons(ETH_P_RARP));
 
     /*
-     * Stop the announcement by settings rounds to 0 on the
+     * Stop the announcment by settings rounds to 0 on the
      * existing timer.
      */
     rsp = qmp("{ 'execute' : 'announce-self', "

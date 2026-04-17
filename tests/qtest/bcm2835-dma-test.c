@@ -25,7 +25,7 @@
 
 #define BCM2708_DMA_INT_STATUS 0xfe0
 
-/* DMA Transfer Info fields: */
+/* DMA Trasfer Info fields: */
 #define BCM2708_DMA_INT_EN     (1 << 0)
 #define BCM2708_DMA_D_INC      (1 << 4)
 #define BCM2708_DMA_S_INC      (1 << 8)

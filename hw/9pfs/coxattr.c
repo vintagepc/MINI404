@@ -19,6 +19,7 @@
 #include "qemu/osdep.h"
 #include "fsdev/qemu-fsdev.h"
 #include "qemu/thread.h"
+#include "qemu/coroutine.h"
 #include "qemu/main-loop.h"
 #include "coth.h"
 

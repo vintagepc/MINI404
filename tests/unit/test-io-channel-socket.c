@@ -460,7 +460,6 @@ static void test_io_channel_unix_fd_pass(void)
                            G_N_ELEMENTS(iorecv),
                            &fdrecv,
                            &nfdrecv,
-                           0,
                            &error_abort);
 
     g_assert(nfdrecv == G_N_ELEMENTS(fdsend));
@@ -506,7 +505,7 @@ static void test_io_channel_unix_listen_cleanup(void)
 {
     QIOChannelSocket *ioc;
     struct sockaddr_un un;
-    int sock, ret = 0;
+    int sock;
 
 #define TEST_SOCKET "test-io-channel-socket.sock"
 
@@ -519,9 +518,7 @@ static void test_io_channel_unix_listen_cleanup(void)
     un.sun_family = AF_UNIX;
     snprintf(un.sun_path, sizeof(un.sun_path), "%s", TEST_SOCKET);
     unlink(TEST_SOCKET);
-    ret = bind(sock, (struct sockaddr *)&un, sizeof(un));
-    g_assert_cmpint(ret, ==, 0);
-
+    bind(sock, (struct sockaddr *)&un, sizeof(un));
     ioc->fd = sock;
     ioc->localAddrLen = sizeof(ioc->localAddr);
     getsockname(sock, (struct sockaddr *)&ioc->localAddr,

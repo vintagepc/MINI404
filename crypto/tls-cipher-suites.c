@@ -52,6 +52,7 @@ GByteArray *qcrypto_tls_cipher_suites_get_data(QCryptoTLSCipherSuites *obj,
     byte_array = g_byte_array_new();
 
     for (i = 0;; i++) {
+        int ret;
         unsigned idx;
         const char *name;
         IANA_TLS_CIPHER cipher;

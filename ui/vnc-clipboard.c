@@ -50,11 +50,8 @@ static uint8_t *inflate_buffer(uint8_t *in, uint32_t in_len, uint32_t *size)
         ret = inflate(&stream, Z_FINISH);
         switch (ret) {
         case Z_OK:
-            break;
         case Z_STREAM_END:
-            *size = stream.total_out;
-            inflateEnd(&stream);
-            return out;
+            break;
         case Z_BUF_ERROR:
             out_len <<= 1;
             if (out_len > (1 << 20)) {

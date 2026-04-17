@@ -152,7 +152,7 @@ static inline MemTxResult dma_memory_read(AddressSpace *as, dma_addr_t addr,
 }
 
 /**
- * dma_memory_write: Write to address space from DMA controller.
+ * address_space_write: Write to address space from DMA controller.
  *
  * Return a MemTxResult indicating whether the operation succeeded
  * or failed (eg unassigned memory, device rejected the transaction,
@@ -189,7 +189,7 @@ MemTxResult dma_memory_set(AddressSpace *as, dma_addr_t addr,
                            uint8_t c, dma_addr_t len, MemTxAttrs attrs);
 
 /**
- * dma_memory_map: Map a physical memory region into a host virtual address.
+ * address_space_map: Map a physical memory region into a host virtual address.
  *
  * May map a subset of the requested range, given by and returned in @plen.
  * May return %NULL and set *@plen to zero(0), if resources needed to perform
@@ -216,15 +216,16 @@ static inline void *dma_memory_map(AddressSpace *as,
 }
 
 /**
- * dma_memory_unmap: Unmaps a memory region previously mapped by dma_memory_map()
+ * address_space_unmap: Unmaps a memory region previously mapped
+ *                      by dma_memory_map()
  *
  * Will also mark the memory as dirty if @dir == %DMA_DIRECTION_FROM_DEVICE.
  * @access_len gives the amount of memory that was actually read or written
  * by the caller.
  *
  * @as: #AddressSpace used
- * @buffer: host pointer as returned by dma_memory_map()
- * @len: buffer length as returned by dma_memory_map()
+ * @buffer: host pointer as returned by address_space_map()
+ * @len: buffer length as returned by address_space_map()
  * @dir: indicates the transfer direction
  * @access_len: amount of data actually transferred
  */

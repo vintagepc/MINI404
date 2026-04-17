@@ -39,9 +39,6 @@
 #define UID_CHECKING_ENABLED 0x01
 #define ZPCI_DTSM 0x40
 
-/* zPCI Function Types */
-#define ZPCI_PFT_ISM 5
-
 OBJECT_DECLARE_SIMPLE_TYPE(S390pciState, S390_PCI_HOST_BRIDGE)
 OBJECT_DECLARE_SIMPLE_TYPE(S390PCIBus, S390_PCI_BUS)
 OBJECT_DECLARE_SIMPLE_TYPE(S390PCIBusDevice, S390_PCI_DEVICE)
@@ -184,7 +181,7 @@ enum ZpciIoatDtype {
  * The following states make up the "configured" meta-state:
  * disabled: device is configured but not enabled; transition between this
  *           state and enabled via clp enable/disable
- * enabled: device is ready for use; transition to disabled via clp disable;
+ * enbaled: device is ready for use; transition to disabled via clp disable;
  *          may enter an error state
  * blocked: ignore all DMA and interrupts; transition back to enabled or from
  *          error state via mpcifc
@@ -281,7 +278,6 @@ struct S390PCIIOMMU {
     uint64_t g_iota;
     uint64_t pba;
     uint64_t pal;
-    uint64_t max_dma_limit;
     GHashTable *iotlb;
     S390PCIDMACount *dma_limit;
 };
@@ -347,7 +343,6 @@ struct S390PCIBusDevice {
     uint16_t noi;
     uint16_t maxstbl;
     uint8_t sum;
-    uint8_t pft;
     S390PCIGroup *pci_group;
     ClpRspQueryPci zpci_fn;
     S390MsixInfo msix;
@@ -356,12 +351,10 @@ struct S390PCIBusDevice {
     MemoryRegion msix_notify_mr;
     IndAddr *summary_ind;
     IndAddr *indicator;
-    Notifier shutdown_notifier;
     bool pci_unplug_request_processed;
     bool unplug_requested;
     bool interp;
     bool forwarding_assist;
-    bool aif;
     QTAILQ_ENTRY(S390PCIBusDevice) link;
 };
 
@@ -401,6 +394,5 @@ S390PCIBusDevice *s390_pci_find_dev_by_target(S390pciState *s,
                                               const char *target);
 S390PCIBusDevice *s390_pci_find_next_avail_dev(S390pciState *s,
                                                S390PCIBusDevice *pbdev);
-void s390_pci_ism_reset(void);
 
 #endif

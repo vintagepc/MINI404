@@ -25,7 +25,6 @@
 #define SSE_TIMER_H
 
 #include "hw/sysbus.h"
-#include "qemu/timer.h"
 #include "qom/object.h"
 #include "hw/timer/sse-counter.h"
 

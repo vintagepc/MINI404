@@ -18,7 +18,7 @@
 #ifndef BLOCK_BACKUP_H
 #define BLOCK_BACKUP_H
 
-#include "block/blockjob.h"
+#include "block/block_int.h"
 
 void backup_do_checkpoint(BlockJob *job, Error **errp);
 

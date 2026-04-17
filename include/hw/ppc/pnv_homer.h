@@ -39,7 +39,7 @@ DECLARE_INSTANCE_CHECKER(PnvHomer, PNV10_HOMER,
 struct PnvHomer {
     DeviceState parent;
 
-    PnvChip *chip;
+    struct PnvChip *chip;
     MemoryRegion pba_regs;
     MemoryRegion regs;
 };

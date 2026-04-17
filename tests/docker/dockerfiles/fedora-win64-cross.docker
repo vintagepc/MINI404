@@ -1,26 +1,25 @@
 # THIS FILE WAS AUTO-GENERATED
 #
-#  $ lcitool dockerfile --layers all --cross-arch mingw64 fedora-40 qemu,qemu-win-installer
+#  $ lcitool dockerfile --layers all --cross mingw64 fedora-35 qemu
 #
 # https://gitlab.com/libvirt/libvirt-ci
 
-FROM registry.fedoraproject.org/fedora:40
+FROM registry.fedoraproject.org/fedora:35
 
 RUN dnf install -y nosync && \
-    printf '#!/bin/sh\n\
+    echo -e '#!/bin/sh\n\
 if test -d /usr/lib64\n\
 then\n\
     export LD_PRELOAD=/usr/lib64/nosync/nosync.so\n\
 else\n\
     export LD_PRELOAD=/usr/lib/nosync/nosync.so\n\
 fi\n\
-exec "$@"\n' > /usr/bin/nosync && \
+exec "$@"' > /usr/bin/nosync && \
     chmod +x /usr/bin/nosync && \
     nosync dnf update -y && \
     nosync dnf install -y \
                bash \
                bc \
-               bindgen-cli \
                bison \
                bzip2 \
                ca-certificates \
@@ -30,8 +29,8 @@ exec "$@"\n' > /usr/bin/nosync && \
                diffutils \
                findutils \
                flex \
-               gcc \
                gcovr \
+               genisoimage \
                git \
                glib2-devel \
                glibc-langpack-en \
@@ -39,10 +38,11 @@ exec "$@"\n' > /usr/bin/nosync && \
                llvm \
                make \
                meson \
-               mtools \
                ninja-build \
                nmap-ncat \
                openssh-clients \
+               pcre-static \
+               perl-base \
                python3 \
                python3-PyYAML \
                python3-numpy \
@@ -51,22 +51,18 @@ exec "$@"\n' > /usr/bin/nosync && \
                python3-pip \
                python3-sphinx \
                python3-sphinx_rtd_theme \
-               python3-zombie-imp \
-               rust \
+               rpm \
                sed \
-               socat \
                sparse \
-               swtpm \
+               spice-protocol \
                tar \
                tesseract \
                tesseract-langpack-eng \
+               texinfo \
                util-linux \
-               which \
-               xorriso \
-               zstd && \
+               which && \
     nosync dnf autoremove -y && \
-    nosync dnf clean all -y && \
-    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
+    nosync dnf clean all -y
 
 ENV CCACHE_WRAPPERSDIR "/usr/libexec/ccache-wrappers"
 ENV LANG "en_US.UTF-8"
@@ -75,7 +71,6 @@ ENV NINJA "/usr/bin/ninja"
 ENV PYTHON "/usr/bin/python3"
 
 RUN nosync dnf install -y \
-               mingw-w64-tools \
                mingw32-nsis \
                mingw64-SDL2 \
                mingw64-SDL2_image \
@@ -86,9 +81,7 @@ RUN nosync dnf install -y \
                mingw64-gettext \
                mingw64-glib2 \
                mingw64-gnutls \
-               mingw64-gtk-vnc2 \
                mingw64-gtk3 \
-               mingw64-libepoxy \
                mingw64-libgcrypt \
                mingw64-libjpeg-turbo \
                mingw64-libpng \
@@ -108,8 +101,3 @@ ENV ABI "x86_64-w64-mingw32"
 ENV MESON_OPTS "--cross-file=/usr/share/mingw/toolchain-mingw64.meson"
 ENV QEMU_CONFIGURE_OPTS --cross-prefix=x86_64-w64-mingw32-
 ENV DEF_TARGET_LIST x86_64-softmmu
-# As a final step configure the user (if env is defined)
-ARG USER
-ARG UID
-RUN if [ "${USER}" ]; then \
-  id ${USER} 2>/dev/null || useradd -u ${UID} -U ${USER}; fi

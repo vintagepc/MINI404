@@ -209,7 +209,7 @@ static const VMStateDescription vmstate_gus = {
     .name = "gus",
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_INT32 (pos, GUSState),
         VMSTATE_INT32 (left, GUSState),
         VMSTATE_INT32 (shift, GUSState),
@@ -236,20 +236,17 @@ static const MemoryRegionPortio gus_portio_list2[] = {
 static void gus_realizefn (DeviceState *dev, Error **errp)
 {
     ISADevice *d = ISA_DEVICE(dev);
-    ISABus *bus = isa_bus_from_device(d);
     GUSState *s = GUS (dev);
     IsaDmaClass *k;
     struct audsettings as;
 
-    if (!AUD_register_card ("gus", &s->card, errp)) {
-        return;
-    }
-
-    s->isa_dma = isa_bus_get_dma(bus, s->emu.gusdma);
+    s->isa_dma = isa_get_dma(isa_bus_from_device(d), s->emu.gusdma);
     if (!s->isa_dma) {
         error_setg(errp, "ISA controller does not support DMA");
         return;
     }
+
+    AUD_register_card ("gus", &s->card);
 
     as.freq = s->freq;
     as.nchannels = 2;
@@ -285,7 +282,7 @@ static void gus_realizefn (DeviceState *dev, Error **errp)
     s->emu.himemaddr = s->himem;
     s->emu.gusdatapos = s->emu.himemaddr + 1024 * 1024 + 32;
     s->emu.opaque = s;
-    s->pic = isa_bus_get_irq(bus, s->emu.gusirq);
+    s->pic = isa_get_irq(d, s->emu.gusirq);
 
     AUD_set_active_out (s->voice, 1);
 }

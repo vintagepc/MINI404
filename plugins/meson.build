@@ -1,48 +1,20 @@
-if not get_option('plugins')
-  subdir_done()
-endif
-
-qemu_plugin_symbols = configure_file(
-  input: files('../include/qemu/qemu-plugin.h'),
-  output: 'qemu-plugin.symbols',
-  capture: true,
-  command: [files('../scripts/qemu-plugin-symbols.py'), '@INPUT@'])
-
+plugin_ldflags = []
 # Modules need more symbols than just those in plugins/qemu-plugins.symbols
 if not enable_modules
-  if host_os == 'darwin'
+  if targetos == 'darwin'
     configure_file(
-      input: qemu_plugin_symbols,
+      input: files('qemu-plugins.symbols'),
       output: 'qemu-plugins-ld64.symbols',
       capture: true,
       command: ['sed', '-ne', 's/^[[:space:]]*\\(qemu_.*\\);/_\\1/p', '@INPUT@'])
-    emulator_link_args += ['-Wl,-exported_symbols_list,plugins/qemu-plugins-ld64.symbols']
+    plugin_ldflags = ['-Wl,-exported_symbols_list,plugins/qemu-plugins-ld64.symbols']
   else
-    emulator_link_args += ['-Xlinker', '--dynamic-list=' + qemu_plugin_symbols.full_path()]
+    plugin_ldflags = ['-Xlinker', '--dynamic-list=' + (meson.project_source_root() / 'plugins/qemu-plugins.symbols')]
   endif
 endif
 
-if host_os == 'windows'
-  dlltool = find_program('dlltool', required: true)
-
-  # Generate a .lib file for plugins to link against.
-  # First, create a .def file listing all the symbols a plugin should expect to have
-  # available in qemu
-  win32_plugin_def = configure_file(
-    input: qemu_plugin_symbols,
-    output: 'qemu_plugin_api.def',
-    capture: true,
-    command: ['sed', '-e', '0,/^/s//EXPORTS/; s/[{};]//g', '@INPUT@'])
-  # then use dlltool to assemble a delaylib.
-  win32_qemu_plugin_api_lib = configure_file(
-    input: win32_plugin_def,
-    output: 'libqemu_plugin_api.a',
-    command: [dlltool, '--input-def', '@INPUT@',
-              '--output-delaylib', '@OUTPUT@', '--dllname', 'qemu.exe']
-  )
-endif
-specific_ss.add(files(
+specific_ss.add(when: 'CONFIG_PLUGIN', if_true: [files(
   'loader.c',
   'core.c',
   'api.c',
-))
+), declare_dependency(link_args: plugin_ldflags)])

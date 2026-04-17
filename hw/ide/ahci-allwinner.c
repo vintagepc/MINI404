@@ -19,8 +19,9 @@
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "sysemu/dma.h"
+#include "hw/ide/internal.h"
 #include "migration/vmstate.h"
-#include "hw/ide/ahci-sysbus.h"
+#include "ahci_internal.h"
 
 #include "trace.h"
 
@@ -96,7 +97,7 @@ static const VMStateDescription vmstate_allwinner_ahci = {
     .name = "allwinner-ahci",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, AllwinnerAHCIState,
                              ALLWINNER_AHCI_MMIO_SIZE / 4),
         VMSTATE_END_OF_LIST()
