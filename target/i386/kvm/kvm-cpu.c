@@ -10,6 +10,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "host-cpu.h"
+#include "kvm-cpu.h"
 #include "qapi/error.h"
 #include "sysemu/sysemu.h"
 #include "hw/boards.h"
@@ -17,32 +18,10 @@
 #include "kvm_i386.h"
 #include "hw/core/accel-cpu.h"
 
-static void kvm_set_guest_phys_bits(CPUState *cs)
-{
-    X86CPU *cpu = X86_CPU(cs);
-    uint32_t eax, guest_phys_bits;
-
-    eax = kvm_arch_get_supported_cpuid(cs->kvm_state, 0x80000008, 0, R_EAX);
-    guest_phys_bits = (eax >> 16) & 0xff;
-    if (!guest_phys_bits) {
-        return;
-    }
-    cpu->guest_phys_bits = guest_phys_bits;
-    if (cpu->guest_phys_bits > cpu->phys_bits) {
-        cpu->guest_phys_bits = cpu->phys_bits;
-    }
-
-    if (cpu->host_phys_bits && cpu->host_phys_bits_limit &&
-        cpu->guest_phys_bits > cpu->host_phys_bits_limit) {
-        cpu->guest_phys_bits = cpu->host_phys_bits_limit;
-    }
-}
-
 static bool kvm_cpu_realizefn(CPUState *cs, Error **errp)
 {
     X86CPU *cpu = X86_CPU(cs);
     CPUX86State *env = &cpu->env;
-    bool ret;
 
     /*
      * The realize order is important, since x86_cpu_realize() checks if
@@ -53,26 +32,16 @@ static bool kvm_cpu_realizefn(CPUState *cs, Error **errp)
      *
      * realize order:
      *
-     * x86_cpu_realizefn():
-     *   x86_cpu_expand_features()
-     *   cpu_exec_realizefn():
-     *      accel_cpu_common_realize()
-     *        kvm_cpu_realizefn()
-     *          host_cpu_realizefn()
-     *          kvm_set_guest_phys_bits()
-     *   check/update ucode_rev, phys_bits, guest_phys_bits, mwait
-     *   cpu_common_realizefn() (via xcc->parent_realize)
+     * x86_cpu_realize():
+     *  -> x86_cpu_expand_features()
+     *  -> cpu_exec_realizefn():
+     *            -> accel_cpu_realizefn()
+     *               kvm_cpu_realizefn() -> host_cpu_realizefn()
+     *  -> check/update ucode_rev, phys_bits, mwait
      */
     if (cpu->max_features) {
-        if (enable_cpu_pm) {
-            if (kvm_has_waitpkg()) {
-                env->features[FEAT_7_0_ECX] |= CPUID_7_0_ECX_WAITPKG;
-            }
-
-            if (env->features[FEAT_1_ECX] & CPUID_EXT_MONITOR) {
-                host_cpuid(5, 0, &cpu->mwait.eax, &cpu->mwait.ebx,
-                           &cpu->mwait.ecx, &cpu->mwait.edx);
-	    }
+        if (enable_cpu_pm && kvm_has_waitpkg()) {
+            env->features[FEAT_7_0_ECX] |= CPUID_7_0_ECX_WAITPKG;
         }
         if (cpu->ucode_rev == 0) {
             cpu->ucode_rev =
@@ -80,17 +49,7 @@ static bool kvm_cpu_realizefn(CPUState *cs, Error **errp)
                                                    MSR_IA32_UCODE_REV);
         }
     }
-    ret = host_cpu_realizefn(cs, errp);
-    if (!ret) {
-        return ret;
-    }
-
-    if ((env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM) &&
-        cpu->guest_phys_bits == -1) {
-        kvm_set_guest_phys_bits(cs);
-    }
-
-    return true;
+    return host_cpu_realizefn(cs, errp);
 }
 
 static bool lmce_supported(void)
@@ -143,6 +102,10 @@ static void kvm_cpu_xsave_init(void)
         if (!esa->size) {
             continue;
         }
+        if ((x86_cpu_get_supported_feature_word(esa->feature, false) & esa->bits)
+            != esa->bits) {
+            continue;
+        }
         host_cpuid(0xd, i, &eax, &ebx, &ecx, &edx);
         if (eax != 0) {
             assert(esa->size == eax);
@@ -180,7 +143,7 @@ static PropValue kvm_default_props[] = {
 /*
  * Only for builtin_x86_defs models initialized with x86_register_cpudef_types.
  */
-static void x86_cpu_change_kvm_default(const char *prop, const char *value)
+void x86_cpu_change_kvm_default(const char *prop, const char *value)
 {
     PropValue *pv;
     for (pv = kvm_default_props; pv->prop; pv++) {
@@ -227,7 +190,7 @@ static void kvm_cpu_accel_class_init(ObjectClass *oc, void *data)
 {
     AccelCPUClass *acc = ACCEL_CPU_CLASS(oc);
 
-    acc->cpu_target_realize = kvm_cpu_realizefn;
+    acc->cpu_realizefn = kvm_cpu_realizefn;
     acc->cpu_instance_init = kvm_cpu_instance_init;
 }
 static const TypeInfo kvm_cpu_accel_type_info = {

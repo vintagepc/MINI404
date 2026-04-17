@@ -23,8 +23,6 @@ from .gen import (
 )
 from .schema import (
     QAPISchema,
-    QAPISchemaAlternatives,
-    QAPISchemaBranches,
     QAPISchemaEnumMember,
     QAPISchemaFeature,
     QAPISchemaIfCond,
@@ -144,7 +142,7 @@ def gen_struct_members(members: List[QAPISchemaObjectTypeMember]) -> str:
     ret = ''
     for memb in members:
         ret += memb.ifcond.gen_if()
-        if memb.need_has():
+        if memb.optional:
             ret += mcgen('''
     bool has_%(c_name)s;
 ''',
@@ -171,7 +169,7 @@ def gen_object(name: str, ifcond: QAPISchemaIfCond,
         if not isinstance(obj, QAPISchemaObjectType):
             continue
         ret += gen_object(obj.name, obj.ifcond, obj.base,
-                          obj.local_members, obj.branches)
+                          obj.local_members, obj.variants)
 
     ret += mcgen('''
 
@@ -350,13 +348,13 @@ class QAPISchemaGenTypeVisitor(QAPISchemaModularCVisitor):
                           features: List[QAPISchemaFeature],
                           base: Optional[QAPISchemaObjectType],
                           members: List[QAPISchemaObjectTypeMember],
-                          branches: Optional[QAPISchemaBranches]) -> None:
+                          variants: Optional[QAPISchemaVariants]) -> None:
         # Nothing to do for the special empty builtin
         if name == 'q_empty':
             return
         with ifcontext(ifcond, self._genh):
             self._genh.preamble_add(gen_fwd_object_or_array(name))
-        self._genh.add(gen_object(name, ifcond, base, members, branches))
+        self._genh.add(gen_object(name, ifcond, base, members, variants))
         with ifcontext(ifcond, self._genh, self._genc):
             if base and not base.is_implicit():
                 self._genh.add(gen_upcast(name, base))
@@ -371,11 +369,11 @@ class QAPISchemaGenTypeVisitor(QAPISchemaModularCVisitor):
                              info: Optional[QAPISourceInfo],
                              ifcond: QAPISchemaIfCond,
                              features: List[QAPISchemaFeature],
-                             alternatives: QAPISchemaAlternatives) -> None:
+                             variants: QAPISchemaVariants) -> None:
         with ifcontext(ifcond, self._genh):
             self._genh.preamble_add(gen_fwd_object_or_array(name))
         self._genh.add(gen_object(name, ifcond, None,
-                                  [alternatives.tag_member], alternatives))
+                                  [variants.tag_member], variants))
         with ifcontext(ifcond, self._genh, self._genc):
             self._gen_type_cleanup(name)
 

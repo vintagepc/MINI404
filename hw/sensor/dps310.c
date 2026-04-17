@@ -9,6 +9,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "hw/hw.h"
 #include "hw/i2c/i2c.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
@@ -188,7 +189,7 @@ static const VMStateDescription vmstate_dps310 = {
     .name = "DPS310",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8(len, DPS310State),
         VMSTATE_UINT8_ARRAY(regs, DPS310State, NUM_REGISTERS),
         VMSTATE_UINT8(pointer, DPS310State),
@@ -205,7 +206,7 @@ static void dps310_class_init(ObjectClass *klass, void *data)
     k->event = dps310_event;
     k->recv = dps310_rx;
     k->send = dps310_tx;
-    device_class_set_legacy_reset(dc, dps310_reset);
+    dc->reset = dps310_reset;
     dc->vmsd = &vmstate_dps310;
 }
 

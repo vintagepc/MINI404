@@ -276,15 +276,9 @@ static int lm4549_post_load(void *opaque, int version_id)
     return 0;
 }
 
-void lm4549_init(lm4549_state *s, lm4549_callback data_req_cb, void* opaque,
-                 Error **errp)
+void lm4549_init(lm4549_state *s, lm4549_callback data_req_cb, void* opaque)
 {
     struct audsettings as;
-
-    /* Register an audio card */
-    if (!AUD_register_card("lm4549", &s->card, errp)) {
-        return;
-    }
 
     /* Store the callback and opaque pointer */
     s->data_req_cb = data_req_cb;
@@ -292,6 +286,9 @@ void lm4549_init(lm4549_state *s, lm4549_callback data_req_cb, void* opaque,
 
     /* Init the registers */
     lm4549_reset(s);
+
+    /* Register an audio card */
+    AUD_register_card("lm4549", &s->card);
 
     /* Open a default voice */
     as.freq = 48000;
@@ -329,7 +326,7 @@ const VMStateDescription vmstate_lm4549_state = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = lm4549_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(voice_is_active, lm4549_state),
         VMSTATE_UINT16_ARRAY(regfile, lm4549_state, 128),
         VMSTATE_UINT16_ARRAY(buffer, lm4549_state, LM4549_BUFFER_SIZE),

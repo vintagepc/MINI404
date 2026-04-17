@@ -25,6 +25,8 @@
 #ifndef BLOCK_AIO_TASK_H
 #define BLOCK_AIO_TASK_H
 
+#include "qemu/coroutine.h"
+
 typedef struct AioTaskPool AioTaskPool;
 typedef struct AioTask AioTask;
 typedef int coroutine_fn (*AioTaskFunc)(AioTask *task);
@@ -39,6 +41,8 @@ void aio_task_pool_free(AioTaskPool *);
 
 /* error code of failed task or 0 if all is OK */
 int aio_task_pool_status(AioTaskPool *pool);
+
+bool aio_task_pool_empty(AioTaskPool *pool);
 
 /* User provides filled @task, however task->pool will be set automatically */
 void coroutine_fn aio_task_pool_start_task(AioTaskPool *pool, AioTask *task);

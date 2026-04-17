@@ -28,7 +28,8 @@ void migration_tls_channel_process_incoming(MigrationState *s,
                                             QIOChannel *ioc,
                                             Error **errp);
 
-QIOChannelTLS *migration_tls_client_create(QIOChannel *ioc,
+QIOChannelTLS *migration_tls_client_create(MigrationState *s,
+                                           QIOChannel *ioc,
                                            const char *hostname,
                                            Error **errp);
 

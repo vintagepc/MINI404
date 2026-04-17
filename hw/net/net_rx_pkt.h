@@ -37,9 +37,10 @@ void net_rx_pkt_uninit(struct NetRxPkt *pkt);
  * Init function for rx packet functionality
  *
  * @pkt:            packet pointer
+ * @has_virt_hdr:   device uses virtio header
  *
  */
-void net_rx_pkt_init(struct NetRxPkt **pkt);
+void net_rx_pkt_init(struct NetRxPkt **pkt, bool has_virt_hdr);
 
 /**
  * returns total length of data attached to rx context
@@ -55,27 +56,34 @@ size_t net_rx_pkt_get_total_len(struct NetRxPkt *pkt);
  * parse and set packet analysis results
  *
  * @pkt:            packet
- * @iov:            received data scatter-gather list
- * @iovcnt:         number of elements in iov
- * @iovoff:         data start offset in the iov
+ * @data:           pointer to the data buffer to be parsed
+ * @len:            data length
  *
  */
-void net_rx_pkt_set_protocols(struct NetRxPkt *pkt,
-                              const struct iovec *iov, size_t iovcnt,
-                              size_t iovoff);
+void net_rx_pkt_set_protocols(struct NetRxPkt *pkt, const void *data,
+                              size_t len);
 
 /**
  * fetches packet analysis results
  *
  * @pkt:            packet
- * @hasip4:          whether the packet has an IPv4 header
- * @hasip6:          whether the packet has an IPv6 header
- * @l4hdr_proto:     protocol of L4 header
+ * @isip4:          whether the packet given is IPv4
+ * @isip6:          whether the packet given is IPv6
+ * @isudp:          whether the packet given is UDP
+ * @istcp:          whether the packet given is TCP
  *
  */
 void net_rx_pkt_get_protocols(struct NetRxPkt *pkt,
-                                 bool *hasip4, bool *hasip6,
-                                 EthL4HdrProto *l4hdr_proto);
+                                 bool *isip4, bool *isip6,
+                                 bool *isudp, bool *istcp);
+
+/**
+* fetches L3 header offset
+*
+* @pkt:            packet
+*
+*/
+size_t net_rx_pkt_get_l3_hdr_offset(struct NetRxPkt *pkt);
 
 /**
 * fetches L4 header offset
@@ -110,6 +118,15 @@ eth_ip6_hdr_info *net_rx_pkt_get_ip6_info(struct NetRxPkt *pkt);
  *
  */
 eth_ip4_hdr_info *net_rx_pkt_get_ip4_info(struct NetRxPkt *pkt);
+
+/**
+ * fetches L4 header analysis results
+ *
+ * Return:  pointer to analysis results structure which is stored in internal
+ *          packet area.
+ *
+ */
+eth_l4_hdr_info *net_rx_pkt_get_l4_info(struct NetRxPkt *pkt);
 
 typedef enum {
     NetPktRssIpV4,
@@ -198,6 +215,15 @@ uint16_t net_rx_pkt_get_vlan_tag(struct NetRxPkt *pkt);
 bool net_rx_pkt_is_vlan_stripped(struct NetRxPkt *pkt);
 
 /**
+ * notifies caller if the packet has virtio header
+ *
+ * @pkt:            packet
+ * @ret:            true if packet has virtio header, false otherwize
+ *
+ */
+bool net_rx_pkt_has_virt_hdr(struct NetRxPkt *pkt);
+
+/**
 * attach scatter-gather data to rx packet
 *
 * @pkt:            packet
@@ -215,19 +241,18 @@ void net_rx_pkt_attach_iovec(struct NetRxPkt *pkt,
 /**
 * attach scatter-gather data to rx packet
 *
-* @pkt:              packet
-* @iov:              received data scatter-gather list
-* @iovcnt:           number of elements in iov
-* @iovoff:           data start offset in the iov
-* @strip_vlan_index: index of Q tag if it is to be stripped. negative otherwise.
-* @vet:              VLAN tag Ethernet type
-* @vet_ext:          outer VLAN tag Ethernet type
+* @pkt:            packet
+* @iov:            received data scatter-gather list
+* @iovcnt          number of elements in iov
+* @iovoff          data start offset in the iov
+* @strip_vlan:     should the module strip vlan from data
+* @vet:            VLAN tag Ethernet type
 *
 */
 void net_rx_pkt_attach_iovec_ex(struct NetRxPkt *pkt,
-                                const struct iovec *iov, int iovcnt,
-                                size_t iovoff, int strip_vlan_index,
-                                uint16_t vet, uint16_t vet_ext);
+                                   const struct iovec *iov, int iovcnt,
+                                   size_t iovoff, bool strip_vlan,
+                                   uint16_t vet);
 
 /**
  * attach data to rx packet
@@ -260,6 +285,15 @@ net_rx_pkt_attach_data(struct NetRxPkt *pkt, const void *data,
 struct iovec *net_rx_pkt_get_iovec(struct NetRxPkt *pkt);
 
 /**
+* returns io vector length that holds the attached data
+*
+* @pkt:            packet
+* @ret:            IOVec length
+*
+*/
+uint16_t net_rx_pkt_get_iovec_len(struct NetRxPkt *pkt);
+
+/**
  * prints rx packet data if debug is enabled
  *
  * @pkt:            packet
@@ -287,14 +321,6 @@ void net_rx_pkt_set_vhdr(struct NetRxPkt *pkt,
 */
 void net_rx_pkt_set_vhdr_iovec(struct NetRxPkt *pkt,
     const struct iovec *iov, int iovcnt);
-
-/**
- * unset vhdr data from packet context
- *
- * @pkt:            packet
- *
- */
-void net_rx_pkt_unset_vhdr(struct NetRxPkt *pkt);
 
 /**
  * save packet type in packet context

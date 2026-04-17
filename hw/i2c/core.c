@@ -50,7 +50,7 @@ static const VMStateDescription vmstate_i2c_bus = {
     .version_id = 1,
     .minimum_version_id = 1,
     .pre_save = i2c_bus_pre_save,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8(saved_address, I2CBus),
         VMSTATE_END_OF_LIST()
     }
@@ -64,7 +64,7 @@ I2CBus *i2c_init_bus(DeviceState *parent, const char *name)
     bus = I2C_BUS(qbus_new(TYPE_I2C_BUS, parent, name));
     QLIST_INIT(&bus->current_devs);
     QSIMPLEQ_INIT(&bus->pending_masters);
-    vmstate_register_any(NULL, &vmstate_i2c_bus, bus);
+    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_i2c_bus, bus);
     return bus;
 }
 
@@ -185,39 +185,22 @@ int i2c_start_transfer(I2CBus *bus, uint8_t address, bool is_recv)
 
 void i2c_bus_master(I2CBus *bus, QEMUBH *bh)
 {
-    I2CPendingMaster *node = g_new(struct I2CPendingMaster, 1);
-    node->bh = bh;
-
-    QSIMPLEQ_INSERT_TAIL(&bus->pending_masters, node, entry);
-}
-
-void i2c_schedule_pending_master(I2CBus *bus)
-{
-    I2CPendingMaster *node;
-
     if (i2c_bus_busy(bus)) {
-        /* someone is already controlling the bus; wait for it to release it */
+        I2CPendingMaster *node = g_new(struct I2CPendingMaster, 1);
+        node->bh = bh;
+
+        QSIMPLEQ_INSERT_TAIL(&bus->pending_masters, node, entry);
+
         return;
     }
 
-    if (QSIMPLEQ_EMPTY(&bus->pending_masters)) {
-        return;
-    }
-
-    node = QSIMPLEQ_FIRST(&bus->pending_masters);
-    bus->bh = node->bh;
-
-    QSIMPLEQ_REMOVE_HEAD(&bus->pending_masters, entry);
-    g_free(node);
-
+    bus->bh = bh;
     qemu_bh_schedule(bus->bh);
 }
 
 void i2c_bus_release(I2CBus *bus)
 {
     bus->bh = NULL;
-
-    i2c_schedule_pending_master(bus);
 }
 
 int i2c_start_recv(I2CBus *bus, uint8_t address)
@@ -251,6 +234,16 @@ void i2c_end_transfer(I2CBus *bus)
         g_free(node);
     }
     bus->broadcast = false;
+
+    if (!QSIMPLEQ_EMPTY(&bus->pending_masters)) {
+        I2CPendingMaster *node = QSIMPLEQ_FIRST(&bus->pending_masters);
+        bus->bh = node->bh;
+
+        QSIMPLEQ_REMOVE_HEAD(&bus->pending_masters, entry);
+        g_free(node);
+
+        qemu_bh_schedule(bus->bh);
+    }
 }
 
 int i2c_send(I2CBus *bus, uint8_t data)
@@ -359,7 +352,7 @@ const VMStateDescription vmstate_i2c_slave = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = i2c_slave_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8(address, I2CSlave),
         VMSTATE_END_OF_LIST()
     }

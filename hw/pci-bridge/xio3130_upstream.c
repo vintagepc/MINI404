@@ -115,7 +115,7 @@ static const VMStateDescription vmstate_xio3130_upstream = {
     .priority = MIG_PRI_PCI_BUS,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj.parent_obj, PCIEPort),
         VMSTATE_STRUCT(parent_obj.parent_obj.exp.aer_log, PCIEPort, 0,
                        vmstate_pcie_aer_log, PCIEAERLog),
@@ -128,6 +128,7 @@ static void xio3130_upstream_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
+    k->is_bridge = true;
     k->config_write = xio3130_upstream_write_config;
     k->realize = xio3130_upstream_realize;
     k->exit = xio3130_upstream_exitfn;
@@ -136,7 +137,7 @@ static void xio3130_upstream_class_init(ObjectClass *klass, void *data)
     k->revision = XIO3130_REVISION;
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->desc = "TI X3130 Upstream Port of PCI Express Switch";
-    device_class_set_legacy_reset(dc, xio3130_upstream_reset);
+    dc->reset = xio3130_upstream_reset;
     dc->vmsd = &vmstate_xio3130_upstream;
 }
 

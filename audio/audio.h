@@ -94,7 +94,7 @@ typedef struct QEMUAudioTimeStamp {
 void AUD_vlog (const char *cap, const char *fmt, va_list ap) G_GNUC_PRINTF(2, 0);
 void AUD_log (const char *cap, const char *fmt, ...) G_GNUC_PRINTF(2, 3);
 
-bool AUD_register_card (const char *name, QEMUSoundCard *card, Error **errp);
+void AUD_register_card (const char *name, QEMUSoundCard *card);
 void AUD_remove_card (QEMUSoundCard *card);
 CaptureVoiceOut *AUD_add_capture(
     AudioState *s,
@@ -169,14 +169,12 @@ void audio_sample_from_uint64(void *samples, int pos,
                             uint64_t left, uint64_t right);
 
 void audio_define(Audiodev *audio);
-void audio_define_default(Audiodev *dev, Error **errp);
 void audio_parse_option(const char *opt);
-void audio_create_default_audiodevs(void);
-void audio_init_audiodevs(void);
+bool audio_init_audiodevs(void);
 void audio_help(void);
+void audio_legacy_help(void);
 
-AudioState *audio_state_by_name(const char *name, Error **errp);
-AudioState *audio_get_default_audio_state(Error **errp);
+AudioState *audio_state_by_name(const char *name);
 const char *audio_get_id(QEMUSoundCard *card);
 
 #define DEFINE_AUDIO_PROPERTIES(_s, _f)         \

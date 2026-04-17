@@ -23,7 +23,7 @@ struct VirtIOVGABase {
 struct VirtIOVGABaseClass {
     VirtioPCIClass parent_class;
 
-    ResettablePhases parent_phases;
+    DeviceReset parent_reset;
 };
 
 #endif /* VIRTIO_VGA_H */

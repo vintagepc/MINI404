@@ -5,8 +5,6 @@
  * See the COPYING file in the top-level directory.
  */
 
-/* header to be included in non-TCG-specific code */
-
 #ifndef SYSEMU_TCG_H
 #define SYSEMU_TCG_H
 

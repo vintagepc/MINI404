@@ -33,7 +33,6 @@
 struct WinStdioChardev {
     Chardev parent;
     HANDLE  hStdIn;
-    DWORD   dwOldMode;
     HANDLE  hInputReadyEvent;
     HANDLE  hInputDoneEvent;
     HANDLE  hInputThread;
@@ -160,7 +159,6 @@ static void qemu_chr_open_stdio(Chardev *chr,
     }
 
     is_console = GetConsoleMode(stdio->hStdIn, &dwMode) != 0;
-    stdio->dwOldMode = dwMode;
 
     if (is_console) {
         if (qemu_add_wait_object(stdio->hStdIn,
@@ -192,7 +190,7 @@ static void qemu_chr_open_stdio(Chardev *chr,
         }
     }
 
-    dwMode |= ENABLE_LINE_INPUT | ENABLE_VIRTUAL_TERMINAL_INPUT;
+    dwMode |= ENABLE_LINE_INPUT;
 
     if (is_console) {
         /* set the terminal in raw mode */
@@ -223,9 +221,6 @@ static void char_win_stdio_finalize(Object *obj)
 {
     WinStdioChardev *stdio = WIN_STDIO_CHARDEV(obj);
 
-    if (stdio->hStdIn != INVALID_HANDLE_VALUE) {
-        SetConsoleMode(stdio->hStdIn, stdio->dwOldMode);
-    }
     if (stdio->hInputReadyEvent != INVALID_HANDLE_VALUE) {
         CloseHandle(stdio->hInputReadyEvent);
     }

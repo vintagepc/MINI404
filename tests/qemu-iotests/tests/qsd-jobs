@@ -40,7 +40,7 @@ cd ..
 . ./common.filter
 
 _supported_fmt qcow2
-_supported_proto file
+_supported_proto generic
 
 size=128M
 

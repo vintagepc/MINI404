@@ -63,7 +63,7 @@ static uint64_t digic_uart_read(void *opaque, hwaddr addr,
     default:
         qemu_log_mask(LOG_UNIMP,
                       "digic-uart: read access to unknown register 0x"
-                      HWADDR_FMT_plx "\n", addr << 2);
+                      TARGET_FMT_plx "\n", addr << 2);
     }
 
     return ret;
@@ -101,7 +101,7 @@ static void digic_uart_write(void *opaque, hwaddr addr, uint64_t value,
     default:
         qemu_log_mask(LOG_UNIMP,
                       "digic-uart: write access to unknown register 0x"
-                      HWADDR_FMT_plx "\n", addr << 2);
+                      TARGET_FMT_plx "\n", addr << 2);
     }
 }
 
@@ -165,7 +165,7 @@ static const VMStateDescription vmstate_digic_uart = {
     .name = "digic-uart",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(reg_rx, DigicUartState),
         VMSTATE_UINT32(reg_st, DigicUartState),
         VMSTATE_END_OF_LIST()
@@ -182,7 +182,7 @@ static void digic_uart_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = digic_uart_realize;
-    device_class_set_legacy_reset(dc, digic_uart_reset);
+    dc->reset = digic_uart_reset;
     dc->vmsd = &vmstate_digic_uart;
     device_class_set_props(dc, digic_uart_properties);
 }

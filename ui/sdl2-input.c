@@ -43,23 +43,17 @@ void sdl2_process_key(struct sdl2_console *scon,
                            ev->type == SDL_KEYDOWN ? "down" : "up");
     qkbd_state_key_event(scon->kbd, qcode, ev->type == SDL_KEYDOWN);
 
-    if (QEMU_IS_TEXT_CONSOLE(con)) {
-        QemuTextConsole *s = QEMU_TEXT_CONSOLE(con);
+    if (!qemu_console_is_graphic(con)) {
         bool ctrl = qkbd_state_modifier_get(scon->kbd, QKBD_MOD_CTRL);
         if (ev->type == SDL_KEYDOWN) {
             switch (qcode) {
             case Q_KEY_CODE_RET:
-                qemu_text_console_put_keysym(s, '\n');
+                kbd_put_keysym_console(con, '\n');
                 break;
             default:
-                qemu_text_console_put_qcode(s, qcode, ctrl);
+                kbd_put_qcode_console(con, qcode, ctrl);
                 break;
             }
         }
     }
-}
-
-void sdl2_release_modifiers(struct sdl2_console *scon)
-{
-    qkbd_state_lift_all_keys(scon->kbd);
 }

@@ -4,6 +4,9 @@ config WHPX
 config NVMM
     bool
 
+config HAX
+    bool
+
 config HVF
     bool
 
@@ -16,4 +19,3 @@ config KVM
 config XEN
     bool
     select FSDEV_9P if VIRTFS
-    select XEN_BUS

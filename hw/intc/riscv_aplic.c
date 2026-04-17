@@ -31,8 +31,6 @@
 #include "hw/irq.h"
 #include "target/riscv/cpu.h"
 #include "sysemu/sysemu.h"
-#include "sysemu/kvm.h"
-#include "kvm/kvm_riscv.h"
 #include "migration/vmstate.h"
 
 #define APLIC_MAX_IDC                  (1UL << 14)
@@ -150,51 +148,18 @@
 
 #define APLIC_IDC_CLAIMI               0x1c
 
-/*
- * KVM AIA only supports APLIC MSI, fallback to QEMU emulation if we want to use
- * APLIC Wired.
- */
-static bool is_kvm_aia(bool msimode)
-{
-    return kvm_irqchip_in_kernel() && msimode;
-}
-
-static bool riscv_aplic_irq_rectified_val(RISCVAPLICState *aplic,
-                                          uint32_t irq)
-{
-    uint32_t sourcecfg, sm, raw_input, irq_inverted;
-
-    if (!irq || aplic->num_irqs <= irq) {
-        return false;
-    }
-
-    sourcecfg = aplic->sourcecfg[irq];
-    if (sourcecfg & APLIC_SOURCECFG_D) {
-        return false;
-    }
-
-    sm = sourcecfg & APLIC_SOURCECFG_SM_MASK;
-    if (sm == APLIC_SOURCECFG_SM_INACTIVE) {
-        return false;
-    }
-
-    raw_input = (aplic->state[irq] & APLIC_ISTATE_INPUT) ? 1 : 0;
-    irq_inverted = (sm == APLIC_SOURCECFG_SM_LEVEL_LOW ||
-                    sm == APLIC_SOURCECFG_SM_EDGE_FALL) ? 1 : 0;
-
-    return !!(raw_input ^ irq_inverted);
-}
-
 static uint32_t riscv_aplic_read_input_word(RISCVAPLICState *aplic,
                                             uint32_t word)
 {
-    uint32_t i, irq, rectified_val, ret = 0;
+    uint32_t i, irq, ret = 0;
 
     for (i = 0; i < 32; i++) {
         irq = word * 32 + i;
+        if (!irq || aplic->num_irqs <= irq) {
+            continue;
+        }
 
-        rectified_val = riscv_aplic_irq_rectified_val(aplic, irq);
-        ret |= rectified_val << i;
+        ret |= ((aplic->state[irq] & APLIC_ISTATE_INPUT) ? 1 : 0) << i;
     }
 
     return ret;
@@ -242,29 +207,13 @@ static void riscv_aplic_set_pending(RISCVAPLICState *aplic,
     }
 
     sm = sourcecfg & APLIC_SOURCECFG_SM_MASK;
-    if (sm == APLIC_SOURCECFG_SM_INACTIVE) {
+    if ((sm == APLIC_SOURCECFG_SM_INACTIVE) ||
+        ((!aplic->msimode || (aplic->msimode && !pending)) &&
+         ((sm == APLIC_SOURCECFG_SM_LEVEL_HIGH) ||
+          (sm == APLIC_SOURCECFG_SM_LEVEL_LOW)))) {
         return;
     }
 
-    if ((sm == APLIC_SOURCECFG_SM_LEVEL_HIGH) ||
-        (sm == APLIC_SOURCECFG_SM_LEVEL_LOW)) {
-        if (!aplic->msimode) {
-            return;
-        }
-        if (aplic->msimode && !pending) {
-            goto noskip_write_pending;
-        }
-        if ((aplic->state[irq] & APLIC_ISTATE_INPUT) &&
-            (sm == APLIC_SOURCECFG_SM_LEVEL_LOW)) {
-            return;
-        }
-        if (!(aplic->state[irq] & APLIC_ISTATE_INPUT) &&
-            (sm == APLIC_SOURCECFG_SM_LEVEL_HIGH)) {
-            return;
-        }
-    }
-
-noskip_write_pending:
     riscv_aplic_set_pending_raw(aplic, irq, pending);
 }
 
@@ -503,7 +452,6 @@ static uint32_t riscv_aplic_idc_claimi(RISCVAPLICState *aplic, uint32_t idc)
 
     if (!topi) {
         aplic->iforce[idc] = 0;
-        riscv_aplic_idc_update(aplic, idc);
         return 0;
     }
 
@@ -717,10 +665,6 @@ static void riscv_aplic_write(void *opaque, hwaddr addr, uint64_t value,
             (aplic->sourcecfg[irq] == 0)) {
             riscv_aplic_set_pending_raw(aplic, irq, false);
             riscv_aplic_set_enabled_raw(aplic, irq, false);
-        } else {
-            if (riscv_aplic_irq_rectified_val(aplic, irq)) {
-                riscv_aplic_set_pending_raw(aplic, irq, true);
-            }
         }
     } else if (aplic->mmode && aplic->msimode &&
                (addr == APLIC_MMSICFGADDR)) {
@@ -744,13 +688,13 @@ static void riscv_aplic_write(void *opaque, hwaddr addr, uint64_t value,
          * domains).
          */
         if (aplic->num_children &&
-            !(aplic->mmsicfgaddrH & APLIC_xMSICFGADDRH_L)) {
+            !(aplic->smsicfgaddrH & APLIC_xMSICFGADDRH_L)) {
             aplic->smsicfgaddr = value;
         }
     } else if (aplic->mmode && aplic->msimode &&
                (addr == APLIC_SMSICFGADDRH)) {
         if (aplic->num_children &&
-            !(aplic->mmsicfgaddrH & APLIC_xMSICFGADDRH_L)) {
+            !(aplic->smsicfgaddrH & APLIC_xMSICFGADDRH_L)) {
             aplic->smsicfgaddrH = value & APLIC_xMSICFGADDRH_VALID_MASK;
         }
     } else if ((APLIC_SETIP_BASE <= addr) &&
@@ -857,35 +801,29 @@ static void riscv_aplic_realize(DeviceState *dev, Error **errp)
     uint32_t i;
     RISCVAPLICState *aplic = RISCV_APLIC(dev);
 
-    if (!is_kvm_aia(aplic->msimode)) {
-        aplic->bitfield_words = (aplic->num_irqs + 31) >> 5;
-        aplic->sourcecfg = g_new0(uint32_t, aplic->num_irqs);
-        aplic->state = g_new0(uint32_t, aplic->num_irqs);
-        aplic->target = g_new0(uint32_t, aplic->num_irqs);
-        if (!aplic->msimode) {
-            for (i = 0; i < aplic->num_irqs; i++) {
-                aplic->target[i] = 1;
-            }
+    aplic->bitfield_words = (aplic->num_irqs + 31) >> 5;
+    aplic->sourcecfg = g_new0(uint32_t, aplic->num_irqs);
+    aplic->state = g_new(uint32_t, aplic->num_irqs);
+    aplic->target = g_new0(uint32_t, aplic->num_irqs);
+    if (!aplic->msimode) {
+        for (i = 0; i < aplic->num_irqs; i++) {
+            aplic->target[i] = 1;
         }
-        aplic->idelivery = g_new0(uint32_t, aplic->num_harts);
-        aplic->iforce = g_new0(uint32_t, aplic->num_harts);
-        aplic->ithreshold = g_new0(uint32_t, aplic->num_harts);
-
-        memory_region_init_io(&aplic->mmio, OBJECT(dev), &riscv_aplic_ops,
-                              aplic, TYPE_RISCV_APLIC, aplic->aperture_size);
-        sysbus_init_mmio(SYS_BUS_DEVICE(dev), &aplic->mmio);
     }
+    aplic->idelivery = g_new0(uint32_t, aplic->num_harts);
+    aplic->iforce = g_new0(uint32_t, aplic->num_harts);
+    aplic->ithreshold = g_new0(uint32_t, aplic->num_harts);
+
+    memory_region_init_io(&aplic->mmio, OBJECT(dev), &riscv_aplic_ops, aplic,
+                          TYPE_RISCV_APLIC, aplic->aperture_size);
+    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &aplic->mmio);
 
     /*
      * Only root APLICs have hardware IRQ lines. All non-root APLICs
      * have IRQ lines delegated by their parent APLIC.
      */
     if (!aplic->parent) {
-        if (kvm_enabled() && is_kvm_aia(aplic->msimode)) {
-            qdev_init_gpio_in(dev, riscv_kvm_aplic_request, aplic->num_irqs);
-        } else {
-            qdev_init_gpio_in(dev, riscv_aplic_request, aplic->num_irqs);
-        }
+        qdev_init_gpio_in(dev, riscv_aplic_request, aplic->num_irqs);
     }
 
     /* Create output IRQ lines for non-MSI mode */
@@ -895,7 +833,7 @@ static void riscv_aplic_realize(DeviceState *dev, Error **errp)
 
         /* Claim the CPU interrupt to be triggered by this APLIC */
         for (i = 0; i < aplic->num_harts; i++) {
-            RISCVCPU *cpu = RISCV_CPU(cpu_by_arch_id(aplic->hartid_base + i));
+            RISCVCPU *cpu = RISCV_CPU(qemu_get_cpu(aplic->hartid_base + i));
             if (riscv_cpu_claim_interrupts(cpu,
                 (aplic->mmode) ? MIP_MEIP : MIP_SEIP) < 0) {
                 error_report("%s already claimed",
@@ -923,7 +861,7 @@ static const VMStateDescription vmstate_riscv_aplic = {
     .name = "riscv_aplic",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
             VMSTATE_UINT32(domaincfg, RISCVAPLICState),
             VMSTATE_UINT32(mmsicfgaddr, RISCVAPLICState),
             VMSTATE_UINT32(mmsicfgaddrH, RISCVAPLICState),
@@ -1019,19 +957,16 @@ DeviceState *riscv_aplic_create(hwaddr addr, hwaddr size,
     qdev_prop_set_bit(dev, "msimode", msimode);
     qdev_prop_set_bit(dev, "mmode", mmode);
 
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, addr);
+
     if (parent) {
         riscv_aplic_add_child(parent, dev);
     }
 
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-
-    if (!is_kvm_aia(msimode)) {
-        sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, addr);
-    }
-
     if (!msimode) {
         for (i = 0; i < num_harts; i++) {
-            CPUState *cpu = cpu_by_arch_id(hartid_base + i);
+            CPUState *cpu = qemu_get_cpu(hartid_base + i);
 
             qdev_connect_gpio_out_named(dev, NULL, i,
                                         qdev_get_gpio_in(DEVICE(cpu),

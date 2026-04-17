@@ -25,9 +25,7 @@
 #  if !defined(ENOATTR)
 #    define ENOATTR ENODATA
 #  endif
-#  ifndef CONFIG_WIN32
-#    include <sys/xattr.h>
-#  endif
+#  include <sys/xattr.h>
 #endif
 
 #endif

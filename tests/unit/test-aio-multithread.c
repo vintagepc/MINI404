@@ -107,7 +107,8 @@ static void test_lifecycle(void)
 /* aio_co_schedule test.  */
 
 static Coroutine *to_schedule[NUM_CONTEXTS];
-static bool stop[NUM_CONTEXTS];
+
+static bool now_stopping;
 
 static int count_retry;
 static int count_here;
@@ -135,7 +136,6 @@ static bool schedule_next(int n)
 
 static void finish_cb(void *opaque)
 {
-    stop[id] = true;
     schedule_next(id);
 }
 
@@ -143,19 +143,13 @@ static coroutine_fn void test_multi_co_schedule_entry(void *opaque)
 {
     g_assert(to_schedule[id] == NULL);
 
-    /*
-     * The next iteration will set to_schedule[id] again, but once finish_cb
-     * is scheduled there is no guarantee that it will actually be woken up,
-     * so at that point it must not go to sleep.
-     */
-    while (!stop[id]) {
+    while (!qatomic_mb_read(&now_stopping)) {
         int n;
 
         n = g_test_rand_int_range(0, NUM_CONTEXTS);
         schedule_next(n);
 
-        qatomic_set_mb(&to_schedule[id], qemu_coroutine_self());
-        /* finish_cb can run here.  */
+        qatomic_mb_set(&to_schedule[id], qemu_coroutine_self());
         qemu_coroutine_yield();
         g_assert(to_schedule[id] == NULL);
     }
@@ -167,6 +161,7 @@ static void test_multi_co_schedule(int seconds)
     int i;
 
     count_here = count_other = count_retry = 0;
+    now_stopping = false;
 
     create_aio_contexts();
     for (i = 0; i < NUM_CONTEXTS; i++) {
@@ -176,10 +171,10 @@ static void test_multi_co_schedule(int seconds)
 
     g_usleep(seconds * 1000000);
 
-    /* Guarantee that each AioContext is woken up from its last wait.  */
+    qatomic_mb_set(&now_stopping, true);
     for (i = 0; i < NUM_CONTEXTS; i++) {
         ctx_run(i, finish_cb, NULL);
-        g_assert(to_schedule[i] == NULL);
+        to_schedule[i] = NULL;
     }
 
     join_aio_contexts();
@@ -204,11 +199,10 @@ static uint32_t atomic_counter;
 static uint32_t running;
 static uint32_t counter;
 static CoMutex comutex;
-static bool now_stopping;
 
 static void coroutine_fn test_multi_co_mutex_entry(void *opaque)
 {
-    while (!qatomic_read(&now_stopping)) {
+    while (!qatomic_mb_read(&now_stopping)) {
         qemu_co_mutex_lock(&comutex);
         counter++;
         qemu_co_mutex_unlock(&comutex);
@@ -242,7 +236,7 @@ static void test_multi_co_mutex(int threads, int seconds)
 
     g_usleep(seconds * 1000000);
 
-    qatomic_set(&now_stopping, true);
+    qatomic_mb_set(&now_stopping, true);
     while (running > 0) {
         g_usleep(100000);
     }
@@ -333,7 +327,7 @@ static void mcs_mutex_unlock(void)
 
 static void test_multi_fair_mutex_entry(void *opaque)
 {
-    while (!qatomic_read(&now_stopping)) {
+    while (!qatomic_mb_read(&now_stopping)) {
         mcs_mutex_lock();
         counter++;
         mcs_mutex_unlock();
@@ -361,7 +355,7 @@ static void test_multi_fair_mutex(int threads, int seconds)
 
     g_usleep(seconds * 1000000);
 
-    qatomic_set(&now_stopping, true);
+    qatomic_mb_set(&now_stopping, true);
     while (running > 0) {
         g_usleep(100000);
     }
@@ -389,7 +383,7 @@ static QemuMutex mutex;
 
 static void test_multi_mutex_entry(void *opaque)
 {
-    while (!qatomic_read(&now_stopping)) {
+    while (!qatomic_mb_read(&now_stopping)) {
         qemu_mutex_lock(&mutex);
         counter++;
         qemu_mutex_unlock(&mutex);
@@ -417,7 +411,7 @@ static void test_multi_mutex(int threads, int seconds)
 
     g_usleep(seconds * 1000000);
 
-    qatomic_set(&now_stopping, true);
+    qatomic_mb_set(&now_stopping, true);
     while (running > 0) {
         g_usleep(100000);
     }

@@ -396,7 +396,7 @@ const VMStateDescription vmstate_IPMIBT = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = ipmi_bt_vmstate_post_load,
-    .fields = (const VMStateField[]) {
+    .fields      = (VMStateField[]) {
         VMSTATE_BOOL(obf_irq_set, IPMIBT),
         VMSTATE_BOOL(atn_irq_set, IPMIBT),
         VMSTATE_BOOL(irqs_enabled, IPMIBT),

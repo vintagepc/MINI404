@@ -1,69 +1,57 @@
 /*
  * Memory Test
  *
- * This is intended to test the system-mode code and ensure we properly
+ * This is intended to test the softmmu code and ensure we properly
  * behave across normal and unaligned accesses across several pages.
  * We are not replicating memory tests for stuck bits and other
  * hardware level failures but looking for issues with different size
  * accesses when access is:
  *
  *   - unaligned at various sizes (if -DCHECK_UNALIGNED set)
- *   - spanning a (system) page
+ *   - spanning a (softmmu) page
  *   - sign extension when loading
  */
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <inttypes.h>
 #include <minilib.h>
 
 #ifndef CHECK_UNALIGNED
 # error "Target does not specify CHECK_UNALIGNED"
 #endif
 
-uint32_t test_read_count;
-uint32_t test_write_count;
-
 #define MEM_PAGE_SIZE 4096             /* nominal 4k "pages" */
 #define TEST_SIZE (MEM_PAGE_SIZE * 4)  /* 4 pages */
 
 #define ARRAY_SIZE(x) ((sizeof(x) / sizeof((x)[0])))
 
-__attribute__((aligned(TEST_SIZE)))
+__attribute__((aligned(MEM_PAGE_SIZE)))
 static uint8_t test_data[TEST_SIZE];
 
 typedef void (*init_ufn) (int offset);
 typedef bool (*read_ufn) (int offset);
 typedef bool (*read_sfn) (int offset, bool nf);
 
-static void pdot(int count, bool write)
+static void pdot(int count)
 {
-    if (write) {
-        test_write_count++;
-    } else {
-        test_read_count++;
-    }
     if (count % 128 == 0) {
         ml_printf(".");
     }
 }
 
 /*
- * Helper macros for endian handling.
+ * Helper macros for shift/extract so we can keep our endian handling
+ * in one place.
  */
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define BYTE_SHIFT(b, pos) (b << (pos * 8))
-#define BYTE_NEXT(b) ((b)++)
-#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define BYTE_SHIFT(b, pos) (b << ((sizeof(b) - 1 - (pos)) * 8))
-#define BYTE_NEXT(b) (--(b))
-#else
-#error Unsupported __BYTE_ORDER__
-#endif
+#define BYTE_SHIFT(b, pos) ((uint64_t)b << (pos * 8))
+#define BYTE_EXTRACT(b, pos) ((b >> (pos * 8)) & 0xff)
 
 /*
- * Fill the data with ascending (for little-endian) or descending (for
- * big-endian) value bytes.
+ * Fill the data with ascending value bytes.
+ *
+ * Currently we only support Little Endian machines so write in
+ * ascending address order. When we read higher address bytes should
+ * either be zero or higher than the lower bytes.
  */
 
 static void init_test_data_u8(int unused_offset)
@@ -72,18 +60,16 @@ static void init_test_data_u8(int unused_offset)
     int i;
     (void)(unused_offset);
 
-    ml_printf("Filling test area with u8 (%p):", ptr);
-
+    ml_printf("Filling test area with u8:");
     for (i = 0; i < TEST_SIZE; i++) {
-        *ptr++ = BYTE_NEXT(count);
-        pdot(i, true);
+        *ptr++ = count++;
+        pdot(i);
     }
-
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done\n");
 }
 
 /*
- * Fill the data with alternating positive and negative bytes. This
+ * Full the data with alternating positive and negative bytes. This
  * should mean for reads larger than a byte all subsequent reads will
  * stay either negative or positive. We never write 0.
  */
@@ -102,11 +88,10 @@ static void init_test_data_s8(bool neg_first)
               neg_first ? "neg first" : "pos first");
     for (i = 0; i < TEST_SIZE / 2; i++) {
         *ptr++ = get_byte(i, neg_first);
-        pdot(i, true);
         *ptr++ = get_byte(i, !neg_first);
-        pdot(i, true);
+        pdot(i);
     }
-    ml_printf("done %d @ %p\n", i * 2, ptr);
+    ml_printf("done\n");
 }
 
 /*
@@ -117,19 +102,9 @@ static void reset_start_data(int offset)
 {
     uint32_t *ptr = (uint32_t *) &test_data[0];
     int i;
-
-    if (!offset) {
-        return;
-    }
-
-    ml_printf("Flushing %d bytes from %p: ", offset, ptr);
-
     for (i = 0; i < offset; i++) {
         *ptr++ = 0;
-        pdot(i, true);
     }
-
-    ml_printf("done %d @ %p\n", i, ptr);
 }
 
 static void init_test_data_u16(int offset)
@@ -139,17 +114,17 @@ static void init_test_data_u16(int offset)
     const int max = (TEST_SIZE - offset) / sizeof(word);
     int i;
 
-    reset_start_data(offset);
-
     ml_printf("Filling test area with u16 (offset %d, %p):", offset, ptr);
 
+    reset_start_data(offset);
+
     for (i = 0; i < max; i++) {
-        uint16_t low = BYTE_NEXT(count), high = BYTE_NEXT(count);
+        uint8_t low = count++, high = count++;
         word = BYTE_SHIFT(high, 1) | BYTE_SHIFT(low, 0);
         *ptr++ = word;
-        pdot(i, true);
+        pdot(i);
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
 }
 
 static void init_test_data_u32(int offset)
@@ -159,22 +134,20 @@ static void init_test_data_u32(int offset)
     const int max = (TEST_SIZE - offset) / sizeof(word);
     int i;
 
-    reset_start_data(offset);
-
     ml_printf("Filling test area with u32 (offset %d, %p):", offset, ptr);
 
+    reset_start_data(offset);
+
     for (i = 0; i < max; i++) {
-        uint32_t b4 = BYTE_NEXT(count), b3 = BYTE_NEXT(count);
-        uint32_t b2 = BYTE_NEXT(count), b1 = BYTE_NEXT(count);
-        word = BYTE_SHIFT(b1, 3) | BYTE_SHIFT(b2, 2) | BYTE_SHIFT(b3, 1) |
-               BYTE_SHIFT(b4, 0);
+        uint8_t b4 = count++, b3 = count++;
+        uint8_t b2 = count++, b1 = count++;
+        word = BYTE_SHIFT(b1, 3) | BYTE_SHIFT(b2, 2) | BYTE_SHIFT(b3, 1) | b4;
         *ptr++ = word;
-        pdot(i, true);
+        pdot(i);
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
 }
 
-#if __SIZEOF_POINTER__ >= 8
 static void init_test_data_u64(int offset)
 {
     uint8_t count = 0;
@@ -182,24 +155,23 @@ static void init_test_data_u64(int offset)
     const int max = (TEST_SIZE - offset) / sizeof(word);
     int i;
 
-    reset_start_data(offset);
-
     ml_printf("Filling test area with u64 (offset %d, %p):", offset, ptr);
 
+    reset_start_data(offset);
+
     for (i = 0; i < max; i++) {
-        uint64_t b8 = BYTE_NEXT(count), b7 = BYTE_NEXT(count);
-        uint64_t b6 = BYTE_NEXT(count), b5 = BYTE_NEXT(count);
-        uint64_t b4 = BYTE_NEXT(count), b3 = BYTE_NEXT(count);
-        uint64_t b2 = BYTE_NEXT(count), b1 = BYTE_NEXT(count);
+        uint8_t b8 = count++, b7 = count++;
+        uint8_t b6 = count++, b5 = count++;
+        uint8_t b4 = count++, b3 = count++;
+        uint8_t b2 = count++, b1 = count++;
         word = BYTE_SHIFT(b1, 7) | BYTE_SHIFT(b2, 6) | BYTE_SHIFT(b3, 5) |
                BYTE_SHIFT(b4, 4) | BYTE_SHIFT(b5, 3) | BYTE_SHIFT(b6, 2) |
-               BYTE_SHIFT(b7, 1) | BYTE_SHIFT(b8, 0);
+               BYTE_SHIFT(b7, 1) | b8;
         *ptr++ = word;
-        pdot(i, true);
+        pdot(i);
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
 }
-#endif
 
 static bool read_test_data_u16(int offset)
 {
@@ -218,11 +190,11 @@ static bool read_test_data_u16(int offset)
             ml_printf("Error %d < %d\n", high, low);
             return false;
         } else {
-            pdot(i, false);
+            pdot(i);
         }
 
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
     return true;
 }
 
@@ -260,14 +232,13 @@ static bool read_test_data_u32(int offset)
             ml_printf("Error %d, %d, %d, %d", b1, b2, b3, b4);
             return false;
         } else {
-            pdot(i, false);
+            pdot(i);
         }
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
     return true;
 }
 
-#if __SIZEOF_POINTER__ >= 8
 static bool read_test_data_u64(int offset)
 {
     uint64_t word, *ptr = (uint64_t *)&test_data[offset];
@@ -315,22 +286,17 @@ static bool read_test_data_u64(int offset)
                       b1, b2, b3, b4, b5, b6, b7, b8);
             return false;
         } else {
-            pdot(i, false);
+            pdot(i);
         }
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
     return true;
 }
-#endif
 
 /* Read the test data and verify at various offsets */
-read_ufn read_ufns[] = {
-    read_test_data_u16,
-    read_test_data_u32,
-#if __SIZEOF_POINTER__ >= 8
-    read_test_data_u64
-#endif
-};
+read_ufn read_ufns[] = { read_test_data_u16,
+                         read_test_data_u32,
+                         read_test_data_u64 };
 
 bool do_unsigned_reads(int start_off)
 {
@@ -387,17 +353,15 @@ static bool read_test_data_s8(int offset, bool neg_first)
         second = *ptr++;
 
         if (neg_first && first < 0 && second > 0) {
-            pdot(i, false);
-            pdot(i, false);
+            pdot(i);
         } else if (!neg_first && first > 0 && second < 0) {
-            pdot(i, false);
-            pdot(i, false);
+            pdot(i);
         } else {
             ml_printf("Error %d %c %d\n", first, neg_first ? '<' : '>', second);
             return false;
         }
     }
-    ml_printf("done %d @ %p\n", i * 2, ptr);
+    ml_printf("done @ %p\n", ptr);
     return true;
 }
 
@@ -410,27 +374,19 @@ static bool read_test_data_s16(int offset, bool neg_first)
     ml_printf("Reading s16 from %#lx (offset %d, %s):", ptr,
               offset, neg_first ? "neg" : "pos");
 
-    /*
-     * If the first byte is negative, then the last byte is positive.
-     * Therefore the logic below must be flipped for big-endian.
-     */
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    neg_first = !neg_first;
-#endif
-
     for (i = 0; i < max; i++) {
         int32_t data = *ptr++;
 
         if (neg_first && data < 0) {
-            pdot(i, false);
-        } else if (!neg_first && data > 0) {
-            pdot(i, false);
+            pdot(i);
+        } else if (data > 0) {
+            pdot(i);
         } else {
             ml_printf("Error %d %c 0\n", data, neg_first ? '<' : '>');
             return false;
         }
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
     return true;
 }
 
@@ -443,27 +399,19 @@ static bool read_test_data_s32(int offset, bool neg_first)
     ml_printf("Reading s32 from %#lx (offset %d, %s):",
               ptr, offset, neg_first ? "neg" : "pos");
 
-    /*
-     * If the first byte is negative, then the last byte is positive.
-     * Therefore the logic below must be flipped for big-endian.
-     */
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    neg_first = !neg_first;
-#endif
-
     for (i = 0; i < max; i++) {
         int64_t data = *ptr++;
 
         if (neg_first && data < 0) {
-            pdot(i, false);
-        } else if (!neg_first && data > 0) {
-            pdot(i, false);
+            pdot(i);
+        } else if (data > 0) {
+            pdot(i);
         } else {
             ml_printf("Error %d %c 0\n", data, neg_first ? '<' : '>');
             return false;
         }
     }
-    ml_printf("done %d @ %p\n", i, ptr);
+    ml_printf("done @ %p\n", ptr);
     return true;
 }
 
@@ -471,7 +419,8 @@ static bool read_test_data_s32(int offset, bool neg_first)
  * Read the test data and verify at various offsets
  *
  * For everything except bytes all our reads should be either positive
- * or negative depending on what offset we are reading from.
+ * or negative depending on what offset we are reading from. Currently
+ * we only handle LE systems.
  */
 read_sfn read_sfns[] = { read_test_data_s8,
                          read_test_data_s16,
@@ -497,22 +446,15 @@ bool do_signed_reads(bool neg_first)
     return ok;
 }
 
-init_ufn init_ufns[] = {
-    init_test_data_u8,
-    init_test_data_u16,
-    init_test_data_u32,
-#if __SIZEOF_POINTER__ >= 8
-    init_test_data_u64
-#endif
-};
+init_ufn init_ufns[] = { init_test_data_u8,
+                         init_test_data_u16,
+                         init_test_data_u32,
+                         init_test_data_u64 };
 
 int main(void)
 {
     int i;
     bool ok = true;
-
-    ml_printf("Test data start: 0x%"PRIxPTR"\n", &test_data[0]);
-    ml_printf("Test data end: 0x%"PRIxPTR"\n", &test_data[TEST_SIZE]);
 
     /* Run through the unsigned tests first */
     for (i = 0; i < ARRAY_SIZE(init_ufns) && ok; i++) {
@@ -529,8 +471,6 @@ int main(void)
         ok = do_signed_reads(true);
     }
 
-    ml_printf("Test data read: %"PRId32"\n", test_read_count);
-    ml_printf("Test data write: %"PRId32"\n", test_write_count);
     ml_printf("Test complete: %s\n", ok ? "PASSED" : "FAILED");
     return ok ? 0 : -1;
 }

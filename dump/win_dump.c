@@ -1,5 +1,5 @@
 /*
- * Windows crashdump (target specific implementations)
+ * Windows crashdump
  *
  * Copyright (c) 2018 Virtuozzo International GmbH
  *
@@ -9,21 +9,19 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/cutils.h"
+#include "elf.h"
+#include "exec/hwaddr.h"
+#include "monitor/monitor.h"
+#include "sysemu/kvm.h"
 #include "sysemu/dump.h"
+#include "sysemu/memory_mapping.h"
+#include "sysemu/cpus.h"
 #include "qapi/error.h"
+#include "qapi/qmp/qerror.h"
 #include "qemu/error-report.h"
-#include "exec/cpu-defs.h"
-#include "hw/core/cpu.h"
-#include "qemu/win_dump_defs.h"
+#include "hw/misc/vmcoreinfo.h"
 #include "win_dump.h"
-#include "cpu.h"
-
-#if defined(TARGET_X86_64)
-
-bool win_dump_available(Error **errp)
-{
-    return true;
-}
 
 static size_t win_dump_ptr_size(bool x64)
 {
@@ -51,7 +49,6 @@ static size_t write_run(uint64_t base_page, uint64_t page_count,
     uint64_t addr = base_page << TARGET_PAGE_BITS;
     uint64_t size = page_count << TARGET_PAGE_BITS;
     uint64_t len, l;
-    int eno;
     size_t total = 0;
 
     while (size) {
@@ -65,10 +62,9 @@ static size_t write_run(uint64_t base_page, uint64_t page_count,
         }
 
         l = qemu_write_full(fd, buf, len);
-        eno = errno;
         cpu_physical_memory_unmap(buf, addr, false, len);
         if (l != len) {
-            error_setg_errno(errp, eno, "win-dump: failed to save memory");
+            error_setg(errp, QERR_IO_ERROR);
             return 0;
         }
 
@@ -460,7 +456,7 @@ void create_win_dump(DumpState *s, Error **errp)
 
     s->written_size = qemu_write_full(s->fd, h, hdr_size);
     if (s->written_size != hdr_size) {
-        error_setg_errno(errp, errno, "win-dump: failed to write header");
+        error_setg(errp, QERR_IO_ERROR);
         goto out_restore;
     }
 
@@ -479,19 +475,3 @@ out_cr3:
 
     return;
 }
-
-#else /* !TARGET_X86_64 */
-
-bool win_dump_available(Error **errp)
-{
-    error_setg(errp, "Windows dump is only available for x86-64");
-
-    return false;
-}
-
-void create_win_dump(DumpState *s, Error **errp)
-{
-    win_dump_available(errp);
-}
-
-#endif

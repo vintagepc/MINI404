@@ -69,7 +69,7 @@ void cpu_check_irqs(CPUSPARCState *env)
                   (env->softint & ~(SOFTINT_TIMER | SOFTINT_STIMER));
 
     /* We should be holding the BQL before we mess with IRQs */
-    g_assert(bql_locked());
+    g_assert(qemu_mutex_iothread_locked());
 
     /* TT_IVEC has a higher priority (16) than TT_EXTINT (31..17) */
     if (env->ivec_status & 0x20) {
@@ -130,9 +130,15 @@ void cpu_check_irqs(CPUSPARCState *env)
 
 void sparc_cpu_do_interrupt(CPUState *cs)
 {
-    CPUSPARCState *env = cpu_env(cs);
+    SPARCCPU *cpu = SPARC_CPU(cs);
+    CPUSPARCState *env = &cpu->env;
     int intno = cs->exception_index;
     trap_state *tsptr;
+
+    /* Compute PSR before exposing state.  */
+    if (env->cc_op != CC_OP_FLAGS) {
+        cpu_get_psr(env);
+    }
 
 #ifdef DEBUG_PCALL
     if (qemu_loglevel_mask(CPU_LOG_INT)) {
@@ -266,9 +272,9 @@ static bool do_modify_softint(CPUSPARCState *env, uint32_t value)
         env->softint = value;
 #if !defined(CONFIG_USER_ONLY)
         if (cpu_interrupts_enabled(env)) {
-            bql_lock();
+            qemu_mutex_lock_iothread();
             cpu_check_irqs(env);
-            bql_unlock();
+            qemu_mutex_unlock_iothread();
         }
 #endif
         return true;

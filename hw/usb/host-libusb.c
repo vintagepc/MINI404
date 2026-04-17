@@ -1010,7 +1010,7 @@ static int usb_host_open(USBHostDevice *s, libusb_device *dev, int hostfd)
          * Speeds are defined in linux/usb/ch9.h, file not included
          * due to name conflicts.
          */
-        rc = ioctl(hostfd, USBDEVFS_GET_SPEED, NULL);
+        int rc = ioctl(hostfd, USBDEVFS_GET_SPEED, NULL);
         switch (rc) {
         case 1: /* low */
             libusb_speed = LIBUSB_SPEED_LOW;
@@ -1141,8 +1141,7 @@ static void usb_host_nodev_bh(void *opaque)
 static void usb_host_nodev(USBHostDevice *s)
 {
     if (!s->bh_nodev) {
-        s->bh_nodev = qemu_bh_new_guarded(usb_host_nodev_bh, s,
-                                          &DEVICE(s)->mem_reentrancy_guard);
+        s->bh_nodev = qemu_bh_new(usb_host_nodev_bh, s);
     }
     qemu_bh_schedule(s->bh_nodev);
 }
@@ -1212,8 +1211,9 @@ static void usb_host_realize(USBDevice *udev, Error **errp)
     if (s->hostdevice) {
         int fd;
         s->needs_autoscan = false;
-        fd = qemu_open(s->hostdevice, O_RDWR, errp);
+        fd = qemu_open_old(s->hostdevice, O_RDWR);
         if (fd < 0) {
+            error_setg_errno(errp, errno, "failed to open %s", s->hostdevice);
             return;
         }
         rc = usb_host_open(s, NULL, fd);
@@ -1739,8 +1739,7 @@ static int usb_host_post_load(void *opaque, int version_id)
     USBHostDevice *dev = opaque;
 
     if (!dev->bh_postld) {
-        dev->bh_postld = qemu_bh_new_guarded(usb_host_post_load_bh, dev,
-                                             &DEVICE(dev)->mem_reentrancy_guard);
+        dev->bh_postld = qemu_bh_new(usb_host_post_load_bh, dev);
     }
     qemu_bh_schedule(dev->bh_postld);
     dev->bh_postld_pending = true;
@@ -1752,7 +1751,7 @@ static const VMStateDescription vmstate_usb_host = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = usb_host_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_USB_DEVICE(parent_obj, USBHostDevice),
         VMSTATE_END_OF_LIST()
     }

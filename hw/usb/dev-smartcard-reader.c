@@ -278,9 +278,7 @@ typedef struct BulkIn {
 struct CCIDBus {
     BusState qbus;
 };
-
-#define TYPE_CCID_BUS "ccid-bus"
-OBJECT_DECLARE_SIMPLE_TYPE(CCIDBus, CCID_BUS)
+typedef struct CCIDBus CCIDBus;
 
 /*
  * powered - defaults to true, changed by PowerOn/PowerOff messages
@@ -1176,6 +1174,9 @@ static Property ccid_props[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
+#define TYPE_CCID_BUS "ccid-bus"
+OBJECT_DECLARE_SIMPLE_TYPE(CCIDBus, CCID_BUS)
+
 static const TypeInfo ccid_bus_info = {
     .name = TYPE_CCID_BUS,
     .parent = TYPE_BUS,
@@ -1367,7 +1368,7 @@ static const VMStateDescription bulk_in_vmstate = {
     .name = "CCID BulkIn state",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_BUFFER(data, BulkIn),
         VMSTATE_UINT32(len, BulkIn),
         VMSTATE_UINT32(pos, BulkIn),
@@ -1379,7 +1380,7 @@ static const VMStateDescription answer_vmstate = {
     .name = "CCID Answer state",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8(slot, Answer),
         VMSTATE_UINT8(seq, Answer),
         VMSTATE_END_OF_LIST()
@@ -1390,7 +1391,7 @@ static const VMStateDescription usb_device_vmstate = {
     .name = "usb_device",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8(addr, USBDevice),
         VMSTATE_BUFFER(setup_buf, USBDevice),
         VMSTATE_BUFFER(data_buf, USBDevice),
@@ -1404,7 +1405,7 @@ static const VMStateDescription ccid_vmstate = {
     .minimum_version_id = 1,
     .post_load = ccid_post_load,
     .pre_save = ccid_pre_save,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(dev, USBCCIDState, 1, usb_device_vmstate, USBDevice),
         VMSTATE_UINT8(debug, USBCCIDState),
         VMSTATE_BUFFER(bulk_out_data, USBCCIDState),

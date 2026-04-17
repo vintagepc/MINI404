@@ -27,13 +27,14 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/main-loop.h"
 #include "qemu/qemu-print.h"
 #include "qemu/units.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "qemu/host-utils.h"
 #include "exec/exec-all.h"
-#include "exec/page-protection.h"
+#include "exec/cpu_ldst.h"
 
 #define XTENSA_MPU_SEGMENT_MASK 0x0000001f
 #define XTENSA_MPU_ACC_RIGHTS_MASK 0x00000f00
@@ -67,7 +68,7 @@ void HELPER(itlb_hit_test)(CPUXtensaState *env, uint32_t vaddr)
      * only the side-effects (ie any MMU or other exception)
      */
     probe_access(env, vaddr, 1, MMU_INST_FETCH,
-                 cpu_mmu_index(env_cpu(env), true), GETPC());
+                 cpu_mmu_index(env, true), GETPC());
 }
 
 void HELPER(wsr_rasid)(CPUXtensaState *env, uint32_t v)
@@ -225,31 +226,22 @@ static void split_tlb_entry_spec_way(const CPUXtensaState *env, uint32_t v,
  * Split TLB address into TLB way, entry index and VPN (with index).
  * See ISA, 4.6.5.5 - 4.6.5.8 for the TLB addressing format
  */
-static bool split_tlb_entry_spec(CPUXtensaState *env, uint32_t v, bool dtlb,
-                                 uint32_t *vpn, uint32_t *wi, uint32_t *ei)
+static void split_tlb_entry_spec(CPUXtensaState *env, uint32_t v, bool dtlb,
+        uint32_t *vpn, uint32_t *wi, uint32_t *ei)
 {
     if (xtensa_option_enabled(env->config, XTENSA_OPTION_MMU)) {
         *wi = v & (dtlb ? 0xf : 0x7);
-        if (*wi < (dtlb ? env->config->dtlb.nways : env->config->itlb.nways)) {
-            split_tlb_entry_spec_way(env, v, dtlb, vpn, *wi, ei);
-            return true;
-        } else {
-            return false;
-        }
+        split_tlb_entry_spec_way(env, v, dtlb, vpn, *wi, ei);
     } else {
         *vpn = v & REGION_PAGE_MASK;
         *wi = 0;
         *ei = (v >> 29) & 0x7;
-        return true;
     }
 }
 
 static xtensa_tlb_entry *xtensa_tlb_get_entry(CPUXtensaState *env, bool dtlb,
                                               unsigned wi, unsigned ei)
 {
-    const xtensa_tlb *tlb = dtlb ? &env->config->dtlb : &env->config->itlb;
-
-    assert(wi < tlb->nways && ei < tlb->way_size[wi]);
     return dtlb ?
         env->dtlb[wi] + ei :
         env->itlb[wi] + ei;
@@ -262,14 +254,11 @@ static xtensa_tlb_entry *get_tlb_entry(CPUXtensaState *env,
     uint32_t wi;
     uint32_t ei;
 
-    if (split_tlb_entry_spec(env, v, dtlb, &vpn, &wi, &ei)) {
-        if (pwi) {
-            *pwi = wi;
-        }
-        return xtensa_tlb_get_entry(env, dtlb, wi, ei);
-    } else {
-        return NULL;
+    split_tlb_entry_spec(env, v, dtlb, &vpn, &wi, &ei);
+    if (pwi) {
+        *pwi = wi;
     }
+    return xtensa_tlb_get_entry(env, dtlb, wi, ei);
 }
 
 static void xtensa_tlb_set_entry_mmu(const CPUXtensaState *env,
@@ -495,12 +484,7 @@ uint32_t HELPER(rtlb0)(CPUXtensaState *env, uint32_t v, uint32_t dtlb)
     if (xtensa_option_enabled(env->config, XTENSA_OPTION_MMU)) {
         uint32_t wi;
         const xtensa_tlb_entry *entry = get_tlb_entry(env, v, dtlb, &wi);
-
-        if (entry) {
-            return (entry->vaddr & get_vpn_mask(env, dtlb, wi)) | entry->asid;
-        } else {
-            return 0;
-        }
+        return (entry->vaddr & get_vpn_mask(env, dtlb, wi)) | entry->asid;
     } else {
         return v & REGION_PAGE_MASK;
     }
@@ -509,12 +493,7 @@ uint32_t HELPER(rtlb0)(CPUXtensaState *env, uint32_t v, uint32_t dtlb)
 uint32_t HELPER(rtlb1)(CPUXtensaState *env, uint32_t v, uint32_t dtlb)
 {
     const xtensa_tlb_entry *entry = get_tlb_entry(env, v, dtlb, NULL);
-
-    if (entry) {
-        return entry->paddr | entry->attr;
-    } else {
-        return 0;
-    }
+    return entry->paddr | entry->attr;
 }
 
 void HELPER(itlb)(CPUXtensaState *env, uint32_t v, uint32_t dtlb)
@@ -522,7 +501,7 @@ void HELPER(itlb)(CPUXtensaState *env, uint32_t v, uint32_t dtlb)
     if (xtensa_option_enabled(env->config, XTENSA_OPTION_MMU)) {
         uint32_t wi;
         xtensa_tlb_entry *entry = get_tlb_entry(env, v, dtlb, &wi);
-        if (entry && entry->variable && entry->asid) {
+        if (entry->variable && entry->asid) {
             tlb_flush_page(env_cpu(env), entry->vaddr);
             entry->asid = 0;
         }
@@ -560,9 +539,8 @@ void HELPER(wtlb)(CPUXtensaState *env, uint32_t p, uint32_t v, uint32_t dtlb)
     uint32_t vpn;
     uint32_t wi;
     uint32_t ei;
-    if (split_tlb_entry_spec(env, v, dtlb, &vpn, &wi, &ei)) {
-        xtensa_tlb_set_entry(env, dtlb, wi, ei, vpn, p);
-    }
+    split_tlb_entry_spec(env, v, dtlb, &vpn, &wi, &ei);
+    xtensa_tlb_set_entry(env, dtlb, wi, ei, vpn, p);
 }
 
 /*!
@@ -991,7 +969,7 @@ uint32_t HELPER(rptlb1)(CPUXtensaState *env, uint32_t s)
 uint32_t HELPER(pptlb)(CPUXtensaState *env, uint32_t v)
 {
     unsigned nhits;
-    unsigned segment;
+    unsigned segment = XTENSA_MPU_PROBE_B;
     unsigned bg_segment;
 
     nhits = xtensa_mpu_lookup(env->mpu_fg, env->config->n_mpu_fg_segments,
@@ -1005,7 +983,7 @@ uint32_t HELPER(pptlb)(CPUXtensaState *env, uint32_t v)
         xtensa_mpu_lookup(env->config->mpu_bg,
                           env->config->n_mpu_bg_segments,
                           v, &bg_segment);
-        return env->config->mpu_bg[bg_segment].attr | XTENSA_MPU_PROBE_B;
+        return env->config->mpu_bg[bg_segment].attr | segment;
     }
 }
 

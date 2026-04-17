@@ -10,7 +10,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
-#include "exec/replay-core.h"
+#include "sysemu/replay.h"
 #include "migration/vmstate.h"
 
 #include "ptimer-test.h"
@@ -107,8 +107,7 @@ int64_t qemu_clock_deadline_ns_all(QEMUClockType type, int attr_mask)
     return deadline;
 }
 
-QEMUBH *qemu_bh_new_full(QEMUBHFunc *cb, void *opaque, const char *name,
-                         MemReentrancyGuard *reentrancy_guard)
+QEMUBH *qemu_bh_new_full(QEMUBHFunc *cb, void *opaque, const char *name)
 {
     QEMUBH *bh = g_new(QEMUBH, 1);
 

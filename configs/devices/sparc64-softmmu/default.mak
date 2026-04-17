@@ -6,6 +6,7 @@
 #CONFIG_SUNHME=n
 #CONFIG_TEST_DEVICES=n
 
-# Boards are selected by default, uncomment to keep out of the build.
-# CONFIG_SUN4U=n
-# CONFIG_NIAGARA=n
+# Boards:
+#
+CONFIG_SUN4U=y
+CONFIG_NIAGARA=y

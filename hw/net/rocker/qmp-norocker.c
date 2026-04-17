@@ -1,5 +1,6 @@
 /*
- * QMP command stubs
+ * QMP Target options - Commands handled based on a target config
+ *                      versus a host config
  *
  * Copyright (c) 2015 David Ahern <dsahern@gmail.com>
  *
@@ -17,16 +18,17 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-rocker.h"
+#include "qapi/qmp/qerror.h"
 
 RockerSwitch *qmp_query_rocker(const char *name, Error **errp)
 {
-    error_setg(errp, "rocker %s not found", name);
+    error_setg(errp, QERR_FEATURE_DISABLED, "rocker");
     return NULL;
 };
 
 RockerPortList *qmp_query_rocker_ports(const char *name, Error **errp)
 {
-    error_setg(errp, "rocker %s not found", name);
+    error_setg(errp, QERR_FEATURE_DISABLED, "rocker");
     return NULL;
 };
 
@@ -35,7 +37,7 @@ RockerOfDpaFlowList *qmp_query_rocker_of_dpa_flows(const char *name,
                                                    uint32_t tbl_id,
                                                    Error **errp)
 {
-    error_setg(errp, "rocker %s not found", name);
+    error_setg(errp, QERR_FEATURE_DISABLED, "rocker");
     return NULL;
 };
 
@@ -44,6 +46,6 @@ RockerOfDpaGroupList *qmp_query_rocker_of_dpa_groups(const char *name,
                                                      uint8_t type,
                                                      Error **errp)
 {
-    error_setg(errp, "rocker %s not found", name);
+    error_setg(errp, QERR_FEATURE_DISABLED, "rocker");
     return NULL;
 };

@@ -38,7 +38,6 @@ struct MouseState {
     ADBDevice parent_obj;
     /*< private >*/
 
-    QemuInputHandlerState *hs;
     int buttons_state, last_buttons_state;
     int dx, dy, dz;
 };
@@ -52,57 +51,17 @@ struct ADBMouseClass {
     DeviceRealize parent_realize;
 };
 
-#define ADB_MOUSE_BUTTON_LEFT   0x01
-#define ADB_MOUSE_BUTTON_RIGHT  0x02
-
-static void adb_mouse_handle_event(DeviceState *dev, QemuConsole *src,
-                                   InputEvent *evt)
+static void adb_mouse_event(void *opaque,
+                            int dx1, int dy1, int dz1, int buttons_state)
 {
-    MouseState *s = (MouseState *)dev;
-    InputMoveEvent *move;
-    InputBtnEvent *btn;
-    static const int bmap[INPUT_BUTTON__MAX] = {
-        [INPUT_BUTTON_LEFT]   = ADB_MOUSE_BUTTON_LEFT,
-        [INPUT_BUTTON_RIGHT]  = ADB_MOUSE_BUTTON_RIGHT,
-    };
+    MouseState *s = opaque;
 
-    switch (evt->type) {
-    case INPUT_EVENT_KIND_REL:
-        move = evt->u.rel.data;
-        if (move->axis == INPUT_AXIS_X) {
-            s->dx += move->value;
-        } else if (move->axis == INPUT_AXIS_Y) {
-            s->dy += move->value;
-        }
-        break;
-
-    case INPUT_EVENT_KIND_BTN:
-        btn = evt->u.btn.data;
-        if (bmap[btn->button]) {
-            if (btn->down) {
-                s->buttons_state |= bmap[btn->button];
-            } else {
-                s->buttons_state &= ~bmap[btn->button];
-            }
-        }
-        break;
-
-    default:
-        /* keep gcc happy */
-        break;
-    }
+    s->dx += dx1;
+    s->dy += dy1;
+    s->dz += dz1;
+    s->buttons_state = buttons_state;
 }
 
-static const QemuInputHandler adb_mouse_handler = {
-    .name  = "QEMU ADB Mouse",
-    .mask  = INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_REL,
-    .event = adb_mouse_handle_event,
-    /*
-     * We do not need the .sync handler because unlike e.g. PS/2 where async
-     * mouse events are sent over the serial port, an ADB mouse is constantly
-     * polled by the host via the adb_mouse_poll() callback.
-     */
-};
 
 static int adb_mouse_poll(ADBDevice *d, uint8_t *obuf)
 {
@@ -135,10 +94,10 @@ static int adb_mouse_poll(ADBDevice *d, uint8_t *obuf)
     dx &= 0x7f;
     dy &= 0x7f;
 
-    if (!(s->buttons_state & ADB_MOUSE_BUTTON_LEFT)) {
+    if (!(s->buttons_state & MOUSE_EVENT_LBUTTON)) {
         dy |= 0x80;
     }
-    if (!(s->buttons_state & ADB_MOUSE_BUTTON_RIGHT)) {
+    if (!(s->buttons_state & MOUSE_EVENT_RBUTTON)) {
         dx |= 0x80;
     }
 
@@ -258,7 +217,7 @@ static const VMStateDescription vmstate_adb_mouse = {
     .name = "adb_mouse",
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(parent_obj, MouseState, 0, vmstate_adb_device,
                        ADBDevice),
         VMSTATE_INT32(buttons_state, MouseState),
@@ -277,7 +236,7 @@ static void adb_mouse_realizefn(DeviceState *dev, Error **errp)
 
     amc->parent_realize(dev, errp);
 
-    s->hs = qemu_input_handler_register(dev, &adb_mouse_handler);
+    qemu_add_mouse_event_handler(adb_mouse_event, s, 0, "QEMU ADB Mouse");
 }
 
 static void adb_mouse_initfn(Object *obj)
@@ -299,7 +258,7 @@ static void adb_mouse_class_init(ObjectClass *oc, void *data)
 
     adc->devreq = adb_mouse_request;
     adc->devhasdata = adb_mouse_has_data;
-    device_class_set_legacy_reset(dc, adb_mouse_reset);
+    dc->reset = adb_mouse_reset;
     dc->vmsd = &vmstate_adb_mouse;
 }
 

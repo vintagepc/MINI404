@@ -16,7 +16,7 @@
 
 typedef struct QCryptoHmac QCryptoHmac;
 struct QCryptoHmac {
-    QCryptoHashAlgo alg;
+    QCryptoHashAlgorithm alg;
     void *opaque;
     void *driver;
 };
@@ -31,7 +31,7 @@ struct QCryptoHmac {
  * Returns:
  *  true if the algorithm is supported, false otherwise
  */
-bool qcrypto_hmac_supports(QCryptoHashAlgo alg);
+bool qcrypto_hmac_supports(QCryptoHashAlgorithm alg);
 
 /**
  * qcrypto_hmac_new:
@@ -52,7 +52,7 @@ bool qcrypto_hmac_supports(QCryptoHashAlgo alg);
  * Returns:
  *  a new hmac object, or NULL on error
  */
-QCryptoHmac *qcrypto_hmac_new(QCryptoHashAlgo alg,
+QCryptoHmac *qcrypto_hmac_new(QCryptoHashAlgorithm alg,
                               const uint8_t *key, size_t nkey,
                               Error **errp);
 
@@ -77,18 +77,11 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(QCryptoHmac, qcrypto_hmac_free)
  * @errp: pointer to a NULL-initialized error object
  *
  * Computes the hmac across all the memory regions
- * present in @iov.
- *
- * If @result_len is set to a non-zero value by the caller, then
- * @result must hold a pointer that is @result_len in size, and
- * @result_len match the size of the hash output. The digest will
- * be written into @result.
- *
- * If @result_len is set to zero, then this function will allocate
- * a buffer to hold the hash output digest, storing a pointer to
- * the buffer in @result, and setting @result_len to its size.
- * The memory referenced in @result must be released with a call
- * to g_free() when no longer required by the caller.
+ * present in @iov. The @result pointer will be
+ * filled with raw bytes representing the computed
+ * hmac, which will have length @resultlen. The
+ * memory pointer in @result must be released
+ * with a call to g_free() when no longer required.
  *
  * Returns:
  *  0 on success, -1 on error
@@ -110,18 +103,11 @@ int qcrypto_hmac_bytesv(QCryptoHmac *hmac,
  * @errp: pointer to a NULL-initialized error object
  *
  * Computes the hmac across all the memory region
- * @buf of length @len.
- *
- * If @result_len is set to a non-zero value by the caller, then
- * @result must hold a pointer that is @result_len in size, and
- * @result_len match the size of the hash output. The digest will
- * be written into @result.
- *
- * If @result_len is set to zero, then this function will allocate
- * a buffer to hold the hash output digest, storing a pointer to
- * the buffer in @result, and setting @result_len to its size.
- * The memory referenced in @result must be released with a call
- * to g_free() when no longer required by the caller.
+ * @buf of length @len. The @result pointer will be
+ * filled with raw bytes representing the computed
+ * hmac, which will have length @resultlen. The
+ * memory pointer in @result must be released
+ * with a call to g_free() when no longer required.
  *
  * Returns:
  *  0 on success, -1 on error

@@ -138,9 +138,6 @@ static int64_t npcm7xx_timer_count_to_ns(NPCM7xxTimer *t, uint32_t count)
 /* Convert a time interval in nanoseconds to a timer cycle count. */
 static uint32_t npcm7xx_timer_ns_to_count(NPCM7xxTimer *t, int64_t ns)
 {
-    if (ns < 0) {
-        return 0;
-    }
     return clock_ns_to_ticks(t->ctrl->clock, ns) /
         npcm7xx_tcsr_prescaler(t->tcsr);
 }
@@ -592,7 +589,7 @@ static void npcm7xx_watchdog_timer_expired(void *opaque)
     }
 }
 
-static void npcm7xx_timer_hold_reset(Object *obj, ResetType type)
+static void npcm7xx_timer_hold_reset(Object *obj)
 {
     NPCM7xxTimerCtrlState *s = NPCM7XX_TIMER(obj);
     int i;
@@ -637,7 +634,7 @@ static const VMStateDescription vmstate_npcm7xx_base_timer = {
     .name = "npcm7xx-base-timer",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_TIMER(qtimer, NPCM7xxBaseTimer),
         VMSTATE_INT64(expires_ns, NPCM7xxBaseTimer),
         VMSTATE_INT64(remaining_ns, NPCM7xxBaseTimer),
@@ -649,7 +646,7 @@ static const VMStateDescription vmstate_npcm7xx_timer = {
     .name = "npcm7xx-timer",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(base_timer, NPCM7xxTimer,
                              0, vmstate_npcm7xx_base_timer,
                              NPCM7xxBaseTimer),
@@ -663,7 +660,7 @@ static const VMStateDescription vmstate_npcm7xx_watchdog_timer = {
     .name = "npcm7xx-watchdog-timer",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_STRUCT(base_timer, NPCM7xxWatchdogTimer,
                              0, vmstate_npcm7xx_base_timer,
                              NPCM7xxBaseTimer),
@@ -676,7 +673,7 @@ static const VMStateDescription vmstate_npcm7xx_timer_ctrl = {
     .name = "npcm7xx-timer-ctrl",
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(tisr, NPCM7xxTimerCtrlState),
         VMSTATE_CLOCK(clock, NPCM7xxTimerCtrlState),
         VMSTATE_STRUCT_ARRAY(timer, NPCM7xxTimerCtrlState,

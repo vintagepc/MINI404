@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2022 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,15 +16,10 @@
  */
 
 #include <stdio.h>
-#include <stdint.h>
 
-int err;
-
-#include "hex_test.h"
-
-static uint32_t preg_alias(uint8_t v0, uint8_t v1, uint8_t v2, uint8_t v3)
+static inline int preg_alias(int v0, int v1, int v2, int v3)
 {
-  uint32_t ret;
+  int ret;
   asm volatile("p0 = %1\n\t"
                "p1 = %2\n\t"
                "p2 = %3\n\t"
@@ -36,9 +31,9 @@ static uint32_t preg_alias(uint8_t v0, uint8_t v1, uint8_t v2, uint8_t v3)
   return ret;
 }
 
-static uint32_t preg_alias_pair(uint8_t v0, uint8_t v1, uint8_t v2, uint8_t v3)
+static inline int preg_alias_pair(int v0, int v1, int v2, int v3)
 {
-  uint64_t c54;
+  long long c54;
   asm volatile("p0 = %1\n\t"
                "p1 = %2\n\t"
                "p2 = %3\n\t"
@@ -47,20 +42,20 @@ static uint32_t preg_alias_pair(uint8_t v0, uint8_t v1, uint8_t v2, uint8_t v3)
                : "=r"(c54)
                : "r"(v0), "r"(v1), "r"(v2), "r"(v3)
                : "p0", "p1", "p2", "p3");
-  return (uint32_t)c54;
+  return (int)c54;
 }
 
 typedef union {
-    uint32_t creg;
+    int creg;
     struct {
-      uint8_t p0;
-      uint8_t p1;
-      uint8_t p2;
-      uint8_t p3;
+      unsigned char p0;
+      unsigned char p1;
+      unsigned char p2;
+      unsigned char p3;
     } pregs;
 } PRegs;
 
-static inline void creg_alias(uint32_t cval, PRegs *pregs)
+static inline void creg_alias(int cval, PRegs *pregs)
 {
   asm("c4 = %4\n\t"
       "%0 = p0\n\t"
@@ -70,13 +65,23 @@ static inline void creg_alias(uint32_t cval, PRegs *pregs)
       : "=r"(pregs->pregs.p0), "=r"(pregs->pregs.p1),
         "=r"(pregs->pregs.p2), "=r"(pregs->pregs.p3)
       : "r"(cval)
-      : "c4", "p0", "p1", "p2", "p3");
+      : "p0", "p1", "p2", "p3");
 }
 
-static inline void creg_alias_pair(uint32_t cval, PRegs *pregs)
+int err;
+
+static void check(int val, int expect)
 {
-  uint64_t cval_pair = (0xdeadbeefULL << 32) | cval;
-  uint32_t c5;
+    if (val != expect) {
+        printf("ERROR: 0x%08x != 0x%08x\n", val, expect);
+        err++;
+    }
+}
+
+static inline void creg_alias_pair(unsigned int cval, PRegs *pregs)
+{
+  unsigned long long cval_pair = (0xdeadbeefULL << 32) | cval;
+  int c5;
 
   asm ("c5:4 = %5\n\t"
        "%0 = p0\n\t"
@@ -87,9 +92,9 @@ static inline void creg_alias_pair(uint32_t cval, PRegs *pregs)
        : "=r"(pregs->pregs.p0), "=r"(pregs->pregs.p1),
          "=r"(pregs->pregs.p2), "=r"(pregs->pregs.p3), "=r"(c5)
        : "r"(cval_pair)
-       : "c4", "c5", "p0", "p1", "p2", "p3");
+       : "p0", "p1", "p2", "p3");
 
-  check32(c5, 0xdeadbeef);
+  check(c5, 0xdeadbeef);
 }
 
 static void test_packet(void)
@@ -99,8 +104,8 @@ static void test_packet(void)
      * that are read during the packet.
      */
 
-    uint32_t result;
-    uint32_t old_val = 0x0000001c;
+    int result;
+    int old_val = 0x0000001c;
 
     /* Test a predicated register transfer */
     result = old_val;
@@ -112,8 +117,8 @@ static void test_packet(void)
          "}\n\t"
          : "+r"(result)
          : "r"(0xffffffff), "r"(0xff00ffff), "r"(0x837ed653)
-         : "c4", "p0", "p1", "p2", "p3");
-    check32(result, old_val);
+         : "p0", "p1", "p2", "p3");
+    check(result, old_val);
 
     /* Test a predicated store */
     result = 0xffffffff;
@@ -124,74 +129,74 @@ static void test_packet(void)
          "}\n\t"
          :
          : "r"(0), "r"(0xffffffff), "r"(&result)
-         : "c4", "p0", "p1", "p2", "p3", "memory");
-    check32(result, 0x0);
+         : "p0", "p1", "p2", "p3", "memory");
+    check(result, 0x0);
 }
 
 int main()
 {
-    uint32_t c4;
+    int c4;
     PRegs pregs;
 
     c4 = preg_alias(0xff, 0x00, 0xff, 0x00);
-    check32(c4, 0x00ff00ff);
+    check(c4, 0x00ff00ff);
     c4 = preg_alias(0xff, 0x00, 0x00, 0x00);
-    check32(c4, 0x000000ff);
+    check(c4, 0x000000ff);
     c4 = preg_alias(0x00, 0xff, 0x00, 0x00);
-    check32(c4, 0x0000ff00);
+    check(c4, 0x0000ff00);
     c4 = preg_alias(0x00, 0x00, 0xff, 0x00);
-    check32(c4, 0x00ff0000);
+    check(c4, 0x00ff0000);
     c4 = preg_alias(0x00, 0x00, 0x00, 0xff);
-    check32(c4, 0xff000000);
+    check(c4, 0xff000000);
     c4 = preg_alias(0xff, 0xff, 0xff, 0xff);
-    check32(c4, 0xffffffff);
+    check(c4, 0xffffffff);
 
     c4 = preg_alias_pair(0xff, 0x00, 0xff, 0x00);
-    check32(c4, 0x00ff00ff);
+    check(c4, 0x00ff00ff);
       c4 = preg_alias_pair(0xff, 0x00, 0x00, 0x00);
-    check32(c4, 0x000000ff);
+    check(c4, 0x000000ff);
     c4 = preg_alias_pair(0x00, 0xff, 0x00, 0x00);
-    check32(c4, 0x0000ff00);
+    check(c4, 0x0000ff00);
     c4 = preg_alias_pair(0x00, 0x00, 0xff, 0x00);
-    check32(c4, 0x00ff0000);
+    check(c4, 0x00ff0000);
     c4 = preg_alias_pair(0x00, 0x00, 0x00, 0xff);
-    check32(c4, 0xff000000);
+    check(c4, 0xff000000);
     c4 = preg_alias_pair(0xff, 0xff, 0xff, 0xff);
-    check32(c4, 0xffffffff);
+    check(c4, 0xffffffff);
 
     creg_alias(0x00ff00ff, &pregs);
-    check32(pregs.creg, 0x00ff00ff);
+    check(pregs.creg, 0x00ff00ff);
     creg_alias(0x00ffff00, &pregs);
-    check32(pregs.creg, 0x00ffff00);
+    check(pregs.creg, 0x00ffff00);
     creg_alias(0x00000000, &pregs);
-    check32(pregs.creg, 0x00000000);
+    check(pregs.creg, 0x00000000);
     creg_alias(0xff000000, &pregs);
-    check32(pregs.creg, 0xff000000);
+    check(pregs.creg, 0xff000000);
     creg_alias(0x00ff0000, &pregs);
-    check32(pregs.creg, 0x00ff0000);
+    check(pregs.creg, 0x00ff0000);
     creg_alias(0x0000ff00, &pregs);
-    check32(pregs.creg, 0x0000ff00);
+    check(pregs.creg, 0x0000ff00);
     creg_alias(0x000000ff, &pregs);
-    check32(pregs.creg, 0x000000ff);
+    check(pregs.creg, 0x000000ff);
     creg_alias(0xffffffff, &pregs);
-    check32(pregs.creg, 0xffffffff);
+    check(pregs.creg, 0xffffffff);
 
     creg_alias_pair(0x00ff00ff, &pregs);
-    check32(pregs.creg, 0x00ff00ff);
+    check(pregs.creg, 0x00ff00ff);
     creg_alias_pair(0x00ffff00, &pregs);
-    check32(pregs.creg, 0x00ffff00);
+    check(pregs.creg, 0x00ffff00);
     creg_alias_pair(0x00000000, &pregs);
-    check32(pregs.creg, 0x00000000);
+    check(pregs.creg, 0x00000000);
     creg_alias_pair(0xff000000, &pregs);
-    check32(pregs.creg, 0xff000000);
+    check(pregs.creg, 0xff000000);
     creg_alias_pair(0x00ff0000, &pregs);
-    check32(pregs.creg, 0x00ff0000);
+    check(pregs.creg, 0x00ff0000);
     creg_alias_pair(0x0000ff00, &pregs);
-    check32(pregs.creg, 0x0000ff00);
+    check(pregs.creg, 0x0000ff00);
     creg_alias_pair(0x000000ff, &pregs);
-    check32(pregs.creg, 0x000000ff);
+    check(pregs.creg, 0x000000ff);
     creg_alias_pair(0xffffffff, &pregs);
-    check32(pregs.creg, 0xffffffff);
+    check(pregs.creg, 0xffffffff);
 
     test_packet();
 

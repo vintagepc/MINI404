@@ -22,6 +22,7 @@
 #include "qemu/osdep.h"
 #include "hw/nmi.h"
 #include "qapi/error.h"
+#include "qapi/qmp/qerror.h"
 #include "qemu/module.h"
 #include "monitor/monitor.h"
 
@@ -69,7 +70,7 @@ void nmi_monitor_handle(int cpu_index, Error **errp)
     if (ns.handled) {
         error_propagate(errp, ns.err);
     } else {
-        error_setg(errp, "machine does not provide NMIs");
+        error_setg(errp, QERR_UNSUPPORTED);
     }
 }
 

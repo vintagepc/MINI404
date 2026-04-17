@@ -161,6 +161,9 @@ static bool gen_sha256(DisasContext *ctx, arg_r2 *a, DisasExtend ext,
     tcg_gen_ext_i32_tl(dest, t1);
 
     gen_set_gpr(ctx, a->rd, dest);
+    tcg_temp_free_i32(t0);
+    tcg_temp_free_i32(t1);
+    tcg_temp_free_i32(t2);
     return true;
 }
 
@@ -209,6 +212,9 @@ static bool gen_sha512_rv32(DisasContext *ctx, arg_r *a, DisasExtend ext,
     tcg_gen_trunc_i64_tl(dest, t1);
 
     gen_set_gpr(ctx, a->rd, dest);
+    tcg_temp_free_i64(t0);
+    tcg_temp_free_i64(t1);
+    tcg_temp_free_i64(t2);
     return true;
 }
 
@@ -265,6 +271,9 @@ static bool gen_sha512h_rv32(DisasContext *ctx, arg_r *a, DisasExtend ext,
     tcg_gen_trunc_i64_tl(dest, t1);
 
     gen_set_gpr(ctx, a->rd, dest);
+    tcg_temp_free_i64(t0);
+    tcg_temp_free_i64(t1);
+    tcg_temp_free_i64(t2);
     return true;
 }
 
@@ -301,6 +310,9 @@ static bool gen_sha512_rv64(DisasContext *ctx, arg_r2 *a, DisasExtend ext,
     tcg_gen_trunc_i64_tl(dest, t1);
 
     gen_set_gpr(ctx, a->rd, dest);
+    tcg_temp_free_i64(t0);
+    tcg_temp_free_i64(t1);
+    tcg_temp_free_i64(t2);
     return true;
 }
 
@@ -347,6 +359,9 @@ static bool gen_sm3(DisasContext *ctx, arg_r2 *a, int32_t b, int32_t c)
     tcg_gen_xor_i32(t1, t1, t0);
     tcg_gen_ext_i32_tl(dest, t1);
     gen_set_gpr(ctx, a->rd, dest);
+
+    tcg_temp_free_i32(t0);
+    tcg_temp_free_i32(t1);
     return true;
 }
 

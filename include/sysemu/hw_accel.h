@@ -12,6 +12,7 @@
 #define QEMU_HW_ACCEL_H
 
 #include "hw/core/cpu.h"
+#include "sysemu/hax.h"
 #include "sysemu/kvm.h"
 #include "sysemu/hvf.h"
 #include "sysemu/whpx.h"

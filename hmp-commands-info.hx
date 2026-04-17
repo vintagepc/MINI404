@@ -1,8 +1,8 @@
-HXCOMM See docs/devel/docs.rst for the format of this file.
-HXCOMM
-HXCOMM This file defines the contents of an array of HMPCommand structs
-HXCOMM which specify the name, behaviour and help text for HMP commands.
-HXCOMM Text between SRST and ERST is rST format documentation.
+HXCOMM Use DEFHEADING() to define headings in both help text and rST.
+HXCOMM Text between SRST and ERST is copied to the rST version and
+HXCOMM discarded from C version.
+HXCOMM DEF(command, args, callback, arg_string, help) is used to construct
+HXCOMM monitor info commands
 HXCOMM HXCOMM can be used for comments, discarded from both rST and C.
 HXCOMM
 HXCOMM In this file, generally SRST fragments should have two extra
@@ -174,12 +174,25 @@ ERST
         .args_type  = "",
         .params     = "",
         .help       = "show PIC state",
-        .cmd_info_hrt = qmp_x_query_interrupt_controllers,
+        .cmd        = hmp_info_pic,
     },
 
 SRST
   ``info pic``
     Show PIC state.
+ERST
+
+    {
+        .name       = "rdma",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show RDMA state",
+        .cmd_info_hrt = qmp_x_query_rdma,
+    },
+
+SRST
+  ``info rdma``
+    Show RDMA state.
 ERST
 
     {
@@ -345,6 +358,21 @@ ERST
 SRST
   ``info usbhost``
     Show host USB devices.
+ERST
+
+#if defined(CONFIG_TCG)
+    {
+        .name       = "profile",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show profiling information",
+        .cmd_info_hrt = qmp_x_query_profile,
+    },
+#endif
+
+SRST
+  ``info profile``
+    Show profiling information.
 ERST
 
     {
@@ -527,9 +555,9 @@ ERST
 
     {
         .name       = "qtree",
-        .args_type  = "brief:-b",
-        .params     = "[-b]",
-        .help       = "show device tree (-b: brief, omit properties)",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show device tree",
         .cmd        = hmp_info_qtree,
     },
 
@@ -892,7 +920,7 @@ ERST
     },
 
 SRST
-  ``info stats``
+  ``stats``
     Show runtime-collected statistics
 ERST
 
@@ -964,18 +992,4 @@ ERST
 SRST
   ``info virtio-queue-element`` *path* *queue* [*index*]
     Display element of a given virtio queue
-ERST
-
-    {
-        .name       = "cryptodev",
-        .args_type  = "",
-        .params     = "",
-        .help       = "show the crypto devices",
-        .cmd        = hmp_info_cryptodev,
-        .flags      = "p",
-    },
-
-SRST
-  ``info cryptodev``
-    Show the crypto devices.
 ERST

@@ -23,7 +23,6 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/dbus.h"
-#include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qom/object_interfaces.h"
 #include "sysemu/sysemu.h"
@@ -141,8 +140,6 @@ dbus_clipboard_qemu_request(QemuClipboardInfo *info,
     const char *mimes[] = { MIME_TEXT_PLAIN_UTF8, NULL };
     size_t n;
 
-    trace_dbus_clipboard_qemu_request(type);
-
     if (type != QEMU_CLIPBOARD_TYPE_TEXT) {
         /* unsupported atm */
         return;
@@ -206,6 +203,15 @@ dbus_clipboard_unregister_proxy(DBusDisplay *dpy)
     g_clear_object(&dpy->clipboard_proxy);
 }
 
+static void
+dbus_on_clipboard_proxy_name_owner_changed(
+    DBusDisplay *dpy,
+    GObject *object,
+    GParamSpec *pspec)
+{
+    dbus_clipboard_unregister_proxy(dpy);
+}
+
 static gboolean
 dbus_clipboard_register(
     DBusDisplay *dpy,
@@ -213,7 +219,6 @@ dbus_clipboard_register(
 {
     g_autoptr(GError) err = NULL;
     const char *name = NULL;
-    GDBusConnection *connection = g_dbus_method_invocation_get_connection(invocation);
 
     if (dpy->clipboard_proxy) {
         g_dbus_method_invocation_return_error(
@@ -226,7 +231,7 @@ dbus_clipboard_register(
 
     dpy->clipboard_proxy =
         qemu_dbus_display1_clipboard_proxy_new_sync(
-            connection,
+            g_dbus_method_invocation_get_connection(invocation),
             G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
             g_dbus_method_invocation_get_sender(invocation),
             "/org/qemu/Display1/Clipboard",
@@ -246,11 +251,7 @@ dbus_clipboard_register(
 
     g_object_connect(dpy->clipboard_proxy,
                      "swapped-signal::notify::g-name-owner",
-                     dbus_clipboard_unregister_proxy, dpy,
-                     NULL);
-    g_object_connect(connection,
-                     "swapped-signal::closed",
-                     dbus_clipboard_unregister_proxy, dpy,
+                     dbus_on_clipboard_proxy_name_owner_changed, dpy,
                      NULL);
     qemu_clipboard_reset_serial();
 
@@ -306,8 +307,6 @@ dbus_clipboard_grab(
     if (!dbus_clipboard_check_caller(dpy, invocation)) {
         return DBUS_METHOD_INVOCATION_HANDLED;
     }
-
-    trace_dbus_clipboard_grab(arg_selection, arg_serial);
 
     if (s >= QEMU_CLIPBOARD_SELECTION__COUNT) {
         g_dbus_method_invocation_return_error(

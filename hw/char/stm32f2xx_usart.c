@@ -53,17 +53,6 @@ static int stm32f2xx_usart_can_receive(void *opaque)
     return 0;
 }
 
-static void stm32f2xx_update_irq(STM32F2XXUsartState *s)
-{
-    uint32_t mask = s->usart_sr & s->usart_cr1;
-
-    if (mask & (USART_SR_TXE | USART_SR_TC | USART_SR_RXNE)) {
-        qemu_set_irq(s->irq, 1);
-    } else {
-        qemu_set_irq(s->irq, 0);
-    }
-}
-
 static void stm32f2xx_usart_receive(void *opaque, const uint8_t *buf, int size)
 {
     STM32F2XXUsartState *s = opaque;
@@ -77,7 +66,9 @@ static void stm32f2xx_usart_receive(void *opaque, const uint8_t *buf, int size)
     s->usart_dr = *buf;
     s->usart_sr |= USART_SR_RXNE;
 
-    stm32f2xx_update_irq(s);
+    if (s->usart_cr1 & USART_CR1_RXNEIE) {
+        qemu_set_irq(s->irq, 1);
+    }
 
     DB_PRINT("Receiving: %c\n", s->usart_dr);
 }
@@ -94,7 +85,7 @@ static void stm32f2xx_usart_reset(DeviceState *dev)
     s->usart_cr3 = 0x00000000;
     s->usart_gtpr = 0x00000000;
 
-    stm32f2xx_update_irq(s);
+    qemu_set_irq(s->irq, 0);
 }
 
 static uint64_t stm32f2xx_usart_read(void *opaque, hwaddr addr,
@@ -115,7 +106,7 @@ static uint64_t stm32f2xx_usart_read(void *opaque, hwaddr addr,
         retvalue = s->usart_dr & 0x3FF;
         s->usart_sr &= ~USART_SR_RXNE;
         qemu_chr_fe_accept_input(&s->chr);
-        stm32f2xx_update_irq(s);
+        qemu_set_irq(s->irq, 0);
         return retvalue;
     case USART_BRR:
         return s->usart_brr;
@@ -154,7 +145,9 @@ static void stm32f2xx_usart_write(void *opaque, hwaddr addr,
         } else {
             s->usart_sr &= value;
         }
-        stm32f2xx_update_irq(s);
+        if (!(s->usart_sr & USART_SR_RXNE)) {
+            qemu_set_irq(s->irq, 0);
+        }
         return;
     case USART_DR:
         if (value < 0xF000) {
@@ -168,7 +161,6 @@ static void stm32f2xx_usart_write(void *opaque, hwaddr addr,
                clear TC by writing 0 to the SR register, so set it again
                on each write. */
             s->usart_sr |= USART_SR_TC;
-            stm32f2xx_update_irq(s);
         }
         return;
     case USART_BRR:
@@ -176,7 +168,10 @@ static void stm32f2xx_usart_write(void *opaque, hwaddr addr,
         return;
     case USART_CR1:
         s->usart_cr1 = value;
-        stm32f2xx_update_irq(s);
+            if (s->usart_cr1 & USART_CR1_RXNEIE &&
+                s->usart_sr & USART_SR_RXNE) {
+                qemu_set_irq(s->irq, 1);
+            }
         return;
     case USART_CR2:
         s->usart_cr2 = value;
@@ -228,7 +223,7 @@ static void stm32f2xx_usart_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, stm32f2xx_usart_reset);
+    dc->reset = stm32f2xx_usart_reset;
     device_class_set_props(dc, stm32f2xx_usart_properties);
     dc->realize = stm32f2xx_usart_realize;
 }

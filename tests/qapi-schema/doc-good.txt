@@ -44,7 +44,7 @@ Values
 ~~~~~~
 
 "one" (**If: **"IFONE")
-   The _one_ {and only}, description on the same line
+   The _one_ {and only}
 
 "two"
    Not documented
@@ -76,7 +76,7 @@ Members
 ~~~~~~~
 
 "base1": "Enum"
-   description starts on a new line, minimally indented
+   the first member
 
 
 If
@@ -90,9 +90,7 @@ If
 
 A paragraph
 
-Another paragraph
-
-"var1" is undocumented
+Another paragraph (but no "var": line)
 
 
 Members
@@ -143,8 +141,7 @@ Members
 ~~~~~~~
 
 "i": "int"
-   description starts on the same line remainder indented the same "b"
-   is undocumented
+   an integer "b" is undocumented
 
 "b": "boolean"
    Not documented
@@ -175,10 +172,10 @@ Arguments
 ~~~~~~~~~
 
 "arg1": "int"
-   description starts on a new line, indented
+   the first argument
 
 "arg2": "string" (optional)
-   description starts on the same line remainder indented differently
+   the second argument
 
 "arg3": "boolean"
    Not documented
@@ -193,9 +190,11 @@ Features
 "cmd-feat2"
    another feature
 
-Note:
 
-  "arg3" is undocumented
+Note
+~~~~
+
+"arg3" is undocumented
 
 
 Returns
@@ -204,12 +203,14 @@ Returns
 "Object"
 
 
-Errors
-~~~~~~
+TODO
+~~~~
 
-some
+frobnicate
 
-Notes:
+
+Notes
+~~~~~
 
 * Lorem ipsum dolor sit amet
 
@@ -217,21 +218,19 @@ Notes:
 
 Duis aute irure dolor
 
-Example: Ideal fast-food burger situation:
 
-   -> "in"
-   <- "out"
+Example
+~~~~~~~
 
-Examples:
+   -> in
+   <- out
 
-   - Not a QMP code block
-   - Merely a preformatted code block literal
-   It isn't even an rST list.
+
+Examples
+~~~~~~~~
+
    - *verbatim*
    - {braces}
-
-Note::
-   Ceci n'est pas une note
 
 
 Since
@@ -260,11 +259,13 @@ Features
 "cmd-feat2"
    another feature
 
-Example::
 
-   -> "this example"
+Example
+~~~~~~~
 
-   <- "has no title"
+   -> in
+
+   <- out
 
 
 "EVT_BOXED" (Event)

@@ -33,7 +33,7 @@ enum PCIBusFlags {
 struct PCIBus {
     BusState qbus;
     enum PCIBusFlags flags;
-    const PCIIOMMUOps *iommu_ops;
+    PCIIOMMUFunc iommu_fn;
     void *iommu_opaque;
     uint8_t devfn_min;
     uint32_t slot_reserved_mask;

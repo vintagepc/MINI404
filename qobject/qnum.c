@@ -85,7 +85,8 @@ bool qnum_get_try_int(const QNum *qn, int64_t *val)
         return false;
     }
 
-    g_assert_not_reached();
+    assert(0);
+    return false;
 }
 
 /**
@@ -122,7 +123,8 @@ bool qnum_get_try_uint(const QNum *qn, uint64_t *val)
         return false;
     }
 
-    g_assert_not_reached();
+    assert(0);
+    return false;
 }
 
 /**
@@ -154,7 +156,8 @@ double qnum_get_double(QNum *qn)
         return qn->u.dbl;
     }
 
-    g_assert_not_reached();
+    assert(0);
+    return 0.0;
 }
 
 char *qnum_to_string(QNum *qn)
@@ -169,7 +172,8 @@ char *qnum_to_string(QNum *qn)
         return g_strdup_printf("%.17g", qn->u.dbl);
     }
 
-    g_assert_not_reached();
+    assert(0);
+    return NULL;
 }
 
 /**

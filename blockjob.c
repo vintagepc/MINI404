@@ -24,7 +24,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "block/aio-wait.h"
 #include "block/block.h"
 #include "block/blockjob_int.h"
 #include "block/block_int.h"
@@ -33,6 +32,7 @@
 #include "qapi/error.h"
 #include "qapi/qapi-events-block-core.h"
 #include "qapi/qmp/qerror.h"
+#include "qemu/coroutine.h"
 #include "qemu/main-loop.h"
 #include "qemu/timer.h"
 
@@ -120,7 +120,7 @@ static bool child_job_drained_poll(BdrvChild *c)
     }
 }
 
-static void child_job_drained_end(BdrvChild *c)
+static void child_job_drained_end(BdrvChild *c, int *drained_end_counter)
 {
     BlockJob *job = c->opaque;
     job_resume(&job->job);
@@ -198,7 +198,6 @@ void block_job_remove_all_bdrv(BlockJob *job)
      * one to make sure that such a concurrent access does not attempt
      * to process an already freed BdrvChild.
      */
-    bdrv_graph_wrlock();
     while (job->nodes) {
         GSList *l = job->nodes;
         BdrvChild *c = l->data;
@@ -210,7 +209,6 @@ void block_job_remove_all_bdrv(BlockJob *job)
 
         g_slist_free_1(l);
     }
-    bdrv_graph_wrunlock();
 }
 
 bool block_job_has_bdrv(BlockJob *job, BlockDriverState *bs)
@@ -232,12 +230,21 @@ int block_job_add_bdrv(BlockJob *job, const char *name, BlockDriverState *bs,
                        uint64_t perm, uint64_t shared_perm, Error **errp)
 {
     BdrvChild *c;
+    bool need_context_ops;
     GLOBAL_STATE_CODE();
 
     bdrv_ref(bs);
 
+    need_context_ops = bdrv_get_aio_context(bs) != job->job.aio_context;
+
+    if (need_context_ops && job->job.aio_context != qemu_get_aio_context()) {
+        aio_context_release(job->job.aio_context);
+    }
     c = bdrv_root_attach_child(bs, name, &child_job, 0, perm, shared_perm, job,
                                errp);
+    if (need_context_ops && job->job.aio_context != qemu_get_aio_context()) {
+        aio_context_acquire(job->job.aio_context);
+    }
     if (c == NULL) {
         return -EPERM;
     }
@@ -312,55 +319,16 @@ static bool block_job_set_speed(BlockJob *job, int64_t speed, Error **errp)
     return block_job_set_speed_locked(job, speed, errp);
 }
 
-void block_job_change_locked(BlockJob *job, BlockJobChangeOptions *opts,
-                             Error **errp)
-{
-    const BlockJobDriver *drv = block_job_driver(job);
-
-    GLOBAL_STATE_CODE();
-
-    if (job_apply_verb_locked(&job->job, JOB_VERB_CHANGE, errp)) {
-        return;
-    }
-
-    if (drv->change) {
-        job_unlock();
-        drv->change(job, opts, errp);
-        job_lock();
-    } else {
-        error_setg(errp, "Job type does not support change");
-    }
-}
-
-void block_job_ratelimit_processed_bytes(BlockJob *job, uint64_t n)
+int64_t block_job_ratelimit_get_delay(BlockJob *job, uint64_t n)
 {
     IO_CODE();
-    ratelimit_calculate_delay(&job->limit, n);
-}
-
-void block_job_ratelimit_sleep(BlockJob *job)
-{
-    uint64_t delay_ns;
-
-    /*
-     * Sleep at least once. If the job is reentered early, keep waiting until
-     * we've waited for the full time that is necessary to keep the job at the
-     * right speed.
-     *
-     * Make sure to recalculate the delay after each (possibly interrupted)
-     * sleep because the speed can change while the job has yielded.
-     */
-    do {
-        delay_ns = ratelimit_calculate_delay(&job->limit, 0);
-        job_sleep_ns(&job->job, delay_ns);
-    } while (delay_ns && !job_is_cancelled(&job->job));
+    return ratelimit_calculate_delay(&job->limit, n);
 }
 
 BlockJobInfo *block_job_query_locked(BlockJob *job, Error **errp)
 {
     BlockJobInfo *info;
     uint64_t progress_current, progress_total;
-    const BlockJobDriver *drv = block_job_driver(job);
 
     GLOBAL_STATE_CODE();
 
@@ -373,7 +341,7 @@ BlockJobInfo *block_job_query_locked(BlockJob *job, Error **errp)
                           &progress_total);
 
     info = g_new0(BlockJobInfo, 1);
-    info->type      = job_type(&job->job);
+    info->type      = g_strdup(job_type_str(&job->job));
     info->device    = g_strdup(job->job.id);
     info->busy      = job->job.busy;
     info->paused    = job->job.pause_count > 0;
@@ -386,14 +354,10 @@ BlockJobInfo *block_job_query_locked(BlockJob *job, Error **errp)
     info->auto_finalize = job->job.auto_finalize;
     info->auto_dismiss  = job->job.auto_dismiss;
     if (job->job.ret) {
+        info->has_error = true;
         info->error = job->job.err ?
                         g_strdup(error_get_pretty(job->job.err)) :
                         g_strdup(strerror(-job->job.ret));
-    }
-    if (drv->query) {
-        job_unlock();
-        drv->query(job, info);
-        job_lock();
     }
     return info;
 }
@@ -450,6 +414,7 @@ static void block_job_event_completed_locked(Notifier *n, void *opaque)
                                         progress_total,
                                         progress_current,
                                         job->speed,
+                                        !!msg,
                                         msg);
 }
 
@@ -496,8 +461,6 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
     int ret;
     GLOBAL_STATE_CODE();
 
-    bdrv_graph_wrlock();
-
     if (job_id == NULL && !(flags & JOB_INTERNAL)) {
         job_id = bdrv_get_device_name(bs);
     }
@@ -505,7 +468,6 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
     job = job_create(job_id, &driver->job_driver, txn, bdrv_get_aio_context(bs),
                      flags, cb, opaque, errp);
     if (job == NULL) {
-        bdrv_graph_wrunlock();
         return NULL;
     }
 
@@ -545,11 +507,9 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
         goto fail;
     }
 
-    bdrv_graph_wrunlock();
     return job;
 
 fail:
-    bdrv_graph_wrunlock();
     job_early_fail(&job->job);
     return NULL;
 }

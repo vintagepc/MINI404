@@ -3,7 +3,6 @@
 ##
 # @foo:
 # @a: line one
-#   line two
-# line three is wrongly indented
+# line two is wrongly indented
 ##
 { 'command': 'foo', 'data': { 'a': 'int' } }

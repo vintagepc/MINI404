@@ -40,6 +40,7 @@ static bool is_connected(uint32_t config, uint32_t level)
         break;
     default:
         g_assert_not_reached();
+        break;
     }
 
     return state;
@@ -77,7 +78,6 @@ static void update_state(NRF51GPIOState *s)
     int pull;
     size_t i;
     bool connected_out, dir, connected_in, out, in, input;
-    bool assert_detect = false;
 
     for (i = 0; i < NRF51_GPIO_PINS; i++) {
         pull = pull_value(s->cnf[i]);
@@ -99,15 +99,7 @@ static void update_state(NRF51GPIOState *s)
                 qemu_log_mask(LOG_GUEST_ERROR,
                               "GPIO pin %zu short circuited\n", i);
             }
-            if (connected_in) {
-                uint32_t detect_config = extract32(s->cnf[i], 16, 2);
-                if ((detect_config == 2) && (in == 1)) {
-                    assert_detect = true;
-                }
-                if ((detect_config == 3) && (in == 0)) {
-                    assert_detect = true;
-                }
-            } else {
+            if (!connected_in) {
                 /*
                  * Floating input: the output stimulates IN if connected,
                  * otherwise pull-up/pull-down resistors put a value on both
@@ -124,8 +116,6 @@ static void update_state(NRF51GPIOState *s)
         }
         update_output_irq(s, i, connected_out, out);
     }
-
-    qemu_set_irq(s->detect, assert_detect);
 }
 
 /*
@@ -279,7 +269,7 @@ static const VMStateDescription vmstate_nrf51_gpio = {
     .name = TYPE_NRF51_GPIO,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(out, NRF51GPIOState),
         VMSTATE_UINT32(in, NRF51GPIOState),
         VMSTATE_UINT32(in_mask, NRF51GPIOState),
@@ -301,7 +291,6 @@ static void nrf51_gpio_init(Object *obj)
 
     qdev_init_gpio_in(DEVICE(s), nrf51_gpio_set, NRF51_GPIO_PINS);
     qdev_init_gpio_out(DEVICE(s), s->output, NRF51_GPIO_PINS);
-    qdev_init_gpio_out_named(DEVICE(s), &s->detect, "detect", 1);
 }
 
 static void nrf51_gpio_class_init(ObjectClass *klass, void *data)
@@ -309,7 +298,7 @@ static void nrf51_gpio_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_nrf51_gpio;
-    device_class_set_legacy_reset(dc, nrf51_gpio_reset);
+    dc->reset = nrf51_gpio_reset;
     dc->desc = "nRF51 GPIO";
 }
 

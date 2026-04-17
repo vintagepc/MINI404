@@ -27,7 +27,6 @@ import shutil
 import multiprocessing
 import traceback
 import shlex
-import json
 
 from qemu.machine import QEMUMachine
 from qemu.utils import get_info_usernet_hostfwd_port, kvm_available
@@ -312,8 +311,8 @@ class BaseVM(object):
         self._guest = guest
         # Init console so we can start consuming the chars.
         self.console_init()
-        usernet_info = guest.cmd("human-monitor-command",
-                                 command_line="info usernet")
+        usernet_info = guest.qmp("human-monitor-command",
+                                 command_line="info usernet").get("return")
         self.ssh_port = get_info_usernet_hostfwd_port(usernet_info)
         if not self.ssh_port:
             raise Exception("Cannot find ssh port from 'info usernet':\n%s" % \
@@ -331,8 +330,8 @@ class BaseVM(object):
     def console_log(self, text):
         for line in re.split("[\r\n]", text):
             # filter out terminal escape sequences
-            line = re.sub("\x1b\\[[0-9;?]*[a-zA-Z]", "", line)
-            line = re.sub("\x1b\\([0-9;?]*[a-zA-Z]", "", line)
+            line = re.sub("\x1b\[[0-9;?]*[a-zA-Z]", "", line)
+            line = re.sub("\x1b\([0-9;?]*[a-zA-Z]", "", line)
             # replace unprintable chars
             line = re.sub("\x1b", "<esc>", line)
             line = re.sub("[\x00-\x1f]", ".", line)
@@ -423,8 +422,6 @@ class BaseVM(object):
     def console_sshd_config(self, prompt):
         self.console_wait(prompt)
         self.console_send("echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config\n")
-        self.console_wait(prompt)
-        self.console_send("echo 'UseDNS no' >> /etc/ssh/sshd_config\n")
         for var in self.envvars:
             self.console_wait(prompt)
             self.console_send("echo 'AcceptEnv %s' >> /etc/ssh/sshd_config\n" % var)
@@ -504,16 +501,6 @@ class BaseVM(object):
                               stderr=self._stdout)
         return os.path.join(cidir, "cloud-init.iso")
 
-    def get_qemu_packages_from_lcitool_json(self, json_path=None):
-        """Parse a lcitool variables json file and return the PKGS list."""
-        if json_path is None:
-            json_path = os.path.join(
-                os.path.dirname(__file__), "generated", self.name + ".json"
-            )
-        with open(json_path, "r") as fh:
-            return json.load(fh)["pkgs"]
-
-
 def get_qemu_path(arch, build_path=None):
     """Fetch the path to the qemu binary."""
     # If QEMU environment variable set, it takes precedence
@@ -532,7 +519,7 @@ def get_qemu_version(qemu_path):
        and return the major number."""
     output = subprocess.check_output([qemu_path, '--version'])
     version_line = output.decode("utf-8")
-    version_num = re.split(r' |\(', version_line)[3].split('.')[0]
+    version_num = re.split(' |\(', version_line)[3].split('.')[0]
     return int(version_num)
 
 def parse_config(config, args):
@@ -582,7 +569,8 @@ def parse_args(vmcls):
                 # more cores. but only up to a reasonable limit. User
                 # can always override these limits with --jobs.
                 return min(multiprocessing.cpu_count() // 2, 8)
-        return 1
+        else:
+            return 1
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -606,7 +594,7 @@ def parse_args(vmcls):
     parser.add_argument("--build-qemu",
                         help="build QEMU from source in guest")
     parser.add_argument("--build-target",
-                        help="QEMU build target", default="all check")
+                        help="QEMU build target", default="check")
     parser.add_argument("--build-path", default=None,
                         help="Path of build directory, "\
                         "for using build tree QEMU binary. ")
@@ -646,9 +634,9 @@ def main(vmcls, config=None):
         vm = vmcls(args, config=config)
         if args.build_image:
             if os.path.exists(args.image) and not args.force:
-                sys.stderr.writelines(["Image file exists, skipping build: %s\n" % args.image,
+                sys.stderr.writelines(["Image file exists: %s\n" % args.image,
                                       "Use --force option to overwrite\n"])
-                return 0
+                return 1
             return vm.build_image(args.image)
         if args.build_qemu:
             vm.add_source_dir(args.build_qemu)

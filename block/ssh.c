@@ -27,7 +27,6 @@
 #include <libssh/libssh.h>
 #include <libssh/sftp.h>
 
-#include "block/block-io.h"
 #include "block/block_int.h"
 #include "block/qdict.h"
 #include "qapi/error.h"
@@ -37,6 +36,7 @@
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
 #include "qemu/sockets.h"
+#include "qemu/uri.h"
 #include "qapi/qapi-visit-sockets.h"
 #include "qapi/qapi-visit-block-core.h"
 #include "qapi/qmp/qdict.h"
@@ -180,71 +180,65 @@ static void sftp_error_trace(BDRVSSHState *s, const char *op)
 
 static int parse_uri(const char *filename, QDict *options, Error **errp)
 {
-    g_autoptr(GUri) uri = g_uri_parse(filename, G_URI_FLAGS_NONE, NULL);
-    const char *uri_host, *uri_path, *uri_user, *uri_query;
+    URI *uri = NULL;
+    QueryParams *qp;
     char *port_str;
-    int port;
-    g_autoptr(GError) gerror = NULL;
-    char *qp_name, *qp_value;
-    GUriParamsIter qp;
+    int i;
 
+    uri = uri_parse(filename);
     if (!uri) {
         return -EINVAL;
     }
 
-    if (g_strcmp0(g_uri_get_scheme(uri), "ssh") != 0) {
+    if (g_strcmp0(uri->scheme, "ssh") != 0) {
         error_setg(errp, "URI scheme must be 'ssh'");
-        return -EINVAL;
+        goto err;
     }
 
-    uri_host = g_uri_get_host(uri);
-    if (!uri_host || g_str_equal(uri_host, "")) {
+    if (!uri->server || strcmp(uri->server, "") == 0) {
         error_setg(errp, "missing hostname in URI");
-        return -EINVAL;
+        goto err;
     }
 
-    uri_path = g_uri_get_path(uri);
-    if (!uri_path || g_str_equal(uri_path, "")) {
+    if (!uri->path || strcmp(uri->path, "") == 0) {
         error_setg(errp, "missing remote path in URI");
-        return -EINVAL;
+        goto err;
     }
 
-    uri_user = g_uri_get_user(uri);
-    if (uri_user && !g_str_equal(uri_user, "")) {
-        qdict_put_str(options, "user", uri_user);
+    qp = query_params_parse(uri->query);
+    if (!qp) {
+        error_setg(errp, "could not parse query parameters");
+        goto err;
     }
 
-    qdict_put_str(options, "server.host", uri_host);
+    if(uri->user && strcmp(uri->user, "") != 0) {
+        qdict_put_str(options, "user", uri->user);
+    }
 
-    port = g_uri_get_port(uri);
-    port_str = g_strdup_printf("%d", port > 0 ? port : 22);
+    qdict_put_str(options, "server.host", uri->server);
+
+    port_str = g_strdup_printf("%d", uri->port ?: 22);
     qdict_put_str(options, "server.port", port_str);
     g_free(port_str);
 
-    qdict_put_str(options, "path", uri_path);
+    qdict_put_str(options, "path", uri->path);
 
-    uri_query = g_uri_get_query(uri);
-    if (uri_query) {
-        g_uri_params_iter_init(&qp, uri_query, -1, "&", G_URI_PARAMS_NONE);
-        while (g_uri_params_iter_next(&qp, &qp_name, &qp_value, &gerror)) {
-            if (!qp_name || !qp_value || gerror) {
-                warn_report("Failed to parse SSH URI parameters '%s'",
-                            uri_query);
-                break;
-            }
-            /*
-             * Pick out the query parameters that we understand, and ignore
-             * (or rather warn about) the rest.
-             */
-            if (g_str_equal(qp_name, "host_key_check")) {
-                qdict_put_str(options, "host_key_check", qp_value);
-            } else {
-                warn_report("Unsupported parameter '%s' in URI", qp_name);
-            }
+    /* Pick out any query parameters that we understand, and ignore
+     * the rest.
+     */
+    for (i = 0; i < qp->n; ++i) {
+        if (strcmp(qp->p[i].name, "host_key_check") == 0) {
+            qdict_put_str(options, "host_key_check", qp->p[i].value);
         }
     }
 
+    query_params_free(qp);
+    uri_free(uri);
     return 0;
+
+ err:
+    uri_free(uri);
+    return -EINVAL;
 }
 
 static bool ssh_has_filename_options_conflict(QDict *options, Error **errp)
@@ -364,7 +358,7 @@ static unsigned hex2decimal(char ch)
         return 10 + (ch - 'A');
     }
 
-    return UINT_MAX;
+    return -1;
 }
 
 /* Compare the binary fingerprint (hash of host key) with the
@@ -376,15 +370,13 @@ static int compare_fingerprint(const unsigned char *fingerprint, size_t len,
     unsigned c;
 
     while (len > 0) {
-        unsigned c0, c1;
         while (*host_key_check == ':')
             host_key_check++;
-        c0 = hex2decimal(host_key_check[0]);
-        c1 = hex2decimal(host_key_check[1]);
-        if (c0 > 0xf || c1 > 0xf) {
+        if (!qemu_isxdigit(host_key_check[0]) ||
+            !qemu_isxdigit(host_key_check[1]))
             return 1;
-        }
-        c = c0 * 16 + c1;
+        c = hex2decimal(host_key_check[0]) * 16 +
+            hex2decimal(host_key_check[1]);
         if (c - *fingerprint != 0)
             return c - *fingerprint;
         fingerprint++;
@@ -476,6 +468,7 @@ static int check_host_key(BDRVSSHState *s, SshHostKeyCheck *hkc, Error **errp)
                                        errp);
         }
         g_assert_not_reached();
+        break;
     case SSH_HOST_KEY_CHECK_MODE_KNOWN_HOSTS:
         return check_host_key_knownhosts(s, errp);
     default:
@@ -650,7 +643,7 @@ static int connect_to_ssh(BDRVSSHState *s, BlockdevOptionsSsh *opts,
     unsigned int port = 0;
     int new_sock = -1;
 
-    if (opts->user) {
+    if (opts->has_user) {
         s->user = g_strdup(opts->user);
     } else {
         s->user = g_strdup(g_get_user_name());
@@ -838,8 +831,8 @@ static int connect_to_ssh(BDRVSSHState *s, BlockdevOptionsSsh *opts,
     return ret;
 }
 
-static int ssh_open(BlockDriverState *bs, QDict *options, int bdrv_flags,
-                    Error **errp)
+static int ssh_file_open(BlockDriverState *bs, QDict *options, int bdrv_flags,
+                         Error **errp)
 {
     BDRVSSHState *s = bs->opaque;
     BlockdevOptionsSsh *opts;
@@ -865,6 +858,9 @@ static int ssh_open(BlockDriverState *bs, QDict *options, int bdrv_flags,
     if (ret < 0) {
         goto err;
     }
+
+    /* Go non-blocking. */
+    ssh_set_blocking(s->session, 0);
 
     if (s->attrs->type == SSH_FILEXFER_TYPE_REGULAR) {
         bs->supported_truncate_flags = BDRV_REQ_ZERO_WRITE;
@@ -1022,7 +1018,7 @@ static void restart_coroutine(void *opaque)
     AioContext *ctx = bdrv_get_aio_context(bs);
 
     trace_ssh_restart_coroutine(restart->co);
-    aio_set_fd_handler(ctx, s->sock, NULL, NULL, NULL, NULL, NULL);
+    aio_set_fd_handler(ctx, s->sock, false, NULL, NULL, NULL, NULL, NULL);
 
     aio_co_wake(restart->co);
 }
@@ -1052,7 +1048,7 @@ static coroutine_fn void co_yield(BDRVSSHState *s, BlockDriverState *bs)
     trace_ssh_co_yield(s->sock, rd_handler, wr_handler);
 
     aio_set_fd_handler(bdrv_get_aio_context(bs), s->sock,
-                       rd_handler, wr_handler, NULL, NULL, &restart);
+                       false, rd_handler, wr_handler, NULL, NULL, &restart);
     qemu_coroutine_yield();
     trace_ssh_co_yield_back(s->sock);
 }
@@ -1256,7 +1252,7 @@ static coroutine_fn int ssh_co_flush(BlockDriverState *bs)
     return ret;
 }
 
-static int64_t coroutine_fn ssh_co_getlength(BlockDriverState *bs)
+static int64_t ssh_getlength(BlockDriverState *bs)
 {
     BDRVSSHState *s = bs->opaque;
     int64_t length;
@@ -1360,14 +1356,14 @@ static BlockDriver bdrv_ssh = {
     .protocol_name                = "ssh",
     .instance_size                = sizeof(BDRVSSHState),
     .bdrv_parse_filename          = ssh_parse_filename,
-    .bdrv_open                    = ssh_open,
+    .bdrv_file_open               = ssh_file_open,
     .bdrv_co_create               = ssh_co_create,
     .bdrv_co_create_opts          = ssh_co_create_opts,
     .bdrv_close                   = ssh_close,
     .bdrv_has_zero_init           = ssh_has_zero_init,
     .bdrv_co_readv                = ssh_co_readv,
     .bdrv_co_writev               = ssh_co_writev,
-    .bdrv_co_getlength            = ssh_co_getlength,
+    .bdrv_getlength               = ssh_getlength,
     .bdrv_co_truncate             = ssh_co_truncate,
     .bdrv_co_flush_to_disk        = ssh_co_flush,
     .bdrv_refresh_filename        = ssh_refresh_filename,

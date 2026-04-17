@@ -25,6 +25,8 @@
 #include "hw/boards.h"
 #include "hw/mips/loongson3_bootp.h"
 
+#define LOONGSON3_CORE_PER_NODE 4
+
 static void init_cpu_info(void *g_cpuinfo, uint64_t cpu_freq)
 {
     struct efi_cpuinfo_loongson *c = g_cpuinfo;
@@ -146,5 +148,4 @@ void init_reset_system(struct efi_reset_system_t *reset)
     reset->Shutdown = cpu_to_le64(0xffffffffbfc000a8);
     reset->ResetCold = cpu_to_le64(0xffffffffbfc00080);
     reset->ResetWarm = cpu_to_le64(0xffffffffbfc00080);
-    reset->DoSuspend = cpu_to_le64(0xffffffffbfc000d0);
 }

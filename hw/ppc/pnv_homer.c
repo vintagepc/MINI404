@@ -25,7 +25,6 @@
 #include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
 #include "hw/ppc/pnv.h"
-#include "hw/ppc/pnv_chip.h"
 #include "hw/ppc/pnv_homer.h"
 #include "hw/ppc/pnv_xscom.h"
 

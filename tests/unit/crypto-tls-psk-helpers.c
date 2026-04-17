@@ -20,6 +20,7 @@
 
 #include "qemu/osdep.h"
 
+#include "crypto-tls-x509-helpers.h"
 #include "crypto-tls-psk-helpers.h"
 #include "qemu/sockets.h"
 

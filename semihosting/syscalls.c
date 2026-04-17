@@ -7,15 +7,14 @@
  */
 
 #include "qemu/osdep.h"
-#include "cpu.h"
-#include "gdbstub/syscalls.h"
+#include "exec/gdbstub.h"
 #include "semihosting/guestfd.h"
 #include "semihosting/syscalls.h"
 #include "semihosting/console.h"
 #ifdef CONFIG_USER_ONLY
 #include "qemu.h"
 #else
-#include "semihosting/uaccess.h"
+#include "semihosting/softmmu-uaccess.h"
 #endif
 
 
@@ -24,7 +23,7 @@
  */
 static int validate_strlen(CPUState *cs, target_ulong str, target_ulong tlen)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char c;
 
     if (tlen == 0) {
@@ -54,7 +53,7 @@ static int validate_lock_user_string(char **pstr, CPUState *cs,
                                      target_ulong tstr, target_ulong tlen)
 {
     int ret = validate_strlen(cs, tstr, tlen);
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *str = NULL;
 
     if (ret > 0) {
@@ -74,7 +73,7 @@ static int validate_lock_user_string(char **pstr, CPUState *cs,
 static int copy_stat_to_user(CPUState *cs, target_ulong addr,
                              const struct stat *s)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     struct gdb_stat *p;
 
     if (s->st_dev != (uint32_t)s->st_dev ||
@@ -139,48 +138,46 @@ static void gdb_open(CPUState *cs, gdb_syscall_complete_cb complete,
 
     gdb_open_complete = complete;
     gdb_do_syscall(gdb_open_cb, "open,%s,%x,%x",
-                   (uint64_t)fname, (uint32_t)len,
-                   (uint32_t)gdb_flags, (uint32_t)mode);
+                   fname, len, (target_ulong)gdb_flags, (target_ulong)mode);
 }
 
 static void gdb_close(CPUState *cs, gdb_syscall_complete_cb complete,
                       GuestFD *gf)
 {
-    gdb_do_syscall(complete, "close,%x", (uint32_t)gf->hostfd);
+    gdb_do_syscall(complete, "close,%x", (target_ulong)gf->hostfd);
 }
 
 static void gdb_read(CPUState *cs, gdb_syscall_complete_cb complete,
                      GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    gdb_do_syscall(complete, "read,%x,%lx,%lx",
-                   (uint32_t)gf->hostfd, (uint64_t)buf, (uint64_t)len);
+    gdb_do_syscall(complete, "read,%x,%x,%x",
+                   (target_ulong)gf->hostfd, buf, len);
 }
 
 static void gdb_write(CPUState *cs, gdb_syscall_complete_cb complete,
                       GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    gdb_do_syscall(complete, "write,%x,%lx,%lx",
-                   (uint32_t)gf->hostfd, (uint64_t)buf, (uint64_t)len);
+    gdb_do_syscall(complete, "write,%x,%x,%x",
+                   (target_ulong)gf->hostfd, buf, len);
 }
 
 static void gdb_lseek(CPUState *cs, gdb_syscall_complete_cb complete,
                       GuestFD *gf, int64_t off, int gdb_whence)
 {
     gdb_do_syscall(complete, "lseek,%x,%lx,%x",
-                   (uint32_t)gf->hostfd, off, (uint32_t)gdb_whence);
+                   (target_ulong)gf->hostfd, off, (target_ulong)gdb_whence);
 }
 
 static void gdb_isatty(CPUState *cs, gdb_syscall_complete_cb complete,
                        GuestFD *gf)
 {
-    gdb_do_syscall(complete, "isatty,%x", (uint32_t)gf->hostfd);
+    gdb_do_syscall(complete, "isatty,%x", (target_ulong)gf->hostfd);
 }
 
 static void gdb_fstat(CPUState *cs, gdb_syscall_complete_cb complete,
                       GuestFD *gf, target_ulong addr)
 {
-    gdb_do_syscall(complete, "fstat,%x,%lx",
-                   (uint32_t)gf->hostfd, (uint64_t)addr);
+    gdb_do_syscall(complete, "fstat,%x,%x", (target_ulong)gf->hostfd, addr);
 }
 
 static void gdb_stat(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -193,8 +190,7 @@ static void gdb_stat(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
 
-    gdb_do_syscall(complete, "stat,%s,%lx",
-                   (uint64_t)fname, (uint32_t)len, (uint64_t)addr);
+    gdb_do_syscall(complete, "stat,%s,%x", fname, len, addr);
 }
 
 static void gdb_remove(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -206,7 +202,7 @@ static void gdb_remove(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
 
-    gdb_do_syscall(complete, "unlink,%s", (uint64_t)fname, (uint32_t)len);
+    gdb_do_syscall(complete, "unlink,%s", fname, len);
 }
 
 static void gdb_rename(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -226,9 +222,7 @@ static void gdb_rename(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
 
-    gdb_do_syscall(complete, "rename,%s,%s",
-                   (uint64_t)oname, (uint32_t)olen,
-                   (uint64_t)nname, (uint32_t)nlen);
+    gdb_do_syscall(complete, "rename,%s,%s", oname, olen, nname, nlen);
 }
 
 static void gdb_system(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -240,14 +234,13 @@ static void gdb_system(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
 
-    gdb_do_syscall(complete, "system,%s", (uint64_t)cmd, (uint32_t)len);
+    gdb_do_syscall(complete, "system,%s", cmd, len);
 }
 
 static void gdb_gettimeofday(CPUState *cs, gdb_syscall_complete_cb complete,
                              target_ulong tv_addr, target_ulong tz_addr)
 {
-    gdb_do_syscall(complete, "gettimeofday,%lx,%lx",
-                   (uint64_t)tv_addr, (uint64_t)tz_addr);
+    gdb_do_syscall(complete, "gettimeofday,%x,%x", tv_addr, tz_addr);
 }
 
 /*
@@ -258,9 +251,9 @@ static void host_open(CPUState *cs, gdb_syscall_complete_cb complete,
                       target_ulong fname, target_ulong fname_len,
                       int gdb_flags, int mode)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *p;
-    int ret, host_flags = O_BINARY;
+    int ret, host_flags;
 
     ret = validate_lock_user_string(&p, cs, fname, fname_len);
     if (ret < 0) {
@@ -269,11 +262,11 @@ static void host_open(CPUState *cs, gdb_syscall_complete_cb complete,
     }
 
     if (gdb_flags & GDB_O_WRONLY) {
-        host_flags |= O_WRONLY;
+        host_flags = O_WRONLY;
     } else if (gdb_flags & GDB_O_RDWR) {
-        host_flags |= O_RDWR;
+        host_flags = O_RDWR;
     } else {
-        host_flags |= O_RDONLY;
+        host_flags = O_RDONLY;
     }
     if (gdb_flags & GDB_O_CREAT) {
         host_flags |= O_CREAT;
@@ -316,7 +309,7 @@ static void host_close(CPUState *cs, gdb_syscall_complete_cb complete,
 static void host_read(CPUState *cs, gdb_syscall_complete_cb complete,
                       GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     void *ptr = lock_user(VERIFY_WRITE, buf, len, 0);
     ssize_t ret;
 
@@ -324,20 +317,22 @@ static void host_read(CPUState *cs, gdb_syscall_complete_cb complete,
         complete(cs, -1, EFAULT);
         return;
     }
-    ret = RETRY_ON_EINTR(read(gf->hostfd, ptr, len));
+    do {
+        ret = read(gf->hostfd, ptr, len);
+    } while (ret == -1 && errno == EINTR);
     if (ret == -1) {
-        unlock_user(ptr, buf, 0);
         complete(cs, -1, errno);
+        unlock_user(ptr, buf, 0);
     } else {
-        unlock_user(ptr, buf, ret);
         complete(cs, ret, 0);
+        unlock_user(ptr, buf, ret);
     }
 }
 
 static void host_write(CPUState *cs, gdb_syscall_complete_cb complete,
                        GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     void *ptr = lock_user(VERIFY_READ, buf, len, 1);
     ssize_t ret;
 
@@ -346,8 +341,8 @@ static void host_write(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
     ret = write(gf->hostfd, ptr, len);
-    unlock_user(ptr, buf, 0);
     complete(cs, ret, ret == -1 ? errno : 0);
+    unlock_user(ptr, buf, 0);
 }
 
 static void host_lseek(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -411,7 +406,7 @@ static void host_stat(CPUState *cs, gdb_syscall_complete_cb complete,
                       target_ulong fname, target_ulong fname_len,
                       target_ulong addr)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     struct stat buf;
     char *name;
     int ret, err;
@@ -433,14 +428,14 @@ static void host_stat(CPUState *cs, gdb_syscall_complete_cb complete,
             ret = -1;
         }
     }
-    unlock_user(name, fname, 0);
     complete(cs, ret, err);
+    unlock_user(name, fname, 0);
 }
 
 static void host_remove(CPUState *cs, gdb_syscall_complete_cb complete,
                         target_ulong fname, target_ulong fname_len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *p;
     int ret;
 
@@ -451,15 +446,15 @@ static void host_remove(CPUState *cs, gdb_syscall_complete_cb complete,
     }
 
     ret = remove(p);
-    unlock_user(p, fname, 0);
     complete(cs, ret, ret ? errno : 0);
+    unlock_user(p, fname, 0);
 }
 
 static void host_rename(CPUState *cs, gdb_syscall_complete_cb complete,
                         target_ulong oname, target_ulong oname_len,
                         target_ulong nname, target_ulong nname_len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *ostr, *nstr;
     int ret;
 
@@ -476,15 +471,15 @@ static void host_rename(CPUState *cs, gdb_syscall_complete_cb complete,
     }
 
     ret = rename(ostr, nstr);
+    complete(cs, ret, ret ? errno : 0);
     unlock_user(ostr, oname, 0);
     unlock_user(nstr, nname, 0);
-    complete(cs, ret, ret ? errno : 0);
 }
 
 static void host_system(CPUState *cs, gdb_syscall_complete_cb complete,
                         target_ulong cmd, target_ulong cmd_len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *p;
     int ret;
 
@@ -495,14 +490,14 @@ static void host_system(CPUState *cs, gdb_syscall_complete_cb complete,
     }
 
     ret = system(p);
-    unlock_user(p, cmd, 0);
     complete(cs, ret, ret == -1 ? errno : 0);
+    unlock_user(p, cmd, 0);
 }
 
 static void host_gettimeofday(CPUState *cs, gdb_syscall_complete_cb complete,
                               target_ulong tv_addr, target_ulong tz_addr)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     struct gdb_timeval *p;
     int64_t rt;
 
@@ -547,7 +542,7 @@ static void host_poll_one(CPUState *cs, gdb_syscall_complete_cb complete,
 static void staticfile_read(CPUState *cs, gdb_syscall_complete_cb complete,
                             GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     target_ulong rest = gf->staticfile.len - gf->staticfile.off;
     void *ptr;
 
@@ -561,8 +556,8 @@ static void staticfile_read(CPUState *cs, gdb_syscall_complete_cb complete,
     }
     memcpy(ptr, gf->staticfile.data + gf->staticfile.off, len);
     gf->staticfile.off += len;
-    unlock_user(ptr, buf, len);
     complete(cs, len, 0);
+    unlock_user(ptr, buf, len);
 }
 
 static void staticfile_lseek(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -605,7 +600,7 @@ static void staticfile_flen(CPUState *cs, gdb_syscall_complete_cb complete,
 static void console_read(CPUState *cs, gdb_syscall_complete_cb complete,
                          GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *ptr;
     int ret;
 
@@ -615,14 +610,14 @@ static void console_read(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
     ret = qemu_semihosting_console_read(cs, ptr, len);
-    unlock_user(ptr, buf, ret);
     complete(cs, ret, 0);
+    unlock_user(ptr, buf, ret);
 }
 
 static void console_write(CPUState *cs, gdb_syscall_complete_cb complete,
                           GuestFD *gf, target_ulong buf, target_ulong len)
 {
-    CPUArchState *env G_GNUC_UNUSED = cpu_env(cs);
+    CPUArchState *env G_GNUC_UNUSED = cs->env_ptr;
     char *ptr = lock_user(VERIFY_READ, buf, len, 1);
     int ret;
 
@@ -631,8 +626,8 @@ static void console_write(CPUState *cs, gdb_syscall_complete_cb complete,
         return;
     }
     ret = qemu_semihosting_console_write(ptr, len);
-    unlock_user(ptr, buf, 0);
     complete(cs, ret ? ret : -1, ret ? 0 : EIO);
+    unlock_user(ptr, buf, 0);
 }
 
 static void console_fstat(CPUState *cs, gdb_syscall_complete_cb complete,
@@ -720,7 +715,7 @@ void semihost_sys_read_gf(CPUState *cs, gdb_syscall_complete_cb complete,
                           GuestFD *gf, target_ulong buf, target_ulong len)
 {
     /*
-     * Bound length for 64-bit guests on 32-bit hosts, not overflowing ssize_t.
+     * Bound length for 64-bit guests on 32-bit hosts, not overlowing ssize_t.
      * Note the Linux kernel does this with MAX_RW_COUNT, so it's not a bad
      * idea to do this unconditionally.
      */
@@ -761,7 +756,7 @@ void semihost_sys_write_gf(CPUState *cs, gdb_syscall_complete_cb complete,
                            GuestFD *gf, target_ulong buf, target_ulong len)
 {
     /*
-     * Bound length for 64-bit guests on 32-bit hosts, not overflowing ssize_t.
+     * Bound length for 64-bit guests on 32-bit hosts, not overlowing ssize_t.
      * Note the Linux kernel does this with MAX_RW_COUNT, so it's not a bad
      * idea to do this unconditionally.
      */

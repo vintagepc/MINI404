@@ -26,7 +26,6 @@
 #ifndef HCD_DWC3_H
 #define HCD_DWC3_H
 
-#include "hw/register.h"
 #include "hw/usb/hcd-xhci.h"
 #include "hw/usb/hcd-xhci-sysbus.h"
 

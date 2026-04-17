@@ -24,8 +24,6 @@
 #include "hw/registerfields.h"
 #include "hw/qdev-clock.h"
 #include "qom/object.h"
-#include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #ifndef ZYNQ_SLCR_ERR_DEBUG
 #define ZYNQ_SLCR_ERR_DEBUG 0
@@ -123,7 +121,6 @@ REG32(RST_REASON, 0x250)
 
 REG32(REBOOT_STATUS, 0x258)
 REG32(BOOT_MODE, 0x25c)
-    FIELD(BOOT_MODE, BOOT_MODE, 0, 4)
 
 REG32(APU_CTRL, 0x300)
 REG32(WDT_CLK_SEL, 0x304)
@@ -198,7 +195,6 @@ struct ZynqSLCRState {
     Clock *ps_clk;
     Clock *uart0_ref_clk;
     Clock *uart1_ref_clk;
-    uint8_t boot_mode;
 };
 
 /*
@@ -289,7 +285,7 @@ static void zynq_slcr_compute_clocks_internal(ZynqSLCRState *s, uint64_t ps_clk)
 }
 
 /**
- * Compute and set the outputs clocks periods.
+ * Compute and set the ouputs clocks periods.
  * But do not propagate them further. Connected clocks
  * will not receive any updates (See zynq_slcr_compute_clocks())
  */
@@ -375,7 +371,7 @@ static void zynq_slcr_reset_init(Object *obj, ResetType type)
     s->regs[R_FPGA_RST_CTRL]  = 0x01F33F0F;
     s->regs[R_RST_REASON]     = 0x00000040;
 
-    s->regs[R_BOOT_MODE]      = s->boot_mode & R_BOOT_MODE_BOOT_MODE_MASK;
+    s->regs[R_BOOT_MODE]      = 0x00000001;
 
     /* 0x700 - 0x7D4 */
     for (i = 0; i < 54; i++) {
@@ -420,7 +416,7 @@ static void zynq_slcr_reset_init(Object *obj, ResetType type)
     s->regs[R_DDRIOB + 12] = 0x00000021;
 }
 
-static void zynq_slcr_reset_hold(Object *obj, ResetType type)
+static void zynq_slcr_reset_hold(Object *obj)
 {
     ZynqSLCRState *s = ZYNQ_SLCR(obj);
 
@@ -429,7 +425,7 @@ static void zynq_slcr_reset_hold(Object *obj, ResetType type)
     zynq_slcr_propagate_clocks(s);
 }
 
-static void zynq_slcr_reset_exit(Object *obj, ResetType type)
+static void zynq_slcr_reset_exit(Object *obj)
 {
     ZynqSLCRState *s = ZYNQ_SLCR(obj);
 
@@ -592,15 +588,6 @@ static const ClockPortInitArray zynq_slcr_clocks = {
     QDEV_CLOCK_END
 };
 
-static void zynq_slcr_realize(DeviceState *dev, Error **errp)
-{
-    ZynqSLCRState *s = ZYNQ_SLCR(dev);
-
-    if (s->boot_mode > 0xF) {
-        error_setg(errp, "Invalid boot mode %d specified", s->boot_mode);
-    }
-}
-
 static void zynq_slcr_init(Object *obj)
 {
     ZynqSLCRState *s = ZYNQ_SLCR(obj);
@@ -616,16 +603,11 @@ static const VMStateDescription vmstate_zynq_slcr = {
     .name = "zynq_slcr",
     .version_id = 3,
     .minimum_version_id = 2,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, ZynqSLCRState, ZYNQ_SLCR_NUM_REGS),
         VMSTATE_CLOCK_V(ps_clk, ZynqSLCRState, 3),
         VMSTATE_END_OF_LIST()
     }
-};
-
-static Property zynq_slcr_props[] = {
-    DEFINE_PROP_UINT8("boot-mode", ZynqSLCRState, boot_mode, 1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void zynq_slcr_class_init(ObjectClass *klass, void *data)
@@ -634,11 +616,9 @@ static void zynq_slcr_class_init(ObjectClass *klass, void *data)
     ResettableClass *rc = RESETTABLE_CLASS(klass);
 
     dc->vmsd = &vmstate_zynq_slcr;
-    dc->realize = zynq_slcr_realize;
     rc->phases.enter = zynq_slcr_reset_init;
     rc->phases.hold  = zynq_slcr_reset_hold;
     rc->phases.exit  = zynq_slcr_reset_exit;
-    device_class_set_props(dc, zynq_slcr_props);
 }
 
 static const TypeInfo zynq_slcr_info = {

@@ -163,21 +163,14 @@ void helper_vmrun(CPUX86State *env, int aflag, int next_eip_addend)
     uint64_t new_cr0;
     uint64_t new_cr3;
     uint64_t new_cr4;
-    uint64_t new_dr6;
-    uint64_t new_dr7;
+
+    cpu_svm_check_intercept_param(env, SVM_EXIT_VMRUN, 0, GETPC());
 
     if (aflag == 2) {
         addr = env->regs[R_EAX];
     } else {
         addr = (uint32_t)env->regs[R_EAX];
     }
-
-    /* Exceptions are checked before the intercept.  */
-    if (addr & (0xfff | ((~0ULL) << env_archcpu(env)->phys_bits))) {
-        raise_exception_err_ra(env, EXCP0D_GPF, 0, GETPC());
-    }
-
-    cpu_svm_check_intercept_param(env, SVM_EXIT_VMRUN, 0, GETPC());
 
     qemu_log_mask(CPU_LOG_TB_IN_ASM, "vmrun! " TARGET_FMT_lx "\n", addr);
 
@@ -253,13 +246,6 @@ void helper_vmrun(CPUX86State *env, int aflag, int next_eip_addend)
                                          offsetof(struct vmcb,
                                                   control.intercept_exceptions
                                                   ));
-
-    env->hflags &= ~HF_INHIBIT_IRQ_MASK;
-    if (x86_ldl_phys(cs, env->vm_vmcb +
-                offsetof(struct vmcb, control.int_state)) &
-                 SVM_INTERRUPT_SHADOW_MASK) {
-        env->hflags |= HF_INHIBIT_IRQ_MASK;
-    }
 
     nested_ctl = x86_ldq_phys(cs, env->vm_vmcb + offsetof(struct vmcb,
                                                           control.nested_ctl));
@@ -370,21 +356,19 @@ void helper_vmrun(CPUX86State *env, int aflag, int next_eip_addend)
                                 env->vm_vmcb + offsetof(struct vmcb, save.rsp));
     env->regs[R_EAX] = x86_ldq_phys(cs,
                                 env->vm_vmcb + offsetof(struct vmcb, save.rax));
-
-    new_dr7 = x86_ldq_phys(cs, env->vm_vmcb + offsetof(struct vmcb, save.dr7));
-    new_dr6 = x86_ldq_phys(cs, env->vm_vmcb + offsetof(struct vmcb, save.dr6));
+    env->dr[7] = x86_ldq_phys(cs,
+                          env->vm_vmcb + offsetof(struct vmcb, save.dr7));
+    env->dr[6] = x86_ldq_phys(cs,
+                          env->vm_vmcb + offsetof(struct vmcb, save.dr6));
 
 #ifdef TARGET_X86_64
-    if (new_dr7 & DR_RESERVED_MASK) {
+    if (env->dr[6] & DR_RESERVED_MASK) {
         cpu_vmexit(env, SVM_EXIT_ERR, 0, GETPC());
     }
-    if (new_dr6 & DR_RESERVED_MASK) {
+    if (env->dr[7] & DR_RESERVED_MASK) {
         cpu_vmexit(env, SVM_EXIT_ERR, 0, GETPC());
     }
 #endif
-
-    cpu_x86_update_dr7(env, new_dr7);
-    env->dr[6] = new_dr6;
 
     if (is_efer_invalid_state(env)) {
         cpu_vmexit(env, SVM_EXIT_ERR, 0, GETPC());
@@ -403,6 +387,8 @@ void helper_vmrun(CPUX86State *env, int aflag, int next_eip_addend)
     env->hflags2 |= HF2_GIF_MASK;
 
     if (ctl_has_irq(env)) {
+        CPUState *cs = env_cpu(env);
+
         cs->interrupt_request |= CPU_INTERRUPT_VIRQ;
     }
 
@@ -479,18 +465,13 @@ void helper_vmload(CPUX86State *env, int aflag)
     int mmu_idx = MMU_PHYS_IDX;
     target_ulong addr;
 
+    cpu_svm_check_intercept_param(env, SVM_EXIT_VMLOAD, 0, GETPC());
+
     if (aflag == 2) {
         addr = env->regs[R_EAX];
     } else {
         addr = (uint32_t)env->regs[R_EAX];
     }
-
-    /* Exceptions are checked before the intercept.  */
-    if (addr & (0xfff | ((~0ULL) << env_archcpu(env)->phys_bits))) {
-        raise_exception_err_ra(env, EXCP0D_GPF, 0, GETPC());
-    }
-
-    cpu_svm_check_intercept_param(env, SVM_EXIT_VMLOAD, 0, GETPC());
 
     if (virtual_vm_load_save_enabled(env, SVM_EXIT_VMLOAD, GETPC())) {
         mmu_idx = MMU_NESTED_IDX;
@@ -540,18 +521,13 @@ void helper_vmsave(CPUX86State *env, int aflag)
     int mmu_idx = MMU_PHYS_IDX;
     target_ulong addr;
 
+    cpu_svm_check_intercept_param(env, SVM_EXIT_VMSAVE, 0, GETPC());
+
     if (aflag == 2) {
         addr = env->regs[R_EAX];
     } else {
         addr = (uint32_t)env->regs[R_EAX];
     }
-
-    /* Exceptions are checked before the intercept.  */
-    if (addr & (0xfff | ((~0ULL) << env_archcpu(env)->phys_bits))) {
-        raise_exception_err_ra(env, EXCP0D_GPF, 0, GETPC());
-    }
-
-    cpu_svm_check_intercept_param(env, SVM_EXIT_VMSAVE, 0, GETPC());
 
     if (virtual_vm_load_save_enabled(env, SVM_EXIT_VMSAVE, GETPC())) {
         mmu_idx = MMU_NESTED_IDX;
@@ -822,12 +798,8 @@ void do_vmexit(CPUX86State *env)
     env->hflags &= ~HF_GUEST_MASK;
     env->intercept = 0;
     env->intercept_exceptions = 0;
-
-    /* Clears the V_IRQ and V_INTR_MASKING bits inside the processor. */
     cs->interrupt_request &= ~CPU_INTERRUPT_VIRQ;
     env->int_ctl = 0;
-
-    /* Clears the TSC_OFFSET inside the processor. */
     env->tsc_offset = 0;
 
     env->gdt.base  = x86_ldq_phys(cs, env->vm_hsave + offsetof(struct vmcb,
@@ -847,15 +819,6 @@ void do_vmexit(CPUX86State *env)
     cpu_x86_update_cr4(env, x86_ldq_phys(cs,
                                      env->vm_hsave + offsetof(struct vmcb,
                                                               save.cr4)));
-
-    /*
-     * Resets the current ASID register to zero (host ASID; TLB flush).
-     *
-     * If the host is in PAE mode, the processor reloads the host's PDPEs
-     * from the page table indicated the host's CR3. FIXME: If the PDPEs
-     * contain illegal state, the processor causes a shutdown (QEMU does
-     * not implement PDPTRs).
-     */
     cpu_x86_update_cr3(env, x86_ldq_phys(cs,
                                      env->vm_hsave + offsetof(struct vmcb,
                                                               save.cr3)));
@@ -863,14 +826,12 @@ void do_vmexit(CPUX86State *env)
        set properly */
     cpu_load_efer(env, x86_ldq_phys(cs, env->vm_hsave + offsetof(struct vmcb,
                                                          save.efer)));
-
-    /* Completion of the VMRUN instruction clears the host EFLAGS.RF bit.  */
     env->eflags = 0;
     cpu_load_eflags(env, x86_ldq_phys(cs,
                                   env->vm_hsave + offsetof(struct vmcb,
                                                            save.rflags)),
                     ~(CC_O | CC_S | CC_Z | CC_A | CC_P | CC_C | DF_MASK |
-                      RF_MASK | VM_MASK));
+                      VM_MASK));
 
     svm_load_seg_cache(env, MMU_PHYS_IDX,
                        env->vm_hsave + offsetof(struct vmcb, save.es), R_ES);
@@ -890,11 +851,8 @@ void do_vmexit(CPUX86State *env)
 
     env->dr[6] = x86_ldq_phys(cs,
                           env->vm_hsave + offsetof(struct vmcb, save.dr6));
-
-    /* Disables all breakpoints in the host DR7 register. */
-    cpu_x86_update_dr7(env,
-             x86_ldq_phys(cs,
-                          env->vm_hsave + offsetof(struct vmcb, save.dr7)) & ~0xff);
+    env->dr[7] = x86_ldq_phys(cs,
+                          env->vm_hsave + offsetof(struct vmcb, save.dr7));
 
     /* other setups */
     x86_stl_phys(cs,
@@ -910,17 +868,21 @@ void do_vmexit(CPUX86State *env)
 
     env->hflags2 &= ~HF2_GIF_MASK;
     env->hflags2 &= ~HF2_VGIF_MASK;
+    /* FIXME: Resets the current ASID register to zero (host ASID). */
 
+    /* Clears the V_IRQ and V_INTR_MASKING bits inside the processor. */
 
-    /* FIXME: Checks the reloaded host state for consistency. */
+    /* Clears the TSC_OFFSET inside the processor. */
 
-    /*
-     * EFLAGS.TF causes a #DB trap after the VMRUN completes on the host
-     * side (i.e., after the #VMEXIT from the guest). Since we're running
-     * in the main loop, call do_interrupt_all directly.
-     */
-    if ((env->eflags & TF_MASK) != 0) {
-        env->dr[6] |= DR6_BS;
-        do_interrupt_all(X86_CPU(cs), EXCP01_DB, 0, 0, env->eip, 0);
-    }
+    /* If the host is in PAE mode, the processor reloads the host's PDPEs
+       from the page table indicated the host's CR3. If the PDPEs contain
+       illegal state, the processor causes a shutdown. */
+
+    /* Disables all breakpoints in the host DR7 register. */
+
+    /* Checks the reloaded host state for consistency. */
+
+    /* If the host's rIP reloaded by #VMEXIT is outside the limit of the
+       host's code segment or non-canonical (in the case of long mode), a
+       #GP fault is delivered inside the host. */
 }

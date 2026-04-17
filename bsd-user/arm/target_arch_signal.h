@@ -86,6 +86,4 @@ struct target_sigframe {
     target_mcontext_vfp_t sf_vfp; /* actual saved VFP context */
 };
 
-#define TARGET_SIGSTACK_ALIGN 8
-
 #endif /* TARGET_ARCH_SIGNAL_H */

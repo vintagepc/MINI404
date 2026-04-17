@@ -51,7 +51,7 @@ struct NubusBus {
     qemu_irq irqs[NUBUS_IRQS];
 };
 
-#define NUBUS_DECL_ROM_MAX_SIZE    (1 * MiB)
+#define NUBUS_DECL_ROM_MAX_SIZE    (128 * KiB)
 
 struct NubusDevice {
     DeviceState qdev;

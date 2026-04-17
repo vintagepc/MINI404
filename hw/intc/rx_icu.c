@@ -345,7 +345,7 @@ static const VMStateDescription vmstate_rxicu = {
     .name = "rx-icu",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8_ARRAY(ir, RXICUState, NR_IRQS),
         VMSTATE_UINT8_ARRAY(dtcer, RXICUState, NR_IRQS),
         VMSTATE_UINT8_ARRAY(ier, RXICUState, NR_IRQS / 8),

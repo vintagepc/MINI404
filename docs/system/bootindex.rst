@@ -49,11 +49,10 @@ Limitations
 -----------
 
 Some firmware has limitations on which devices can be considered for
-booting.  For instance, the x86 PC BIOS boot specification allows only one
-disk to be bootable.  If boot from disk fails for some reason, the x86 BIOS
+booting.  For instance, the PC BIOS boot specification allows only one
+disk to be bootable.  If boot from disk fails for some reason, the BIOS
 won't retry booting from other disk.  It can still try to boot from
-floppy or net, though. In the case of s390x BIOS, the BIOS will try up to
-8 total devices, any number of which may be disks or virtio-net devices.
+floppy or net, though.
 
 Sometimes, firmware cannot map the device path QEMU wants firmware to
 boot from to a boot method.  It doesn't happen for devices the firmware

@@ -35,40 +35,18 @@
 #define PSKFILE WORKDIR "keys.psk"
 #define KEYFILE WORKDIR "key-ctx.pem"
 
-static ssize_t
-testWrite(const char *buf, size_t len, void *opaque, Error **errp)
+static ssize_t testWrite(const char *buf, size_t len, void *opaque)
 {
     int *fd = opaque;
-    int ret;
 
-    ret = write(*fd, buf, len);
-    if (ret < 0) {
-        if (errno == EAGAIN) {
-            return QCRYPTO_TLS_SESSION_ERR_BLOCK;
-        } else {
-            error_setg_errno(errp, errno, "unable to write");
-            return -1;
-        }
-    }
-    return ret;
+    return write(*fd, buf, len);
 }
 
-static ssize_t
-testRead(char *buf, size_t len, void *opaque, Error **errp)
+static ssize_t testRead(char *buf, size_t len, void *opaque)
 {
     int *fd = opaque;
-    int ret;
 
-    ret = read(*fd, buf, len);
-    if (ret < 0) {
-        if (errno == EAGAIN) {
-            return QCRYPTO_TLS_SESSION_ERR_BLOCK;
-        } else {
-            error_setg_errno(errp, errno, "unable to read");
-            return -1;
-        }
-    }
-    return ret;
+    return read(*fd, buf, len);
 }
 
 static QCryptoTLSCreds *test_tls_creds_psk_create(
@@ -104,7 +82,7 @@ static void test_crypto_tls_session_psk(void)
     int ret;
 
     /* We'll use this for our fake client-server connection */
-    ret = qemu_socketpair(AF_UNIX, SOCK_STREAM, 0, channel);
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, channel);
     g_assert(ret == 0);
 
     /*
@@ -258,7 +236,7 @@ static void test_crypto_tls_session_x509(const void *opaque)
     int ret;
 
     /* We'll use this for our fake client-server connection */
-    ret = qemu_socketpair(AF_UNIX, SOCK_STREAM, 0, channel);
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, channel);
     g_assert(ret == 0);
 
     /*

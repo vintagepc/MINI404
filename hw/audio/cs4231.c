@@ -142,7 +142,7 @@ static const VMStateDescription vmstate_cs4231 = {
     .name ="cs4231",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, CSState, CS_REGS),
         VMSTATE_UINT8_ARRAY(dregs, CSState, CS_DREGS),
         VMSTATE_END_OF_LIST()
@@ -164,7 +164,7 @@ static void cs4231_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, cs_reset);
+    dc->reset = cs_reset;
     dc->vmsd = &vmstate_cs4231;
 }
 
