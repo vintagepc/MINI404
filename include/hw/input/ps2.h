@@ -36,7 +36,7 @@
 struct PS2DeviceClass {
     SysBusDeviceClass parent_class;
 
-    ResettablePhases parent_phases;
+    DeviceReset parent_reset;
 };
 
 /*

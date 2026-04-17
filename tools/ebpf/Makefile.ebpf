@@ -1,24 +1,21 @@
-SKELETONS = rss.bpf.skeleton.h
+OBJS = rss.bpf.o
 
-LLVM_STRIP ?= llvm-strip
+LLC ?= llc
 CLANG ?= clang
 INC_FLAGS = `$(CLANG) -print-file-name=include`
-EXTRA_CFLAGS ?= -O2 -g -target bpf
+EXTRA_CFLAGS ?= -O2 -emit-llvm -fno-stack-protector
 
-all: $(SKELETONS)
+all: $(OBJS)
 
 .PHONY: clean
 
 clean:
-	rm -f $(SKELETONS) $(SKELETONS:%.skeleton.h=%.o)
+	rm -f $(OBJS)
 
-%.o: %.c
+$(OBJS):  %.o:%.c
 	$(CLANG) $(INC_FLAGS) \
                 -D__KERNEL__ -D__ASM_SYSREG_H \
                 -I../include $(LINUXINCLUDE) \
-                $(EXTRA_CFLAGS) -c $< -o $@
-	$(LLVM_STRIP) -g $@
-
-%.skeleton.h: %.o
-	bpftool gen skeleton $< > $@
-	cp $@ ../../ebpf/
+                $(EXTRA_CFLAGS) -c $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
+	bpftool gen skeleton rss.bpf.o > rss.bpf.skeleton.h
+	cp rss.bpf.skeleton.h ../../ebpf/

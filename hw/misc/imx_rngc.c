@@ -228,10 +228,8 @@ static void imx_rngc_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(sbd, &s->iomem);
 
     sysbus_init_irq(sbd, &s->irq);
-    s->self_test_bh = qemu_bh_new_guarded(imx_rngc_self_test, s,
-                                          &dev->mem_reentrancy_guard);
-    s->seed_bh = qemu_bh_new_guarded(imx_rngc_seed, s,
-                                     &dev->mem_reentrancy_guard);
+    s->self_test_bh = qemu_bh_new(imx_rngc_self_test, s);
+    s->seed_bh = qemu_bh_new(imx_rngc_seed, s);
 }
 
 static void imx_rngc_reset(DeviceState *dev)
@@ -245,7 +243,7 @@ static const VMStateDescription vmstate_imx_rngc = {
     .name = RNGC_NAME,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8(op_self_test, IMXRNGCState),
         VMSTATE_UINT8(op_seed, IMXRNGCState),
         VMSTATE_UINT8(mask, IMXRNGCState),
@@ -259,7 +257,7 @@ static void imx_rngc_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = imx_rngc_realize;
-    device_class_set_legacy_reset(dc, imx_rngc_reset);
+    dc->reset = imx_rngc_reset;
     dc->desc = RNGC_NAME,
     dc->vmsd = &vmstate_imx_rngc;
 }

@@ -41,6 +41,7 @@
 #include "hw/pci/msi.h"
 #include "qapi/error.h"
 #include "qemu/bitops.h"
+#include "qapi/qmp/qerror.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qemu/error-report.h"
@@ -609,8 +610,11 @@ static void openpic_gbl_write(void *opaque, hwaddr addr, uint64_t val,
     case 0x10B0:
     case 0x10C0:
     case 0x10D0:
-        idx = (addr - 0x10A0) >> 4;
-        write_IRQreg_ivpr(opp, opp->irq_ipi0 + idx, val);
+        {
+            int idx;
+            idx = (addr - 0x10A0) >> 4;
+            write_IRQreg_ivpr(opp, opp->irq_ipi0 + idx, val);
+        }
         break;
     case 0x10E0: /* SPVE */
         opp->spve = val & opp->vector_mask;
@@ -1031,14 +1035,13 @@ static void openpic_cpu_write_internal(void *opaque, hwaddr addr,
         s_IRQ = IRQ_get_next(opp, &dst->servicing);
         /* Check queued interrupts. */
         n_IRQ = IRQ_get_next(opp, &dst->raised);
-        if (n_IRQ != -1) {
-            src = &opp->src[n_IRQ];
-            if (s_IRQ == -1 ||
-                IVPR_PRIORITY(src->ivpr) > dst->servicing.priority) {
-                DPRINTF("Raise OpenPIC INT output cpu %d irq %d",
-                        idx, n_IRQ);
-                qemu_irq_raise(opp->dst[idx].irqs[OPENPIC_OUTPUT_INT]);
-            }
+        src = &opp->src[n_IRQ];
+        if (n_IRQ != -1 &&
+            (s_IRQ == -1 ||
+             IVPR_PRIORITY(src->ivpr) > dst->servicing.priority)) {
+            DPRINTF("Raise OpenPIC INT output cpu %d irq %d",
+                    idx, n_IRQ);
+            qemu_irq_raise(opp->dst[idx].irqs[OPENPIC_OUTPUT_INT]);
         }
         break;
     default:
@@ -1391,7 +1394,7 @@ static const VMStateDescription vmstate_openpic_irq_queue = {
     .name = "openpic_irq_queue",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_BITMAP(queue, IRQQueue, 0, queue_size),
         VMSTATE_INT32(next, IRQQueue),
         VMSTATE_INT32(priority, IRQQueue),
@@ -1403,7 +1406,7 @@ static const VMStateDescription vmstate_openpic_irqdest = {
     .name = "openpic_irqdest",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_INT32(ctpr, IRQDest),
         VMSTATE_STRUCT(raised, IRQDest, 0, vmstate_openpic_irq_queue,
                        IRQQueue),
@@ -1418,7 +1421,7 @@ static const VMStateDescription vmstate_openpic_irqsource = {
     .name = "openpic_irqsource",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(ivpr, IRQSource),
         VMSTATE_UINT32(idr, IRQSource),
         VMSTATE_UINT32(destmask, IRQSource),
@@ -1432,7 +1435,7 @@ static const VMStateDescription vmstate_openpic_timer = {
     .name = "openpic_timer",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(tccr, OpenPICTimer),
         VMSTATE_UINT32(tbcr, OpenPICTimer),
         VMSTATE_END_OF_LIST()
@@ -1443,7 +1446,7 @@ static const VMStateDescription vmstate_openpic_msi = {
     .name = "openpic_msi",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(msir, OpenPICMSI),
         VMSTATE_END_OF_LIST()
     }
@@ -1468,7 +1471,7 @@ static const VMStateDescription vmstate_openpic = {
     .version_id = 3,
     .minimum_version_id = 3,
     .post_load = openpic_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32(gcr, OpenPICState),
         VMSTATE_UINT32(vir, OpenPICState),
         VMSTATE_UINT32(pir, OpenPICState),
@@ -1535,7 +1538,9 @@ static void openpic_realize(DeviceState *dev, Error **errp)
     };
 
     if (opp->nb_cpus > MAX_CPU) {
-        error_setg(errp, "property 'nb_cpus' can be at most %d", MAX_CPU);
+        error_setg(errp, QERR_PROPERTY_VALUE_OUT_OF_RANGE,
+                   TYPE_OPENPIC, "nb_cpus", (uint64_t)opp->nb_cpus,
+                   (uint64_t)0, (uint64_t)MAX_CPU);
         return;
     }
 
@@ -1618,7 +1623,7 @@ static void openpic_class_init(ObjectClass *oc, void *data)
 
     dc->realize = openpic_realize;
     device_class_set_props(dc, openpic_properties);
-    device_class_set_legacy_reset(dc, openpic_reset);
+    dc->reset = openpic_reset;
     dc->vmsd = &vmstate_openpic;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }

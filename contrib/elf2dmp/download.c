@@ -9,18 +9,19 @@
 #include <curl/curl.h>
 #include "download.h"
 
-bool download_url(const char *name, const char *url)
+int download_url(const char *name, const char *url)
 {
-    bool success = false;
+    int err = 0;
     FILE *file;
     CURL *curl = curl_easy_init();
 
     if (!curl) {
-        return false;
+        return 1;
     }
 
     file = fopen(name, "wb");
     if (!file) {
+        err = 1;
         goto out_curl;
     }
 
@@ -32,12 +33,13 @@ bool download_url(const char *name, const char *url)
             || curl_easy_perform(curl) != CURLE_OK) {
         unlink(name);
         fclose(file);
+        err = 1;
     } else {
-        success = !fclose(file);
+        err = fclose(file);
     }
 
 out_curl:
     curl_easy_cleanup(curl);
 
-    return success;
+    return err;
 }

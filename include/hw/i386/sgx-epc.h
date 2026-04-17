@@ -12,7 +12,6 @@
 #ifndef QEMU_SGX_EPC_H
 #define QEMU_SGX_EPC_H
 
-#include "hw/qdev-core.h"
 #include "hw/i386/hostmem-epc.h"
 
 #define TYPE_SGX_EPC "sgx-epc"
@@ -58,7 +57,6 @@ typedef struct SGXEPCState {
     int nr_sections;
 } SGXEPCState;
 
-bool check_sgx_support(void);
 bool sgx_epc_get_section(int section_nr, uint64_t *addr, uint64_t *size);
 void sgx_epc_build_srat(GArray *table_data);
 

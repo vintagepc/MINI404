@@ -23,6 +23,7 @@
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/forward-visitor.h"
 #include "qapi/qapi-builtin-visit.h"
+#include "qapi/qmp/qerror.h"
 #include "qapi/qmp/qjson.h"
 #include "trace.h"
 
@@ -30,7 +31,6 @@
  * of the QOM core on QObject?  */
 #include "qom/qom-qobject.h"
 #include "qapi/qmp/qbool.h"
-#include "qapi/qmp/qlist.h"
 #include "qapi/qmp/qnum.h"
 #include "qapi/qmp/qstring.h"
 #include "qemu/error-report.h"
@@ -137,38 +137,9 @@ static TypeImpl *type_new(const TypeInfo *info)
     return ti;
 }
 
-static bool type_name_is_valid(const char *name)
-{
-    const int slen = strlen(name);
-    int plen;
-
-    g_assert(slen > 1);
-
-    /*
-     * Ideally, the name should start with a letter - however, we've got
-     * too many names starting with a digit already, so allow digits here,
-     * too (except '0' which is not used yet)
-     */
-    if (!g_ascii_isalnum(name[0]) || name[0] == '0') {
-        return false;
-    }
-
-    plen = strspn(name, "abcdefghijklmnopqrstuvwxyz"
-                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                        "0123456789-_.");
-
-    return plen == slen;
-}
-
 static TypeImpl *type_register_internal(const TypeInfo *info)
 {
     TypeImpl *ti;
-
-    if (!type_name_is_valid(info->name)) {
-        fprintf(stderr, "Registering '%s' with illegal type name\n", info->name);
-        abort();
-    }
-
     ti = type_new(info);
 
     type_table_add(ti);
@@ -195,7 +166,7 @@ void type_register_static_array(const TypeInfo *infos, int nr_infos)
     }
 }
 
-static TypeImpl *type_get_by_name_noload(const char *name)
+static TypeImpl *type_get_by_name(const char *name)
 {
     if (name == NULL) {
         return NULL;
@@ -204,32 +175,10 @@ static TypeImpl *type_get_by_name_noload(const char *name)
     return type_table_lookup(name);
 }
 
-static TypeImpl *type_get_or_load_by_name(const char *name, Error **errp)
-{
-    TypeImpl *type = type_get_by_name_noload(name);
-
-#ifdef CONFIG_MODULES
-    if (!type) {
-        int rv = module_load_qom(name, errp);
-        if (rv > 0) {
-            type = type_get_by_name_noload(name);
-        } else {
-            error_prepend(errp, "could not load a module for type '%s'", name);
-            return NULL;
-        }
-    }
-#endif
-    if (!type) {
-        error_setg(errp, "unknown type '%s'", name);
-    }
-
-    return type;
-}
-
 static TypeImpl *type_get_parent(TypeImpl *type)
 {
     if (!type->parent_type && type->parent) {
-        type->parent_type = type_get_by_name_noload(type->parent);
+        type->parent_type = type_get_by_name(type->parent);
         if (!type->parent_type) {
             fprintf(stderr, "Type '%s' is missing its parent '%s'\n",
                     type->name, type->parent);
@@ -271,17 +220,12 @@ static size_t type_object_get_size(TypeImpl *ti)
     return 0;
 }
 
-static size_t type_object_get_align(TypeImpl *ti)
+size_t object_type_get_instance_size(const char *typename)
 {
-    if (ti->instance_align) {
-        return ti->instance_align;
-    }
+    TypeImpl *type = type_get_by_name(typename);
 
-    if (type_has_parent(ti)) {
-        return type_object_get_align(type_get_parent(ti));
-    }
-
-    return 0;
+    g_assert(type != NULL);
+    return type_object_get_size(type);
 }
 
 static bool type_is_ancestor(TypeImpl *type, TypeImpl *target_type)
@@ -349,7 +293,6 @@ static void type_initialize(TypeImpl *ti)
 
     ti->class_size = type_class_get_size(ti);
     ti->instance_size = type_object_get_size(ti);
-    ti->instance_align = type_object_get_align(ti);
     /* Any type with zero instance_size is implicitly abstract.
      * This means interface types are all abstract.
      */
@@ -385,7 +328,7 @@ static void type_initialize(TypeImpl *ti)
         }
 
         for (i = 0; i < ti->num_interfaces; i++) {
-            TypeImpl *t = type_get_by_name_noload(ti->interfaces[i].typename);
+            TypeImpl *t = type_get_by_name(ti->interfaces[i].typename);
             if (!t) {
                 error_report("missing interface '%s' for object '%s'",
                              ti->interfaces[i].typename, parent->name);
@@ -579,7 +522,23 @@ static void object_initialize_with_type(Object *obj, size_t size, TypeImpl *type
 
 void object_initialize(void *data, size_t size, const char *typename)
 {
-    TypeImpl *type = type_get_or_load_by_name(typename, &error_fatal);
+    TypeImpl *type = type_get_by_name(typename);
+
+#ifdef CONFIG_MODULES
+    if (!type) {
+        int rv = module_load_qom(typename, &error_fatal);
+        if (rv > 0) {
+            type = type_get_by_name(typename);
+        } else {
+            error_report("missing object type '%s'", typename);
+            exit(1);
+        }
+    }
+#endif
+    if (!type) {
+        error_report("missing object type '%s'", typename);
+        abort();
+    }
 
     object_initialize_with_type(data, size, type);
 }
@@ -790,7 +749,7 @@ Object *object_new_with_class(ObjectClass *klass)
 
 Object *object_new(const char *typename)
 {
-    TypeImpl *ti = type_get_or_load_by_name(typename, &error_fatal);
+    TypeImpl *ti = type_get_by_name(typename);
 
     return object_new_with_type(ti);
 }
@@ -963,7 +922,7 @@ ObjectClass *object_class_dynamic_cast(ObjectClass *class,
         return class;
     }
 
-    target_type = type_get_by_name_noload(typename);
+    target_type = type_get_by_name(typename);
     if (!target_type) {
         /* target class type unknown, so fail the cast */
         return NULL;
@@ -1061,7 +1020,7 @@ const char *object_class_get_name(ObjectClass *klass)
 
 ObjectClass *object_class_by_name(const char *typename)
 {
-    TypeImpl *type = type_get_by_name_noload(typename);
+    TypeImpl *type = type_get_by_name(typename);
 
     if (!type) {
         return NULL;
@@ -1074,15 +1033,21 @@ ObjectClass *object_class_by_name(const char *typename)
 
 ObjectClass *module_object_class_by_name(const char *typename)
 {
-    TypeImpl *type = type_get_or_load_by_name(typename, NULL);
+    ObjectClass *oc;
 
-    if (!type) {
-        return NULL;
+    oc = object_class_by_name(typename);
+#ifdef CONFIG_MODULES
+    if (!oc) {
+        Error *local_err = NULL;
+        int rv = module_load_qom(typename, &local_err);
+        if (rv > 0) {
+            oc = object_class_by_name(typename);
+        } else if (rv < 0) {
+            error_report_err(local_err);
+        }
     }
-
-    type_initialize(type);
-
-    return type->class;
+#endif
+    return oc;
 }
 
 ObjectClass *object_class_get_parent(ObjectClass *class)
@@ -1478,8 +1443,7 @@ char *object_property_get_str(Object *obj, const char *name,
     }
     qstring = qobject_to(QString, ret);
     if (!qstring) {
-        error_setg(errp, "Invalid parameter type for '%s', expected: string",
-                   name);
+        error_setg(errp, QERR_INVALID_PARAMETER_TYPE, name, "string");
         retval = NULL;
     } else {
         retval = g_strdup(qstring_get_str(qstring));
@@ -1540,8 +1504,7 @@ bool object_property_get_bool(Object *obj, const char *name,
     }
     qbool = qobject_to(QBool, ret);
     if (!qbool) {
-        error_setg(errp, "Invalid parameter type for '%s', expected: boolean",
-                   name);
+        error_setg(errp, QERR_INVALID_PARAMETER_TYPE, name, "boolean");
         retval = false;
     } else {
         retval = qbool_get_bool(qbool);
@@ -1574,8 +1537,7 @@ int64_t object_property_get_int(Object *obj, const char *name,
 
     qnum = qobject_to(QNum, ret);
     if (!qnum || !qnum_get_try_int(qnum, &retval)) {
-        error_setg(errp, "Invalid parameter type for '%s', expected: int",
-                   name);
+        error_setg(errp, QERR_INVALID_PARAMETER_TYPE, name, "int");
         retval = -1;
     }
 
@@ -1612,11 +1574,6 @@ void object_property_set_default_str(ObjectProperty *prop, const char *value)
     object_property_set_default(prop, QOBJECT(qstring_from_str(value)));
 }
 
-void object_property_set_default_list(ObjectProperty *prop)
-{
-    object_property_set_default(prop, QOBJECT(qlist_new()));
-}
-
 void object_property_set_default_int(ObjectProperty *prop, int64_t value)
 {
     object_property_set_default(prop, QOBJECT(qnum_from_int(value)));
@@ -1649,8 +1606,7 @@ uint64_t object_property_get_uint(Object *obj, const char *name,
     }
     qnum = qobject_to(QNum, ret);
     if (!qnum || !qnum_get_try_uint(qnum, &retval)) {
-        error_setg(errp, "Invalid parameter type for '%s', expected: uint",
-                   name);
+        error_setg(errp, QERR_INVALID_PARAMETER_TYPE, name, "uint");
         retval = 0;
     }
 
@@ -1895,8 +1851,7 @@ static Object *object_resolve_link(Object *obj, const char *name,
     } else if (!target) {
         target = object_resolve_path(path, &ambiguous);
         if (target || ambiguous) {
-            error_setg(errp, "Invalid parameter type for '%s', expected: %s",
-                             name, target_type);
+            error_setg(errp, QERR_INVALID_PARAMETER_TYPE, name, target_type);
         } else {
             error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
                       "Device '%s' not found", path);
@@ -2071,6 +2026,7 @@ const char *object_get_canonical_path_component(const Object *obj)
 
     /* obj had a parent but was not a child, should never happen */
     g_assert_not_reached();
+    return NULL;
 }
 
 char *object_get_canonical_path(const Object *obj)
@@ -2176,7 +2132,7 @@ static Object *object_resolve_partial_path(Object *parent,
 }
 
 Object *object_resolve_path_type(const char *path, const char *typename,
-                                 bool *ambiguous)
+                                 bool *ambiguousp)
 {
     Object *obj;
     char **parts;
@@ -2185,17 +2141,14 @@ Object *object_resolve_path_type(const char *path, const char *typename,
     assert(parts);
 
     if (parts[0] == NULL || strcmp(parts[0], "") != 0) {
-        bool ambig = false;
+        bool ambiguous = false;
         obj = object_resolve_partial_path(object_get_root(), parts,
-                                          typename, &ambig);
-        if (ambiguous) {
-            *ambiguous = ambig;
+                                          typename, &ambiguous);
+        if (ambiguousp) {
+            *ambiguousp = ambiguous;
         }
     } else {
         obj = object_resolve_abs_path(object_get_root(), parts + 1, typename);
-        if (ambiguous) {
-            *ambiguous = false;
-        }
     }
 
     g_strfreev(parts);
@@ -2217,22 +2170,6 @@ Object *object_resolve_path_at(Object *parent, const char *path)
                                        TYPE_OBJECT);
     }
     return object_resolve_abs_path(parent, parts, TYPE_OBJECT);
-}
-
-Object *object_resolve_type_unambiguous(const char *typename, Error **errp)
-{
-    bool ambig = false;
-    Object *o = object_resolve_path_type("", typename, &ambig);
-
-    if (ambig) {
-        error_setg(errp, "More than one object of type %s", typename);
-        return NULL;
-    }
-    if (!o) {
-        error_setg(errp, "No object found of type %s", typename);
-        return NULL;
-    }
-    return o;
 }
 
 typedef struct StringProperty

@@ -32,8 +32,6 @@
 #include "cpu.h"
 #include "qom/object.h"
 
-#include "trace.h"
-
 /* debug only vmmouse */
 //#define DEBUG_VMMOUSE
 
@@ -46,16 +44,11 @@
 
 #define VMMOUSE_VERSION		0x3442554a
 
-#define VMMOUSE_RELATIVE_PACKET    0x00010000
-
-#define VMMOUSE_LEFT_BUTTON        0x20
-#define VMMOUSE_RIGHT_BUTTON       0x10
-#define VMMOUSE_MIDDLE_BUTTON      0x08
-
-#define VMMOUSE_MIN_X 0
-#define VMMOUSE_MIN_Y 0
-#define VMMOUSE_MAX_X 0xFFFF
-#define VMMOUSE_MAX_Y 0xFFFF
+#ifdef DEBUG_VMMOUSE
+#define DPRINTF(fmt, ...) printf(fmt, ## __VA_ARGS__)
+#else
+#define DPRINTF(fmt, ...) do { } while (0)
+#endif
 
 #define TYPE_VMMOUSE "vmmouse"
 OBJECT_DECLARE_SIMPLE_TYPE(VMMouseState, VMMOUSE)
@@ -94,8 +87,7 @@ static void vmmouse_set_data(const uint32_t *data)
 
 static uint32_t vmmouse_get_status(VMMouseState *s)
 {
-    trace_vmmouse_get_status();
-
+    DPRINTF("vmmouse_get_status()\n");
     return (s->status << 16) | s->nb_queue;
 }
 
@@ -107,25 +99,19 @@ static void vmmouse_mouse_event(void *opaque, int x, int y, int dz, int buttons_
     if (s->nb_queue > (VMMOUSE_QUEUE_SIZE - 4))
         return;
 
-    trace_vmmouse_mouse_event(x, y, dz, buttons_state);
+    DPRINTF("vmmouse_mouse_event(%d, %d, %d, %d)\n",
+            x, y, dz, buttons_state);
 
     if ((buttons_state & MOUSE_EVENT_LBUTTON))
-        buttons |= VMMOUSE_LEFT_BUTTON;
+        buttons |= 0x20;
     if ((buttons_state & MOUSE_EVENT_RBUTTON))
-        buttons |= VMMOUSE_RIGHT_BUTTON;
+        buttons |= 0x10;
     if ((buttons_state & MOUSE_EVENT_MBUTTON))
-        buttons |= VMMOUSE_MIDDLE_BUTTON;
+        buttons |= 0x08;
 
     if (s->absolute) {
-        x = qemu_input_scale_axis(x,
-                                  INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
-                                  VMMOUSE_MIN_X, VMMOUSE_MAX_X);
-        y = qemu_input_scale_axis(y,
-                                  INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
-                                  VMMOUSE_MIN_Y, VMMOUSE_MAX_Y);
-    } else{
-        /* add for guest vmmouse driver to judge this is a relative packet. */
-        buttons |= VMMOUSE_RELATIVE_PACKET;
+        x <<= 1;
+        y <<= 1;
     }
 
     s->queue[s->nb_queue++] = buttons;
@@ -165,7 +151,7 @@ static void vmmouse_update_handler(VMMouseState *s, int absolute)
 
 static void vmmouse_read_id(VMMouseState *s)
 {
-    trace_vmmouse_read_id();
+    DPRINTF("vmmouse_read_id()\n");
 
     if (s->nb_queue == VMMOUSE_QUEUE_SIZE)
         return;
@@ -177,22 +163,19 @@ static void vmmouse_read_id(VMMouseState *s)
 
 static void vmmouse_request_relative(VMMouseState *s)
 {
-    trace_vmmouse_request_relative();
-
+    DPRINTF("vmmouse_request_relative()\n");
     vmmouse_update_handler(s, 0);
 }
 
 static void vmmouse_request_absolute(VMMouseState *s)
 {
-    trace_vmmouse_request_absolute();
-
+    DPRINTF("vmmouse_request_absolute()\n");
     vmmouse_update_handler(s, 1);
 }
 
 static void vmmouse_disable(VMMouseState *s)
 {
-    trace_vmmouse_disable();
-
+    DPRINTF("vmmouse_disable()\n");
     s->status = 0xffff;
     vmmouse_remove_handler(s);
 }
@@ -201,7 +184,7 @@ static void vmmouse_data(VMMouseState *s, uint32_t *data, uint32_t size)
 {
     int i;
 
-    trace_vmmouse_data(size);
+    DPRINTF("vmmouse_data(%d)\n", size);
 
     if (size == 0 || size > 6 || size > s->nb_queue) {
         printf("vmmouse: driver requested too much data %d\n", size);
@@ -277,7 +260,7 @@ static const VMStateDescription vmstate_vmmouse = {
     .version_id = 0,
     .minimum_version_id = 0,
     .post_load = vmmouse_post_load,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_INT32_EQUAL(queue_size, VMMouseState, NULL),
         VMSTATE_UINT32_ARRAY(queue, VMMouseState, VMMOUSE_QUEUE_SIZE),
         VMSTATE_UINT16(nb_queue, VMMouseState),
@@ -301,7 +284,7 @@ static void vmmouse_realizefn(DeviceState *dev, Error **errp)
 {
     VMMouseState *s = VMMOUSE(dev);
 
-    trace_vmmouse_init();
+    DPRINTF("vmmouse_init\n");
 
     if (!s->i8042) {
         error_setg(errp, "'i8042' link is not set");
@@ -327,7 +310,7 @@ static void vmmouse_class_initfn(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = vmmouse_realizefn;
-    device_class_set_legacy_reset(dc, vmmouse_reset);
+    dc->reset = vmmouse_reset;
     dc->vmsd = &vmstate_vmmouse;
     device_class_set_props(dc, vmmouse_properties);
     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);

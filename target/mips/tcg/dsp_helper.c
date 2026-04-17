@@ -3281,12 +3281,15 @@ target_ulong helper_dextr_l(target_ulong ac, target_ulong shift,
                             CPUMIPSState *env)
 {
     uint64_t temp[3];
+    target_ulong ret;
 
     shift = shift & 0x3F;
 
     mipsdsp_rndrashift_acc(temp, ac, shift, env);
 
-    return (temp[1] << 63) | (temp[0] >> 1);
+    ret = (temp[1] << 63) | (temp[0] >> 1);
+
+    return ret;
 }
 
 target_ulong helper_dextr_r_l(target_ulong ac, target_ulong shift,
@@ -3294,6 +3297,7 @@ target_ulong helper_dextr_r_l(target_ulong ac, target_ulong shift,
 {
     uint64_t temp[3];
     uint32_t temp128;
+    target_ulong ret;
 
     shift = shift & 0x3F;
     mipsdsp_rndrashift_acc(temp, ac, shift, env);
@@ -3313,7 +3317,9 @@ target_ulong helper_dextr_r_l(target_ulong ac, target_ulong shift,
         set_DSPControl_overflow_flag(1, 23, env);
     }
 
-    return (temp[1] << 63) | (temp[0] >> 1);
+    ret = (temp[1] << 63) | (temp[0] >> 1);
+
+    return ret;
 }
 
 target_ulong helper_dextr_rs_l(target_ulong ac, target_ulong shift,
@@ -3321,6 +3327,7 @@ target_ulong helper_dextr_rs_l(target_ulong ac, target_ulong shift,
 {
     uint64_t temp[3];
     uint32_t temp128;
+    target_ulong ret;
 
     shift = shift & 0x3F;
     mipsdsp_rndrashift_acc(temp, ac, shift, env);
@@ -3347,7 +3354,9 @@ target_ulong helper_dextr_rs_l(target_ulong ac, target_ulong shift,
         set_DSPControl_overflow_flag(1, 23, env);
     }
 
-    return (temp[1] << 63) | (temp[0] >> 1);
+    ret = (temp[1] << 63) | (temp[0] >> 1);
+
+    return ret;
 }
 #endif
 

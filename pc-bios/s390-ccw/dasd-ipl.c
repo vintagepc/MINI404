@@ -8,8 +8,7 @@
  * directory.
  */
 
-#include <string.h>
-#include <stdio.h>
+#include "libc.h"
 #include "s390-ccw.h"
 #include "s390-arch.h"
 #include "dasd-ipl.h"
@@ -83,7 +82,7 @@ static int run_dynamic_ccw_program(SubChannelId schid, uint16_t cutype,
     do {
         has_next = dynamic_cp_fixup(cpa, &next_cpa);
 
-        printf("executing ccw chain at 0x%X\n", cpa);
+        print_int("executing ccw chain at ", cpa);
         enable_prefixing();
         rc = do_cio(schid, cutype, cpa, CCW_FMT0);
         disable_prefixing();
@@ -111,29 +110,38 @@ static void make_readipl(void)
     ccwIplRead->count = 0x18; /* Read 0x18 bytes of data */
 }
 
-static int run_readipl(SubChannelId schid, uint16_t cutype)
+static void run_readipl(SubChannelId schid, uint16_t cutype)
 {
-    return do_cio(schid, cutype, 0x00, CCW_FMT0);
+    if (do_cio(schid, cutype, 0x00, CCW_FMT0)) {
+        panic("dasd-ipl: Failed to run Read IPL channel program\n");
+    }
 }
 
 /*
  * The architecture states that IPL1 data should consist of a psw followed by
  * format-0 READ and TIC CCWs. Let's sanity check.
  */
-static bool check_ipl1(void)
+static void check_ipl1(void)
 {
     Ccw0 *ccwread = (Ccw0 *)0x08;
     Ccw0 *ccwtic = (Ccw0 *)0x10;
 
-    return (ccwread->cmd_code == CCW_CMD_DASD_READ &&
-            ccwtic->cmd_code == CCW_CMD_TIC);
+    if (ccwread->cmd_code != CCW_CMD_DASD_READ ||
+        ccwtic->cmd_code != CCW_CMD_TIC) {
+        panic("dasd-ipl: IPL1 data invalid. Is this disk really bootable?\n");
+    }
 }
 
-static bool check_ipl2(uint32_t ipl2_addr)
+static void check_ipl2(uint32_t ipl2_addr)
 {
     Ccw0 *ccw = u32toptr(ipl2_addr);
 
-    return (ipl2_addr != 0x00 && ccw->cmd_code != 0x00);
+    if (ipl2_addr == 0x00) {
+        panic("IPL2 address invalid. Is this disk really bootable?\n");
+    }
+    if (ccw->cmd_code == 0x00) {
+        panic("IPL2 ccw data invalid. Is this disk really bootable?\n");
+    }
 }
 
 static uint32_t read_ipl2_addr(void)
@@ -179,67 +187,52 @@ static void ipl1_fixup(void)
     ccwSearchTic->cda = ptr2u32(ccwSearchID);
 }
 
-static int run_ipl1(SubChannelId schid, uint16_t cutype)
+static void run_ipl1(SubChannelId schid, uint16_t cutype)
  {
     uint32_t startAddr = 0x08;
 
-    return do_cio(schid, cutype, startAddr, CCW_FMT0);
+    if (do_cio(schid, cutype, startAddr, CCW_FMT0)) {
+        panic("dasd-ipl: Failed to run IPL1 channel program\n");
+    }
 }
 
-static int run_ipl2(SubChannelId schid, uint16_t cutype, uint32_t addr)
+static void run_ipl2(SubChannelId schid, uint16_t cutype, uint32_t addr)
 {
-    return run_dynamic_ccw_program(schid, cutype, addr);
+    if (run_dynamic_ccw_program(schid, cutype, addr)) {
+        panic("dasd-ipl: Failed to run IPL2 channel program\n");
+    }
 }
 
 /*
  * Limitations in vfio-ccw support complicate the IPL process. Details can
  * be found in docs/devel/s390-dasd-ipl.rst
  */
-int dasd_ipl(SubChannelId schid, uint16_t cutype)
+void dasd_ipl(SubChannelId schid, uint16_t cutype)
 {
     PSWLegacy *pswl = (PSWLegacy *) 0x00;
     uint32_t ipl2_addr;
 
     /* Construct Read IPL CCW and run it to read IPL1 from boot disk */
     make_readipl();
-    if (run_readipl(schid, cutype)) {
-        puts("Failed to run Read IPL channel program");
-        return -EIO;
-    }
-
+    run_readipl(schid, cutype);
     ipl2_addr = read_ipl2_addr();
-
-    if (!check_ipl1()) {
-        puts("IPL1 invalid for DASD-IPL");
-        return -EINVAL;
-    }
+    check_ipl1();
 
     /*
      * Fixup IPL1 channel program to account for vfio-ccw limitations, then run
      * it to read IPL2 channel program from boot disk.
      */
     ipl1_fixup();
-    if (run_ipl1(schid, cutype)) {
-        puts("Failed to run IPL1 channel program");
-        return -EIO;
-    }
-
-    if (!check_ipl2(ipl2_addr)) {
-        puts("IPL2 invalid for DASD-IPL");
-        return -EINVAL;
-    }
+    run_ipl1(schid, cutype);
+    check_ipl2(ipl2_addr);
 
     /*
      * Run IPL2 channel program to read operating system code from boot disk
      */
-    if (run_ipl2(schid, cutype, ipl2_addr)) {
-        puts("Failed to run IPL2 channel program");
-        return -EIO;
-    }
+    run_ipl2(schid, cutype, ipl2_addr);
 
     /* Transfer control to the guest operating system */
     pswl->mask |= PSW_MASK_EAMODE;   /* Force z-mode */
     pswl->addr |= PSW_MASK_BAMODE;   /* ...          */
     jump_to_low_kernel();
-    return -1;
 }

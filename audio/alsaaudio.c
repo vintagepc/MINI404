@@ -222,7 +222,11 @@ static int alsa_poll_helper (snd_pcm_t *handle, struct pollhlp *hlp, int mask)
         return -1;
     }
 
-    pfds = g_new0(struct pollfd, count);
+    pfds = audio_calloc ("alsa_poll_helper", count, sizeof (*pfds));
+    if (!pfds) {
+        dolog ("Could not initialize poll mode\n");
+        return -1;
+    }
 
     err = snd_pcm_poll_descriptors (handle, pfds, count);
     if (err < 0) {
@@ -445,7 +449,7 @@ static int alsa_open(bool in, struct alsa_params_req *req,
     snd_pcm_hw_params_t *hw_params;
     int err;
     unsigned int freq, nchannels;
-    const char *pcm_name = apdo->dev ?: "default";
+    const char *pcm_name = apdo->has_dev ? apdo->dev : "default";
     snd_pcm_uframes_t obt_buffer_size;
     const char *typ = in ? "ADC" : "DAC";
     snd_pcm_format_t obtfmt;
@@ -904,7 +908,7 @@ static void alsa_init_per_direction(AudiodevAlsaPerDirectionOptions *apdo)
     }
 }
 
-static void *alsa_audio_init(Audiodev *dev, Error **errp)
+static void *alsa_audio_init(Audiodev *dev)
 {
     AudiodevAlsaOptions *aopts;
     assert(dev->driver == AUDIODEV_DRIVER_ALSA);
@@ -913,23 +917,28 @@ static void *alsa_audio_init(Audiodev *dev, Error **errp)
     alsa_init_per_direction(aopts->in);
     alsa_init_per_direction(aopts->out);
 
-    /* don't set has_* so alsa_open can identify it wasn't set by the user */
+    /*
+     * need to define them, as otherwise alsa produces no sound
+     * doesn't set has_* so alsa_open can identify it wasn't set by the user
+     */
     if (!dev->u.alsa.out->has_period_length) {
-        /* 256 frames assuming 44100Hz */
-        dev->u.alsa.out->period_length = 5805;
+        /* 1024 frames assuming 44100Hz */
+        dev->u.alsa.out->period_length = 1024 * 1000000 / 44100;
     }
     if (!dev->u.alsa.out->has_buffer_length) {
         /* 4096 frames assuming 44100Hz */
-        dev->u.alsa.out->buffer_length = 92880;
+        dev->u.alsa.out->buffer_length = 4096ll * 1000000 / 44100;
     }
 
+    /*
+     * OptsVisitor sets unspecified optional fields to zero, but do not depend
+     * on it...
+     */
     if (!dev->u.alsa.in->has_period_length) {
-        /* 256 frames assuming 44100Hz */
-        dev->u.alsa.in->period_length = 5805;
+        dev->u.alsa.in->period_length = 0;
     }
     if (!dev->u.alsa.in->has_buffer_length) {
-        /* 4096 frames assuming 44100Hz */
-        dev->u.alsa.in->buffer_length = 92880;
+        dev->u.alsa.in->buffer_length = 0;
     }
 
     return dev;
@@ -960,6 +969,7 @@ static struct audio_driver alsa_audio_driver = {
     .init           = alsa_audio_init,
     .fini           = alsa_audio_fini,
     .pcm_ops        = &alsa_pcm_ops,
+    .can_be_default = 1,
     .max_voices_out = INT_MAX,
     .max_voices_in  = INT_MAX,
     .voice_size_out = sizeof (ALSAVoiceOut),

@@ -55,7 +55,8 @@ class ThrottleTestCase(iotests.QMPTestCase):
         # Set the I/O throttling parameters to all drives
         for i in range(0, ndrives):
             params['device'] = 'drive%d' % i
-            self.vm.cmd("block_set_io_throttle", conv_keys=False, **params)
+            result = self.vm.qmp("block_set_io_throttle", conv_keys=False, **params)
+            self.assert_qmp(result, 'return', {})
 
     def do_test_throttle(self, ndrives, seconds, params, first_drive = 0):
         def check_limit(limit, num):
@@ -252,7 +253,8 @@ class ThrottleTestCase(iotests.QMPTestCase):
         # drive1 remains in the group with a throttled request.
         params['bps_rd'] = 0
         params['device'] = 'drive0'
-        self.vm.cmd("block_set_io_throttle", conv_keys=False, **params)
+        result = self.vm.qmp("block_set_io_throttle", conv_keys=False, **params)
+        self.assert_qmp(result, 'return', {})
 
         # Removing the I/O limits from drive0 drains its two pending requests.
         # The read request in drive1 is still throttled.
@@ -284,7 +286,8 @@ class ThrottleTestGroupNames(iotests.QMPTestCase):
 
     def set_io_throttle(self, device, params):
         params["device"] = device
-        self.vm.cmd("block_set_io_throttle", conv_keys=False, **params)
+        result = self.vm.qmp("block_set_io_throttle", conv_keys=False, **params)
+        self.assert_qmp(result, 'return', {})
 
     def verify_name(self, device, name):
         result = self.vm.qmp("query-block")
@@ -376,19 +379,23 @@ class ThrottleTestRemovableMedia(iotests.QMPTestCase):
 
     def test_removable_media(self):
         # Add a couple of dummy nodes named cd0 and cd1
-        self.vm.cmd("blockdev-add", driver="null-co",
-                    read_zeroes=True, node_name="cd0")
-        self.vm.cmd("blockdev-add", driver="null-co",
-                    read_zeroes=True, node_name="cd1")
+        result = self.vm.qmp("blockdev-add", driver="null-co",
+                             read_zeroes=True, node_name="cd0")
+        self.assert_qmp(result, 'return', {})
+        result = self.vm.qmp("blockdev-add", driver="null-co",
+                             read_zeroes=True, node_name="cd1")
+        self.assert_qmp(result, 'return', {})
 
         # Attach a CD drive with cd0 inserted
-        self.vm.cmd("device_add", driver="scsi-cd",
-                    id="dev0", drive="cd0")
+        result = self.vm.qmp("device_add", driver="scsi-cd",
+                             id="dev0", drive="cd0")
+        self.assert_qmp(result, 'return', {})
 
         # Set I/O limits
         args = { "id": "dev0", "iops": 100, "iops_rd": 0, "iops_wr": 0,
                                 "bps":  50,  "bps_rd": 0,  "bps_wr": 0 }
-        self.vm.cmd("block_set_io_throttle", conv_keys=False, **args)
+        result = self.vm.qmp("block_set_io_throttle", conv_keys=False, **args)
+        self.assert_qmp(result, 'return', {})
 
         # Check that the I/O limits have been set
         result = self.vm.qmp("query-block")
@@ -396,9 +403,12 @@ class ThrottleTestRemovableMedia(iotests.QMPTestCase):
         self.assert_qmp(result, 'return[0]/inserted/bps',   50)
 
         # Now eject cd0 and insert cd1
-        self.vm.cmd("blockdev-open-tray", id='dev0')
-        self.vm.cmd("blockdev-remove-medium", id='dev0')
-        self.vm.cmd("blockdev-insert-medium", id='dev0', node_name='cd1')
+        result = self.vm.qmp("blockdev-open-tray", id='dev0')
+        self.assert_qmp(result, 'return', {})
+        result = self.vm.qmp("blockdev-remove-medium", id='dev0')
+        self.assert_qmp(result, 'return', {})
+        result = self.vm.qmp("blockdev-insert-medium", id='dev0', node_name='cd1')
+        self.assert_qmp(result, 'return', {})
 
         # Check that the I/O limits are still the same
         result = self.vm.qmp("query-block")
@@ -406,14 +416,16 @@ class ThrottleTestRemovableMedia(iotests.QMPTestCase):
         self.assert_qmp(result, 'return[0]/inserted/bps',   50)
 
         # Eject cd1
-        self.vm.cmd("blockdev-remove-medium", id='dev0')
+        result = self.vm.qmp("blockdev-remove-medium", id='dev0')
+        self.assert_qmp(result, 'return', {})
 
         # Check that we can't set limits if the device has no medium
         result = self.vm.qmp("block_set_io_throttle", conv_keys=False, **args)
         self.assert_qmp(result, 'error/class', 'GenericError')
 
         # Remove the CD drive
-        self.vm.cmd("device_del", id='dev0')
+        result = self.vm.qmp("device_del", id='dev0')
+        self.assert_qmp(result, 'return', {})
 
 
 if __name__ == '__main__':

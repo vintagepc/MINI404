@@ -3,10 +3,6 @@ qht_bench = executable('qht-bench',
                        sources: 'qht-bench.c',
                        dependencies: [qemuutil])
 
-executable('qtree-bench',
-           sources: 'qtree-bench.c',
-           dependencies: [qemuutil])
-
 executable('atomic_add-bench',
            sources: files('atomic_add-bench.c'),
            dependencies: [qemuutil],
@@ -21,7 +17,6 @@ benchs = {}
 
 if have_block
   benchs += {
-     'bufferiszero-bench': [],
      'benchmark-crypto-hash': [crypto],
      'benchmark-crypto-hmac': [crypto],
      'benchmark-crypto-cipher': [crypto],

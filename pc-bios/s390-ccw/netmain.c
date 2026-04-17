@@ -41,6 +41,7 @@
 #define DEFAULT_TFTP_RETRIES 20
 
 extern char _start[];
+void write_iplb_location(void) {}
 
 #define KERNEL_ADDR             ((void *)0L)
 #define KERNEL_MAX_SIZE         ((long)_start)
@@ -49,9 +50,11 @@ extern char _start[];
 /* STSI 3.2.2 offset of first vmdb + offset of uuid inside vmdb */
 #define STSI322_VMDB_UUID_OFFSET ((8 + 12) * 4)
 
+char stack[PAGE_SIZE * 8] __attribute__((aligned(PAGE_SIZE)));
+IplParameterBlock iplb __attribute__((aligned(PAGE_SIZE)));
 static char cfgbuf[2048];
 
-SubChannelId net_schid = { .one = 1 };
+static SubChannelId net_schid = { .one = 1 };
 static uint8_t mac[6];
 static uint64_t dest_timer;
 
@@ -291,7 +294,7 @@ static int load_kernel_with_initrd(filename_ip_t *fn_ip,
     printf("Loading pxelinux.cfg entry '%s'\n", entry->label);
 
     if (!entry->kernel) {
-        puts("Kernel entry is missing!\n");
+        printf("Kernel entry is missing!\n");
         return -1;
     }
 
@@ -436,6 +439,15 @@ static int net_try_direct_tftp_load(filename_ip_t *fn_ip)
     return rc;
 }
 
+void write_subsystem_identification(void)
+{
+    SubChannelId *schid = (SubChannelId *) 184;
+    uint32_t *zeroes = (uint32_t *) 188;
+
+    *schid = net_schid;
+    *zeroes = 0;
+}
+
 static bool find_net_dev(Schib *schib, int dev_no)
 {
     int i, r;
@@ -464,7 +476,7 @@ static bool find_net_dev(Schib *schib, int dev_no)
     return false;
 }
 
-static bool virtio_setup(void)
+static void virtio_setup(void)
 {
     Schib schib;
     int ssid;
@@ -478,7 +490,7 @@ static bool virtio_setup(void)
      */
     enable_mss_facility();
 
-    if (have_iplb || store_iplb(&iplb)) {
+    if (store_iplb(&iplb)) {
         IPL_assert(iplb.pbt == S390_IPL_TYPE_CCW, "IPL_TYPE_CCW expected");
         dev_no = iplb.ccw.devno;
         debug_print_int("device no. ", dev_no);
@@ -495,26 +507,22 @@ static bool virtio_setup(void)
         }
     }
 
-    return found;
+    IPL_assert(found, "No virtio net device found");
 }
 
-int netmain(void)
+void main(void)
 {
     filename_ip_t fn_ip;
     int rc, fnlen;
 
     sclp_setup();
-    puts("Network boot starting...");
+    sclp_print("Network boot starting...\n");
 
-    if (!virtio_setup()) {
-        puts("No virtio net device found.");
-        return -1;
-    }
+    virtio_setup();
 
     rc = net_init(&fn_ip);
     if (rc) {
-        puts("Network initialization failed.");
-        return -1;
+        panic("Network initialization failed. Halting.\n");
     }
 
     fnlen = strlen(fn_ip.filename);
@@ -528,10 +536,9 @@ int netmain(void)
     net_release(&fn_ip);
 
     if (rc > 0) {
-        puts("Network loading done, starting kernel...");
+        sclp_print("Network loading done, starting kernel...\n");
         jump_to_low_kernel();
     }
 
-    puts("Failed to load OS from network.");
-    return -1;
+    panic("Failed to load OS from network\n");
 }

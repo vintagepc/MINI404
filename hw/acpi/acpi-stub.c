@@ -19,9 +19,11 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qapi/qmp/qerror.h"
 #include "hw/acpi/acpi.h"
 
 void acpi_table_add(const QemuOpts *opts, Error **errp)
 {
-    g_assert_not_reached();
+    error_setg(errp, QERR_UNSUPPORTED);
 }

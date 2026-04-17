@@ -3,15 +3,11 @@
 #
 # Positive QAPI doc comment tests
 
-{ 'pragma': {
-    'doc-required': true,
-    'documentation-exceptions': [ 'Enum', 'Variant1', 'Alternate', 'cmd' ] } }
+{ 'pragma': { 'doc-required': true } }
 
 ##
 # = Section
-##
-
-##
+#
 # == Subsection
 #
 # *with emphasis*
@@ -55,12 +51,10 @@
 # - {braces}
 ##
 
-# Not a doc comment
-
 ##
 # @Enum:
 #
-# @one: The _one_ {and only}, description on the same line
+# @one: The _one_ {and only}
 #
 # Features:
 # @enum-feat: Also _one_ {and only}
@@ -79,8 +73,7 @@
 # @Base:
 #
 # @base1:
-#  description starts on a new line,
-#  minimally indented
+# the first member
 ##
 { 'struct': 'Base', 'data': { 'base1': 'Enum' },
   'if': { 'all': ['IFALL1', 'IFALL2'] } }
@@ -90,9 +83,7 @@
 #
 # A paragraph
 #
-# Another paragraph
-#
-# @var1 is undocumented
+# Another paragraph (but no @var: line)
 #
 # Features:
 # @variant1-feat: a feature
@@ -127,8 +118,7 @@
 ##
 # @Alternate:
 #
-# @i: description starts on the same line
-#     remainder indented the same
+# @i: an integer
 #     @b is undocumented
 #
 # Features:
@@ -146,49 +136,30 @@
 ##
 # @cmd:
 #
-# @arg1:
-#     description starts on a new line,
-#     indented
+# @arg1: the first argument
 #
-# @arg2: description starts on the same line
-#     remainder indented differently
+# @arg2: the second
+#        argument
 #
 # Features:
 # @cmd-feat1: a feature
 # @cmd-feat2: another feature
-#
-# .. note:: @arg3 is undocumented
-#
+# Note: @arg3 is undocumented
 # Returns: @Object
-#
-# Errors: some
-#
 # TODO: frobnicate
+# Notes:
 #
-# .. admonition:: Notes
+# - Lorem ipsum dolor sit amet
+# - Ut enim ad minim veniam
 #
-#  - Lorem ipsum dolor sit amet
-#  - Ut enim ad minim veniam
+# Duis aute irure dolor
+# Example:
 #
-#  Duis aute irure dolor
-#
-# .. qmp-example::
-#    :title: Ideal fast-food burger situation
-#
-#    -> "in"
-#    <- "out"
-#
-# Examples::
-#
-#  - Not a QMP code block
-#  - Merely a preformatted code block literal
-#  It isn't even an rST list.
-#  - *verbatim*
-#  - {braces}
-#
-# Note::
-#     Ceci n'est pas une note
-#
+# -> in
+# <- out
+# Examples:
+# - *verbatim*
+# - {braces}
 # Since: 2.10
 ##
 { 'command': 'cmd',
@@ -199,16 +170,14 @@
 ##
 # @cmd-boxed:
 # If you're bored enough to read this, go see a video of boxed cats
-#
 # Features:
 # @cmd-feat1: a feature
 # @cmd-feat2: another feature
+# Example:
 #
-# .. qmp-example::
+# -> in
 #
-#    -> "this example"
-#
-#    <- "has no title"
+# <- out
 ##
 { 'command': 'cmd-boxed', 'boxed': true,
   'data': 'Object',

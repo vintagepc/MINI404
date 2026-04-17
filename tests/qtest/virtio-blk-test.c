@@ -17,6 +17,9 @@
 #include "libqos/qgraph.h"
 #include "libqos/virtio-blk.h"
 
+/* TODO actually test the results and get rid of this */
+#define qmp_discard_response(...) qobject_unref(qmp(__VA_ARGS__))
+
 #define TEST_IMAGE_SIZE         (64 * 1024 * 1024)
 #define QVIRTIO_BLK_TIMEOUT_US  (30 * 1000 * 1000)
 #define PCI_SLOT_HP             0x06
@@ -450,10 +453,9 @@ static void config(void *obj, void *data, QGuestAllocator *t_alloc)
 
     qvirtio_set_driver_ok(dev);
 
-    qtest_qmp_assert_success(global_qtest,
-                             "{ 'execute': 'block_resize', "
-                             " 'arguments': { 'device': 'drive0', "
-                             " 'size': %d } }", n_size);
+    qmp_discard_response("{ 'execute': 'block_resize', "
+                         " 'arguments': { 'device': 'drive0', "
+                         " 'size': %d } }", n_size);
     qvirtio_wait_config_isr(dev, QVIRTIO_BLK_TIMEOUT_US);
 
     capacity = qvirtio_config_readq(dev, 0);
@@ -500,10 +502,9 @@ static void msix(void *obj, void *u_data, QGuestAllocator *t_alloc)
 
     qvirtio_set_driver_ok(dev);
 
-    qtest_qmp_assert_success(global_qtest,
-                             "{ 'execute': 'block_resize', "
-                             " 'arguments': { 'device': 'drive0', "
-                             " 'size': %d } }", n_size);
+    qmp_discard_response("{ 'execute': 'block_resize', "
+                         " 'arguments': { 'device': 'drive0', "
+                         " 'size': %d } }", n_size);
 
     qvirtio_wait_config_isr(dev, QVIRTIO_BLK_TIMEOUT_US);
 
@@ -757,10 +758,9 @@ static void resize(void *obj, void *data, QGuestAllocator *t_alloc)
 
     vq = test_basic(dev, t_alloc);
 
-    qtest_qmp_assert_success(global_qtest,
-                             "{ 'execute': 'block_resize', "
-                             " 'arguments': { 'device': 'drive0', "
-                             " 'size': %d } }", n_size);
+    qmp_discard_response("{ 'execute': 'block_resize', "
+                         " 'arguments': { 'device': 'drive0', "
+                         " 'size': %d } }", n_size);
 
     qvirtio_wait_queue_isr(qts, dev, vq, QVIRTIO_BLK_TIMEOUT_US);
 

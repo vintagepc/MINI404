@@ -19,10 +19,18 @@
 
 #include "qemu/osdep.h"
 #include "tcg/tcg.h"
-#include "tcg/tcg-temp-internal.h"
-#include "tcg/tcg-op-common.h"
+#include "tcg/tcg-op.h"
 #include "tcg/tcg-mo.h"
-#include "tcg-internal.h"
+
+/* Reduce the number of ifdefs below.  This assumes that all uses of
+   TCGV_HIGH and TCGV_LOW are properly protected by a conditional that
+   the compiler can eliminate.  */
+#if TCG_TARGET_REG_BITS == 64
+extern TCGv_i32 TCGV_LOW_link_error(TCGv_i64);
+extern TCGv_i32 TCGV_HIGH_link_error(TCGv_i64);
+#define TCGV_LOW  TCGV_LOW_link_error
+#define TCGV_HIGH TCGV_HIGH_link_error
+#endif
 
 /*
  * Vector optional opcode tracking.
@@ -42,9 +50,9 @@
  * tcg_ctx->vec_opt_opc is non-NULL, the tcg_gen_*_vec expanders
  * will validate that their opcode is present in the list.
  */
-static void tcg_assert_listed_vecop(TCGOpcode op)
-{
 #ifdef CONFIG_DEBUG_TCG
+void tcg_assert_listed_vecop(TCGOpcode op)
+{
     const TCGOpcode *p = tcg_ctx->vecop_list;
     if (p) {
         for (; *p; ++p) {
@@ -54,8 +62,8 @@ static void tcg_assert_listed_vecop(TCGOpcode op)
         }
         g_assert_not_reached();
     }
-#endif
 }
+#endif
 
 bool tcg_can_emit_vecop_list(const TCGOpcode *list,
                              TCGType type, unsigned vece)
@@ -142,7 +150,7 @@ bool tcg_can_emit_vecop_list(const TCGOpcode *list,
 
 void vec_gen_2(TCGOpcode opc, TCGType type, unsigned vece, TCGArg r, TCGArg a)
 {
-    TCGOp *op = tcg_emit_op(opc, 2);
+    TCGOp *op = tcg_emit_op(opc);
     TCGOP_VECL(op) = type - TCG_TYPE_V64;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
@@ -152,7 +160,7 @@ void vec_gen_2(TCGOpcode opc, TCGType type, unsigned vece, TCGArg r, TCGArg a)
 void vec_gen_3(TCGOpcode opc, TCGType type, unsigned vece,
                TCGArg r, TCGArg a, TCGArg b)
 {
-    TCGOp *op = tcg_emit_op(opc, 3);
+    TCGOp *op = tcg_emit_op(opc);
     TCGOP_VECL(op) = type - TCG_TYPE_V64;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
@@ -163,7 +171,7 @@ void vec_gen_3(TCGOpcode opc, TCGType type, unsigned vece,
 void vec_gen_4(TCGOpcode opc, TCGType type, unsigned vece,
                TCGArg r, TCGArg a, TCGArg b, TCGArg c)
 {
-    TCGOp *op = tcg_emit_op(opc, 4);
+    TCGOp *op = tcg_emit_op(opc);
     TCGOP_VECL(op) = type - TCG_TYPE_V64;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
@@ -172,10 +180,10 @@ void vec_gen_4(TCGOpcode opc, TCGType type, unsigned vece,
     op->args[3] = c;
 }
 
-void vec_gen_6(TCGOpcode opc, TCGType type, unsigned vece, TCGArg r,
-               TCGArg a, TCGArg b, TCGArg c, TCGArg d, TCGArg e)
+static void vec_gen_6(TCGOpcode opc, TCGType type, unsigned vece, TCGArg r,
+                      TCGArg a, TCGArg b, TCGArg c, TCGArg d, TCGArg e)
 {
-    TCGOp *op = tcg_emit_op(opc, 6);
+    TCGOp *op = tcg_emit_op(opc);
     TCGOP_VECL(op) = type - TCG_TYPE_V64;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
@@ -216,6 +224,32 @@ void tcg_gen_mov_vec(TCGv_vec r, TCGv_vec a)
     if (r != a) {
         vec_gen_op2(INDEX_op_mov_vec, 0, r, a);
     }
+}
+
+TCGv_vec tcg_const_zeros_vec(TCGType type)
+{
+    TCGv_vec ret = tcg_temp_new_vec(type);
+    tcg_gen_dupi_vec(MO_64, ret, 0);
+    return ret;
+}
+
+TCGv_vec tcg_const_ones_vec(TCGType type)
+{
+    TCGv_vec ret = tcg_temp_new_vec(type);
+    tcg_gen_dupi_vec(MO_64, ret, -1);
+    return ret;
+}
+
+TCGv_vec tcg_const_zeros_vec_matching(TCGv_vec m)
+{
+    TCGTemp *t = tcgv_vec_temp(m);
+    return tcg_const_zeros_vec(t->base_type);
+}
+
+TCGv_vec tcg_const_ones_vec_matching(TCGv_vec m)
+{
+    TCGTemp *t = tcgv_vec_temp(m);
+    return tcg_const_ones_vec(t->base_type);
 }
 
 void tcg_gen_dupi_vec(unsigned vece, TCGv_vec r, uint64_t a)
@@ -391,11 +425,14 @@ static bool do_op2(unsigned vece, TCGv_vec r, TCGv_vec a, TCGOpcode opc)
 
 void tcg_gen_not_vec(unsigned vece, TCGv_vec r, TCGv_vec a)
 {
-    if (TCG_TARGET_HAS_not_vec) {
-        vec_gen_op2(INDEX_op_not_vec, 0, r, a);
-    } else {
-        tcg_gen_xor_vec(0, r, a, tcg_constant_vec_matching(r, 0, -1));
+    const TCGOpcode *hold_list = tcg_swap_vecop_list(NULL);
+
+    if (!TCG_TARGET_HAS_not_vec || !do_op2(vece, r, a, INDEX_op_not_vec)) {
+        TCGv_vec t = tcg_const_ones_vec_matching(r);
+        tcg_gen_xor_vec(0, r, a, t);
+        tcg_temp_free_vec(t);
     }
+    tcg_swap_vecop_list(hold_list);
 }
 
 void tcg_gen_neg_vec(unsigned vece, TCGv_vec r, TCGv_vec a)
@@ -406,7 +443,9 @@ void tcg_gen_neg_vec(unsigned vece, TCGv_vec r, TCGv_vec a)
     hold_list = tcg_swap_vecop_list(NULL);
 
     if (!TCG_TARGET_HAS_neg_vec || !do_op2(vece, r, a, INDEX_op_neg_vec)) {
-        tcg_gen_sub_vec(vece, r, tcg_constant_vec_matching(r, vece, 0), a);
+        TCGv_vec t = tcg_const_zeros_vec_matching(r);
+        tcg_gen_sub_vec(vece, r, t, a);
+        tcg_temp_free_vec(t);
     }
     tcg_swap_vecop_list(hold_list);
 }
@@ -508,11 +547,9 @@ void tcg_gen_cmp_vec(TCGCond cond, unsigned vece,
     TCGTemp *rt = tcgv_vec_temp(r);
     TCGTemp *at = tcgv_vec_temp(a);
     TCGTemp *bt = tcgv_vec_temp(b);
-    TCGTemp *tt = NULL;
     TCGArg ri = temp_arg(rt);
     TCGArg ai = temp_arg(at);
     TCGArg bi = temp_arg(bt);
-    TCGArg ti;
     TCGType type = rt->base_type;
     int can;
 
@@ -520,18 +557,6 @@ void tcg_gen_cmp_vec(TCGCond cond, unsigned vece,
     tcg_debug_assert(bt->base_type >= type);
     tcg_assert_listed_vecop(INDEX_op_cmp_vec);
     can = tcg_can_emit_vec_op(INDEX_op_cmp_vec, type, vece);
-
-    if (!TCG_TARGET_HAS_tst_vec && is_tst_cond(cond)) {
-        tt = tcg_temp_new_internal(type, TEMP_EBB);
-        ti = temp_arg(tt);
-        vec_gen_3(INDEX_op_and_vec, type, 0, ti, ai, bi);
-        at = tt;
-        ai = ti;
-        bt = tcg_constant_internal(type, 0);
-        bi = temp_arg(bt);
-        cond = tcg_tst_eqne_cond(cond);
-    }
-
     if (can > 0) {
         vec_gen_4(INDEX_op_cmp_vec, type, vece, ri, ai, bi, cond);
     } else {
@@ -539,10 +564,6 @@ void tcg_gen_cmp_vec(TCGCond cond, unsigned vece,
         tcg_debug_assert(can < 0);
         tcg_expand_vec_op(INDEX_op_cmp_vec, type, vece, ri, ai, bi, cond);
         tcg_swap_vecop_list(hold_list);
-    }
-
-    if (tt) {
-        tcg_temp_free_internal(tt);
     }
 }
 

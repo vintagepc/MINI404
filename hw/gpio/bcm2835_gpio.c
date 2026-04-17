@@ -284,7 +284,7 @@ static const VMStateDescription vmstate_bcm2835_gpio = {
     .name = "bcm2835_gpio",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT8_ARRAY(fsel, BCM2835GpioState, 54),
         VMSTATE_UINT32(lev0, BCM2835GpioState),
         VMSTATE_UINT32(lev1, BCM2835GpioState),
@@ -325,7 +325,7 @@ static void bcm2835_gpio_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_bcm2835_gpio;
     dc->realize = &bcm2835_gpio_realize;
-    device_class_set_legacy_reset(dc, bcm2835_gpio_reset);
+    dc->reset = &bcm2835_gpio_reset;
 }
 
 static const TypeInfo bcm2835_gpio_info = {

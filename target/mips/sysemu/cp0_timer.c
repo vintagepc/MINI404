@@ -22,31 +22,21 @@
 
 #include "qemu/osdep.h"
 #include "hw/irq.h"
+#include "hw/mips/cpudevs.h"
 #include "qemu/timer.h"
 #include "sysemu/kvm.h"
 #include "internal.h"
 
 /* MIPS R4K timer */
-static uint32_t cpu_mips_get_count_val(CPUMIPSState *env)
-{
-    int64_t now_ns;
-    now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    return env->CP0_Count +
-            (uint32_t)clock_ns_to_ticks(env->count_clock, now_ns);
-}
-
 static void cpu_mips_timer_update(CPUMIPSState *env)
 {
     uint64_t now_ns, next_ns;
     uint32_t wait;
 
     now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    wait = env->CP0_Compare - cpu_mips_get_count_val(env);
-    /* Clamp interval to overflow if virtual time had not progressed */
-    if (!wait) {
-        wait = UINT32_MAX;
-    }
-    next_ns = now_ns + clock_ticks_to_ns(env->count_clock, wait);
+    wait = env->CP0_Compare - env->CP0_Count -
+           (uint32_t)(now_ns / env->cp0_count_ns);
+    next_ns = now_ns + (uint64_t)wait * env->cp0_count_ns;
     timer_mod(env->timer, next_ns);
 }
 
@@ -74,7 +64,7 @@ uint32_t cpu_mips_get_count(CPUMIPSState *env)
             cpu_mips_timer_expire(env);
         }
 
-        return cpu_mips_get_count_val(env);
+        return env->CP0_Count + (uint32_t)(now_ns / env->cp0_count_ns);
     }
 }
 
@@ -89,8 +79,9 @@ void cpu_mips_store_count(CPUMIPSState *env, uint32_t count)
         env->CP0_Count = count;
     } else {
         /* Store new count register */
-        env->CP0_Count = count - (uint32_t)clock_ns_to_ticks(env->count_clock,
-                        qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+        env->CP0_Count = count -
+               (uint32_t)(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) /
+                          env->cp0_count_ns);
         /* Update timer timer */
         cpu_mips_timer_update(env);
     }
@@ -116,8 +107,8 @@ void cpu_mips_start_count(CPUMIPSState *env)
 void cpu_mips_stop_count(CPUMIPSState *env)
 {
     /* Store the current value */
-    env->CP0_Count += (uint32_t)clock_ns_to_ticks(env->count_clock,
-                        qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+    env->CP0_Count += (uint32_t)(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) /
+                                 env->cp0_count_ns);
 }
 
 static void mips_timer_cb(void *opaque)
@@ -130,7 +121,14 @@ static void mips_timer_cb(void *opaque)
         return;
     }
 
+    /*
+     * ??? This callback should occur when the counter is exactly equal to
+     * the comparator value.  Offset the count by one to avoid immediately
+     * retriggering the callback before any virtual time has passed.
+     */
+    env->CP0_Count++;
     cpu_mips_timer_expire(env);
+    env->CP0_Count--;
 }
 
 void cpu_mips_clock_init(MIPSCPU *cpu)

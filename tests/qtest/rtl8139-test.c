@@ -12,8 +12,6 @@
 #include "libqos/pci-pc.h"
 #include "qemu/timer.h"
 
-static int verbosity_level;
-
 /* Tests only initialization so far. TODO: Replace with functional tests */
 static void nop(void)
 {
@@ -22,7 +20,7 @@ static void nop(void)
 #define CLK 33333333
 
 static QPCIBus *pcibus;
-static QPCIDevice *pcidev;
+static QPCIDevice *dev;
 static QPCIBar dev_bar;
 
 static void save_fn(QPCIDevice *dev, int devfn, void *data)
@@ -46,18 +44,14 @@ static QPCIDevice *get_device(void)
 #define PORT(name, len, val) \
 static unsigned __attribute__((unused)) in_##name(void) \
 { \
-    unsigned res = qpci_io_read##len(pcidev, dev_bar, (val));     \
-    if (verbosity_level >= 2) { \
-        g_test_message("*%s -> %x", #name, res); \
-    } \
+    unsigned res = qpci_io_read##len(dev, dev_bar, (val));     \
+    g_test_message("*%s -> %x", #name, res); \
     return res; \
 } \
 static void out_##name(unsigned v) \
 { \
-    if (verbosity_level >= 2) { \
-        g_test_message("%x -> *%s", v, #name); \
-    } \
-    qpci_io_write##len(pcidev, dev_bar, (val), v);        \
+    g_test_message("%x -> *%s", v, #name); \
+    qpci_io_write##len(dev, dev_bar, (val), v);        \
 }
 
 PORT(Timer, l, 0x48)
@@ -65,7 +59,7 @@ PORT(IntrMask, w, 0x3c)
 PORT(IntrStatus, w, 0x3E)
 PORT(TimerInt, l, 0x54)
 
-#define fatal(...) do { g_test_message(__VA_ARGS__); g_assert_not_reached(); } while (0)
+#define fatal(...) do { g_test_message(__VA_ARGS__); g_assert(0); } while (0)
 
 static void test_timer(void)
 {
@@ -189,11 +183,11 @@ static void test_init(void)
 {
     uint64_t barsize;
 
-    pcidev = get_device();
+    dev = get_device();
 
-    dev_bar = qpci_iomap(pcidev, 0, &barsize);
+    dev_bar = qpci_iomap(dev, 0, &barsize);
 
-    qpci_device_enable(pcidev);
+    qpci_device_enable(dev);
 
     test_timer();
 }
@@ -201,20 +195,10 @@ static void test_init(void)
 int main(int argc, char **argv)
 {
     int ret;
-    char *v_env = getenv("V");
-
-    if (v_env) {
-        verbosity_level = atoi(v_env);
-    }
-
-    g_test_init(&argc, &argv, NULL);
-
-    if (!qtest_has_device("rtl8139")) {
-        return 0;
-    }
 
     qtest_start("-device rtl8139");
 
+    g_test_init(&argc, &argv, NULL);
     qtest_add_func("/rtl8139/nop", nop);
     qtest_add_func("/rtl8139/timer", test_init);
 

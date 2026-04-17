@@ -21,7 +21,7 @@
 
 #include "qemu/osdep.h"
 #include "libqtest.h"
-#include "ppc-util.h"
+#include "libqos/libqos-spapr.h"
 
 #define MAGIC   0xcafec0de
 #define ADDRESS 0x4000

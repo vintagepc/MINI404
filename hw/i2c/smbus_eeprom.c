@@ -100,7 +100,7 @@ static const VMStateDescription vmstate_smbus_eeprom = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = smbus_eeprom_vmstate_needed,
-    .fields = (const VMStateField[]) {
+    .fields      = (VMStateField[]) {
         VMSTATE_SMBUS_DEVICE(smbusdev, SMBusEEPROMDevice),
         VMSTATE_UINT8_ARRAY(data, SMBusEEPROMDevice, SMBUS_EEPROM_SIZE),
         VMSTATE_UINT8(offset, SMBusEEPROMDevice),
@@ -143,7 +143,7 @@ static void smbus_eeprom_class_initfn(ObjectClass *klass, void *data)
     SMBusDeviceClass *sc = SMBUS_DEVICE_CLASS(klass);
 
     dc->realize = smbus_eeprom_realize;
-    device_class_set_legacy_reset(dc, smbus_eeprom_reset);
+    dc->reset = smbus_eeprom_reset;
     sc->receive_byte = eeprom_receive_byte;
     sc->write_data = eeprom_write_data;
     dc->vmsd = &vmstate_smbus_eeprom;
@@ -151,16 +151,19 @@ static void smbus_eeprom_class_initfn(ObjectClass *klass, void *data)
     dc->user_creatable = false;
 }
 
-static const TypeInfo smbus_eeprom_types[] = {
-    {
-        .name          = TYPE_SMBUS_EEPROM,
-        .parent        = TYPE_SMBUS_DEVICE,
-        .instance_size = sizeof(SMBusEEPROMDevice),
-        .class_init    = smbus_eeprom_class_initfn,
-    },
+static const TypeInfo smbus_eeprom_info = {
+    .name          = TYPE_SMBUS_EEPROM,
+    .parent        = TYPE_SMBUS_DEVICE,
+    .instance_size = sizeof(SMBusEEPROMDevice),
+    .class_init    = smbus_eeprom_class_initfn,
 };
 
-DEFINE_TYPES(smbus_eeprom_types)
+static void smbus_eeprom_register_types(void)
+{
+    type_register_static(&smbus_eeprom_info);
+}
+
+type_init(smbus_eeprom_register_types)
 
 void smbus_eeprom_init_one(I2CBus *smbus, uint8_t address, uint8_t *eeprom_buf)
 {

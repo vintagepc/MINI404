@@ -263,14 +263,8 @@ static int protocol_client_auth_sasl_step(VncState *vs, uint8_t *data, size_t le
     /* NB, distinction of NULL vs "" is *critical* in SASL */
     if (datalen) {
         clientdata = (char*)data;
-        if (clientdata[datalen - 1] != '\0') {
-            trace_vnc_auth_fail(vs, vs->auth, "Malformed SASL client data",
-                                "Missing SASL NUL padding byte");
-            sasl_dispose(&vs->sasl.conn);
-            vs->sasl.conn = NULL;
-            goto authabort;
-        }
-        datalen--; /* Discard the extra NUL padding byte */
+        clientdata[datalen-1] = '\0'; /* Wire includes '\0', but make sure */
+        datalen--; /* Don't count NULL byte when passing to _start() */
     }
 
     err = sasl_server_step(vs->sasl.conn,
@@ -295,10 +289,9 @@ static int protocol_client_auth_sasl_step(VncState *vs, uint8_t *data, size_t le
         goto authabort;
     }
 
-    if (serverout) {
+    if (serveroutlen) {
         vnc_write_u32(vs, serveroutlen + 1);
-        vnc_write(vs, serverout, serveroutlen);
-        vnc_write_u8(vs, '\0');
+        vnc_write(vs, serverout, serveroutlen + 1);
     } else {
         vnc_write_u32(vs, 0);
     }
@@ -391,14 +384,8 @@ static int protocol_client_auth_sasl_start(VncState *vs, uint8_t *data, size_t l
     /* NB, distinction of NULL vs "" is *critical* in SASL */
     if (datalen) {
         clientdata = (char*)data;
-        if (clientdata[datalen - 1] != '\0') {
-            trace_vnc_auth_fail(vs, vs->auth,  "Malformed SASL client data",
-                                "Missing SASL NUL padding byte");
-            sasl_dispose(&vs->sasl.conn);
-            vs->sasl.conn = NULL;
-            goto authabort;
-        }
-        datalen--; /* Discard the extra NUL padding byte */
+        clientdata[datalen-1] = '\0'; /* Should be on wire, but make sure */
+        datalen--; /* Don't count NULL byte when passing to _start() */
     }
 
     err = sasl_server_start(vs->sasl.conn,
@@ -423,10 +410,9 @@ static int protocol_client_auth_sasl_start(VncState *vs, uint8_t *data, size_t l
         goto authabort;
     }
 
-    if (serverout) {
+    if (serveroutlen) {
         vnc_write_u32(vs, serveroutlen + 1);
-        vnc_write(vs, serverout, serveroutlen);
-        vnc_write_u8(vs, '\0');
+        vnc_write(vs, serverout, serveroutlen + 1);
     } else {
         vnc_write_u32(vs, 0);
     }
@@ -538,13 +524,13 @@ static int protocol_client_auth_sasl_mechname_len(VncState *vs, uint8_t *data, s
     return 0;
 }
 
-static int
+static char *
 vnc_socket_ip_addr_string(QIOChannelSocket *ioc,
                           bool local,
-                          char **addrstr,
                           Error **errp)
 {
     SocketAddress *addr;
+    char *ret;
 
     if (local) {
         addr = qio_channel_socket_get_local_address(ioc, errp);
@@ -552,24 +538,17 @@ vnc_socket_ip_addr_string(QIOChannelSocket *ioc,
         addr = qio_channel_socket_get_remote_address(ioc, errp);
     }
     if (!addr) {
-        return -1;
+        return NULL;
     }
 
     if (addr->type != SOCKET_ADDRESS_TYPE_INET) {
-        *addrstr = NULL;
+        error_setg(errp, "Not an inet socket type");
         qapi_free_SocketAddress(addr);
-        return 0;
+        return NULL;
     }
-    *addrstr = g_strdup_printf("%s;%s", addr->u.inet.host, addr->u.inet.port);
+    ret = g_strdup_printf("%s;%s", addr->u.inet.host, addr->u.inet.port);
     qapi_free_SocketAddress(addr);
-    return 0;
-}
-
-static bool
-vnc_socket_is_unix(QIOChannelSocket *ioc)
-{
-    SocketAddress *addr = qio_channel_socket_get_local_address(ioc, NULL);
-    return addr && addr->type == SOCKET_ADDRESS_TYPE_UNIX;
+    return ret;
 }
 
 void start_auth_sasl(VncState *vs)
@@ -582,15 +561,15 @@ void start_auth_sasl(VncState *vs)
     int mechlistlen;
 
     /* Get local & remote client addresses in form  IPADDR;PORT */
-    if (vnc_socket_ip_addr_string(vs->sioc, true,
-                                  &localAddr, &local_err) < 0) {
+    localAddr = vnc_socket_ip_addr_string(vs->sioc, true, &local_err);
+    if (!localAddr) {
         trace_vnc_auth_fail(vs, vs->auth, "Cannot format local IP",
                             error_get_pretty(local_err));
         goto authabort;
     }
 
-    if (vnc_socket_ip_addr_string(vs->sioc, false,
-                                  &remoteAddr, &local_err) < 0) {
+    remoteAddr = vnc_socket_ip_addr_string(vs->sioc, false, &local_err);
+    if (!remoteAddr) {
         trace_vnc_auth_fail(vs, vs->auth, "Cannot format remote IP",
                             error_get_pretty(local_err));
         g_free(localAddr);
@@ -642,17 +621,16 @@ void start_auth_sasl(VncState *vs)
             goto authabort;
         }
     } else {
-        vs->sasl.wantSSF = !vnc_socket_is_unix(vs->sioc);
+        vs->sasl.wantSSF = 1;
     }
 
     memset (&secprops, 0, sizeof secprops);
     /* Inform SASL that we've got an external SSF layer from TLS.
      *
-     * Disable SSF, if using TLS+x509+SASL only, or UNIX sockets.
-     * TLS without x509 is not sufficiently strong, nor is plain
-     * TCP
+     * Disable SSF, if using TLS+x509+SASL only. TLS without x509
+     * is not sufficiently strong
      */
-    if (vnc_socket_is_unix(vs->sioc) ||
+    if (vs->vd->is_unix ||
         (vs->auth == VNC_AUTH_VENCRYPT &&
          vs->subauth == VNC_AUTH_VENCRYPT_X509SASL)) {
         /* If we've got TLS or UNIX domain sock, we don't care about SSF */
@@ -695,13 +673,6 @@ void start_auth_sasl(VncState *vs)
         goto authabort;
     }
     trace_vnc_auth_sasl_mech_list(vs, mechlist);
-
-    if (g_str_equal(mechlist, "")) {
-        trace_vnc_auth_fail(vs, vs->auth, "no available SASL mechanisms", "");
-        sasl_dispose(&vs->sasl.conn);
-        vs->sasl.conn = NULL;
-        goto authabort;
-    }
 
     vs->sasl.mechlist = g_strdup(mechlist);
     mechlistlen = strlen(mechlist);

@@ -28,6 +28,7 @@
 #include "sysemu/iothread.h"
 #include "net/colo-compare.h"
 #include "migration/colo.h"
+#include "migration/migration.h"
 #include "util.h"
 
 #include "block/aio-wait.h"
@@ -188,7 +189,7 @@ static void colo_compare_inconsistency_notify(CompareState *s)
         notify_remote_frame(s);
     } else {
         notifier_list_notify(&colo_compare_notifiers,
-                             NULL);
+                             migrate_get_current());
     }
 }
 
@@ -412,7 +413,8 @@ static void colo_compare_tcp(CompareState *s, Connection *conn)
      * can ensure that the packet's payload is acknowledged by
      * primary and secondary.
     */
-    uint32_t min_ack = MIN(conn->pack, conn->sack);
+    uint32_t min_ack = conn->pack - conn->sack > 0 ?
+                       conn->sack : conn->pack;
 
 pri:
     if (g_queue_is_empty(&conn->primary_list)) {
@@ -1133,17 +1135,22 @@ static void set_max_queue_size(Object *obj, Visitor *v,
                                const char *name, void *opaque,
                                Error **errp)
 {
+    Error *local_err = NULL;
     uint64_t value;
 
-    if (!visit_type_uint64(v, name, &value, errp)) {
-        return;
+    visit_type_uint64(v, name, &value, &local_err);
+    if (local_err) {
+        goto out;
     }
     if (!value) {
-        error_setg(errp, "Property '%s.%s' requires a positive value",
+        error_setg(&local_err, "Property '%s.%s' requires a positive value",
                    object_get_typename(obj), name);
-        return;
+        goto out;
     }
     max_queue_size = value;
+
+out:
+    error_propagate(errp, local_err);
 }
 
 static void compare_pri_rs_finalize(SocketReadState *pri_rs)
@@ -1437,10 +1444,12 @@ static void colo_compare_finalize(Object *obj)
     qemu_bh_delete(s->event_bh);
 
     AioContext *ctx = iothread_get_aio_context(s->iothread);
+    aio_context_acquire(ctx);
     AIO_WAIT_WHILE(ctx, !s->out_sendco.done);
     if (s->notify_dev) {
         AIO_WAIT_WHILE(ctx, !s->notify_sendco.done);
     }
+    aio_context_release(ctx);
 
     /* Release all unhandled packets after compare thead exited */
     g_queue_foreach(&s->conn_list, colo_flush_packets, s);

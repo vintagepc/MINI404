@@ -191,7 +191,7 @@ static void crf_reset_enter(Object *obj, ResetType type)
     }
 }
 
-static void crf_reset_hold(Object *obj, ResetType type)
+static void crf_reset_hold(Object *obj)
 {
     XlnxZynqMPCRF *s = XLNX_ZYNQMP_CRF(obj);
     ir_update_irq(s);
@@ -233,7 +233,7 @@ static const VMStateDescription vmstate_crf = {
     .name = TYPE_XLNX_ZYNQMP_CRF,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, XlnxZynqMPCRF, CRF_R_MAX),
         VMSTATE_END_OF_LIST(),
     }

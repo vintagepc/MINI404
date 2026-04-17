@@ -30,7 +30,6 @@
 #include "sysemu/watchdog.h"
 #include "hw/nmi.h"
 #include "qemu/help_option.h"
-#include "trace.h"
 
 static WatchdogAction watchdog_action = WATCHDOG_ACTION_RESET;
 
@@ -44,8 +43,6 @@ WatchdogAction get_watchdog_action(void)
  */
 void watchdog_perform_action(void)
 {
-    trace_watchdog_perform_action(watchdog_action);
-
     switch (watchdog_action) {
     case WATCHDOG_ACTION_RESET:     /* same as 'system_reset' in monitor */
         qapi_event_send_watchdog(WATCHDOG_ACTION_RESET);
@@ -85,12 +82,11 @@ void watchdog_perform_action(void)
         break;
 
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
 void qmp_watchdog_set_action(WatchdogAction action, Error **errp)
 {
     watchdog_action = action;
-    trace_watchdog_set_action(watchdog_action);
 }

@@ -1,5 +1,3 @@
-.. _Tools:
-
 -----
 Tools
 -----
@@ -15,4 +13,5 @@ command line utilities and other standalone programs.
    qemu-nbd
    qemu-pr-helper
    qemu-trace-stap
-   qemu-vmsr-helper
+   virtfs-proxy-helper
+   virtiofsd

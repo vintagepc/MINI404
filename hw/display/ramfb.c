@@ -28,8 +28,6 @@ struct QEMU_PACKED RAMFBCfg {
     uint32_t stride;
 };
 
-typedef struct RAMFBCfg RAMFBCfg;
-
 struct RAMFBState {
     DisplaySurface *ds;
     uint32_t width, height;
@@ -99,7 +97,6 @@ static void ramfb_fw_cfg_write(void *dev, off_t offset, size_t len)
 
     s->width = width;
     s->height = height;
-    qemu_free_displaysurface(s->ds);
     s->ds = surface;
 }
 
@@ -117,23 +114,6 @@ void ramfb_display_update(QemuConsole *con, RAMFBState *s)
     /* simple full screen update */
     dpy_gfx_update_full(con);
 }
-
-static int ramfb_post_load(void *opaque, int version_id)
-{
-    ramfb_fw_cfg_write(opaque, 0, 0);
-    return 0;
-}
-
-const VMStateDescription ramfb_vmstate = {
-    .name = "ramfb",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .post_load = ramfb_post_load,
-    .fields = (const VMStateField[]) {
-        VMSTATE_BUFFER_UNSAFE(cfg, RAMFBState, 0, sizeof(RAMFBCfg)),
-        VMSTATE_END_OF_LIST()
-    }
-};
 
 RAMFBState *ramfb_setup(Error **errp)
 {

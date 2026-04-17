@@ -14,30 +14,22 @@
 #ifndef MIGRATION_BLOCKER_H
 #define MIGRATION_BLOCKER_H
 
-#include "qapi/qapi-types-migration.h"
-
-#define MIG_MODE_ALL MIG_MODE__MAX
-
 /**
- * @migrate_add_blocker - prevent all modes of migration from proceeding
+ * @migrate_add_blocker - prevent migration from proceeding
  *
- * @reasonp - address of an error to be returned whenever migration is attempted
+ * @reason - an error to be returned whenever migration is attempted
  *
  * @errp - [out] The reason (if any) we cannot block migration right now.
  *
  * @returns - 0 on success, -EBUSY/-EACCES on failure, with errp set.
- *
- * *@reasonp is freed and set to NULL if failure is returned.
- * On success, the caller must not free @reasonp, except by
- *   calling migrate_del_blocker.
  */
-int migrate_add_blocker(Error **reasonp, Error **errp);
+int migrate_add_blocker(Error *reason, Error **errp);
 
 /**
- * @migrate_add_blocker_internal - prevent all modes of migration from
- *                                 proceeding, but ignore -only-migratable
+ * @migrate_add_blocker_internal - prevent migration from proceeding without
+ *                                 only-migrate implications
  *
- * @reasonp - address of an error to be returned whenever migration is attempted
+ * @reason - an error to be returned whenever migration is attempted
  *
  * @errp - [out] The reason (if any) we cannot block migration right now.
  *
@@ -46,52 +38,14 @@ int migrate_add_blocker(Error **reasonp, Error **errp);
  * Some of the migration blockers can be temporary (e.g., for a few seconds),
  * so it shouldn't need to conflict with "-only-migratable".  For those cases,
  * we can call this function rather than @migrate_add_blocker().
- *
- * *@reasonp is freed and set to NULL if failure is returned.
- * On success, the caller must not free @reasonp, except by
- *   calling migrate_del_blocker.
  */
-int migrate_add_blocker_internal(Error **reasonp, Error **errp);
+int migrate_add_blocker_internal(Error *reason, Error **errp);
 
 /**
- * @migrate_del_blocker - remove a migration blocker from all modes and free it.
+ * @migrate_del_blocker - remove a blocking error from migration
  *
- * @reasonp - address of the error blocking migration
- *
- * This function frees *@reasonp and sets it to NULL.
+ * @reason - the error blocking migration
  */
-void migrate_del_blocker(Error **reasonp);
-
-/**
- * @migrate_add_blocker_normal - prevent normal migration mode from proceeding
- *
- * @reasonp - address of an error to be returned whenever migration is attempted
- *
- * @errp - [out] The reason (if any) we cannot block migration right now.
- *
- * @returns - 0 on success, -EBUSY/-EACCES on failure, with errp set.
- *
- * *@reasonp is freed and set to NULL if failure is returned.
- * On success, the caller must not free @reasonp, except by
- *   calling migrate_del_blocker.
- */
-int migrate_add_blocker_normal(Error **reasonp, Error **errp);
-
-/**
- * @migrate_add_blocker_modes - prevent some modes of migration from proceeding
- *
- * @reasonp - address of an error to be returned whenever migration is attempted
- *
- * @errp - [out] The reason (if any) we cannot block migration right now.
- *
- * @mode - one or more migration modes to be blocked.  The list is terminated
- *         by -1 or MIG_MODE_ALL.  For the latter, all modes are blocked.
- *
- * @returns - 0 on success, -EBUSY/-EACCES on failure, with errp set.
- *
- * *@reasonp is freed and set to NULL if failure is returned.
- * On success, the caller must not free *@reasonp before the blocker is removed.
- */
-int migrate_add_blocker_modes(Error **reasonp, Error **errp, MigMode mode, ...);
+void migrate_del_blocker(Error *reason);
 
 #endif

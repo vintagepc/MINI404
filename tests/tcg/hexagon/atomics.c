@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,19 +17,15 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include <inttypes.h>
 #include <pthread.h>
 
-int err;
-
-#include "hex_test.h"
-
-static inline int32_t atomic_inc32(int32_t *x)
+/* Using volatile because we are testing atomics */
+static inline int atomic_inc32(volatile int *x)
 {
-    int32_t old, dummy;
+    int old, dummy;
     __asm__ __volatile__(
         "1: %0 = memw_locked(%2)\n\t"
         "   %1 = add(%0, #1)\n\t"
@@ -41,9 +37,10 @@ static inline int32_t atomic_inc32(int32_t *x)
     return old;
 }
 
-static inline int64_t atomic_inc64(int64_t *x)
+/* Using volatile because we are testing atomics */
+static inline long long atomic_inc64(volatile long long *x)
 {
-    int64_t old, dummy;
+    long long old, dummy;
     __asm__ __volatile__(
         "1: %0 = memd_locked(%2)\n\t"
         "   %1 = #1\n\t"
@@ -56,9 +53,10 @@ static inline int64_t atomic_inc64(int64_t *x)
     return old;
 }
 
-static inline int32_t atomic_dec32(int32_t *x)
+/* Using volatile because we are testing atomics */
+static inline int atomic_dec32(volatile int *x)
 {
-    int32_t old, dummy;
+    int old, dummy;
     __asm__ __volatile__(
         "1: %0 = memw_locked(%2)\n\t"
         "   %1 = add(%0, #-1)\n\t"
@@ -70,9 +68,10 @@ static inline int32_t atomic_dec32(int32_t *x)
     return old;
 }
 
-static inline int64_t atomic_dec64(int64_t *x)
+/* Using volatile because we are testing atomics */
+static inline long long atomic_dec64(volatile long long *x)
 {
-    int64_t old, dummy;
+    long long old, dummy;
     __asm__ __volatile__(
         "1: %0 = memd_locked(%2)\n\t"
         "   %1 = #-1\n\t"
@@ -86,12 +85,17 @@ static inline int64_t atomic_dec64(int64_t *x)
 }
 
 #define LOOP_CNT 1000
-volatile int32_t tick32 = 1; /* Using volatile because we are testing atomics */
-volatile int64_t tick64 = 1; /* Using volatile because we are testing atomics */
+/* Using volatile because we are testing atomics */
+volatile int tick32 = 1;
+/* Using volatile because we are testing atomics */
+volatile long long tick64 = 1;
+int err;
 
 void *thread1_func(void *arg)
 {
-    for (int i = 0; i < LOOP_CNT; i++) {
+    int i;
+
+    for (i = 0; i < LOOP_CNT; i++) {
         atomic_inc32(&tick32);
         atomic_dec64(&tick64);
     }
@@ -100,7 +104,8 @@ void *thread1_func(void *arg)
 
 void *thread2_func(void *arg)
 {
-    for (int i = 0; i < LOOP_CNT; i++) {
+    int i;
+    for (i = 0; i < LOOP_CNT; i++) {
         atomic_dec32(&tick32);
         atomic_inc64(&tick64);
     }
@@ -116,8 +121,14 @@ void test_pthread(void)
     pthread_join(tid1, NULL);
     pthread_join(tid2, NULL);
 
-    check32(tick32, 1);
-    check64(tick64, 1);
+    if (tick32 != 1) {
+        printf("ERROR: tick32 %d != 1\n", tick32);
+        err++;
+    }
+    if (tick64 != 1) {
+        printf("ERROR: tick64 %lld != 1\n", tick64);
+        err++;
+    }
 }
 
 int main(int argc, char **argv)

@@ -20,12 +20,13 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "internal.h"
-#include "gdbstub/helpers.h"
+#include "exec/gdbstub.h"
 #include "fpu_helper.h"
 
 int mips_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
 
     if (n < 32) {
         return gdb_get_regl(mem_buf, env->active_tc.gpr[n]);
@@ -77,7 +78,8 @@ int mips_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
 
 int mips_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
-    CPUMIPSState *env = cpu_env(cs);
+    MIPSCPU *cpu = MIPS_CPU(cs);
+    CPUMIPSState *env = &cpu->env;
     target_ulong tmp;
 
     tmp = ldtul_p(mem_buf);

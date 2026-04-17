@@ -1,9 +1,7 @@
 /*
  * QEMU GRLIB GPTimer Emulator
  *
- * SPDX-License-Identifier: MIT
- *
- * Copyright (c) 2010-2024 AdaCore
+ * Copyright (c) 2010-2019 AdaCore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +23,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/timer/grlib_gptimer.h"
+#include "hw/sparc/grlib.h"
 #include "hw/sysbus.h"
 #include "qemu/timer.h"
 #include "hw/irq.h"
@@ -415,7 +413,7 @@ static void grlib_gptimer_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = grlib_gptimer_realize;
-    device_class_set_legacy_reset(dc, grlib_gptimer_reset);
+    dc->reset = grlib_gptimer_reset;
     device_class_set_props(dc, grlib_gptimer_properties);
 }
 

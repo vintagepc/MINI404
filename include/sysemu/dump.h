@@ -15,7 +15,6 @@
 #define DUMP_H
 
 #include "qapi/qapi-types-dump.h"
-#include "qemu/thread.h"
 
 #define MAKEDUMPFILE_SIGNATURE      "makedumpfile"
 #define MAX_SIZE_MDF_HEADER         (4096) /* max size of makedumpfile_header */
@@ -137,7 +136,7 @@ typedef struct QEMU_PACKED KdumpSubHeader64 {
 } KdumpSubHeader64;
 
 typedef struct DataCache {
-    DumpState *state;   /* dump state related to this data */
+    int fd;             /* fd of the file where to write the cached data */
     uint8_t *buf;       /* buffer for cached data */
     size_t buf_size;    /* size of the buf */
     size_t data_size;   /* size of cached data in buf */
@@ -157,7 +156,6 @@ typedef struct DumpState {
     MemoryMappingList list;
     bool resume;
     bool detached;
-    bool kdump_raw;
     hwaddr memory_offset;
     int fd;
 

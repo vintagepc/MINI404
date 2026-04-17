@@ -24,16 +24,12 @@
 #include "qemu/osdep.h"
 #include "qemu/host-utils.h"
 #include "cpu.h"
-#include "exec/helper-proto-common.h"
+#include "exec/helper-proto.h"
 #include "exec/cpu_ldst.h"
 #include "exec/exec-all.h"
 #include "disas/disas.h"
 #include "exec/log.h"
 #include "tcg/tcg.h"
-
-#define HELPER_H  "accel/tcg/tcg-runtime.h"
-#include "exec/helper-info.c.inc"
-#undef  HELPER_H
 
 /* 32-bit helpers */
 

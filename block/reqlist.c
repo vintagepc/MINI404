@@ -20,6 +20,8 @@
 void reqlist_init_req(BlockReqList *reqs, BlockReq *req, int64_t offset,
                       int64_t bytes)
 {
+    assert(!reqlist_find_conflict(reqs, offset, bytes));
+
     *req = (BlockReq) {
         .offset = offset,
         .bytes = bytes,

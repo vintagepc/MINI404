@@ -26,7 +26,6 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
-#include "qemu/bitops.h"
 #include "chardev/char.h"
 #include "sysemu/block-backend.h"
 #include "qapi/qapi-commands-control.h"
@@ -74,11 +73,11 @@ static int mux_chr_write(Chardev *chr, const uint8_t *buf, int len)
                  * qemu_chr_fe_write and background I/O callbacks */
                 qemu_chr_fe_write_all(&d->chr,
                                       (uint8_t *)buf1, strlen(buf1));
-                d->linestart = false;
+                d->linestart = 0;
             }
             ret += qemu_chr_fe_write(&d->chr, buf + i, 1);
             if (buf[i] == '\n') {
-                d->linestart = true;
+                d->linestart = 1;
             }
         }
     }
@@ -125,8 +124,7 @@ static void mux_print_help(Chardev *chr)
     }
 }
 
-static void mux_chr_send_event(MuxChardev *d, unsigned int mux_nr,
-                               QEMUChrEvent event)
+static void mux_chr_send_event(MuxChardev *d, int mux_nr, QEMUChrEvent event)
 {
     CharBackend *be = d->backends[mux_nr];
 
@@ -147,7 +145,7 @@ static void mux_chr_be_event(Chardev *chr, QEMUChrEvent event)
 static int mux_proc_byte(Chardev *chr, MuxChardev *d, int ch)
 {
     if (d->term_got_escape) {
-        d->term_got_escape = false;
+        d->term_got_escape = 0;
         if (ch == term_escape_char) {
             goto send_char;
         }
@@ -169,26 +167,19 @@ static int mux_proc_byte(Chardev *chr, MuxChardev *d, int ch)
         case 'b':
             qemu_chr_be_event(chr, CHR_EVENT_BREAK);
             break;
-        case 'c': {
-            unsigned int bit;
-
-            /* Handler registered with first fe */
-            assert(d->mux_bitset != 0);
+        case 'c':
+            assert(d->mux_cnt > 0); /* handler registered with first fe */
             /* Switch to the next registered device */
-            bit = find_next_bit(&d->mux_bitset, MAX_MUX, d->focus + 1);
-            if (bit >= MAX_MUX) {
-                bit = find_next_bit(&d->mux_bitset, MAX_MUX, 0);
-            }
-            mux_set_focus(chr, bit);
+            mux_set_focus(chr, (d->focus + 1) % d->mux_cnt);
             break;
-        } case 't':
+        case 't':
             d->timestamps = !d->timestamps;
             d->timestamps_start = -1;
-            d->linestart = false;
+            d->linestart = 0;
             break;
         }
     } else if (ch == term_escape_char) {
-        d->term_got_escape = true;
+        d->term_got_escape = 1;
     } else {
     send_char:
         return 1;
@@ -251,16 +242,15 @@ static void mux_chr_read(void *opaque, const uint8_t *buf, int size)
 void mux_chr_send_all_event(Chardev *chr, QEMUChrEvent event)
 {
     MuxChardev *d = MUX_CHARDEV(chr);
-    int bit;
+    int i;
 
     if (!muxes_opened) {
         return;
     }
 
     /* Send the event to all registered listeners */
-    bit = -1;
-    while ((bit = find_next_bit(&d->mux_bitset, MAX_MUX, bit + 1)) < MAX_MUX) {
-        mux_chr_send_event(d, bit, event);
+    for (i = 0; i < d->mux_cnt; i++) {
+        mux_chr_send_event(d, i, event);
     }
 }
 
@@ -285,15 +275,14 @@ static GSource *mux_chr_add_watch(Chardev *s, GIOCondition cond)
 static void char_mux_finalize(Object *obj)
 {
     MuxChardev *d = MUX_CHARDEV(obj);
-    int bit;
+    int i;
 
-    bit = -1;
-    while ((bit = find_next_bit(&d->mux_bitset, MAX_MUX, bit + 1)) < MAX_MUX) {
-        CharBackend *be = d->backends[bit];
-        be->chr = NULL;
-        d->backends[bit] = NULL;
+    for (i = 0; i < d->mux_cnt; i++) {
+        CharBackend *be = d->backends[i];
+        if (be) {
+            be->chr = NULL;
+        }
     }
-    d->mux_bitset = 0;
     qemu_chr_fe_deinit(&d->chr, false);
 }
 
@@ -311,46 +300,12 @@ static void mux_chr_update_read_handlers(Chardev *chr)
                                   chr->gcontext, true, false);
 }
 
-bool mux_chr_attach_frontend(MuxChardev *d, CharBackend *b,
-                             unsigned int *tag, Error **errp)
-{
-    unsigned int bit;
-
-    QEMU_BUILD_BUG_ON(MAX_MUX > (sizeof(d->mux_bitset) * BITS_PER_BYTE));
-
-    bit = find_next_zero_bit(&d->mux_bitset, MAX_MUX, 0);
-    if (bit >= MAX_MUX) {
-        error_setg(errp,
-                   "too many uses of multiplexed chardev '%s'"
-                   " (maximum is " stringify(MAX_MUX) ")",
-                   d->parent.label);
-        return false;
-    }
-
-    d->mux_bitset |= (1ul << bit);
-    d->backends[bit] = b;
-    *tag = bit;
-
-    return true;
-}
-
-bool mux_chr_detach_frontend(MuxChardev *d, unsigned int tag)
-{
-    if (!(d->mux_bitset & (1ul << tag))) {
-        return false;
-    }
-
-    d->mux_bitset &= ~(1ul << tag);
-    d->backends[tag] = NULL;
-
-    return true;
-}
-
-void mux_set_focus(Chardev *chr, unsigned int focus)
+void mux_set_focus(Chardev *chr, int focus)
 {
     MuxChardev *d = MUX_CHARDEV(chr);
 
-    assert(d->mux_bitset & (1ul << focus));
+    assert(focus >= 0);
+    assert(focus < d->mux_cnt);
 
     if (d->focus != -1) {
         mux_chr_send_event(d, d->focus, CHR_EVENT_MUX_OUT);

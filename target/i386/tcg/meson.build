@@ -1,5 +1,4 @@
 i386_ss.add(when: 'CONFIG_TCG', if_true: files(
-  'access.c',
   'bpt_helper.c',
   'cc_helper.c',
   'excp_helper.c',

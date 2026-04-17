@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2024 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -28,7 +28,10 @@ struct Instruction;
 struct Packet;
 struct DisasContext;
 
-typedef void (*SemanticInsn)(struct DisasContext *ctx);
+typedef void (*SemanticInsn)(CPUHexagonState *env,
+                             struct DisasContext *ctx,
+                             struct Instruction *insn,
+                             struct Packet *pkt);
 
 struct Instruction {
     SemanticInsn generate;            /* pointer to genptr routine */
@@ -39,9 +42,6 @@ struct Instruction {
     uint32_t slot:3;
     uint32_t which_extended:1;    /* If has an extender, which immediate */
     uint32_t new_value_producer_slot:4;
-    int32_t new_read_idx;
-    int32_t dest_idx;
-    bool has_pred_dest;
 
     bool part1;              /*
                               * cmp-jumps are split into two insns.
@@ -57,11 +57,9 @@ typedef struct Instruction Insn;
 struct Packet {
     uint16_t num_insns;
     uint16_t encod_pkt_size_in_bytes;
-    uint32_t pc;
 
     /* Pre-decodes about COF */
     bool pkt_has_cof;          /* Has any change-of-flow */
-    bool pkt_has_multi_cof;    /* Has more than one change-of-flow */
     bool pkt_has_endloop;
 
     bool pkt_has_dczeroa;

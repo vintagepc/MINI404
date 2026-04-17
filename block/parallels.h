@@ -72,13 +72,9 @@ typedef struct BDRVParallelsState {
     unsigned long *bat_dirty_bmap;
     unsigned int  bat_dirty_block;
 
-    unsigned long *used_bmap;
-    unsigned long used_bmap_size;
-
     uint32_t *bat_bitmap;
     unsigned int bat_size;
 
-    int64_t  data_start;
     int64_t  data_end;
     uint64_t prealloc_size;
     ParallelsPreallocMode prealloc_mode;
@@ -90,8 +86,7 @@ typedef struct BDRVParallelsState {
     Error *migration_blocker;
 } BDRVParallelsState;
 
-int GRAPH_RDLOCK
-parallels_read_format_extension(BlockDriverState *bs, int64_t ext_off,
-                                Error **errp);
+int parallels_read_format_extension(BlockDriverState *bs,
+                                    int64_t ext_off, Error **errp);
 
 #endif

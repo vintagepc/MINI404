@@ -357,7 +357,8 @@ probes::
 
     scripts/tracetool.py --backends=dtrace --format=stap \
                          --binary path/to/qemu-binary \
-                         --probe-prefix qemu.system.x86_64 \
+                         --target-type system \
+                         --target-name x86_64 \
                          --group=all \
                          trace-events-all \
                          qemu.stp

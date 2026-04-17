@@ -30,7 +30,6 @@
 #include "hw/irq.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
-#include "qemu/atomic.h"
 
 void check_interrupts(CPUXtensaState *env)
 {

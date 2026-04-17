@@ -82,9 +82,9 @@ static target_ulong h_random(PowerPCCPU *cpu, SpaprMachineState *spapr,
     while (hrdata.received < 8) {
         rng_backend_request_entropy(rngstate->backend, 8 - hrdata.received,
                                     random_recv, &hrdata);
-        bql_unlock();
+        qemu_mutex_unlock_iothread();
         qemu_sem_wait(&hrdata.sem);
-        bql_lock();
+        qemu_mutex_lock_iothread();
     }
 
     qemu_sem_destroy(&hrdata.sem);

@@ -20,19 +20,15 @@
 
 #include "qemu/osdep.h"
 
-#include <libtasn1.h>
-
 #include "crypto-tls-x509-helpers.h"
 #include "crypto/init.h"
 #include "qemu/sockets.h"
-
-#include "pkix_asn1_tab.c.inc"
 
 /*
  * This stores some static data that is needed when
  * encoding extensions in the x509 certs
  */
-static asn1_node pkix_asn1;
+asn1_node pkix_asn1;
 
 /*
  * To avoid consuming random entropy to generate keys,
@@ -135,7 +131,6 @@ void test_tls_init(const char *keyfile)
 void test_tls_cleanup(const char *keyfile)
 {
     asn1_delete_structure(&pkix_asn1);
-    gnutls_x509_privkey_deinit(privkey);
     unlink(keyfile);
 }
 
@@ -503,15 +498,6 @@ void test_tls_write_cert_chain(const char *filename,
     g_free(buffer);
 }
 
-void test_tls_deinit_cert(QCryptoTLSTestCertReq *req)
-{
-    if (!req->crt) {
-        return;
-    }
-
-    gnutls_x509_crt_deinit(req->crt);
-    req->crt = NULL;
-}
 
 void test_tls_discard_cert(QCryptoTLSTestCertReq *req)
 {
@@ -519,7 +505,8 @@ void test_tls_discard_cert(QCryptoTLSTestCertReq *req)
         return;
     }
 
-    test_tls_deinit_cert(req);
+    gnutls_x509_crt_deinit(req->crt);
+    req->crt = NULL;
 
     if (getenv("QEMU_TEST_DEBUG_CERTS") == NULL) {
         unlink(req->filename);

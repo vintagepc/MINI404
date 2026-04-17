@@ -22,7 +22,6 @@
 #include "internal.h"
 #include "tcg/tcg.h"
 #include "exec/exec-all.h"
-#include "exec/cpu_ldst.h"
 #include "exec/helper-proto.h"
 #include "exec/memop.h"
 #include "fpu/softfloat.h"
@@ -803,9 +802,9 @@ void helper_msa_bset_d(CPUMIPSState *env, uint32_t wd, uint32_t ws, uint32_t wt)
  * | HADD_S.H      | Vector Signed Horizontal Add (halfword)                  |
  * | HADD_S.W      | Vector Signed Horizontal Add (word)                      |
  * | HADD_S.D      | Vector Signed Horizontal Add (doubleword)                |
- * | HADD_U.H      | Vector Unsigned Horizontal Add (halfword)                |
- * | HADD_U.W      | Vector Unsigned Horizontal Add (word)                    |
- * | HADD_U.D      | Vector Unsigned Horizontal Add (doubleword)              |
+ * | HADD_U.H      | Vector Unigned Horizontal Add (halfword)                 |
+ * | HADD_U.W      | Vector Unigned Horizontal Add (word)                     |
+ * | HADD_U.D      | Vector Unigned Horizontal Add (doubleword)               |
  * +---------------+----------------------------------------------------------+
  */
 
@@ -3452,9 +3451,9 @@ void helper_msa_mulv_d(CPUMIPSState *env,
  * | HSUB_S.H      | Vector Signed Horizontal Subtract (halfword)             |
  * | HSUB_S.W      | Vector Signed Horizontal Subtract (word)                 |
  * | HSUB_S.D      | Vector Signed Horizontal Subtract (doubleword)           |
- * | HSUB_U.H      | Vector Unsigned Horizontal Subtract (halfword)           |
- * | HSUB_U.W      | Vector Unsigned Horizontal Subtract (word)               |
- * | HSUB_U.D      | Vector Unsigned Horizontal Subtract (doubleword)         |
+ * | HSUB_U.H      | Vector Unigned Horizontal Subtract (halfword)            |
+ * | HSUB_U.W      | Vector Unigned Horizontal Subtract (word)                |
+ * | HSUB_U.D      | Vector Unigned Horizontal Subtract (doubleword)          |
  * | SUBS_S.B      | Vector Signed Saturated Subtract (of Signed) (byte)      |
  * | SUBS_S.H      | Vector Signed Saturated Subtract (of Signed) (halfword)  |
  * | SUBS_S.W      | Vector Signed Saturated Subtract (of Signed) (word)      |
@@ -5334,7 +5333,7 @@ void helper_msa_shf_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
     msa_move_v(pwd, pwx);
 }
@@ -5369,7 +5368,7 @@ void helper_msa_ ## helper ## _df(CPUMIPSState *env, uint32_t df,       \
         }                                                               \
         break;                                                          \
     default:                                                            \
-        g_assert_not_reached();                                         \
+        assert(0);                                                      \
     }                                                                   \
 }
 
@@ -5414,7 +5413,7 @@ void helper_msa_ldi_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
        break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
@@ -5462,7 +5461,7 @@ void helper_msa_ ## helper ## _df(CPUMIPSState *env, uint32_t df, uint32_t wd, \
         }                                                               \
         break;                                                          \
     default:                                                            \
-        g_assert_not_reached();                                         \
+        assert(0);                                                      \
     }                                                                   \
 }
 
@@ -5512,7 +5511,7 @@ void helper_msa_ ## helper ## _df(CPUMIPSState *env, uint32_t df,       \
         }                                                               \
         break;                                                          \
     default:                                                            \
-        g_assert_not_reached();                                         \
+        assert(0);                                                      \
     }                                                                   \
 }
 
@@ -5558,7 +5557,7 @@ static inline void msa_sld_df(uint32_t df, wr_t *pwd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
@@ -5633,7 +5632,7 @@ void helper_msa_ ## func ## _df(CPUMIPSState *env, uint32_t df,         \
         pwd->d[1] = msa_ ## func ## _df(df, pws->d[1], pwt->d[1]);      \
         break;                                                          \
     default:                                                            \
-        g_assert_not_reached();                                         \
+        assert(0);                                                      \
     }                                                                   \
 }
 
@@ -5772,7 +5771,7 @@ void helper_msa_ ## func ## _df(CPUMIPSState *env, uint32_t df, uint32_t wd,  \
         pwd->d[1] = msa_ ## func ## _df(df, pwd->d[1], pws->d[1], pwt->d[1]); \
         break;                                                                \
     default:                                                                  \
-        g_assert_not_reached();                                               \
+        assert(0);                                                            \
     }                                                                         \
 }
 
@@ -5812,7 +5811,7 @@ static inline void msa_splat_df(uint32_t df, wr_t *pwd,
         }
        break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
@@ -5870,7 +5869,7 @@ void helper_msa_##FUNC(CPUMIPSState *env, uint32_t df, uint32_t wd, \
         MSA_LOOP_D;                                                 \
         break;                                                      \
     default:                                                        \
-        g_assert_not_reached();                                     \
+        assert(0);                                                  \
     }                                                               \
     msa_move_v(pwd, pwx);                                           \
 }
@@ -6091,7 +6090,7 @@ void helper_msa_insve_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         pwd->d[n] = (int64_t)pws->d[0];
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
@@ -6151,7 +6150,7 @@ void helper_msa_fill_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
        break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
@@ -6566,7 +6565,7 @@ static inline void compare_af(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6597,7 +6596,7 @@ static inline void compare_un(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6626,7 +6625,7 @@ static inline void compare_eq(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6655,7 +6654,7 @@ static inline void compare_ueq(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6684,7 +6683,7 @@ static inline void compare_lt(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6713,7 +6712,7 @@ static inline void compare_ult(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6742,7 +6741,7 @@ static inline void compare_le(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6771,7 +6770,7 @@ static inline void compare_ule(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6800,7 +6799,7 @@ static inline void compare_or(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6829,7 +6828,7 @@ static inline void compare_une(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -6858,7 +6857,7 @@ static inline void compare_ne(CPUMIPSState *env, wr_t *pwd, wr_t *pws,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, retaddr);
@@ -7108,7 +7107,7 @@ void helper_msa_fadd_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7138,7 +7137,7 @@ void helper_msa_fsub_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7168,7 +7167,7 @@ void helper_msa_fmul_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7199,7 +7198,7 @@ void helper_msa_fdiv_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7246,7 +7245,7 @@ void helper_msa_fmadd_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7281,7 +7280,7 @@ void helper_msa_fmsub_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7318,7 +7317,7 @@ void helper_msa_fexp2_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7372,7 +7371,7 @@ void helper_msa_fexdo_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7418,7 +7417,7 @@ void helper_msa_ftq_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7432,15 +7431,15 @@ void helper_msa_ftq_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
 
 #define MSA_FLOAT_MAXOP(DEST, OP, ARG1, ARG2, BITS)                         \
     do {                                                                    \
-        float_status *status_ = &env->active_tc.msa_fp_status;              \
+        float_status *status = &env->active_tc.msa_fp_status;               \
         int c;                                                              \
                                                                             \
-        set_float_exception_flags(0, status_);                              \
-        DEST = float ## BITS ## _ ## OP(ARG1, ARG2, status_);               \
+        set_float_exception_flags(0, status);                               \
+        DEST = float ## BITS ## _ ## OP(ARG1, ARG2, status);                \
         c = update_msacsr(env, 0, 0);                                       \
                                                                             \
         if (get_enabled_exceptions(env, c)) {                               \
-            DEST = ((FLOAT_SNAN ## BITS(status_) >> 6) << 6) | c;           \
+            DEST = ((FLOAT_SNAN ## BITS(status) >> 6) << 6) | c;            \
         }                                                                   \
     } while (0)
 
@@ -7527,7 +7526,7 @@ void helper_msa_fmin_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
 
     } else {
 
-        g_assert_not_reached();
+        assert(0);
 
     }
 
@@ -7556,7 +7555,7 @@ void helper_msa_fmin_a_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         FMAXMIN_A(min, max, pwx->d[0], pws->d[0], pwt->d[0], 64, status);
         FMAXMIN_A(min, max, pwx->d[1], pws->d[1], pwt->d[1], 64, status);
     } else {
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7629,7 +7628,7 @@ void helper_msa_fmax_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
 
     } else {
 
-        g_assert_not_reached();
+        assert(0);
 
     }
 
@@ -7658,7 +7657,7 @@ void helper_msa_fmax_a_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         FMAXMIN_A(max, min, pwx->d[0], pws->d[0], pwt->d[0], 64, status);
         FMAXMIN_A(max, min, pwx->d[1], pws->d[1], pwt->d[1], 64, status);
     } else {
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7682,7 +7681,7 @@ void helper_msa_fclass_df(CPUMIPSState *env, uint32_t df,
         pwd->d[0] = float_class_d(pws->d[0], status);
         pwd->d[1] = float_class_d(pws->d[1], status);
     } else {
-        g_assert_not_reached();
+        assert(0);
     }
 }
 
@@ -7724,7 +7723,7 @@ void helper_msa_ftrunc_s_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7754,7 +7753,7 @@ void helper_msa_ftrunc_u_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7784,7 +7783,7 @@ void helper_msa_fsqrt_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7833,7 +7832,7 @@ void helper_msa_frsqrt_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7863,7 +7862,7 @@ void helper_msa_frcp_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7893,7 +7892,7 @@ void helper_msa_frint_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7947,7 +7946,7 @@ void helper_msa_flog2_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -7984,7 +7983,7 @@ void helper_msa_fexupl_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -8020,7 +8019,7 @@ void helper_msa_fexupr_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -8047,7 +8046,7 @@ void helper_msa_ffql_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     msa_move_v(pwd, pwx);
@@ -8073,7 +8072,7 @@ void helper_msa_ffqr_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     msa_move_v(pwd, pwx);
@@ -8101,7 +8100,7 @@ void helper_msa_ftint_s_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -8131,7 +8130,7 @@ void helper_msa_ftint_u_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -8167,7 +8166,7 @@ void helper_msa_ffint_s_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -8197,7 +8196,7 @@ void helper_msa_ffint_u_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
         }
         break;
     default:
-        g_assert_not_reached();
+        assert(0);
     }
 
     check_msacsr_cause(env, GETPC());
@@ -8210,6 +8209,14 @@ void helper_msa_ffint_u_df(CPUMIPSState *env, uint32_t df, uint32_t wd,
 
 /* Element-by-element access macros */
 #define DF_ELEMENTS(df) (MSA_WRLEN / DF_BITS(df))
+
+#if !defined(CONFIG_USER_ONLY)
+#define MEMOP_IDX(DF)                                                   \
+    MemOpIdx oi = make_memop_idx(MO_TE | DF | MO_UNALN,                 \
+                                 cpu_mmu_index(env, false));
+#else
+#define MEMOP_IDX(DF)
+#endif
 
 #if TARGET_BIG_ENDIAN
 static inline uint64_t bswap16x4(uint64_t x)
@@ -8315,7 +8322,7 @@ void helper_msa_st_b(CPUMIPSState *env, uint32_t wd,
                      target_ulong addr)
 {
     wr_t *pwd = &(env->active_fpu.fpr[wd].wr);
-    int mmu_idx = mips_env_mmu_index(env);
+    int mmu_idx = cpu_mmu_index(env, false);
     uintptr_t ra = GETPC();
 
     ensure_writable_pages(env, addr, mmu_idx, ra);
@@ -8329,7 +8336,7 @@ void helper_msa_st_h(CPUMIPSState *env, uint32_t wd,
                      target_ulong addr)
 {
     wr_t *pwd = &(env->active_fpu.fpr[wd].wr);
-    int mmu_idx = mips_env_mmu_index(env);
+    int mmu_idx = cpu_mmu_index(env, false);
     uintptr_t ra = GETPC();
     uint64_t d0, d1;
 
@@ -8350,7 +8357,7 @@ void helper_msa_st_w(CPUMIPSState *env, uint32_t wd,
                      target_ulong addr)
 {
     wr_t *pwd = &(env->active_fpu.fpr[wd].wr);
-    int mmu_idx = mips_env_mmu_index(env);
+    int mmu_idx = cpu_mmu_index(env, false);
     uintptr_t ra = GETPC();
     uint64_t d0, d1;
 
@@ -8371,7 +8378,7 @@ void helper_msa_st_d(CPUMIPSState *env, uint32_t wd,
                      target_ulong addr)
 {
     wr_t *pwd = &(env->active_fpu.fpr[wd].wr);
-    int mmu_idx = mips_env_mmu_index(env);
+    int mmu_idx = cpu_mmu_index(env, false);
     uintptr_t ra = GETPC();
 
     ensure_writable_pages(env, addr, mmu_idx, GETPC());

@@ -15,10 +15,10 @@
 
 #define _FDT(exp)                                                  \
     do {                                                           \
-        int _ret = (exp);                                          \
-        if (_ret < 0) {                                            \
-            error_report("error creating device tree: %s: %s",     \
-                    #exp, fdt_strerror(_ret));                     \
+        int ret = (exp);                                           \
+        if (ret < 0) {                                             \
+            error_report("error creating device tree: %s: %s",   \
+                    #exp, fdt_strerror(ret));                      \
             exit(1);                                               \
         }                                                          \
     } while (0)

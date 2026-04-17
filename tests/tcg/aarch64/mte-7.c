@@ -19,7 +19,8 @@ int main(int ac, char **av)
     p = (void *)((unsigned long)p | (1ul << 56));
 
     /* Store tag in sequential granules. */
-    asm("stz2g %0, [%0]" : : "r"(p + 0x0ff0));
+    asm("stg %0, [%0]" : : "r"(p + 0x0ff0));
+    asm("stg %0, [%0]" : : "r"(p + 0x1000));
 
     /*
      * Perform an unaligned store with tag 1 crossing the pages.

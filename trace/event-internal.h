@@ -19,6 +19,7 @@
 /**
  * TraceEvent:
  * @id: Unique event identifier.
+ * @vcpu_id: Unique per-vCPU event identifier.
  * @name: Event name.
  * @sstate: Static tracing state.
  * @dstate: Dynamic tracing state
@@ -32,6 +33,7 @@
  */
 typedef struct TraceEvent {
     uint32_t id;
+    uint32_t vcpu_id;
     const char * name;
     const bool sstate;
     uint16_t *dstate;

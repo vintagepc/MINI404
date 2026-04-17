@@ -16,7 +16,6 @@
 #include "qapi/error.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qstring.h"
-#include "qemu/defer-call.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
@@ -24,9 +23,7 @@
 #include "qemu/option.h"
 #include "qemu/memalign.h"
 #include "qemu/vfio-helpers.h"
-#include "block/block-io.h"
 #include "block/block_int.h"
-#include "sysemu/block-backend.h"
 #include "sysemu/replay.h"
 #include "trace.h"
 
@@ -121,6 +118,7 @@ struct BDRVNVMeState {
     int blkshift;
 
     uint64_t max_transfer;
+    bool plugged;
 
     bool supports_write_zeroes;
     bool supports_discard;
@@ -168,7 +166,6 @@ static QemuOptsList runtime_opts = {
 static bool nvme_init_queue(BDRVNVMeState *s, NVMeQueue *q,
                             unsigned nentries, size_t entry_bytes, Error **errp)
 {
-    ERRP_GUARD();
     size_t bytes;
     int r;
 
@@ -222,7 +219,6 @@ static NVMeQueuePair *nvme_create_queue_pair(BDRVNVMeState *s,
                                              unsigned idx, size_t size,
                                              Error **errp)
 {
-    ERRP_GUARD();
     int i, r;
     NVMeQueuePair *q;
     uint64_t prp_list_iova;
@@ -285,7 +281,7 @@ static void nvme_kick(NVMeQueuePair *q)
 {
     BDRVNVMeState *s = q->s;
 
-    if (!q->need_kick) {
+    if (s->plugged || !q->need_kick) {
         return;
     }
     trace_nvme_kick(s, q->index);
@@ -390,6 +386,10 @@ static bool nvme_process_completion(NVMeQueuePair *q)
     NvmeCqe *c;
 
     trace_nvme_process_completion(s, q->index, q->inflight);
+    if (s->plugged) {
+        trace_nvme_process_completion_queue_plugged(s, q->index);
+        return false;
+    }
 
     /*
      * Support re-entrancy when a request cb() function invokes aio_poll().
@@ -419,10 +419,9 @@ static bool nvme_process_completion(NVMeQueuePair *q)
             q->cq_phase = !q->cq_phase;
         }
         cid = le16_to_cpu(c->cid);
-        if (cid == 0 || cid > NVME_NUM_REQS) {
-            warn_report("NVMe: Unexpected CID in completion queue: %" PRIu32
-                        ", should be within: 1..%u inclusively", cid,
-                        NVME_NUM_REQS);
+        if (cid == 0 || cid > NVME_QUEUE_SIZE) {
+            warn_report("NVMe: Unexpected CID in completion queue: %"PRIu32", "
+                        "queue size: %u", cid, NVME_QUEUE_SIZE);
             continue;
         }
         trace_nvme_complete_command(s, q->index, cid);
@@ -480,15 +479,6 @@ static void nvme_trace_command(const NvmeCmd *cmd)
     }
 }
 
-static void nvme_deferred_fn(void *opaque)
-{
-    NVMeQueuePair *q = opaque;
-
-    QEMU_LOCK_GUARD(&q->lock);
-    nvme_kick(q);
-    nvme_process_completion(q);
-}
-
 static void nvme_submit_command(NVMeQueuePair *q, NVMeRequest *req,
                                 NvmeCmd *cmd, BlockCompletionFunc cb,
                                 void *opaque)
@@ -505,9 +495,9 @@ static void nvme_submit_command(NVMeQueuePair *q, NVMeRequest *req,
            q->sq.tail * NVME_SQ_ENTRY_BYTES, cmd, sizeof(*cmd));
     q->sq.tail = (q->sq.tail + 1) % NVME_QUEUE_SIZE;
     q->need_kick++;
+    nvme_kick(q);
+    nvme_process_completion(q);
     qemu_mutex_unlock(&q->lock);
-
-    defer_call(nvme_deferred_fn, q);
 }
 
 static void nvme_admin_cmd_sync_cb(void *opaque, int ret)
@@ -537,7 +527,6 @@ static int nvme_admin_cmd_sync(BlockDriverState *bs, NvmeCmd *cmd)
 /* Returns true on success, false on failure. */
 static bool nvme_identify(BlockDriverState *bs, int namespace, Error **errp)
 {
-    ERRP_GUARD();
     BDRVNVMeState *s = bs->opaque;
     bool ret = false;
     QEMU_AUTO_VFREE union {
@@ -872,7 +861,7 @@ static int nvme_init(BlockDriverState *bs, const char *device, int namespace,
     }
     aio_set_event_notifier(bdrv_get_aio_context(bs),
                            &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           nvme_handle_event, nvme_poll_cb,
+                           false, nvme_handle_event, nvme_poll_cb,
                            nvme_poll_ready);
 
     if (!nvme_identify(bs, namespace, errp)) {
@@ -889,7 +878,7 @@ out:
         qemu_vfio_pci_unmap_bar(s->vfio, 0, (void *)regs, 0, sizeof(NvmeBar));
     }
 
-    /* Cleaning up is done in nvme_open() upon error. */
+    /* Cleaning up is done in nvme_file_open() upon error. */
     return ret;
 }
 
@@ -958,7 +947,7 @@ static void nvme_close(BlockDriverState *bs)
     g_free(s->queues);
     aio_set_event_notifier(bdrv_get_aio_context(bs),
                            &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           NULL, NULL, NULL);
+                           false, NULL, NULL, NULL);
     event_notifier_cleanup(&s->irq_notifier[MSIX_SHARED_IRQ_IDX]);
     qemu_vfio_pci_unmap_bar(s->vfio, 0, s->bar0_wo_map,
                             0, sizeof(NvmeBar) + NVME_DOORBELL_SIZE);
@@ -967,8 +956,8 @@ static void nvme_close(BlockDriverState *bs)
     g_free(s->device);
 }
 
-static int nvme_open(BlockDriverState *bs, QDict *options, int flags,
-                     Error **errp)
+static int nvme_file_open(BlockDriverState *bs, QDict *options, int flags,
+                          Error **errp)
 {
     const char *device;
     QemuOpts *opts;
@@ -1012,7 +1001,7 @@ fail:
     return ret;
 }
 
-static int64_t coroutine_fn nvme_co_getlength(BlockDriverState *bs)
+static int64_t nvme_getlength(BlockDriverState *bs)
 {
     BDRVNVMeState *s = bs->opaque;
     return s->nsze << s->blkshift;
@@ -1496,7 +1485,7 @@ static int coroutine_fn nvme_co_truncate(BlockDriverState *bs, int64_t offset,
         return -ENOTSUP;
     }
 
-    cur_length = nvme_co_getlength(bs);
+    cur_length = nvme_getlength(bs);
     if (offset != cur_length && exact) {
         error_setg(errp, "Cannot resize NVMe devices");
         return -ENOTSUP;
@@ -1556,7 +1545,7 @@ static void nvme_detach_aio_context(BlockDriverState *bs)
 
     aio_set_event_notifier(bdrv_get_aio_context(bs),
                            &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           NULL, NULL, NULL);
+                           false, NULL, NULL, NULL);
 }
 
 static void nvme_attach_aio_context(BlockDriverState *bs,
@@ -1566,7 +1555,7 @@ static void nvme_attach_aio_context(BlockDriverState *bs,
 
     s->aio_context = new_context;
     aio_set_event_notifier(new_context, &s->irq_notifier[MSIX_SHARED_IRQ_IDX],
-                           nvme_handle_event, nvme_poll_cb,
+                           false, nvme_handle_event, nvme_poll_cb,
                            nvme_poll_ready);
 
     for (unsigned i = 0; i < s->queue_count; i++) {
@@ -1574,6 +1563,27 @@ static void nvme_attach_aio_context(BlockDriverState *bs,
 
         q->completion_bh =
             aio_bh_new(new_context, nvme_process_completion_bh, q);
+    }
+}
+
+static void nvme_aio_plug(BlockDriverState *bs)
+{
+    BDRVNVMeState *s = bs->opaque;
+    assert(!s->plugged);
+    s->plugged = true;
+}
+
+static void nvme_aio_unplug(BlockDriverState *bs)
+{
+    BDRVNVMeState *s = bs->opaque;
+    assert(s->plugged);
+    s->plugged = false;
+    for (unsigned i = INDEX_IO(0); i < s->queue_count; i++) {
+        NVMeQueuePair *q = s->queues[i];
+        qemu_mutex_lock(&q->lock);
+        nvme_kick(q);
+        nvme_process_completion(q);
+        qemu_mutex_unlock(&q->lock);
     }
 }
 
@@ -1630,9 +1640,9 @@ static BlockDriver bdrv_nvme = {
     .create_opts              = &bdrv_create_opts_simple,
 
     .bdrv_parse_filename      = nvme_parse_filename,
-    .bdrv_open                = nvme_open,
+    .bdrv_file_open           = nvme_file_open,
     .bdrv_close               = nvme_close,
-    .bdrv_co_getlength        = nvme_co_getlength,
+    .bdrv_getlength           = nvme_getlength,
     .bdrv_probe_blocksizes    = nvme_probe_blocksizes,
     .bdrv_co_truncate         = nvme_co_truncate,
 
@@ -1652,6 +1662,9 @@ static BlockDriver bdrv_nvme = {
 
     .bdrv_detach_aio_context  = nvme_detach_aio_context,
     .bdrv_attach_aio_context  = nvme_attach_aio_context,
+
+    .bdrv_io_plug             = nvme_aio_plug,
+    .bdrv_io_unplug           = nvme_aio_unplug,
 
     .bdrv_register_buf        = nvme_register_buf,
     .bdrv_unregister_buf      = nvme_unregister_buf,

@@ -3,6 +3,6 @@
 ##
 # @foo:
 #
-# Errors:
+# Note:
 ##
 { 'command': 'foo', 'data': {'a': 'int'} }

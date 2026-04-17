@@ -270,8 +270,6 @@ struct IMXFECState {
     uint32_t phy_int;
     uint32_t phy_int_mask;
     uint32_t phy_num;
-    bool phy_connected;
-    struct IMXFECState *phy_consumer;
 
     bool is_fec;
 

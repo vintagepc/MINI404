@@ -1,9 +1,7 @@
 /*
  * QEMU GRLIB APB UART Emulator
  *
- * SPDX-License-Identifier: MIT
- *
- * Copyright (c) 2010-2024 AdaCore
+ * Copyright (c) 2010-2019 AdaCore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +26,7 @@
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
-#include "hw/char/grlib_uart.h"
+#include "hw/sparc/grlib.h"
 #include "hw/sysbus.h"
 #include "qemu/module.h"
 #include "chardev/char-fe.h"
@@ -287,7 +285,7 @@ static void grlib_apbuart_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = grlib_apbuart_realize;
-    device_class_set_legacy_reset(dc, grlib_apbuart_reset);
+    dc->reset = grlib_apbuart_reset;
     device_class_set_props(dc, grlib_apbuart_properties);
 }
 

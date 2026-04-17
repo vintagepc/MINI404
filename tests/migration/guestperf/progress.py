@@ -81,9 +81,7 @@ class Progress(object):
                  downtime,
                  downtime_expected,
                  setup_time,
-                 throttle_pcent,
-                 dirty_limit_throttle_time_per_round,
-                 dirty_limit_ring_full_time):
+                 throttle_pcent):
 
         self._status = status
         self._ram = ram
@@ -93,10 +91,6 @@ class Progress(object):
         self._downtime_expected = downtime_expected
         self._setup_time = setup_time
         self._throttle_pcent = throttle_pcent
-        self._dirty_limit_throttle_time_per_round = \
-            dirty_limit_throttle_time_per_round
-        self._dirty_limit_ring_full_time = \
-            dirty_limit_ring_full_time
 
     def serialize(self):
         return {
@@ -108,10 +102,6 @@ class Progress(object):
             "downtime_expected": self._downtime_expected,
             "setup_time": self._setup_time,
             "throttle_pcent": self._throttle_pcent,
-            "dirty_limit_throttle_time_per_round":
-                self._dirty_limit_throttle_time_per_round,
-            "dirty_limit_ring_full_time":
-                self._dirty_limit_ring_full_time,
         }
 
     @classmethod
@@ -124,6 +114,4 @@ class Progress(object):
             data["downtime"],
             data["downtime_expected"],
             data["setup_time"],
-            data["throttle_pcent"],
-            data["dirty_limit_throttle_time_per_round"],
-            data["dirty_limit_ring_full_time"])
+            data["throttle_pcent"])

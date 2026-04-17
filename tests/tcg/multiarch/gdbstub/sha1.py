@@ -7,11 +7,19 @@ from __future__ import print_function
 #
 
 import gdb
-from test_gdbstub import main, report
-
+import sys
 
 initial_vlen = 0
+failcount = 0
 
+def report(cond, msg):
+    "Report success/fail of test"
+    if cond:
+        print("PASS: %s" % (msg))
+    else:
+        print("FAIL: %s" % (msg))
+        global failcount
+        failcount += 1
 
 def check_break(sym_name):
     "Setup breakpoint, continue and check we stopped."
@@ -26,7 +34,6 @@ def check_break(sym_name):
            "break @ %s (%s %d hits)" % (end_pc, sym.value(), bp.hit_count))
 
     bp.delete()
-
 
 def run_test():
     "Run through the tests one by one"
@@ -50,5 +57,32 @@ def run_test():
     # finally check we don't barf inspecting registers
     gdb.execute("info registers")
 
+#
+# This runs as the script it sourced (via -x, via run-test.py)
+#
+try:
+    inferior = gdb.selected_inferior()
+    arch = inferior.architecture()
+    print("ATTACHED: %s" % arch.name())
+except (gdb.error, AttributeError):
+    print("SKIPPING (not connected)", file=sys.stderr)
+    exit(0)
 
-main(run_test)
+if gdb.parse_and_eval('$pc') == 0:
+    print("SKIP: PC not set")
+    exit(0)
+
+try:
+    # These are not very useful in scripts
+    gdb.execute("set pagination off")
+    gdb.execute("set confirm off")
+
+    # Run the actual tests
+    run_test()
+except (gdb.error):
+    print ("GDB Exception: %s" % (sys.exc_info()[0]))
+    failcount += 1
+    pass
+
+print("All tests complete: %d failures" % failcount)
+exit(failcount)

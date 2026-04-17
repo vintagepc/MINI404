@@ -22,7 +22,7 @@
 #include "kvm/kvm_i386.h"
 #include "migration/vmstate.h"
 #include "hw/sysbus.h"
-#include "hw/i386/kvm/clock.h"
+#include "hw/kvm/clock.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 
@@ -66,7 +66,7 @@ struct pvclock_vcpu_time_info {
 static uint64_t kvmclock_current_nsec(KVMClockState *s)
 {
     CPUState *cpu = first_cpu;
-    CPUX86State *env = cpu_env(cpu);
+    CPUX86State *env = cpu->env_ptr;
     hwaddr kvmclock_struct_pa;
     uint64_t migration_tsc = env->tsc;
     struct pvclock_vcpu_time_info time;
@@ -245,7 +245,7 @@ static const VMStateDescription kvmclock_reliable_get_clock = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = kvmclock_clock_is_reliable_needed,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_BOOL(clock_is_reliable, KVMClockState),
         VMSTATE_END_OF_LIST()
     }
@@ -295,11 +295,11 @@ static const VMStateDescription kvmclock_vmsd = {
     .minimum_version_id = 1,
     .pre_load = kvmclock_pre_load,
     .pre_save = kvmclock_pre_save,
-    .fields = (const VMStateField[]) {
+    .fields = (VMStateField[]) {
         VMSTATE_UINT64(clock, KVMClockState),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * const []) {
+    .subsections = (const VMStateDescription * []) {
         &kvmclock_reliable_get_clock,
         NULL
     }
@@ -332,7 +332,9 @@ void kvmclock_create(bool create_always)
 {
     X86CPU *cpu = X86_CPU(first_cpu);
 
-    assert(kvm_enabled());
+    if (!kvm_enabled() || !kvm_has_adjust_clock())
+        return;
+
     if (create_always ||
         cpu->env.features[FEAT_KVM] & ((1ULL << KVM_FEATURE_CLOCKSOURCE) |
                                        (1ULL << KVM_FEATURE_CLOCKSOURCE2))) {

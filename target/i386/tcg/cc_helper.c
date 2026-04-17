@@ -22,22 +22,57 @@
 #include "exec/helper-proto.h"
 #include "helper-tcg.h"
 
+const uint8_t parity_table[256] = {
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    CC_P, 0, 0, CC_P, 0, CC_P, CC_P, 0,
+    0, CC_P, CC_P, 0, CC_P, 0, 0, CC_P,
+};
+
 #define SHIFT 0
-#include "cc_helper_template.h.inc"
+#include "cc_helper_template.h"
 #undef SHIFT
 
 #define SHIFT 1
-#include "cc_helper_template.h.inc"
+#include "cc_helper_template.h"
 #undef SHIFT
 
 #define SHIFT 2
-#include "cc_helper_template.h.inc"
+#include "cc_helper_template.h"
 #undef SHIFT
 
 #ifdef TARGET_X86_64
 
 #define SHIFT 3
-#include "cc_helper_template.h.inc"
+#include "cc_helper_template.h"
 #undef SHIFT
 
 #endif
@@ -60,19 +95,6 @@ static target_ulong compute_all_adcox(target_ulong dst, target_ulong src1,
     return (src1 & ~(CC_C | CC_O)) | (dst * CC_C) | (src2 * CC_O);
 }
 
-target_ulong helper_cc_compute_nz(target_ulong dst, target_ulong src1,
-                                  int op)
-{
-    if (CC_OP_HAS_EFLAGS(op)) {
-        return ~src1 & CC_Z;
-    } else {
-        MemOp size = cc_op_size(op);
-        target_ulong mask = MAKE_64BIT_MASK(0, 8 << size);
-
-        return dst & mask;
-    }
-}
-
 target_ulong helper_cc_compute_all(target_ulong dst, target_ulong src1,
                                    target_ulong src2, int op)
 {
@@ -82,8 +104,10 @@ target_ulong helper_cc_compute_all(target_ulong dst, target_ulong src1,
 
     case CC_OP_EFLAGS:
         return src1;
+    case CC_OP_CLR:
+        return CC_Z | CC_P;
     case CC_OP_POPCNT:
-        return dst ? 0 : CC_Z;
+        return src1 ? 0 : CC_Z;
 
     case CC_OP_MULB:
         return compute_all_mulb(dst, src1);
@@ -162,13 +186,6 @@ target_ulong helper_cc_compute_all(target_ulong dst, target_ulong src1,
     case CC_OP_BMILGL:
         return compute_all_bmilgl(dst, src1);
 
-    case CC_OP_BLSIB:
-        return compute_all_blsib(dst, src1);
-    case CC_OP_BLSIW:
-        return compute_all_blsiw(dst, src1);
-    case CC_OP_BLSIL:
-        return compute_all_blsil(dst, src1);
-
     case CC_OP_ADCX:
         return compute_all_adcx(dst, src1, src2);
     case CC_OP_ADOX:
@@ -199,15 +216,13 @@ target_ulong helper_cc_compute_all(target_ulong dst, target_ulong src1,
         return compute_all_sarq(dst, src1);
     case CC_OP_BMILGQ:
         return compute_all_bmilgq(dst, src1);
-    case CC_OP_BLSIQ:
-        return compute_all_blsiq(dst, src1);
 #endif
     }
 }
 
-uint32_t cpu_cc_compute_all(CPUX86State *env)
+uint32_t cpu_cc_compute_all(CPUX86State *env, int op)
 {
-    return helper_cc_compute_all(CC_DST, CC_SRC, CC_SRC2, CC_OP);
+    return helper_cc_compute_all(CC_DST, CC_SRC, CC_SRC2, op);
 }
 
 target_ulong helper_cc_compute_c(target_ulong dst, target_ulong src1,
@@ -219,6 +234,7 @@ target_ulong helper_cc_compute_c(target_ulong dst, target_ulong src1,
     case CC_OP_LOGICW:
     case CC_OP_LOGICL:
     case CC_OP_LOGICQ:
+    case CC_OP_CLR:
     case CC_OP_POPCNT:
         return 0;
 
@@ -292,13 +308,6 @@ target_ulong helper_cc_compute_c(target_ulong dst, target_ulong src1,
     case CC_OP_BMILGL:
         return compute_c_bmilgl(dst, src1);
 
-    case CC_OP_BLSIB:
-        return compute_c_blsib(dst, src1);
-    case CC_OP_BLSIW:
-        return compute_c_blsiw(dst, src1);
-    case CC_OP_BLSIL:
-        return compute_c_blsil(dst, src1);
-
 #ifdef TARGET_X86_64
     case CC_OP_ADDQ:
         return compute_c_addq(dst, src1);
@@ -312,8 +321,6 @@ target_ulong helper_cc_compute_c(target_ulong dst, target_ulong src1,
         return compute_c_shlq(dst, src1);
     case CC_OP_BMILGQ:
         return compute_c_bmilgq(dst, src1);
-    case CC_OP_BLSIQ:
-        return compute_c_blsiq(dst, src1);
 #endif
     }
 }
@@ -328,7 +335,7 @@ target_ulong helper_read_eflags(CPUX86State *env)
 {
     uint32_t eflags;
 
-    eflags = cpu_cc_compute_all(env);
+    eflags = cpu_cc_compute_all(env, CC_OP);
     eflags |= (env->df & DF_MASK);
     eflags |= env->eflags & ~(VM_MASK | RF_MASK);
     return eflags;

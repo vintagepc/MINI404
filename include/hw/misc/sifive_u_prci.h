@@ -18,8 +18,7 @@
 
 #ifndef HW_SIFIVE_U_PRCI_H
 #define HW_SIFIVE_U_PRCI_H
-
-#include "hw/sysbus.h"
+#include "qom/object.h"
 
 #define SIFIVE_U_PRCI_HFXOSCCFG     0x00
 #define SIFIVE_U_PRCI_COREPLLCFG0   0x04

@@ -33,7 +33,6 @@
 #include "standard-headers/linux/virtio_ids.h"
 #include "standard-headers/linux/virtio_net.h"
 #include "standard-headers/linux/virtio_gpio.h"
-#include "standard-headers/linux/virtio_scmi.h"
 
 #ifdef CONFIG_LINUX
 #include <sys/vfs.h>
@@ -43,8 +42,6 @@
 #define QEMU_CMD_MEM    " -m %d -object memory-backend-file,id=mem,size=%dM," \
                         "mem-path=%s,share=on -numa node,memdev=mem"
 #define QEMU_CMD_MEMFD  " -m %d -object memory-backend-memfd,id=mem,size=%dM," \
-                        " -numa node,memdev=mem"
-#define QEMU_CMD_SHM    " -m %d -object memory-backend-shm,id=mem,size=%dM," \
                         " -numa node,memdev=mem"
 #define QEMU_CMD_CHR    " -chardev socket,id=%s,path=%s%s"
 #define QEMU_CMD_NETDEV " -netdev vhost-user,id=hs0,chardev=%s,vhostforce=on"
@@ -148,7 +145,6 @@ enum {
 enum {
     VHOST_USER_NET,
     VHOST_USER_GPIO,
-    VHOST_USER_SCMI,
 };
 
 typedef struct TestServer {
@@ -197,7 +193,6 @@ enum test_memfd {
     TEST_MEMFD_AUTO,
     TEST_MEMFD_YES,
     TEST_MEMFD_NO,
-    TEST_MEMFD_SHM,
 };
 
 static void append_vhost_net_opts(TestServer *s, GString *cmd_line,
@@ -231,8 +226,6 @@ static void append_mem_opts(TestServer *server, GString *cmd_line,
 
     if (memfd == TEST_MEMFD_YES) {
         g_string_append_printf(cmd_line, QEMU_CMD_MEMFD, size, size);
-    } else if (memfd == TEST_MEMFD_SHM) {
-        g_string_append_printf(cmd_line, QEMU_CMD_SHM, size, size);
     } else {
         const char *root = init_hugepagefs() ? : server->tmpfs;
 
@@ -288,7 +281,7 @@ static void read_guest_mem_server(QTestState *qts, TestServer *s)
     /* iterate all regions */
     for (i = 0; i < s->fds_num; i++) {
 
-        /* We'll check only the region starting at 0x0 */
+        /* We'll check only the region statring at 0x0*/
         if (s->memory.regions[i].guest_phys_addr != 0x0) {
             continue;
         }
@@ -358,7 +351,7 @@ static void chr_read(void *opaque, const uint8_t *buf, int size)
         if (size != msg.size) {
             qos_printf("%s: Wrong message size received %d != %d\n",
                        __func__, size, msg.size);
-            goto out;
+            return;
         }
     }
 
@@ -463,10 +456,7 @@ static void chr_read(void *opaque, const uint8_t *buf, int size)
     case VHOST_USER_SET_VRING_KICK:
     case VHOST_USER_SET_VRING_CALL:
         /* consume the fd */
-        if (!qemu_chr_fe_get_msgfds(chr, &fd, 1) && fd < 0) {
-            qos_printf("call fd: %d, do not set non-blocking\n", fd);
-            break;
-        }
+        qemu_chr_fe_get_msgfds(chr, &fd, 1);
         /*
          * This is a non-blocking eventfd.
          * The receive function forces it to be blocking,
@@ -519,7 +509,6 @@ static void chr_read(void *opaque, const uint8_t *buf, int size)
         break;
     }
 
-out:
     g_mutex_unlock(&s->data_mutex);
 }
 
@@ -796,19 +785,6 @@ static void *vhost_user_test_setup_memfd(GString *cmd_line, void *arg)
     return server;
 }
 
-static void *vhost_user_test_setup_shm(GString *cmd_line, void *arg)
-{
-    TestServer *server = test_server_new("vhost-user-test", arg);
-    test_server_listen(server);
-
-    append_mem_opts(server, cmd_line, 256, TEST_MEMFD_SHM);
-    server->vu_ops->append_opts(server, cmd_line, "");
-
-    g_test_queue_destroy(vhost_user_test_cleanup, server);
-
-    return server;
-}
-
 static void test_read_guest_mem(void *obj, void *arg, QGuestAllocator *alloc)
 {
     TestServer *server = arg;
@@ -920,7 +896,7 @@ static void wait_for_rings_started(TestServer *s, size_t count)
 
 static inline void test_server_connect(TestServer *server)
 {
-    test_server_create_chr(server, ",reconnect-ms=1000");
+    test_server_create_chr(server, ",reconnect=1");
 }
 
 static gboolean
@@ -949,7 +925,7 @@ static void *vhost_user_test_setup_reconnect(GString *cmd_line, void *arg)
 {
     TestServer *s = test_server_new("reconnect", arg);
 
-    g_thread_unref(g_thread_new("connect", connect_thread, s));
+    g_thread_new("connect", connect_thread, s);
     append_mem_opts(s, cmd_line, 256, TEST_MEMFD_AUTO);
     s->vu_ops->append_opts(s, cmd_line, ",server=on");
 
@@ -986,7 +962,7 @@ static void *vhost_user_test_setup_connect_fail(GString *cmd_line, void *arg)
 
     s->test_fail = true;
 
-    g_thread_unref(g_thread_new("connect", connect_thread, s));
+    g_thread_new("connect", connect_thread, s);
     append_mem_opts(s, cmd_line, 256, TEST_MEMFD_AUTO);
     s->vu_ops->append_opts(s, cmd_line, ",server=on");
 
@@ -1001,7 +977,7 @@ static void *vhost_user_test_setup_flags_mismatch(GString *cmd_line, void *arg)
 
     s->test_flags = TEST_FLAGS_DISCONNECT;
 
-    g_thread_unref(g_thread_new("connect", connect_thread, s));
+    g_thread_new("connect", connect_thread, s);
     append_mem_opts(s, cmd_line, 256, TEST_MEMFD_AUTO);
     s->vu_ops->append_opts(s, cmd_line, ",server=on");
 
@@ -1102,11 +1078,6 @@ static void register_vhost_user_test(void)
                  "virtio-net",
                  test_read_guest_mem, &opts);
 
-    opts.before = vhost_user_test_setup_shm;
-    qos_add_test("vhost-user/read-guest-mem/shm",
-                 "virtio-net",
-                 test_read_guest_mem, &opts);
-
     if (qemu_memfd_check(MFD_ALLOW_SEALING)) {
         opts.before = vhost_user_test_setup_memfd;
         qos_add_test("vhost-user/read-guest-mem/memfd",
@@ -1185,45 +1156,3 @@ static void register_vhost_gpio_test(void)
                  "vhost-user-gpio", test_read_guest_mem, &opts);
 }
 libqos_init(register_vhost_gpio_test);
-
-static uint64_t vu_scmi_get_features(TestServer *s)
-{
-    return 0x1ULL << VIRTIO_F_VERSION_1 |
-        0x1ULL << VIRTIO_SCMI_F_P2A_CHANNELS |
-        0x1ULL << VHOST_USER_F_PROTOCOL_FEATURES;
-}
-
-static void vu_scmi_get_protocol_features(TestServer *s, CharBackend *chr,
-                                          VhostUserMsg *msg)
-{
-    msg->flags |= VHOST_USER_REPLY_MASK;
-    msg->size = sizeof(m.payload.u64);
-    msg->payload.u64 = 1ULL << VHOST_USER_PROTOCOL_F_MQ;
-
-    qemu_chr_fe_write_all(chr, (uint8_t *)msg, VHOST_USER_HDR_SIZE + msg->size);
-}
-
-static struct vhost_user_ops g_vu_scmi_ops = {
-    .type = VHOST_USER_SCMI,
-
-    .append_opts = append_vhost_gpio_opts,
-
-    .get_features = vu_scmi_get_features,
-    .set_features = vu_net_set_features,
-    .get_protocol_features = vu_scmi_get_protocol_features,
-};
-
-static void register_vhost_scmi_test(void)
-{
-    QOSGraphTestOptions opts = {
-        .before = vhost_user_test_setup,
-        .subprocess = true,
-        .arg = &g_vu_scmi_ops,
-    };
-
-    qemu_add_opts(&qemu_chardev_opts);
-
-    qos_add_test("scmi/read-guest-mem/memfile",
-                 "vhost-user-scmi", test_read_guest_mem, &opts);
-}
-libqos_init(register_vhost_scmi_test);

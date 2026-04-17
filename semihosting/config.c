@@ -8,11 +8,11 @@
  * targets that support it. Architecture specific handling is handled
  * in target/HW/HW-semi.c
  *
- * Semihosting is slightly strange in that it is also supported by some
+ * Semihosting is sightly strange in that it is also supported by some
  * linux-user targets. However in that use case no configuration of
  * the outputs and command lines is supported.
  *
- * The config module is common to all system targets however as vl.c
+ * The config module is common to all softmmu targets however as vl.c
  * needs to link against the helpers.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -113,13 +113,12 @@ static int add_semihosting_arg(void *opaque,
 void semihosting_arg_fallback(const char *file, const char *cmd)
 {
     char *cmd_token;
-    g_autofree char *cmd_dup = g_strdup(cmd);
 
     /* argv[0] */
     add_semihosting_arg(&semihosting, "arg", file, NULL);
 
     /* split -append and initialize argv[1..n] */
-    cmd_token = strtok(cmd_dup, " ");
+    cmd_token = strtok(g_strdup(cmd), " ");
     while (cmd_token) {
         add_semihosting_arg(&semihosting, "arg", cmd_token, NULL);
         cmd_token = strtok(NULL, " ");
@@ -132,10 +131,10 @@ void qemu_semihosting_enable(void)
     semihosting.target = SEMIHOSTING_TARGET_AUTO;
 }
 
-int qemu_semihosting_config_options(const char *optstr)
+int qemu_semihosting_config_options(const char *optarg)
 {
     QemuOptsList *opt_list = qemu_find_opts("semihosting-config");
-    QemuOpts *opts = qemu_opts_parse_noisily(opt_list, optstr, false);
+    QemuOpts *opts = qemu_opts_parse_noisily(opt_list, optarg, false);
 
     semihosting.enabled = true;
 
@@ -156,7 +155,7 @@ int qemu_semihosting_config_options(const char *optstr)
                 semihosting.target = SEMIHOSTING_TARGET_AUTO;
             } else {
                 error_report("unsupported semihosting-config %s",
-                             optstr);
+                             optarg);
                 return 1;
             }
         } else {
@@ -166,7 +165,7 @@ int qemu_semihosting_config_options(const char *optstr)
         qemu_opt_foreach(opts, add_semihosting_arg,
                          &semihosting, NULL);
     } else {
-        error_report("unsupported semihosting-config %s", optstr);
+        error_report("unsupported semihosting-config %s", optarg);
         return 1;
     }
 

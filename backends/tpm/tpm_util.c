@@ -112,8 +112,12 @@ static int tpm_util_request(int fd,
                             void *response,
                             size_t responselen)
 {
-    GPollFD fds[1] = { {.fd = fd, .events = G_IO_IN } };
+    fd_set readfds;
     int n;
+    struct timeval tv = {
+        .tv_sec = 1,
+        .tv_usec = 0,
+    };
 
     n = write(fd, request, requestlen);
     if (n < 0) {
@@ -123,8 +127,11 @@ static int tpm_util_request(int fd,
         return -EFAULT;
     }
 
+    FD_ZERO(&readfds);
+    FD_SET(fd, &readfds);
+
     /* wait for a second */
-    n = RETRY_ON_EINTR(g_poll(fds, 1, 1000));
+    n = select(fd + 1, &readfds, NULL, NULL, &tv);
     if (n != 1) {
         return -errno;
     }
@@ -339,11 +346,10 @@ void tpm_util_show_buffer(const unsigned char *buffer,
     size_t len, i;
     char *line_buffer, *p;
 
-    if (!trace_event_get_state_backends(TRACE_TPM_UTIL_SHOW_BUFFER_CONTENT)) {
+    if (!trace_event_get_state_backends(TRACE_TPM_UTIL_SHOW_BUFFER)) {
         return;
     }
     len = MIN(tpm_cmd_get_size(buffer), buffer_size);
-    trace_tpm_util_show_buffer_header(string, len);
 
     /*
      * allocate enough room for 3 chars per buffer entry plus a
@@ -357,7 +363,7 @@ void tpm_util_show_buffer(const unsigned char *buffer,
         }
         p += sprintf(p, "%.2X ", buffer[i]);
     }
-    trace_tpm_util_show_buffer_content(line_buffer);
+    trace_tpm_util_show_buffer(string, len, line_buffer);
 
     g_free(line_buffer);
 }

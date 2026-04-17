@@ -21,8 +21,6 @@
 #include "user-internals.h"
 #include "signal-common.h"
 #include "linux-user/trace.h"
-#include "target/arm/cpu-features.h"
-#include "vdso-asmoffset.h"
 
 struct target_sigcontext {
     abi_ulong trap_no;
@@ -104,11 +102,6 @@ struct rt_sigframe
     struct sigframe sig;
 };
 
-QEMU_BUILD_BUG_ON(offsetof(struct sigframe, retcode[3])
-                  != SIGFRAME_RC3_OFFSET);
-QEMU_BUILD_BUG_ON(offsetof(struct rt_sigframe, sig.retcode[3])
-                  != RT_SIGFRAME_RC3_OFFSET);
-
 static abi_ptr sigreturn_fdpic_tramp;
 
 /*
@@ -167,9 +160,6 @@ get_sigframe(struct target_sigaction *ka, CPUARMState *regs, int framesize)
     return (sp - framesize) & ~7;
 }
 
-static void write_arm_sigreturn(uint32_t *rc, int syscall);
-static void write_arm_fdpic_sigreturn(uint32_t *rc, int ofs);
-
 static int
 setup_return(CPUARMState *env, struct target_sigaction *ka, int usig,
              struct sigframe *frame, abi_ulong sp_addr)
@@ -177,9 +167,9 @@ setup_return(CPUARMState *env, struct target_sigaction *ka, int usig,
     abi_ulong handler = 0;
     abi_ulong handler_fdpic_GOT = 0;
     abi_ulong retcode;
-    bool is_fdpic = info_is_fdpic(get_task_state(thread_cpu)->info);
-    bool is_rt = ka->sa_flags & TARGET_SA_SIGINFO;
-    bool thumb;
+    int thumb, retcode_idx;
+    int is_fdpic = info_is_fdpic(((TaskState *)thread_cpu->opaque)->info);
+    bool copy_retcode;
 
     if (is_fdpic) {
         /* In FDPIC mode, ka->_sa_handler points to a function
@@ -194,7 +184,9 @@ setup_return(CPUARMState *env, struct target_sigaction *ka, int usig,
     } else {
         handler = ka->_sa_handler;
     }
+
     thumb = handler & 1;
+    retcode_idx = thumb + (ka->sa_flags & TARGET_SA_SIGINFO ? 2 : 0);
 
     uint32_t cpsr = cpsr_read(env);
 
@@ -210,32 +202,24 @@ setup_return(CPUARMState *env, struct target_sigaction *ka, int usig,
         cpsr &= ~CPSR_E;
     }
 
-    /* Our vdso default_sigreturn label is a table of entry points. */
-    retcode = default_sigreturn + (is_fdpic * 2 + is_rt) * 8;
-
-    /*
-     * Put the sigreturn code on the stack no matter which return
-     * mechanism we use in order to remain ABI compliant.
-     * Because this is about ABI, always use the A32 instructions,
-     * despite the fact that our actual vdso trampoline is T16.
-     */
-    if (is_fdpic) {
-        write_arm_fdpic_sigreturn(frame->retcode,
-                                  is_rt ? RT_SIGFRAME_RC3_OFFSET
-                                        : SIGFRAME_RC3_OFFSET);
-    } else {
-        write_arm_sigreturn(frame->retcode,
-                            is_rt ? TARGET_NR_rt_sigreturn
-                                  : TARGET_NR_sigreturn);
-    }
-
     if (ka->sa_flags & TARGET_SA_RESTORER) {
         if (is_fdpic) {
-            /* Place the function descriptor in slot 3. */
             __put_user((abi_ulong)ka->sa_restorer, &frame->retcode[3]);
+            retcode = (sigreturn_fdpic_tramp +
+                       retcode_idx * RETCODE_BYTES + thumb);
+            copy_retcode = true;
         } else {
             retcode = ka->sa_restorer;
+            copy_retcode = false;
         }
+    } else {
+        retcode = default_sigreturn + retcode_idx * RETCODE_BYTES + thumb;
+        copy_retcode = true;
+    }
+
+    /* Copy the code to the stack slot for ABI compatibility. */
+    if (copy_retcode) {
+        memcpy(frame->retcode, g2h_untagged(retcode & ~1), RETCODE_BYTES);
     }
 
     env->regs[0] = usig;
@@ -357,7 +341,7 @@ void setup_rt_frame(int usig, struct target_sigaction *ka,
 
     info_addr = frame_addr + offsetof(struct rt_sigframe, info);
     uc_addr = frame_addr + offsetof(struct rt_sigframe, sig.uc);
-    frame->info = *info;
+    tswap_siginfo(&frame->info, info);
 
     setup_sigframe(&frame->sig.uc, set, env);
 
