@@ -37,7 +37,7 @@ struct P404KeyState {
     /*< public >*/
 };
 
-extern void p404_keyctl_handle_key(int keycode);
+extern void p404_keyctl_handle_key(int keycode, bool bDown);
 
 OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(P404KeyState, p404_key, P404_KEY_INPUT, SYS_BUS_DEVICE, {NULL})
 
@@ -47,7 +47,7 @@ static void p404_key_input_keyevent(DeviceState *dev, QemuConsole *src,
 {
     InputKeyEvent *key = evt->u.key.data;
     int qcode = qemu_input_key_value_to_qcode(key->key);
-    p404_keyctl_handle_key(qcode);
+    p404_keyctl_handle_key(qcode, key->down);
 }
 
 static void p404_key_finalize(Object *obj)
