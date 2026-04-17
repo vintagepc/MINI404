@@ -1,7 +1,7 @@
 #pragma once
 
-#include "hw/hw.h"
-#include "hw/registerfields.h"
+
+#include "hw/core/registerfields.h"
 #include "hw/ssi/ssi.h"
 
 #define TYPE_ESP32_SPI "ssi.esp32.spi"

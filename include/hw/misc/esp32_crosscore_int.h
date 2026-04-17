@@ -1,9 +1,9 @@
 #pragma once
 
-#include "hw/hw.h"
-#include "hw/registerfields.h"
-#include "hw/sysbus.h"
-#include "sysemu/block-backend.h"
+
+#include "hw/core/registerfields.h"
+#include "hw/core/sysbus.h"
+#include "system/block-backend.h"
 
 
 #define TYPE_ESP32_CROSSCORE_INT "misc.esp32.crosscoreint"

@@ -13,12 +13,12 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/registerfields.h"
-#include "hw/boards.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/boards.h"
 #include "hw/timer/esp32_timg.h"
 
 
@@ -634,16 +634,15 @@ static void esp32_timg_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(sbd), &s->wdt_sys_reset_req, ESP32_TIMG_WDT_SYS_RESET_GPIO, 1);
 }
 
-static Property esp32_timg_properties[] = {
+static const Property esp32_timg_properties[] = {
     DEFINE_PROP_BOOL("wdt_disable", Esp32TimgState, wdt_disable, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void esp32_timg_class_init(ObjectClass *klass, void *data)
+static void esp32_timg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_timg_reset;
+    dc->legacy_reset = esp32_timg_reset;
     dc->realize = esp32_timg_realize;
     device_class_set_props(dc, esp32_timg_properties);
 }

@@ -13,13 +13,12 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "sysemu/sysemu.h"
 #include "chardev/char-fe.h"
-#include "hw/registerfields.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/nvram/esp32_efuse.h"
 
 static void esp32_efuse_read_op(Esp32EfuseState *s);
@@ -277,16 +276,15 @@ static void esp32_efuse_init(Object *obj)
     memset(&s->efuse_wr, 0, sizeof(s->efuse_wr));
 }
 
-static Property esp32_efuse_properties[] = {
+static const Property esp32_efuse_properties[] = {
     DEFINE_PROP_DRIVE("drive", Esp32EfuseState, blk),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void esp32_efuse_class_init(ObjectClass *klass, void *data)
+static void esp32_efuse_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_efuse_reset;
+    dc->legacy_reset = esp32_efuse_reset;
     dc->realize = esp32_efuse_realize;
     device_class_set_props(dc, esp32_efuse_properties);
 }

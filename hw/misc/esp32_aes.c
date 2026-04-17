@@ -1,5 +1,5 @@
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/misc/esp32_aes.h"
 #include "crypto/aes.h"
 
@@ -32,7 +32,10 @@ static void esp32_aes_mode(Esp32AesState *s, uint32_t mode_value)
 static void esp32_aes_start(Esp32AesState *s)
 {
     AES_KEY aes_key;
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wvla"
     uint32_t full_key[s->mode.bits / 32];
+    #pragma GCC diagnostic pop
     memcpy(full_key, s->key, s->mode.bits / 8);
     if (s->mode.type == ESP32_AES_ENCRYPTION_MODE) {
         AES_set_encrypt_key((unsigned char *)full_key, s->mode.bits, &aes_key);
@@ -106,11 +109,11 @@ static void esp32_aes_init(Object *obj)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static void esp32_aes_class_init(ObjectClass *klass, void *data)
+static void esp32_aes_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_aes_reset;
+    dc->legacy_reset = esp32_aes_reset;
 }
 
 static const TypeInfo esp32_aes_info = {

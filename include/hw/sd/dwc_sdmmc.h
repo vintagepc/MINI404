@@ -21,7 +21,7 @@
 #define DWC_SDMMC_H
 
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/sd/sd.h"
 
 

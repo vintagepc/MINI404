@@ -1,7 +1,7 @@
 #pragma once
 
-#include "hw/hw.h"
-#include "hw/registerfields.h"
+
+#include "hw/core/registerfields.h"
 
 #define TYPE_ESP32_TIMG "timer.esp32.timg"
 #define ESP32_TIMG(obj) OBJECT_CHECK(Esp32TimgState, (obj), TYPE_ESP32_TIMG)
