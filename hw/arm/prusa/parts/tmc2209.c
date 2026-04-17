@@ -17,13 +17,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
 #include "../utility/macros.h"
@@ -431,13 +431,13 @@ static void tmc2209_init(Object *obj){
 
 }
 
-static Property tmc2209_properties[] = {
+static const Property tmc2209_properties[] = {
     DEFINE_PROP_UINT8("axis", tmc2209_state, id,(uint8_t)' '),
     DEFINE_PROP_UINT8("address", tmc2209_state, address,0),
     DEFINE_PROP_UINT8("inverted",tmc2209_state, is_inverted, 0),
     DEFINE_PROP_UINT64("max_step", tmc2209_state, max_step,16*100),
     DEFINE_PROP_UINT32("fullstepspermm",tmc2209_state, max_steps_per_mm,160*16*100),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void tmc2209_finalize(Object *obj){
@@ -486,7 +486,7 @@ static const VMStateDescription vmstate_tmc2209 = {
     }
 };
 
-static void tmc2209_class_init(ObjectClass *klass, void *data)
+static void tmc2209_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, tmc2209_properties);

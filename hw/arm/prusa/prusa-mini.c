@@ -24,22 +24,22 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "hw/arm/boot.h"
 #include "hw/ssi/ssi.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "stm32_common/stm32_shared.h"
 #include "stm32_common/stm32_common.h"
 #include "stm32_common/stm32_types.h"
 #include "hw/arm/armv7m.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -81,7 +81,7 @@ static void prusa_mini_100_init(MachineState *machine)
 static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 {
     DeviceState *dev;
-    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");
 
     dev = qdev_new(TYPE_STM32F407xG_SOC);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
@@ -131,10 +131,8 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
-        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-            BOOTLOADER_IMAGE, 0,
-            default_flash_size);
+        stm32_soc_load_targphys(OBJECT(dev_soc), machine->kernel_filename,0x20000-64);
+        stm32_soc_load_kernel(OBJECT(dev_soc), BOOTLOADER_IMAGE);
     }
     else // Raw bin or ELF file, load directly.
     {

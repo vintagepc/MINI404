@@ -19,13 +19,13 @@
 #include "qemu/osdep.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "ui/console.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 #include "../utility/macros.h"
 #include "../utility/p404_motor_if.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "../utility/text_helper.h"
 //#define DEBUG_ILI9488 1
 
@@ -365,7 +365,7 @@ static int dashboard_2d_post_load(void *opaque, int version) {
     return 0;
 }
 
-static Property dashboard_2d_properties[] = {
+static const Property dashboard_2d_properties[] = {
     DEFINE_PROP_LINK("motor[0]",Dashboard2DState, motors[0], TYPE_P404_MOTOR_IF, P404MotorIF*),
     DEFINE_PROP_LINK("motor[1]",Dashboard2DState, motors[1], TYPE_P404_MOTOR_IF, P404MotorIF*),
     DEFINE_PROP_LINK("motor[2]",Dashboard2DState, motors[2], TYPE_P404_MOTOR_IF, P404MotorIF*),
@@ -380,7 +380,7 @@ static Property dashboard_2d_properties[] = {
     DEFINE_PROP_UINT8("thermistors", Dashboard2DState, therm_count, 0),
     DEFINE_PROP_STRING("indicators", Dashboard2DState, ind_labels),
     DEFINE_PROP_STRING("title", Dashboard2DState, title),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static const VMStateDescription vmstate_dashboard_2d = {
@@ -394,7 +394,7 @@ static const VMStateDescription vmstate_dashboard_2d = {
     }
 };
 
-static void dashboard_2d_class_init(ObjectClass *klass, void *data)
+static void dashboard_2d_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_dashboard_2d;

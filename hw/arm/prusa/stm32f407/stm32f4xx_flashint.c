@@ -21,12 +21,13 @@
 
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_common.h"
+#include "exec/cpu-common.h"
 #include "stm32f4xx_flashint_regdata.h"
 
 
@@ -324,13 +325,13 @@ static const VMStateDescription vmstate_stm32f4xx_fint = {
     }
 };
 
-static Property stm32f4xx_fint_properties[] = {
+static const Property stm32f4xx_fint_properties[] = {
     DEFINE_PROP_LINK("flash", STM32F4XX_STRUCT_NAME(FlashIF), flash, TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void
-stm32f4xx_fint_class_init(ObjectClass *klass, void *data)
+stm32f4xx_fint_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32f4xx_fint_reset);
@@ -360,7 +361,7 @@ stm32f4xx_fint_register_types(void)
 			.class_init = stm32f4xx_fint_class_init,
             .class_data = (void *)stm32f4xx_flashif_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

@@ -23,15 +23,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "qemu/log.h"
 #include "stm32_rcc_if.h"
 
@@ -520,13 +520,13 @@ static const VMStateDescription vmstate_stm32_common_dma = {
     }
 };
 
-static Property stm32_common_dma_properties[] = {
+static const Property stm32_common_dma_properties[] = {
     DEFINE_PROP_LINK("system-memory", COM_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void
-stm32_common_dma_class_init(ObjectClass *klass, void *data)
+stm32_common_dma_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_dma;
@@ -559,7 +559,7 @@ stm32_common_dma_register_types(void)
 			.class_init    = stm32_common_dma_class_init,
             .class_data = (void *)stm32_dma_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

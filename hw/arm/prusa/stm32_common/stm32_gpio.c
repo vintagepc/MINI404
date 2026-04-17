@@ -24,15 +24,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_gpio.h"
 #include "stm32_gpio_regdata.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 //#define DEBUG_STM32_GPIO
 #ifdef DEBUG_STM32_GPIO
@@ -286,10 +286,10 @@ stm32_common_gpio_init(Object *obj)
 	s->reginfo = k->var_reginfo;
 }
 
-static Property stm32_common_gpio_properties[] = {
+static const Property stm32_common_gpio_properties[] = {
     DEFINE_PROP_UINT32("idr-mask", COM_STRUCT_NAME(Gpio), idr_mask, 0),
     DEFINE_PROP_UINT32("idr-force", COM_STRUCT_NAME(Gpio), force_idr, 0),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static const VMStateDescription vmstate_stm32_common_gpio = {
@@ -305,7 +305,7 @@ static const VMStateDescription vmstate_stm32_common_gpio = {
 
 
 static void
-stm32_common_gpio_class_init(ObjectClass *klass, void *data)
+stm32_common_gpio_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_common_gpio_reset);
@@ -314,7 +314,7 @@ stm32_common_gpio_class_init(ObjectClass *klass, void *data)
 
 	COM_CLASS_NAME(Gpio) *k = STM32COM_GPIO_CLASS(klass);
 	QEMU_BUILD_BUG_MSG(sizeof(k->var_reginfo) != sizeof(stm32_reginfo_t[MAX_GPIO_BANKS][RI_END]), "Reginfo not sized correctly!");
-	stm32_reginfo_t (** ri_data)[MAX_GPIO_BANKS][RI_END] = data;
+	const stm32_reginfo_t (*const *const ri_data)[MAX_GPIO_BANKS][RI_END] = data;
 	for (int i=0; i<MAX_GPIO_BANKS; i++)
 	{
 		memcpy(k->var_reginfo[i], ri_data[i], sizeof(k->var_reginfo[0]));
@@ -342,7 +342,7 @@ stm32_common_gpio_register_types(void)
     		.class_init    = stm32_common_gpio_class_init,
             .class_data = (void *)stm32_gpio_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 
 }

@@ -21,9 +21,9 @@
 
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "../stm32_common/stm32_common.h"
@@ -236,7 +236,7 @@ static const VMStateDescription vmstate_stm32_common_dmamux = {
 };
 
 static void
-stm32_common_dmamux_class_init(ObjectClass *klass, void *data)
+stm32_common_dmamux_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_dmamux;
@@ -268,7 +268,7 @@ stm32_common_dmamux_register_types(void)
 			.class_init    = stm32_common_dmamux_class_init,
             .class_data = (void *)stm32_dmamux_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

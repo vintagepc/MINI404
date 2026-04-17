@@ -28,10 +28,10 @@
 #include "../utility/ArgHelper.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 
 #define TYPE_HALL_SENSOR "hall-sensor"
 
@@ -183,15 +183,14 @@ static const VMStateDescription vmstate_hall_sensor = {
     }
 };
 
-static Property hall_sensor_properties[] = {
+static const Property hall_sensor_properties[] = {
     DEFINE_PROP_UINT8("index",HallState, index, 0),
     DEFINE_PROP_UINT32("present-value",HallState, present_val, 80000),
     DEFINE_PROP_UINT32("missing-value",HallState, missing_val, 250),
     DEFINE_PROP_BOOL("start-state",HallState, start_state, true),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void hall_sensor_class_init(ObjectClass *oc, void *data)
+static void hall_sensor_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, hall_sensor_reset);

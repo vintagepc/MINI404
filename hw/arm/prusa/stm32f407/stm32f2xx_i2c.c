@@ -27,9 +27,9 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/i2c/i2c.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "stm32f2xx_i2c.h"
 #include "../utility/macros.h"
@@ -377,7 +377,7 @@ static const VMStateDescription vmstate_stm32f2xx_i2c = {
 };
 
 static void
-stm32f2xxi2c_class_init(ObjectClass *c, void *data)
+stm32f2xxi2c_class_init(ObjectClass *c, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(c);
     dc->vmsd = &vmstate_stm32f2xx_i2c;

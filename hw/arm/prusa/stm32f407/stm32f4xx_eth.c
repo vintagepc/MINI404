@@ -28,14 +28,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "net/checksum.h"
 #include "net/eth.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
+#include "exec/cpu-common.h"
 #include "net/net.h"
 #include "hw/net/mii.h"
 #include "qom/object.h"
@@ -497,10 +498,9 @@ static void stm32f4xx_eth_realize(DeviceState *dev, Error **errp)
                                   s->conf.macaddr.a[0];
 }
 
-static Property stm32f4xx_eth_properties[] = {
+static const Property stm32f4xx_eth_properties[] = {
     DEFINE_NIC_PROPERTIES(Stm32F4xx_Eth, conf),
-    DEFINE_PROP_BOOL("connected", Stm32F4xx_Eth, is_connected, false),
-    DEFINE_PROP_END_OF_LIST(),
+    DEFINE_PROP_BOOL("connected", Stm32F4xx_Eth, is_connected, false)
 };
 
 static const VMStateDescription vmstate_rxtx_stats = {
@@ -530,7 +530,7 @@ static const VMStateDescription vmstate_stm32f4xx_eth = {
     }
 };
 
-static void stm32f4xx_eth_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_eth_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

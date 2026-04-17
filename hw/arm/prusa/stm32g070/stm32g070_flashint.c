@@ -21,13 +21,13 @@
 
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "../stm32_common/stm32_common.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "stm32g070_flashint_regdata.h"
-
+#include "exec/cpu-common.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32G070_STRUCT_NAME(FlashIF), STM32G070_FINT);
 
@@ -342,13 +342,13 @@ static const VMStateDescription vmstate_stm32g070_fint = {
     }
 };
 
-static Property stm32g070_fint_properties[] = {
+static const Property stm32g070_fint_properties[] = {
     DEFINE_PROP_LINK("flash", STM32G070_STRUCT_NAME(FlashIF), flash, TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void
-stm32g070_fint_class_init(ObjectClass *klass, void *data)
+stm32g070_fint_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32g070_fint_reset);

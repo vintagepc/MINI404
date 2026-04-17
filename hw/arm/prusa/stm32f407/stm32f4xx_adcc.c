@@ -23,8 +23,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "qemu/typedefs.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
@@ -162,7 +162,7 @@ static void stm32f4xx_adcc_init(Object *obj)
 
 }
 
-static void stm32f4xx_adcc_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_adcc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

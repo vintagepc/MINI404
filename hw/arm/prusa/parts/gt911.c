@@ -23,10 +23,10 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/i2c/i2c.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qom/object.h"
 
 
@@ -231,12 +231,8 @@ static void gt911_reset(DeviceState *dev)
 	s->regs.defs.TOUCH.BUFFER_STATUS = 1;
 }
 
-static Property gt911_props[] = {
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static
-void gt911_class_init(ObjectClass *klass, void *data)
+void gt911_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
@@ -246,7 +242,6 @@ void gt911_class_init(ObjectClass *klass, void *data)
     k->send = &gt911_send;
 	k->event = &gt911_event;
 
-    device_class_set_props(dc, gt911_props);
     device_class_set_legacy_reset(dc, gt911_reset);
 }
 

@@ -26,25 +26,25 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/core/split-irq.h"
 #include "hw/ssi/ssi.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "hw/arm/boot.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/runstate.h"
+#include "system/block-backend.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
 #include "otp.h"
 #include "parts/xl_bridge.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 
 
 #define TYPE_XBUDDY_MACHINE "xbuddy-machine"
@@ -393,7 +393,7 @@ static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
-    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
@@ -461,10 +461,8 @@ static void mk4_init(MachineState *machine)
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
-        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-            cfg.boot_fn, 0,
-            flash_size);
+        stm32_soc_load_targphys(OBJECT(dev_soc), machine->kernel_filename,0x20000-64);
+        stm32_soc_load_kernel(OBJECT(dev_soc), cfg.boot_fn);
     }
     else // Raw bin or ELF file, load directly.
     {
@@ -981,7 +979,7 @@ static void mk4_init(MachineState *machine)
 
 };
 
-static void xbuddy_class_init(ObjectClass *oc, void *data)
+static void xbuddy_class_init(ObjectClass *oc, const void *data)
 {
 		const xBuddyData* d = (xBuddyData*)data;
 	    MachineClass *mc = MACHINE_CLASS(oc);

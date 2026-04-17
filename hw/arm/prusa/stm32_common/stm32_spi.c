@@ -26,7 +26,7 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/ssi/ssi.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "stm32_shared.h"
 #include "stm32_common.h"
 #include "migration/vmstate.h"
@@ -359,7 +359,7 @@ static void stm32_common_spi_init(Object *obj)
 	s->reginfo = k->var_reginfo;
 }
 
-static void stm32_common_spi_class_init(ObjectClass *klass, void *data)
+static void stm32_common_spi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -390,7 +390,7 @@ static void stm32_common_spi_register_types(void)
     		.class_init    = stm32_common_spi_class_init,
             .class_data = (void *)stm32_spi_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

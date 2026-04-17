@@ -27,10 +27,9 @@
 #include "chardev/char-fe.h"
 #include "../utility/macros.h"
 #include "../utility/ArgHelper.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
-#include "sysemu/sysemu.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
+#include "hw/core/sysbus.h"
 #include "qemu/readline.h"
 #include "ui/console.h"
 
@@ -39,7 +38,7 @@ struct ScriptConsoleState {
 
     Chardev *input_source;
 
-    CharBackend be;
+    CharFrontend be;
 
     char* scriptcon_name;
 
@@ -282,14 +281,13 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 
 }
 
-static Property scriptcon_properties[] = {
+static const Property scriptcon_properties[] = {
     DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, false),
     DEFINE_PROP_STRING("input_id", ScriptConsoleState, scriptcon_name),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 
-static void scriptcon_class_init(ObjectClass *klass, void *data)
+static void scriptcon_class_init(ObjectClass *klass, const void *data)
 {
    // ChardevClass *cc = CHARDEV_CLASS(klass);
     // cc->chr_write = scriptcon_read;

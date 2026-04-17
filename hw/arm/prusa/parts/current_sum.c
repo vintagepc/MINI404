@@ -17,10 +17,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "../utility/macros.h"
 #include "migration/vmstate.h"
 
@@ -97,7 +97,7 @@ static void current_sum_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj), current_sum_read_request,"adc_read_request",1);
 }
 
-static Property current_sum_properties[] = {
+static const Property current_sum_properties[] = {
     DEFINE_PROP_LINK("heater[0]",CurrentSumState, heaters[0], "heater", heater_state*),
     DEFINE_PROP_LINK("heater[1]",CurrentSumState, heaters[1], "heater", heater_state*),
     DEFINE_PROP_LINK("heater[2]",CurrentSumState, heaters[2], "heater", heater_state*),
@@ -108,7 +108,6 @@ static Property current_sum_properties[] = {
     DEFINE_PROP_LINK("heater[7]",CurrentSumState, heaters[7], "heater", heater_state*),
     DEFINE_PROP_LINK("heater[8]",CurrentSumState, heaters[8], "heater", heater_state*),
     DEFINE_PROP_LINK("heater[9]",CurrentSumState, heaters[9], "heater", heater_state*),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 // static const VMStateDescription vmstate_acs711 = {
@@ -122,7 +121,7 @@ static Property current_sum_properties[] = {
 //     }
 // };
 
-static void current_sum_class_init(ObjectClass *klass, void *data)
+static void current_sum_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, current_sum_reset);

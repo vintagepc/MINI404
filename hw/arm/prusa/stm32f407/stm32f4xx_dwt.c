@@ -20,15 +20,16 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "../stm32_common/stm32_types.h"
 #include "../stm32_common/stm32_shared.h"
 #include <assert.h>
 #include "../utility/macros.h"
-#include "sysemu/cpu-timers.h"
-#include "hw/irq.h"
+#include "system/cpu-timers.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "exec/icount.h"
 
 enum RegIndex {
 	RI_CTRL,				/*!< Offset: 0x000 (R/W)  Control Register */
@@ -226,7 +227,7 @@ static const VMStateDescription vmstate_stm32f4xx_dwt = {
 };
 
 static void
-stm32f4xx_dwt_class_init(ObjectClass *klass, void *data)
+stm32f4xx_dwt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32f4xx_dwt_reset);

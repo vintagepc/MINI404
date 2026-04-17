@@ -24,8 +24,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "qemu/typedefs.h"
 #include "qemu/timer.h"
 #include "migration/vmstate.h"
@@ -33,7 +33,7 @@
 #include "qemu/module.h"
 #include "../utility/macros.h"
 #include "stm32f4xx_adcc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "../stm32_common/stm32_types.h"
 #include "../stm32_common/stm32_rcc_if.h"
 
@@ -541,12 +541,12 @@ static void stm32f4xx_adc_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
-static Property stm32f4xx_adc_properties[] = {
+static const Property stm32f4xx_adc_properties[] = {
     DEFINE_PROP_LINK("common", STM32F4XXADCState, common, TYPE_STM32F4XX_ADCC, STM32F4XXADCCState *),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
-static void stm32f4xx_adc_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_adc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

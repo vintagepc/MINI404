@@ -26,9 +26,9 @@
 #include "qemu/module.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 
 #define TYPE_SOFTWARE_PWM "software-pwm"
 #define LINE_COUNT 16
@@ -125,12 +125,11 @@ static void software_pwm_init(Object *obj)
 	qdev_init_gpio_out(dev, s->pwm, LINE_COUNT);
 }
 
-static Property software_pwm_properties[] = {
+static const Property software_pwm_properties[] = {
     DEFINE_PROP_BOOL("is_inverted", SoftwarePWMState, is_inverted, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void software_pwm_class_init(ObjectClass *klass, void *data)
+static void software_pwm_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
