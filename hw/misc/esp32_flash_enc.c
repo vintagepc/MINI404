@@ -9,8 +9,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
+
+#include "hw/core/sysbus.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "crypto/cipher.h"
@@ -140,7 +140,7 @@ static void esp32_flash_encryption_op(struct Esp32FlashEncryptionState *s)
     memset(s->encrypted_buffer, 0, sizeof(s->encrypted_buffer));
     reverse_key_byte_order(s->efuse_key, reversed_key);
     esp32_flash_encryption_key_tweak(s, s->address_reg, reversed_key, tweaked_key);
-    QCryptoCipher *cipher = qcrypto_cipher_new(QCRYPTO_CIPHER_ALG_AES_256, QCRYPTO_CIPHER_MODE_ECB, (const uint8_t*) tweaked_key, FLASH_ENCRYPTION_KEY_WORDS * 4, &error_abort);
+    QCryptoCipher *cipher = qcrypto_cipher_new(QCRYPTO_CIPHER_ALGO_AES_256, QCRYPTO_CIPHER_MODE_ECB, (const uint8_t*) tweaked_key, FLASH_ENCRYPTION_KEY_WORDS * 4, &error_abort);
     for (size_t total_words = 0; total_words < ARRAY_SIZE(s->buffer_reg); total_words += FLASH_ENCRYPTION_DATA_WORDS) {
         reverse_data_byte_order(s->buffer_reg + total_words, reversed_data);
         qcrypto_cipher_decrypt(cipher, reversed_data, encrypted_data, sizeof(s->buffer_reg), &error_abort);
@@ -168,7 +168,7 @@ void esp32_flash_decrypt_inplace(struct Esp32FlashEncryptionState* s, size_t fla
     for (size_t pos = 0; pos < words; pos += FLASH_ENCRYPTION_DATA_WORDS) {
         uint32_t offset = flash_addr + pos * 4;
         esp32_flash_encryption_key_tweak(s, offset, reversed_key, tweaked_key);
-        QCryptoCipher *cipher = qcrypto_cipher_new(QCRYPTO_CIPHER_ALG_AES_256, QCRYPTO_CIPHER_MODE_ECB, (const uint8_t*) tweaked_key, FLASH_ENCRYPTION_KEY_WORDS * 4, &error_abort);
+        QCryptoCipher *cipher = qcrypto_cipher_new(QCRYPTO_CIPHER_ALGO_AES_256, QCRYPTO_CIPHER_MODE_ECB, (const uint8_t*) tweaked_key, FLASH_ENCRYPTION_KEY_WORDS * 4, &error_abort);
         reverse_data_byte_order(data + pos, reversed_data);
         qcrypto_cipher_encrypt(cipher, reversed_data, decrypted_data, sizeof(decrypted_data), &error_abort);
         reverse_data_byte_order(decrypted_data, data + pos);
@@ -248,11 +248,11 @@ static void esp32_flash_encryption_reset(DeviceState *dev)
     s->encryption_done = false;
 }
 
-static void esp32_flash_encryption_class_init(ObjectClass *klass, void *data)
+static void esp32_flash_encryption_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_flash_encryption_reset;
+    dc->legacy_reset = esp32_flash_encryption_reset;
 }
 
 static const TypeInfo esp32_flash_encryption_info = {

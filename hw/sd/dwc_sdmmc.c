@@ -25,21 +25,21 @@
 #include "qemu/error-report.h"
 #include "hw/sd/dwc_sdmmc.h"
 #include "qapi/error.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "sysemu/blockdev.h"
-#include "sysemu/dma.h"
-#include "hw/qdev-properties.h"
-#include "hw/irq.h"
+#include "system/blockdev.h"
+#include "system/dma.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "trace.h"
 #include "qom/object.h"
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 
 /* This implementation is simplified:
  * - Only DMA mode is implemented, with 32-bit DMA descriptor pointers.
@@ -244,7 +244,7 @@ static void dwc_sdmmc_handle_cmd(DWCSDMMCState *s)
     request.cmd = hw_cmd.cmd_index;
     request.arg = s->cmdarg;
 
-    rlen = sdbus_do_command(&s->sdbus, &request, resp);
+    rlen = sdbus_do_command(&s->sdbus, &request, resp, sizeof(resp));
     s->rintsts |= SDMMC_INTMASK_CMD_DONE;
     if (rlen < 0) {
         DEBUG("%s: error: rlen=%d\n", __func__, rlen);
@@ -527,10 +527,6 @@ static const MemoryRegionOps dwc_sdmmc_ops = {
 
 
 
-static Property dwc_sdmmc_properties[] = {
-        DEFINE_PROP_END_OF_LIST(),
-};
-
 static void dwc_sdmmc_init(Object *obj)
 {
     DWCSDMMCState *s = DWC_SDMMC(obj);
@@ -562,12 +558,11 @@ static void dwc_sdmmc_reset(DeviceState *dev)
     memset(s->resp, 0, sizeof(s->resp));
 }
 
-static void dwc_sdmmc_class_init(ObjectClass *klass, void *data)
+static void dwc_sdmmc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = dwc_sdmmc_reset;
-    device_class_set_props(dc, dwc_sdmmc_properties);
+    dc->legacy_reset = dwc_sdmmc_reset;
 }
 
 static TypeInfo dwc_sdmmc_info = {

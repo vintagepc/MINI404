@@ -1,8 +1,8 @@
 #pragma once
 
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
 
 #define TYPE_ESP32_FLASH_ENCRYPTION "misc.esp32.flash_encryption"
 #define ESP32_FLASH_ENCRYPTION(obj) OBJECT_CHECK(Esp32FlashEncryptionState, (obj), TYPE_ESP32_FLASH_ENCRYPTION)

@@ -13,10 +13,10 @@
 #include "qemu/error-report.h"
 #include "crypto/hash.h"
 #include "qapi/error.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
-#include "hw/boards.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/boards.h"
 #include "hw/misc/esp32_sha.h"
 
 #define ESP32_SHA_REGS_SIZE (A_SHA512_BUSY + 4)

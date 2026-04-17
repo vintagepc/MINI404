@@ -1,8 +1,8 @@
 #pragma once
 
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
 #include "hw/misc/esp32_reg.h"
 #include "crypto/sha512_i.h"
 #include "crypto/sha384_i.h"
