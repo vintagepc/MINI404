@@ -109,7 +109,7 @@ static const VMStateDescription vmstate_hc4052 = {
     .name = TYPE_HC4052,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(channel,HC4052State), // Current selected channel.
         VMSTATE_INT32_2DARRAY(levels, HC4052State, 2,4),
         VMSTATE_END_OF_LIST()

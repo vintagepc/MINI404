@@ -513,7 +513,7 @@ static const VMStateDescription vmstate_stm32_common_dma = {
     .name = TYPE_STM32COM_DMA,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,COM_STRUCT_NAME(Dma), RI_END),
         VMSTATE_UINT32_ARRAY(original_ndtrs,COM_STRUCT_NAME(Dma), STM32_COM_DMA_MAX_CHAN),
         VMSTATE_END_OF_LIST()

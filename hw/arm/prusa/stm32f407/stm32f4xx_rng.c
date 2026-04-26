@@ -173,7 +173,7 @@ static const VMStateDescription vmstate_stm32f4xx_rng = {
     .name = TYPE_STM32F4XX_RNG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,Stm32f4xxRNGState, R_RNG_MAX),
         VMSTATE_END_OF_LIST()
     }

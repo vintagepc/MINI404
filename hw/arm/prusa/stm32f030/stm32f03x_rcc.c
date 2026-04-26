@@ -627,7 +627,7 @@ static const VMStateDescription vmstate_stm32f2xx_rcc = {
     .name = TYPE_STM32F030_RCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(HSI14,STM32F030_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(SYSCLK,STM32F030_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(PLLM,STM32F030_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),

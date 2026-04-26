@@ -507,7 +507,7 @@ static const VMStateDescription vmstate_rxtx_stats = {
     .name = "stm32f4xx_eth_stats",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(rx_bytes, RxTxStats),
         VMSTATE_UINT64(tx_bytes, RxTxStats),
         VMSTATE_UINT64(rx, RxTxStats),
@@ -521,7 +521,7 @@ static const VMStateDescription vmstate_stm32f4xx_eth = {
     .name = TYPE_STM32F4XXETH,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(stats, Stm32F4xx_Eth, 0, vmstate_rxtx_stats, RxTxStats),
         VMSTATE_UINT32_ARRAY(regs, Stm32F4xx_Eth, R_MAX),
         VMSTATE_UINT16_ARRAY(mii,Stm32F4xx_Eth, 32),

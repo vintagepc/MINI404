@@ -149,7 +149,7 @@ static const VMStateDescription vmstate_powersource = {
     .minimum_version_id = 1,
     .pre_save = powersource_pre_save,
     .post_load = powersource_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(r1,PSState),
         VMSTATE_UINT32(r2,PSState),
         VMSTATE_UINT32(start_voltage,PSState),

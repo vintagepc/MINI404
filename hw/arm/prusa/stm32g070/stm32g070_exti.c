@@ -243,7 +243,7 @@ stm32_g070_exti_init(Object *obj)
 	.name = TYPE_STM32G070_EXTI,
 	.version_id = 1,
 	.minimum_version_id = 1,
-	.fields = (VMStateField[]) {
+	.fields = (const VMStateField[]) {
 		VMSTATE_UINT32_ARRAY(regs.raw, STM32G070_STRUCT_NAME(Exti), RI_END),
 		VMSTATE_END_OF_LIST()
 	}

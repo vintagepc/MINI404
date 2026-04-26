@@ -107,7 +107,7 @@ static const VMStateDescription vmstate_software_pwm= {
     .name = TYPE_SOFTWARE_PWM,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
 		VMSTATE_UINT8_ARRAY(state_count, SoftwarePWMState, LINE_COUNT),
 		VMSTATE_UINT8(clock_count, SoftwarePWMState),
         VMSTATE_END_OF_LIST()

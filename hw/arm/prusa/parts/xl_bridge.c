@@ -293,7 +293,7 @@ static void xl_bridge_warp(void *opaque, int64_t time)
         qemu_clock_run_all_timers();
         // timerlist_run_timers(aio_context->tlg.tl[QEMU_CLOCK_VIRTUAL]);
         int64_t clock2 = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
-        printf("advancing clock %ld -> %ld\n", clock, clock2);
+        printf("advancing clock %"PRIi64" -> %"PRIi64"\n", clock, clock2);
         clock = clock2;
     }
 
@@ -344,14 +344,14 @@ static void xl_bridge_gpio_receive(void *opaque, const uint8_t *buf, int size)
                 // Account for the initial desync due to start delay of xlbuddy being paused.
                 if (s->time_offset == 0)
                 {
-                    printf("First sync - offset %ld\n", diff);
+                    printf("First sync - offset %"PRIi64"\n", diff);
                     s->time_offset = diff;
                 }
                 diff -= s->time_offset;
                 s->tick++;
                 if (s->tick > 100)
                 {
-                    printf("Puppy %s clock is diff is %ld ms\n", shm_names[s->id], diff);
+                    printf("Puppy %s clock is diff is %"PRIi64" ms\n", shm_names[s->id], diff);
                     s->tick = 0;
                 }
                 if (false && diff < 0)

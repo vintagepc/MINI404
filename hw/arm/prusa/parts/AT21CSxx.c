@@ -103,7 +103,7 @@ static const VMStateDescription vmstate_at21csxx = {
     .name = TYPE_AT21CSXX,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
 		VMSTATE_UINT8(cmd.raw, AT21CSxxState),
 		VMSTATE_TIMER_PTR(line_release, AT21CSxxState),
 		VMSTATE_INT64(low_start, AT21CSxxState),

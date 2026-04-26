@@ -120,7 +120,7 @@ static const VMStateDescription vmstate_cbtl3257 = {
     .name = TYPE_CBTLV3257,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(oe,CBTLV3257State),
         VMSTATE_BOOL(select,CBTLV3257State),
 		VMSTATE_INT32_2DARRAY(levels, CBTLV3257State, 2,4),

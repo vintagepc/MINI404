@@ -265,7 +265,7 @@ static const VMStateDescription vmstate_stm32_common_iwdg = {
     .name = TYPE_STM32COM_IWDG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,COM_STRUCT_NAME(Iwdg), RI_END),
         VMSTATE_TIMER_PTR(timer, COM_STRUCT_NAME(Iwdg)),
         VMSTATE_BOOL(time_changed,COM_STRUCT_NAME(Iwdg)),

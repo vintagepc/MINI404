@@ -114,7 +114,7 @@ static const Property current_sum_properties[] = {
 //     .name = TYPE_ACS711,
 //     .version_id = 1,
 //     .minimum_version_id = 1,
-//     .fields = (VMStateField[]) {
+//     .fields = (const VMStateField[]) {
 //         VMSTATE_UINT8(on_count, ACS711State),
 //         VMSTATE_UINT8_ARRAY(pwm_on, ACS711State,NUM_ITEMS),
 //         VMSTATE_END_OF_LIST()

@@ -223,7 +223,7 @@ static const VMStateDescription vmstate_loadcell = {
     .name = TYPE_LOADCELL,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(is_zero,LoadcellState),
         VMSTATE_INT32(last_pos, LoadcellState),
         VMSTATE_END_OF_LIST()

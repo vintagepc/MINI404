@@ -105,7 +105,7 @@ static const VMStateDescription vmstate_software_spi = {
     .name = TYPE_SOFTWARE_SPI,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
 
         VMSTATE_END_OF_LIST()
     }

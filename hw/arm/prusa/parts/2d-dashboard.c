@@ -388,7 +388,7 @@ static const VMStateDescription vmstate_dashboard_2d = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = dashboard_2d_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(framebuffer,Dashboard2DState,DPY_MAX_ROWS*DPY_MAX_COLS),
         VMSTATE_END_OF_LIST()
     }

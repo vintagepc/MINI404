@@ -610,8 +610,8 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
                 printf("%s now points to: %s\n",link_path, s->chr.chr->label);
             }
         }
+    #endif
     }
-#endif
     // Throw compile errors if alignment is off
     CHECK_ALIGN(sizeof(s->defs), sizeof(s->regs), "USART");
     CHECK_ALIGN(sizeof(uint32_t)*7, sizeof(s->regs), "USART");
@@ -629,24 +629,26 @@ static const Property stm32_uart_properties[] = {
     
 };
 
+static const VMStateField vmsf_stm32_uart[] = {
+    VMSTATE_UINT32_ARRAY(regs, Stm32Uart,USART_R_END),
+    VMSTATE_UINT32(bits_per_sec,Stm32Uart),
+    VMSTATE_INT64(ns_per_char,Stm32Uart),
+    VMSTATE_UINT32(USART_TDR,Stm32Uart),
+    VMSTATE_BOOL(sr_read_since_ore_set,Stm32Uart),
+    VMSTATE_BOOL(receiving,Stm32Uart),
+    VMSTATE_TIMER_PTR(rx_timer,Stm32Uart),
+    VMSTATE_TIMER_PTR(tx_timer,Stm32Uart),
+    VMSTATE_INT32(curr_irq_level,Stm32Uart),
+    VMSTATE_UINT8_ARRAY(rcv_char_buf,Stm32Uart,USART_RCV_BUF_LEN),
+    VMSTATE_UINT32(rcv_char_bytes,Stm32Uart),
+    VMSTATE_END_OF_LIST()
+};
+
 static const VMStateDescription vmstate_stm32_uart = {
     .name = TYPE_STM32_UART,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs, Stm32Uart,USART_R_END),
-        VMSTATE_UINT32(bits_per_sec,Stm32Uart),
-        VMSTATE_INT64(ns_per_char,Stm32Uart),
-        VMSTATE_UINT32(USART_TDR,Stm32Uart),
-        VMSTATE_BOOL(sr_read_since_ore_set,Stm32Uart),
-        VMSTATE_BOOL(receiving,Stm32Uart),
-        VMSTATE_TIMER_PTR(rx_timer,Stm32Uart),
-        VMSTATE_TIMER_PTR(tx_timer,Stm32Uart),
-        VMSTATE_INT32(curr_irq_level,Stm32Uart),
-        VMSTATE_UINT8_ARRAY(rcv_char_buf,Stm32Uart,USART_RCV_BUF_LEN),
-        VMSTATE_UINT32(rcv_char_bytes,Stm32Uart),
-        VMSTATE_END_OF_LIST()
-    }
+    .fields = vmsf_stm32_uart
 };
 
 static void stm32_uart_class_init(ObjectClass *klass, const void *data)
@@ -661,7 +663,7 @@ static void stm32_uart_class_init(ObjectClass *klass, const void *data)
     k->clock_update = stm32_uart_baud_update;
 }
 
-static TypeInfo stm32_uart_info = {
+static const TypeInfo stm32_uart_info = {
     .name  = TYPE_STM32_UART,
     .parent = TYPE_STM32_PERIPHERAL,
     .instance_size  = sizeof(Stm32Uart),

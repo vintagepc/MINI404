@@ -543,7 +543,7 @@ static const VMStateDescription vmstate_spi_display = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = spi_display_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_SSI_PERIPHERAL(ssidev,SPIDisplayState),
         VMSTATE_UINT32(cmd_len,SPIDisplayState),
         VMSTATE_INT32(cmd,SPIDisplayState),

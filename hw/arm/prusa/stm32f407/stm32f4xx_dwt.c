@@ -217,7 +217,7 @@ static const VMStateDescription vmstate_stm32f4xx_dwt = {
     .name = TYPE_STM32F4xx_DWT,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,STM32F4xxDWTState, RI_END),
         // VMSTATE_UINT32_ARRAY(port_buffer,stm32f4xx_dwt, 101),
         // VMSTATE_UINT8(buffer_pos, stm32f4xx_dwt),

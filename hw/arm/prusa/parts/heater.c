@@ -279,7 +279,7 @@ static const VMStateDescription vmstate_heater = {
     .minimum_version_id = 1,
     .pre_save = heater_pre_save,
     .post_load = heater_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(chrLabel,heater_state),
         VMSTATE_UINT8(mass10x,heater_state),
         VMSTATE_UINT16(pwm,heater_state),

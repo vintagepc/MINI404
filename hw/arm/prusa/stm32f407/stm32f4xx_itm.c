@@ -126,7 +126,7 @@ static const VMStateDescription vmstate_stm32f4xx_itm = {
     .name = TYPE_STM32F4xx_ITM,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs,STM32F4XX_STRUCT_NAME(Itm), RI_END),
         VMSTATE_BOOL(unlocked, STM32F4XX_STRUCT_NAME(Itm)),
         VMSTATE_END_OF_LIST()

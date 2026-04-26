@@ -296,7 +296,7 @@ static const VMStateDescription vmstate_stm32_common_gpio = {
     .name = TYPE_STM32COM_GPIO,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(idr_mask, COM_STRUCT_NAME(Gpio)),
         VMSTATE_UINT32_ARRAY(regs, COM_STRUCT_NAME(Gpio),RI_END),
         VMSTATE_END_OF_LIST()

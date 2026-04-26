@@ -3250,7 +3250,7 @@ static const VMStateDescription vmstate_STM32F4xx_state_packet = {
     .name = "STM32F4xx/packet",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(devadr, STM32F4xxPacket),
         VMSTATE_UINT32(epnum, STM32F4xxPacket),
         VMSTATE_UINT32(epdir, STM32F4xxPacket),
@@ -3270,7 +3270,7 @@ const VMStateDescription vmstate_STM32F4xx_state = {
     .name = "STM32F4xx",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(glbreg, STM32F4xxUSBState,
                              STM32F4xx_GLBREG_SIZE / sizeof(uint32_t)),
         VMSTATE_UINT32_ARRAY(fszreg, STM32F4xxUSBState,

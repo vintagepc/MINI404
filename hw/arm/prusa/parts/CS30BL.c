@@ -138,7 +138,7 @@ static const VMStateDescription vmstate_cs30bl = {
     .minimum_version_id = 1,
     .pre_save = cs30bl_pre_save,
     .post_load = cs30bl_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(rcsense, CS30BLState),
         VMSTATE_UINT32(start_current, CS30BLState),
         VMSTATE_UINT32(gain, CS30BLState),

@@ -547,7 +547,7 @@ static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
     .name = TYPE_STM32F2xx_DMA,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,STM32F2XX_STRUCT_NAME(Dma), RI_MAX),
         VMSTATE_UINT32_ARRAY(original_ndtrs,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
         VMSTATE_UINT32_ARRAY(original_cmars,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),

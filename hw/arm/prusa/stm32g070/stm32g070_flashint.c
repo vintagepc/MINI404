@@ -335,7 +335,7 @@ static const VMStateDescription vmstate_stm32g070_fint = {
     .name = TYPE_STM32G070_FINT,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw, STM32G070_STRUCT_NAME(FlashIF),RI_END),
         VMSTATE_UINT8(flash_state, STM32G070_STRUCT_NAME(FlashIF)),
         VMSTATE_END_OF_LIST()

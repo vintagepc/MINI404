@@ -36,7 +36,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(Stm32Uart, STM32UART)
 
 struct Stm32Rcc;
 
-struct Stm32Uart {
+typedef struct Stm32Uart {
     /* Inherited */
     STM32Peripheral parent;
 
@@ -85,7 +85,7 @@ struct Stm32Uart {
                 uint32_t UE     :1;
                 uint32_t _reserved :1;
                 uint32_t OVER8  :1;
-                uint16_t :16;
+                uint32_t :16;
             } QEMU_PACKED CR1;
             struct {
                 uint32_t ADD    :4;
@@ -164,7 +164,7 @@ struct Stm32Uart {
     CharFrontend chr;
 
     qemu_irq *clk_irq;
-};
+} Stm32Uart;
 
 void stm32_uart_connect(Stm32Uart *s, ChardevBackend *chr);
 

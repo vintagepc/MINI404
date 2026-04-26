@@ -202,7 +202,7 @@ static const VMStateDescription vmstate_hx717 = {
     .name = TYPE_HX717,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(channel,HX717State),
         VMSTATE_UINT8(gain, HX717State),
         VMSTATE_UINT8(sck_count, HX717State),

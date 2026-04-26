@@ -179,7 +179,7 @@ const VMStateDescription vmstate_stm32_common_rcc = {
     .name = TYPE_STM32COM_RCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(hsi_freq, COM_STRUCT_NAME(Rcc)),
         VMSTATE_UINT32(hse_freq, COM_STRUCT_NAME(Rcc)),
         VMSTATE_UINT32(lsi_freq, COM_STRUCT_NAME(Rcc)),

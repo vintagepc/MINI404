@@ -340,7 +340,7 @@ static const VMStateDescription vmstate_stm32_common_syscfg = {
     .name = TYPE_STM32COM_SYSCFG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,COM_STRUCT_NAME(Syscfg), RI_END),
         VMSTATE_END_OF_LIST()
     }

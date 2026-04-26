@@ -147,7 +147,7 @@ static const VMStateDescription vmstate_stm32_common_dbg = {
     .name = TYPE_STM32COM_DBG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(Dbg), RI_END),
         VMSTATE_END_OF_LIST()
     }

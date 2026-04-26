@@ -620,7 +620,7 @@ static const VMStateDescription vmstate_stm32f2xx_rtc = {
     .name = TYPE_STM32F2XX_RTC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER_PTR(timer,f2xx_rtc),
         VMSTATE_TIMER_PTR(wu_timer,f2xx_rtc),
         VMSTATE_INT64(host_to_target_offset_us,f2xx_rtc),

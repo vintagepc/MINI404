@@ -125,7 +125,7 @@ static const VMStateDescription vmstate_acs711 = {
     .name = TYPE_ACS711,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(on_count, ACS711State),
         VMSTATE_BOOL_ARRAY(is_on, ACS711State,NUM_ITEMS),
         VMSTATE_END_OF_LIST()

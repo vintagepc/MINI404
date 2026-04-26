@@ -151,7 +151,7 @@ static const VMStateDescription vmstate_stm32f2xx_pwr = {
     .name = TYPE_STM32F2XX_PWR,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, f2xx_pwr,R_PWR_MAX),
         VMSTATE_END_OF_LIST()
     }

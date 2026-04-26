@@ -545,7 +545,7 @@ static const VMStateDescription vmstate_stm32_adc = {
 	.name = TYPE_STM32COM_ADC,
 	.version_id = 1,
 	.minimum_version_id = 1,
-	.fields = (VMStateField[]) {
+	.fields = (const VMStateField[]) {
 		VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(Adc), RI_END),
 		VMSTATE_INT32_ARRAY(adc_data,COM_STRUCT_NAME(Adc), STM32_COM_ADC_MAX_REG_CHANNELS),
 		VMSTATE_UINT8(adc_sequence_position,COM_STRUCT_NAME(Adc)),

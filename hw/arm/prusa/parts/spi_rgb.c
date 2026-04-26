@@ -216,7 +216,7 @@ static const VMStateDescription vmstate_spi_rgb = {
     .name = TYPE_RGB_LED,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_SSI_PERIPHERAL(ssidev,RGBLedState),
         VMSTATE_UINT32(chunks_in,RGBLedState),
         VMSTATE_UINT8(bit_count,RGBLedState),

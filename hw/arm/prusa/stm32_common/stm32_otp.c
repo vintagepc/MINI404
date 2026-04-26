@@ -187,7 +187,7 @@ static const VMStateDescription vmstate_stm32_common_otp = {
     .name = TYPE_STM32COM_OTP,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(data, COM_STRUCT_NAME(Otp), MAX_OTP_SIZE_BYTES/sizeof(uint32_t)),
         VMSTATE_END_OF_LIST()
     }

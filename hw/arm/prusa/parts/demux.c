@@ -80,7 +80,7 @@ static const VMStateDescription vmstate_demux = {
     .name = TYPE_GPIODEMUX,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(address,DemuxState), // Current selected channel.
         VMSTATE_END_OF_LIST()
     }

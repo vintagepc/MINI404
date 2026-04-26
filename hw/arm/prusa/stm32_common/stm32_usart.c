@@ -1030,8 +1030,8 @@ static void stm32_common_usart_realize(DeviceState *dev, Error **errp)
                 printf("%s now points to: %s\n",link_path, s->chr.chr->label);
             }
         }
+    #endif
     }
-#endif
 }
 
 static const Property stm32_common_usart_properties[] = {
@@ -1042,23 +1042,25 @@ static const Property stm32_common_usart_properties[] = {
     
 };
 
+static const VMStateField vmsf_stm32_common_usart[] = {
+    VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(Usart),RI_END),
+    VMSTATE_UINT32(bits_per_sec,COM_STRUCT_NAME(Usart)),
+    VMSTATE_INT64(ns_per_char,COM_STRUCT_NAME(Usart)),
+    VMSTATE_BOOL(sr_read_since_ore_set,COM_STRUCT_NAME(Usart)),
+    VMSTATE_BOOL(receiving,COM_STRUCT_NAME(Usart)),
+    VMSTATE_TIMER_PTR(rx_timer,COM_STRUCT_NAME(Usart)),
+    VMSTATE_TIMER_PTR(tx_timer,COM_STRUCT_NAME(Usart)),
+    VMSTATE_INT32(curr_irq_level,COM_STRUCT_NAME(Usart)),
+    VMSTATE_UINT8_ARRAY(rcv_char_buf,COM_STRUCT_NAME(Usart),USART_RCV_BUF_LEN),
+    VMSTATE_UINT32(rcv_char_bytes,COM_STRUCT_NAME(Usart)),
+    VMSTATE_END_OF_LIST()
+};
+
 static const VMStateDescription vmstate_stm32_common_usart = {
     .name = TYPE_STM32COM_USART,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(Usart),RI_END),
-        VMSTATE_UINT32(bits_per_sec,COM_STRUCT_NAME(Usart)),
-        VMSTATE_INT64(ns_per_char,COM_STRUCT_NAME(Usart)),
-        VMSTATE_BOOL(sr_read_since_ore_set,COM_STRUCT_NAME(Usart)),
-        VMSTATE_BOOL(receiving,COM_STRUCT_NAME(Usart)),
-        VMSTATE_TIMER_PTR(rx_timer,COM_STRUCT_NAME(Usart)),
-        VMSTATE_TIMER_PTR(tx_timer,COM_STRUCT_NAME(Usart)),
-        VMSTATE_INT32(curr_irq_level,COM_STRUCT_NAME(Usart)),
-        VMSTATE_UINT8_ARRAY(rcv_char_buf,COM_STRUCT_NAME(Usart),USART_RCV_BUF_LEN),
-        VMSTATE_UINT32(rcv_char_bytes,COM_STRUCT_NAME(Usart)),
-        VMSTATE_END_OF_LIST()
-    }
+    .fields = vmsf_stm32_common_usart
 };
 
 static void stm32_common_usart_class_init(ObjectClass *klass, const void *data)
@@ -1075,7 +1077,7 @@ static void stm32_common_usart_class_init(ObjectClass *klass, const void *data)
 }
 
 
-static TypeInfo stm32_common_usart_info = {
+static const TypeInfo stm32_common_usart_info = {
     .name  = TYPE_STM32COM_USART,
     .parent = TYPE_STM32_PERIPHERAL,
     .instance_size  = sizeof(COM_STRUCT_NAME(Usart)),
@@ -1092,7 +1094,7 @@ static void stm32_common_usart_register_types(void)
             .parent     = TYPE_STM32COM_USART,
 			.instance_init = stm32_common_usart_init,
     		.class_init    = stm32_common_usart_class_init,
-            .class_data = (void *)stm32_usart_variants[i].variant_regs,
+            .class_data = (const void *)stm32_usart_variants[i].variant_regs,
         };
         type_register_static(&ti);
     }

@@ -318,7 +318,7 @@ static const VMStateDescription vmstate_stm32f4xx_fint = {
     .name = TYPE_STM32F4xx_FINT,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw, STM32F4XX_STRUCT_NAME(FlashIF),RI_END),
         VMSTATE_UINT8(flash_state, STM32F4XX_STRUCT_NAME(FlashIF)),
         VMSTATE_END_OF_LIST()

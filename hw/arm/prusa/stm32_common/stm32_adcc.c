@@ -154,7 +154,7 @@ static const VMStateDescription vmstate_stm32common_adcc = {
     .name = TYPE_STM32COM_ADCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(regs.raw, COM_STRUCT_NAME(Adcc)),
         VMSTATE_END_OF_LIST()
     }

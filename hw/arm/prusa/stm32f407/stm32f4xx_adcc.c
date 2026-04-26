@@ -136,7 +136,7 @@ static const VMStateDescription vmstate_stm32f4xx_adcc = {
     .name = TYPE_STM32F4XX_ADCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, STM32F4XXADCCState, R_ADCC_MAX),
         VMSTATE_END_OF_LIST()
     }
