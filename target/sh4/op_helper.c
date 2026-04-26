@@ -19,8 +19,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
-#include "exec/exec-all.h"
-#include "exec/cpu_ldst.h"
+#include "accel/tcg/cpu-ldst.h"
 #include "fpu/softfloat.h"
 
 #ifndef CONFIG_USER_ONLY
@@ -137,6 +136,8 @@ void helper_discard_movcal_backup(CPUSH4State *env)
 
 void helper_ocbi(CPUSH4State *env, uint32_t address)
 {
+    unsigned mmu_idx = cpu_mmu_index(env_cpu(env), false);
+    MemOpIdx oi = make_memop_idx(MO_TE | MO_UL | MO_UNALN, mmu_idx);
     memory_content **current = &(env->movcal_backup);
     while (*current)
     {
@@ -144,7 +145,8 @@ void helper_ocbi(CPUSH4State *env, uint32_t address)
         if ((a & ~0x1F) == (address & ~0x1F))
         {
             memory_content *next = (*current)->next;
-            cpu_stl_data(env, a, (*current)->value);
+
+            cpu_stl_mmu(env, a, (*current)->value, oi, GETPC());
 
             if (next == NULL)
             {

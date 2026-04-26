@@ -20,9 +20,9 @@ _proc_macro_error_rs = static_library(
   override_options: ['rust_std=2018', 'build.rust_std=2018'],
   rust_abi: 'rust',
   rust_args: [
+    '--cap-lints', 'allow',
     '--cfg', 'use_fallback',
     '--cfg', 'feature="syn-error"',
-    '--cfg', 'feature="proc-macro"',
     '-A', 'non_fmt_panics'
   ],
   dependencies: [

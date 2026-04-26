@@ -17,8 +17,8 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "migration/vmstate.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/display/dm163.h"
 #include "ui/console.h"
 #include "trace.h"
@@ -325,12 +325,12 @@ static void dm163_realize(DeviceState *dev, Error **errp)
                         RGB_MATRIX_NUM_ROWS * LED_SQUARE_SIZE);
 }
 
-static void dm163_class_init(ObjectClass *klass, void *data)
+static void dm163_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
 
-    dc->desc = "DM163";
+    dc->desc = "DM163 8x3-channel constant current LED driver";
     dc->vmsd = &vmstate_dm163;
     dc->realize = dm163_realize;
     rc->phases.hold = dm163_reset_hold;

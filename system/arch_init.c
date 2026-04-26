@@ -22,29 +22,11 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
-#include "qemu/module.h"
-#include "sysemu/arch_init.h"
+#include "system/arch_init.h"
+#include "qemu/bitops.h"
+#include "qemu/target-info-qapi.h"
 
-#ifdef TARGET_SPARC
-int graphic_width = 1024;
-int graphic_height = 768;
-int graphic_depth = 8;
-#elif defined(TARGET_M68K)
-int graphic_width = 800;
-int graphic_height = 600;
-int graphic_depth = 8;
-#else
-int graphic_width = 800;
-int graphic_height = 600;
-int graphic_depth = 32;
-#endif
-
-const uint32_t arch_type = QEMU_ARCH;
-
-void qemu_init_arch_modules(void)
+bool qemu_arch_available(uint32_t arch_bitmask)
 {
-#ifdef CONFIG_MODULES
-    module_init_info(qemu_modinfo);
-    module_allow_arch(TARGET_NAME);
-#endif
+    return extract32(arch_bitmask, target_arch(), 1);
 }

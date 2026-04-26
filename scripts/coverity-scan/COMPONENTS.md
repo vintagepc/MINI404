@@ -4,7 +4,7 @@ alpha
   ~ .*/qemu((/include)?/hw/alpha/.*|/target/alpha/.*)
 
 arm
-  ~ .*/qemu((/include)?/hw/arm/.*|(/include)?/hw/.*/(arm|allwinner-a10|bcm28|digic|exynos|imx|omap|stellaris|pxa2xx|versatile|zynq|cadence).*|/hw/net/xgmac.c|/hw/ssi/xilinx_spips.c|/target/arm/.*)
+  ~ .*/qemu((/include)?/hw/arm/.*|(/include)?/hw/.*/(arm|allwinner-a10|bcm28|digic|exynos|imx|omap|stellaris|pxa2xx|versatile|zynq|cadence).*|/hw/ssi/xilinx_spips.c|/target/arm/.*)
 
 avr
   ~ .*/qemu((/include)?/hw/avr/.*|/target/avr/.*)
@@ -76,7 +76,7 @@ chardev
   ~ .*/qemu((/include)?/chardev/.*)
 
 crypto
-  ~ .*/qemu((/include)?/crypto/.*|/hw/.*/.*crypto.*|(/include/sysemu|/backends)/cryptodev.*|/host/include/.*/host/crypto/.*)
+  ~ .*/qemu((/include)?/crypto/.*|/hw/.*/.*crypto.*|(/include/system|/backends)/cryptodev.*|/host/include/.*/host/crypto/.*)
 
 disas
   ~ .*/qemu((/include)?/disas.*)
@@ -144,8 +144,11 @@ kvm
 tcg
   ~ .*/qemu(/accel/tcg|/replay|/tcg)/.*
 
-sysemu
+system
   ~ .*/qemu(/system/.*|/accel/.*)
+
+plugins
+  ~ .*/qemu(/contrib|/tests/tcg)?/plugins/.*
 
 (headers)
   ~ .*/qemu(/include/.*)

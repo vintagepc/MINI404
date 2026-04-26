@@ -15,7 +15,6 @@
 #define PPC_BITMASK(bs, be)     ((PPC_BIT(bs) - PPC_BIT(be)) | PPC_BIT(bs))
 #define PPC_BITMASK32(bs, be)   ((PPC_BIT32(bs) - PPC_BIT32(be)) | \
                                  PPC_BIT32(bs))
-#include "qemu/bswap.h"
 #include "hw/intc/pnv_xive2_regs.h"
 #include "hw/ppc/xive_regs.h"
 #include "hw/ppc/xive2_regs.h"
@@ -107,5 +106,6 @@ extern void set_end(QTestState *qts, uint32_t index, uint32_t nvp_index,
 
 
 void test_flush_sync_inject(QTestState *qts);
+void test_nvpg_bar(QTestState *qts);
 
 #endif /* TEST_PNV_XIVE2_COMMON_H */

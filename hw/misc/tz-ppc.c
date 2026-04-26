@@ -14,12 +14,12 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "trace.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/registerfields.h"
-#include "hw/irq.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/irq.h"
 #include "hw/misc/tz-ppc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 static void tz_ppc_update_irq(TZPPC *s)
 {
@@ -273,8 +273,8 @@ static void tz_ppc_realize(DeviceState *dev, Error **errp)
             continue;
         }
 
-        name = g_strdup_printf("tz-ppc-port[%d]", i);
-
+        name = g_strdup_printf("tz-ppc-port[%s]",
+                               memory_region_name(port->downstream));
         port->ppc = s;
         address_space_init(&port->downstream_as, port->downstream, name);
 
@@ -305,7 +305,7 @@ static const VMStateDescription tz_ppc_vmstate = {
     DEFINE_PROP_LINK("port[" #N "]", TZPPC, port[N].downstream, \
                      TYPE_MEMORY_REGION, MemoryRegion *)
 
-static Property tz_ppc_properties[] = {
+static const Property tz_ppc_properties[] = {
     DEFINE_PROP_UINT32("NONSEC_MASK", TZPPC, nonsec_mask, 0),
     DEFINE_PORT(0),
     DEFINE_PORT(1),
@@ -323,10 +323,9 @@ static Property tz_ppc_properties[] = {
     DEFINE_PORT(13),
     DEFINE_PORT(14),
     DEFINE_PORT(15),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void tz_ppc_class_init(ObjectClass *klass, void *data)
+static void tz_ppc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -23,7 +23,7 @@
 #include "qemu/module.h"
 #include "hw/arm/nrf51.h"
 #include "hw/nvram/nrf51_nvm.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 
 /*
@@ -354,9 +354,8 @@ static void nrf51_nvm_reset(DeviceState *dev)
     memset(s->uicr_content, 0xFF, sizeof(s->uicr_content));
 }
 
-static Property nrf51_nvm_properties[] = {
+static const Property nrf51_nvm_properties[] = {
     DEFINE_PROP_UINT32("flash-size", NRF51NVMState, flash_size, 0x40000),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_nvm = {
@@ -371,7 +370,7 @@ static const VMStateDescription vmstate_nvm = {
     }
 };
 
-static void nrf51_nvm_class_init(ObjectClass *klass, void *data)
+static void nrf51_nvm_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

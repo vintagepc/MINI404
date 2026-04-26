@@ -25,7 +25,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/isa/pc87312.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -327,13 +327,12 @@ static const VMStateDescription vmstate_pc87312 = {
     }
 };
 
-static Property pc87312_properties[] = {
+static const Property pc87312_properties[] = {
     DEFINE_PROP_UINT16("iobase", PC87312State, iobase, 0x398),
     DEFINE_PROP_UINT8("config", PC87312State, config, 1),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void pc87312_class_init(ObjectClass *klass, void *data)
+static void pc87312_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ISASuperIOClass *sc = ISA_SUPERIO_CLASS(klass);

@@ -19,9 +19,9 @@
 #define LINUX_USER_USER_INTERNALS_H
 
 #include "user/thunk.h"
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
 #include "qemu/log.h"
+#include "exec/tb-flush.h"
+#include "exec/translation-block.h"
 
 extern char *exec_path;
 void init_task_state(TaskState *ts);
@@ -65,11 +65,12 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
                     abi_long arg5, abi_long arg6, abi_long arg7,
                     abi_long arg8);
 extern __thread CPUState *thread_cpu;
-G_NORETURN void cpu_loop(CPUArchState *env);
 abi_long get_errno(abi_long ret);
 const char *target_strerror(int err);
 int get_osversion(void);
 void init_qemu_uname_release(void);
+void clone_fork_start(void);
+void clone_fork_end(bool child);
 void fork_start(void);
 void fork_end(pid_t pid);
 
@@ -130,6 +131,9 @@ static inline uint64_t target_offset64(uint64_t word0, uint64_t word1)
 #endif /* TARGET_ABI_BITS != 32 */
 
 void print_termios(void *arg);
+#ifdef TARGET_TCGETS2
+void print_termios2(void *arg);
+#endif
 
 /* ARM EABI and MIPS expect 64bit types aligned even on pairs or registers */
 #ifdef TARGET_ARM
@@ -174,6 +178,20 @@ static inline int regpairs_aligned(CPUArchState *cpu_env, int num) { return 0; }
  * code: the exit code
  */
 void preexit_cleanup(CPUArchState *env, int code);
+
+/**
+ * begin_parallel_context
+ * @cs: the CPU context
+ *
+ * Called when starting the second vcpu, or joining shared memory.
+ */
+static inline void begin_parallel_context(CPUState *cs)
+{
+    if (!tcg_cflags_has(cs, CF_PARALLEL)) {
+        tb_flush__exclusive_or_serial();
+        tcg_cflags_set(cs, CF_PARALLEL);
+    }
+}
 
 /*
  * Include target-specific struct and function definitions;

@@ -28,8 +28,8 @@
 #include "qemu/main-loop.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "hw/qdev-properties.h"
-#include "hw/usb.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/usb/usb.h"
 #include "migration/vmstate.h"
 
 #include "u2f.h"
@@ -516,12 +516,11 @@ static const VMStateDescription u2f_passthru_vmstate = {
     }
 };
 
-static Property u2f_passthru_properties[] = {
+static const Property u2f_passthru_properties[] = {
     DEFINE_PROP_STRING("hidraw", U2FPassthruState, hidraw),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void u2f_passthru_class_init(ObjectClass *klass, void *data)
+static void u2f_passthru_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     U2FKeyClass *kc = U2F_KEY_CLASS(klass);

@@ -28,7 +28,7 @@
 #include "qemu/job.h"
 #include "qemu/id.h"
 #include "qemu/main-loop.h"
-#include "block/aio-wait.h"
+#include "qemu/aio-wait.h"
 #include "trace/trace-root.h"
 #include "qapi/qapi-events-job.h"
 
@@ -249,6 +249,12 @@ bool job_is_cancelled_locked(Job *job)
     /* force_cancel may be true only if cancelled is true, too */
     assert(job->cancelled || !job->force_cancel);
     return job->force_cancel;
+}
+
+bool job_is_paused(Job *job)
+{
+    JOB_LOCK_GUARD();
+    return job->paused;
 }
 
 bool job_is_cancelled(Job *job)

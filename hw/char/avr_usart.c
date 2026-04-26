@@ -22,9 +22,9 @@
 #include "qemu/osdep.h"
 #include "hw/char/avr_usart.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 
 static int avr_usart_can_receive(void *opaque)
 {
@@ -259,9 +259,8 @@ static const MemoryRegionOps avr_usart_ops = {
     .impl = {.min_access_size = 1, .max_access_size = 1}
 };
 
-static Property avr_usart_properties[] = {
+static const Property avr_usart_properties[] = {
     DEFINE_PROP_CHR("chardev", AVRUsartState, chr),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void avr_usart_pr(void *opaque, int irq, int level)
@@ -296,7 +295,7 @@ static void avr_usart_realize(DeviceState *dev, Error **errp)
     avr_usart_reset(dev);
 }
 
-static void avr_usart_class_init(ObjectClass *klass, void *data)
+static void avr_usart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

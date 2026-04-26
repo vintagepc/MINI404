@@ -6,17 +6,17 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/register.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/register.h"
 #include "qemu/timer.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "hw/misc/unimp.h"
-#include "sysemu/rtc.h"
-#include "hw/registerfields.h"
+#include "system/rtc.h"
+#include "hw/core/registerfields.h"
 
 #define SYS_TOYTRIM        0x20
 #define SYS_TOYWRITE0      0x24
@@ -464,7 +464,7 @@ static const VMStateDescription vmstate_ls7a_rtc = {
     }
 };
 
-static void ls7a_rtc_class_init(ObjectClass *klass, void *data)
+static void ls7a_rtc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_ls7a_rtc;

@@ -25,9 +25,8 @@
 #ifndef XLNX_DPDMA_H
 #define XLNX_DPDMA_H
 
-#include "hw/sysbus.h"
-#include "ui/console.h"
-#include "sysemu/dma.h"
+#include "hw/core/sysbus.h"
+#include "system/dma.h"
 #include "qom/object.h"
 
 #define XLNX_DPDMA_REG_ARRAY_SIZE (0x1000 >> 2)

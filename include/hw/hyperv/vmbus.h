@@ -10,9 +10,9 @@
 #ifndef HW_HYPERV_VMBUS_H
 #define HW_HYPERV_VMBUS_H
 
-#include "sysemu/sysemu.h"
-#include "sysemu/dma.h"
-#include "hw/qdev-core.h"
+#include "system/system.h"
+#include "system/dma.h"
+#include "hw/core/qdev.h"
 #include "migration/vmstate.h"
 #include "hw/hyperv/vmbus-proto.h"
 #include "qemu/uuid.h"

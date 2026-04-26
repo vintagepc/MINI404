@@ -11,15 +11,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/register.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/register.h"
+#include "hw/core/irq.h"
 #include "qemu/bitops.h"
 #include "qemu/log.h"
 #include "qemu/units.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/misc/xlnx-versal-cfu.h"
 
 #ifndef XLNX_VERSAL_CFU_APB_ERR_DEBUG
@@ -426,7 +426,7 @@ static void cfu_fdro_cfi_transfer_packet(XlnxCfiIf *cfi_if, XlnxCfiPacket *pkt)
     }
 }
 
-static Property cfu_props[] = {
+static const Property cfu_props[] = {
         DEFINE_PROP_LINK("cframe0", XlnxVersalCFUAPB, cfg.cframe[0],
                          TYPE_XLNX_CFI_IF, XlnxCfiIf *),
         DEFINE_PROP_LINK("cframe1", XlnxVersalCFUAPB, cfg.cframe[1],
@@ -457,13 +457,11 @@ static Property cfu_props[] = {
                          TYPE_XLNX_CFI_IF, XlnxCfiIf *),
         DEFINE_PROP_LINK("cframe14", XlnxVersalCFUAPB, cfg.cframe[14],
                          TYPE_XLNX_CFI_IF, XlnxCfiIf *),
-        DEFINE_PROP_END_OF_LIST(),
 };
 
-static Property cfu_sfr_props[] = {
+static const Property cfu_sfr_props[] = {
         DEFINE_PROP_LINK("cfu", XlnxVersalCFUSFR, cfg.cfu,
                          TYPE_XLNX_VERSAL_CFU_APB, XlnxVersalCFUAPB *),
-        DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_cfu_apb = {
@@ -498,7 +496,7 @@ static const VMStateDescription vmstate_cfu_sfr = {
     }
 };
 
-static void cfu_apb_class_init(ObjectClass *klass, void *data)
+static void cfu_apb_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -507,7 +505,7 @@ static void cfu_apb_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, cfu_props);
 }
 
-static void cfu_fdro_class_init(ObjectClass *klass, void *data)
+static void cfu_fdro_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -518,7 +516,7 @@ static void cfu_fdro_class_init(ObjectClass *klass, void *data)
     rc->phases.enter = cfu_fdro_reset_enter;
 }
 
-static void cfu_sfr_class_init(ObjectClass *klass, void *data)
+static void cfu_sfr_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -534,7 +532,7 @@ static const TypeInfo cfu_apb_info = {
     .instance_size = sizeof(XlnxVersalCFUAPB),
     .class_init    = cfu_apb_class_init,
     .instance_init = cfu_apb_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_XLNX_CFI_IF },
         { }
     }
@@ -547,7 +545,7 @@ static const TypeInfo cfu_fdro_info = {
     .class_init    = cfu_fdro_class_init,
     .instance_init = cfu_fdro_init,
     .instance_finalize = cfu_fdro_finalize,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_XLNX_CFI_IF },
         { }
     }

@@ -25,9 +25,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/misc/mos6522.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "monitor/monitor.h"
 #include "monitor/hmp.h"
@@ -696,12 +696,11 @@ static void mos6522_finalize(Object *obj)
     timer_free(s->timers[1].timer);
 }
 
-static Property mos6522_properties[] = {
+static const Property mos6522_properties[] = {
     DEFINE_PROP_UINT64("frequency", MOS6522State, frequency, 0),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void mos6522_class_init(ObjectClass *oc, void *data)
+static void mos6522_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     ResettableClass *rc = RESETTABLE_CLASS(oc);
