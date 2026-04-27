@@ -1010,12 +1010,14 @@ static const xBuddyData mk4_027c_mmu = {
     .has_mmu = true,
 };
 
+#ifdef CONFIG_GCOV
 static const xBuddyData mk4_027c_mmu_qtest = {
 	.cfg = &mk4_027c_cfg,
 	.descr = "Prusa Mk4 0.2.7c with MMU3 (Special QTest)",
     .has_mmu = true,
     .qtest_add_mm_bridge = true,
 };
+#endif 
 
 static const xBuddyData mk4_034 = {
 	.cfg = &mk4_034_cfg,

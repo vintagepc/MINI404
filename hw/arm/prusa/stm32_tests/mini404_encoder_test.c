@@ -258,7 +258,7 @@ static void test_script_push(void)
 
     // Emulate a keypress
     send_scriptcmd(CMD_PUSH, fd);
-    qtest_clock_step_next(ts);
+    // qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
 
     g_assert_false(qtest_get_irq(ts,0));
@@ -359,7 +359,7 @@ static void test_script_reset(void)
     // Emulate a keypress
     send_scriptcmd(CMD_RESET, fd);
     qtest_clock_step_next(ts);
-    qtest_clock_step_next(ts);
+    // qtest_clock_step_next(ts);
     
     qtest_qmp_eventwait(ts, "RESET");
     
