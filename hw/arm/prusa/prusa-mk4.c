@@ -150,6 +150,7 @@ typedef struct xBuddyMachineClass {
     const mk4_cfg_t     *cfg;
     bool                has_mmu;
     bool                has_modbed;
+    bool                qtest_add_mm_bridge;
 } xBuddyMachineClass;
 
 typedef struct xBuddyData {
@@ -158,6 +159,7 @@ typedef struct xBuddyData {
 	const char* descr;
     const bool has_mmu;
     const bool has_modbed;
+    const bool qtest_add_mm_bridge;
 } xBuddyData;
 
 #define XBUDDY_MACHINE_CLASS(klass)                                    \
@@ -937,7 +939,7 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
-    if (kernel_len == 0)
+    if (kernel_len == 0 && !mc->qtest_add_mm_bridge)
     {
         // No bridge setup in this case...
     }
@@ -994,6 +996,7 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 		xmc->cfg = d->cfg;
         xmc->has_mmu = d->has_mmu;
         xmc->has_modbed = d->has_modbed;
+        xmc->qtest_add_mm_bridge = d->qtest_add_mm_bridge;
 }
 
 static const xBuddyData mk4_027c = {
@@ -1005,6 +1008,13 @@ static const xBuddyData mk4_027c_mmu = {
 	.cfg = &mk4_027c_cfg,
 	.descr = "Prusa Mk4 0.2.7c with MMU3",
     .has_mmu = true,
+};
+
+static const xBuddyData mk4_027c_mmu_qtest = {
+	.cfg = &mk4_027c_cfg,
+	.descr = "Prusa Mk4 0.2.7c with MMU3 (Special QTest)",
+    .has_mmu = true,
+    .qtest_add_mm_bridge = true,
 };
 
 static const xBuddyData mk4_034 = {
@@ -1077,5 +1087,13 @@ static const TypeInfo xbuddy_machine_types[] = {
 		.class_init     = xbuddy_class_init,
 		.class_data		= (void*)&iX_027c
     }
+#ifdef CONFIG_GCOV
+    ,{
+        .name           = MACHINE_TYPE_NAME("prusa-mk4-027c-mmu-qtest"),
+        .parent         = TYPE_XBUDDY_MACHINE,
+        .class_init     = xbuddy_class_init,
+        .class_data		= (void*)&mk4_027c_mmu_qtest,
+    }
+#endif
 };
 DEFINE_TYPES(xbuddy_machine_types)

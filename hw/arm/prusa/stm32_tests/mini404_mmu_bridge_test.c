@@ -30,7 +30,7 @@ static void test_reset(void)
     /* Setup chardev */
     int fd = 0;
     char buff[10] = {0};
-	QTestState *ts = qtest_init_with_serial("-machine prusa-mk4-027c-mmu -kernel /dev/zero -global mmu-bridge.input_id=s0", &fd);
+	QTestState *ts = qtest_init_with_serial("-machine prusa-mk4-027c-mmu-qtest -global mmu-bridge.input_id=s0", &fd);
 
     // Process the initial boot-up reset
     g_assert_cmpint(recv(fd, buff, sizeof(buff), MSG_DONTWAIT), ==, 1);
@@ -52,7 +52,7 @@ static void test_reset(void)
 static void test_fsensor(void)
 {
     int fd = 0;
-	QTestState *ts = qtest_init_with_serial("-machine prusa-mk4-027c-mmu -kernel /dev/zero -global mmu-bridge.input_id=s0", &fd);
+	QTestState *ts = qtest_init_with_serial("-machine prusa-mk4-027c-mmu-qtest -global mmu-bridge.input_id=s0", &fd);
 
     qtest_irq_intercept_out_named(ts, QOM_PATH, "fs-out");
 

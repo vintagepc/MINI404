@@ -68,12 +68,10 @@ static void test_fan_tach(void)
         {
             t_start = qtest_clock_step_next(ts);
         }
-        t_start = qtest_clock_step(ts,0);
         while(qtest_get_irq_level(ts, 0) == 0)
         {
             t_end = qtest_clock_step_next(ts);
         }
-        t_end = qtest_clock_step(ts,0);
         g_assert_cmpint((t_end - t_start)/1000, ==, tach_us_per_pulse[i]);
     }
 

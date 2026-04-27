@@ -115,7 +115,7 @@ static void mmu_bridge_realize(DeviceState *dev, Error **errp)
     else
     {
         QemuOpts *opts;
-        printf("Socket ID %s - not found, creating it instead.\n", CHARDEV_NAME);
+        printf("#Socket ID %s - not found, creating it instead.\n", CHARDEV_NAME);
         opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(CHARDEV_NAME), 1, NULL);
             qemu_opt_set(opts, "backend","serial", errp);
             qemu_opt_set(opts, "path", g_strdup_printf("/tmp/MK404-MMU-sideband"), errp);
