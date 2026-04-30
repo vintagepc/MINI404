@@ -28,15 +28,17 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/sysemu.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "system/block-backend.h"
 #include "chardev/char.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/core/split-irq.h"
 #include "qemu/error-report.h"
+#include "qemu/config-file.h"
 #include "parts/xl_bridge.h"
+#include "qemu/option.h"
+#include "system/system.h"
 
 #define FLASH_FN "Prusa_XL_ESP32_flash.bin"
 #define FLASH_ID "prusa-xl-esp32-flash"
@@ -127,7 +129,7 @@ static void prusa_esp32_init(MachineState *machine)
     // qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART1),"byte-in", 0));
 };
 
-static void xlbuddy_esp32_class_init(ObjectClass *oc, void *data)
+static void xlbuddy_esp32_class_init(ObjectClass *oc, const void *data)
 {
 	    MachineClass *mc = MACHINE_CLASS(oc);
 	    mc->desc = "Prusa XL embedded ESP32";

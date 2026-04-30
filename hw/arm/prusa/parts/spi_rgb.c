@@ -22,9 +22,9 @@
 
 #include "qemu/osdep.h"
 #include "hw/ssi/ssi.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "qom/object.h"
 #include "../utility/macros.h"
@@ -207,17 +207,16 @@ static void rgb_led_realize(SSIPeripheral *d, Error **errp)
 
 }
 
-static Property rgb_led_properties[] = {
+static const Property rgb_led_properties[] = {
     DEFINE_PROP_UINT8("led-type",RGBLedState, led_type, (uint64_t)SPI_RGB_WS2812),
     DEFINE_PROP_UINT8("flags",RGBLedState, flags, SPI_RGB_FLAG_NONE),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_spi_rgb = {
     .name = TYPE_RGB_LED,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_SSI_PERIPHERAL(ssidev,RGBLedState),
         VMSTATE_UINT32(chunks_in,RGBLedState),
         VMSTATE_UINT8(bit_count,RGBLedState),
@@ -229,7 +228,7 @@ static const VMStateDescription vmstate_spi_rgb = {
     }
 };
 
-static void rgb_led_class_init(ObjectClass *klass, void *data)
+static void rgb_led_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_spi_rgb;

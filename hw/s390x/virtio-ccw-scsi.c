@@ -10,7 +10,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/virtio/virtio.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
@@ -53,15 +53,14 @@ static void virtio_ccw_scsi_instance_init(Object *obj)
                                 TYPE_VIRTIO_SCSI);
 }
 
-static Property virtio_ccw_scsi_properties[] = {
+static const Property virtio_ccw_scsi_properties[] = {
     DEFINE_PROP_BIT("ioeventfd", VirtioCcwDevice, flags,
                     VIRTIO_CCW_FLAG_USE_IOEVENTFD_BIT, true),
     DEFINE_PROP_UINT32("max_revision", VirtioCcwDevice, max_rev,
                        VIRTIO_CCW_MAX_REV),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void virtio_ccw_scsi_class_init(ObjectClass *klass, void *data)
+static void virtio_ccw_scsi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtIOCCWDeviceClass *k = VIRTIO_CCW_DEVICE_CLASS(klass);

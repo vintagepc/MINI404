@@ -22,14 +22,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "sysemu/cpu-timers.h"
+#include "exec/icount.h"
+#include "hw/core/sysbus.h"
+#include "system/cpu-timers.h"
 #include "../utility/macros.h"
 
 typedef union {
@@ -177,6 +178,6 @@ static void ws281x_init(Object *obj)
 }
 
 
-static void ws281x_class_init(ObjectClass *klass, void *data)
+static void ws281x_class_init(ObjectClass *klass, const void *data)
 {
 }

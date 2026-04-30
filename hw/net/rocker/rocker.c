@@ -17,8 +17,8 @@
 
 #include "qemu/osdep.h"
 #include "hw/pci/pci_device.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "migration/vmstate.h"
 #include "hw/pci/msix.h"
 #include "net/net.h"
@@ -1228,7 +1228,7 @@ static int rocker_msix_init(Rocker *r, Error **errp)
                     &r->msix_bar,
                     ROCKER_PCI_MSIX_BAR_IDX, ROCKER_PCI_MSIX_PBA_OFFSET,
                     0, errp);
-    if (err) {
+    if (err < 0) {
         return err;
     }
 
@@ -1429,7 +1429,6 @@ static void pci_rocker_uninit(PCIDevice *dev)
             world_free(r->worlds[i]);
         }
     }
-    g_free(r->fp_ports_peers);
 }
 
 static void rocker_reset(DeviceState *dev)
@@ -1459,7 +1458,7 @@ static void rocker_reset(DeviceState *dev)
     DPRINTF("Reset done\n");
 }
 
-static Property rocker_properties[] = {
+static const Property rocker_properties[] = {
     DEFINE_PROP_STRING("name", Rocker, name),
     DEFINE_PROP_STRING("world", Rocker, world_name),
     DEFINE_PROP_MACADDR("fp_start_macaddr", Rocker,
@@ -1468,7 +1467,6 @@ static Property rocker_properties[] = {
                        switch_id, 0),
     DEFINE_PROP_ARRAY("ports", Rocker, fp_ports,
                       fp_ports_peers, qdev_prop_netdev, NICPeers),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription rocker_vmsd = {
@@ -1476,7 +1474,7 @@ static const VMStateDescription rocker_vmsd = {
     .unmigratable = 1,
 };
 
-static void rocker_class_init(ObjectClass *klass, void *data)
+static void rocker_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -1499,7 +1497,7 @@ static const TypeInfo rocker_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(Rocker),
     .class_init    = rocker_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

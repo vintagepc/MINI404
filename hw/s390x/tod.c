@@ -13,9 +13,9 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
-#include "sysemu/kvm.h"
-#include "sysemu/tcg.h"
-#include "sysemu/qtest.h"
+#include "system/kvm.h"
+#include "system/tcg.h"
+#include "system/qtest.h"
 #include "migration/qemu-file-types.h"
 #include "migration/register.h"
 
@@ -72,6 +72,11 @@ static void s390_tod_save(QEMUFile *f, void *opaque)
     qemu_put_byte(f, S390_TOD_CLOCK_VALUE_PRESENT);
     qemu_put_byte(f, tod.high);
     qemu_put_be64(f, tod.low);
+
+    tdc->set(td, &tod, &err);
+    if (err) {
+        warn_report_err(err);
+    }
 }
 
 static int s390_tod_load(QEMUFile *f, void *opaque, int version_id)
@@ -111,7 +116,7 @@ static void s390_tod_realize(DeviceState *dev, Error **errp)
     register_savevm_live("todclock", 0, 1, &savevm_tod, td);
 }
 
-static void s390_tod_class_init(ObjectClass *oc, void *data)
+static void s390_tod_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

@@ -23,9 +23,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
 #include <math.h>
@@ -251,12 +251,11 @@ static void heater_init(Object *obj)
 
 }
 
-static Property heater_properties[] = {
+static const Property heater_properties[] = {
     DEFINE_PROP_UINT8("thermal_mass_x10",heater_state, mass10x, 25),
     DEFINE_PROP_UINT8("label",heater_state, chrLabel, (uint8_t)' '),
 	DEFINE_PROP_UINT16("voltage_x100", heater_state, voltagex100, 2400),
 	DEFINE_PROP_UINT16("resistance_x100", heater_state, resistancex100, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static int heater_pre_save(void *opaque) {
@@ -280,7 +279,7 @@ static const VMStateDescription vmstate_heater = {
     .minimum_version_id = 1,
     .pre_save = heater_pre_save,
     .post_load = heater_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(chrLabel,heater_state),
         VMSTATE_UINT8(mass10x,heater_state),
         VMSTATE_UINT16(pwm,heater_state),
@@ -302,7 +301,7 @@ static const VMStateDescription vmstate_heater = {
 };
 
 
-static void heater_class_init(ObjectClass *klass, void *data)
+static void heater_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, heater_reset);

@@ -20,15 +20,11 @@
 
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
+#include "scriptcon_helper.h"
 
 #define QOM_PATH "/machine/peripheral/hx717"
 
 #define CMD_SET "hx717::Set(5)\n"
-
-static void send_scriptcmd(const char* cmd, int fd)
-{
-    g_assert_true(send(fd, cmd, strlen(cmd), 0) == strlen(cmd));
-}
 
 static uint32_t hx717_read_data(QTestState *ts)
 {
@@ -136,7 +132,7 @@ static void test_hx717_scripting(void)
     qtest_irq_intercept_out(ts, QOM_PATH);
     qtest_set_irq_in(ts, QOM_PATH, "input", 0, 1);
     qtest_set_irq_in(ts, QOM_PATH, "input", 1, 2);
-    send_scriptcmd(CMD_SET, fd);
+    send_scriptcmd(CMD_SET, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);

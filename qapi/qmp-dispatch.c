@@ -13,15 +13,15 @@
 
 #include "qemu/osdep.h"
 
-#include "block/aio.h"
+#include "qemu/aio.h"
 #include "qapi/compat-policy.h"
 #include "qapi/error.h"
-#include "qapi/qmp/dispatch.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qjson.h"
+#include "qapi/qmp-registry.h"
+#include "qobject/qdict.h"
+#include "qobject/qjson.h"
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/qobject-output-visitor.h"
-#include "qapi/qmp/qbool.h"
+#include "qobject/qbool.h"
 #include "qemu/coroutine.h"
 #include "qemu/main-loop.h"
 
@@ -128,6 +128,16 @@ static void do_qmp_dispatch_bh(void *opaque)
     data->cmd->fn(data->args, data->ret, data->errp);
     monitor_set_cur(qemu_coroutine_self(), NULL);
     aio_co_wake(data->co);
+
+    /*
+     * If the QMP dispatcher coroutine is waiting to be scheduled
+     * in iohandler_ctx, we must kick the main loop. This ensures
+     * that AIO_WAIT_WHILE_UNLOCKED() in monitor_cleanup() doesn't
+     * block indefinitely waiting for an event in qemu_aio_context,
+     * but actually gets the chance to poll iohandler_ctx and resume
+     * the coroutine.
+     */
+    aio_wait_kick();
 }
 
 /*
@@ -173,7 +183,7 @@ QDict *coroutine_mixed_fn qmp_dispatch(const QmpCommandList *cmds, QObject *requ
                   "The command %s has not been found", command);
         goto out;
     }
-    if (!compat_policy_input_ok(cmd->special_features, &compat_policy,
+    if (!compat_policy_input_ok(cmd->features, &compat_policy,
                                 ERROR_CLASS_COMMAND_NOT_FOUND,
                                 "command", command, &err)) {
         goto out;

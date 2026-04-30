@@ -1,14 +1,15 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qom/object.h"
-#include "sysemu/block-backend.h"
-#include "hw/boards.h"
-#include "hw/loader.h"
-#include "hw/qdev-core.h"
+#include "qapi/error.h"
+#include "system/block-backend.h"
+#include "hw/core/boards.h"
+#include "hw/core/loader.h"
+#include "hw/core/qdev.h"
 #include "qapi/error.h"
 #include "hw/arm/armv7m.h"
 #include "hw/arm/boot.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "stm32_common.h"
 #include "stm32_chip_macros.h"
 #include "stm32_rcc.h"
@@ -211,7 +212,7 @@ extern ssize_t stm32_soc_load_targphys(Object* obj, const char *filename, hwaddr
 {
     STM32SOC *soc = STM32_SOC(obj);
     ARMv7MState *cpu = ARMV7M(soc->cpu);
-    return load_image_targphys_as(filename, addr, get_image_size(filename), cpu_get_address_space(CPU(cpu), 0));
+    return load_image_targphys_as(filename, addr, get_image_size(filename, &error_abort), cpu_get_address_space(CPU(cpu), 0), &error_abort);
 }
 
 stm32_periph_t g_stm32_periph_init = STM32_P_UNDEFINED;
@@ -355,13 +356,12 @@ static void stm32_peripheral_instance_init(Object* obj)
     qdev_init_gpio_out_named(DEVICE(obj),s->dmar,"dmar",2);
 }
 
-static Property stm32_peripheral_properties[] = {
+static const Property stm32_peripheral_properties[] = {
 	DEFINE_PROP_PERIPH_T("periph", STM32Peripheral, periph, -1),
-	DEFINE_PROP_LINK("rcc", STM32Peripheral, rcc, TYPE_STM32COM_RCC_IF, COM_STRUCT_NAME(Rcc)*),
-	DEFINE_PROP_END_OF_LIST()
+	DEFINE_PROP_LINK("rcc", STM32Peripheral, rcc, TYPE_STM32COM_RCC_IF, COM_STRUCT_NAME(Rcc)*)
 };
 
-static void stm32_peripheral_class_init(ObjectClass* class, void* class_data)
+static void stm32_peripheral_class_init(ObjectClass* class, const void* class_data)
 {
 	DeviceClass *dc = DEVICE_CLASS(class);
 	device_class_set_props(dc, stm32_peripheral_properties);
@@ -377,15 +377,14 @@ static const TypeInfo stm32_peripheral_info = {
 	.class_init = stm32_peripheral_class_init,
 };
 
-static Property stm32_soc_properties[] = {
+static const Property stm32_soc_properties[] = {
     DEFINE_PROP_STRING("cpu-type", 	STM32SOC, cpu_type),
     DEFINE_PROP_UINT64("sram-size",	STM32SOC, ram_size, 0), // 0 = use chip default
 	DEFINE_PROP_UINT64("flash-size",STM32SOC, flash_size, 0), //
-	DEFINE_PROP_STRING("flash-file", STM32SOC, flash_filename),
-    DEFINE_PROP_END_OF_LIST(),
+	DEFINE_PROP_STRING("flash-file", STM32SOC, flash_filename)
 };
 
-static void stm32_soc_class_init(ObjectClass* class, void* class_data)
+static void stm32_soc_class_init(ObjectClass* class, const void* class_data)
 {
 	DeviceClass *dc = DEVICE_CLASS(class);
 	device_class_set_props(dc, stm32_soc_properties);

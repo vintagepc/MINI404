@@ -26,25 +26,25 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/core/split-irq.h"
 #include "hw/ssi/ssi.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "hw/arm/boot.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/runstate.h"
+#include "system/block-backend.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
 #include "otp.h"
 #include "parts/xl_bridge.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 
 
 #define TYPE_XBUDDY_MACHINE "xbuddy-machine"
@@ -389,11 +389,30 @@ static const mk4_cfg_t ix_027c_cfg = {
 	.xflash_fn = XFLASH_FN(iX)
 };
 
+typedef struct xBuddyMachineState {
+    MachineState parent;
+    bool force_mmu;
+} xBuddyMachineState;
+
+OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
+
+static bool xbuddy_get_force_mmu(Object *obj, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    return s->force_mmu;
+}
+
+static void xbuddy_set_force_mmu(Object *obj, bool value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    s->force_mmu = value;
+}
+
 static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
-    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
@@ -461,10 +480,8 @@ static void mk4_init(MachineState *machine)
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
-        load_image_targphys(machine->kernel_filename,0x20000-64,get_image_size(machine->kernel_filename));
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-            cfg.boot_fn, 0,
-            flash_size);
+        stm32_soc_load_targphys(OBJECT(dev_soc), machine->kernel_filename,0x20000-64);
+        stm32_soc_load_kernel(OBJECT(dev_soc), cfg.boot_fn);
     }
     else // Raw bin or ELF file, load directly.
     {
@@ -939,7 +956,8 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
-    if (kernel_len == 0)
+    xBuddyMachineState *s = XBUDDY_MACHINE(machine);
+    if (kernel_len == 0 && !s->force_mmu)
     {
         // No bridge setup in this case...
     }
@@ -981,7 +999,7 @@ static void mk4_init(MachineState *machine)
 
 };
 
-static void xbuddy_class_init(ObjectClass *oc, void *data)
+static void xbuddy_class_init(ObjectClass *oc, const void *data)
 {
 		const xBuddyData* d = (xBuddyData*)data;
 	    MachineClass *mc = MACHINE_CLASS(oc);
@@ -992,10 +1010,18 @@ static void xbuddy_class_init(ObjectClass *oc, void *data)
 	    mc->no_parallel = 1;
 		mc->no_serial = 1;
 
+        object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
+
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
         xmc->has_mmu = d->has_mmu;
         xmc->has_modbed = d->has_modbed;
+}
+
+static void xbuddy_instance_init(Object *obj)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    s->force_mmu = false; // Set default
 }
 
 static const xBuddyData mk4_027c = {
@@ -1042,6 +1068,8 @@ static const TypeInfo xbuddy_machine_types[] = {
         .name           = TYPE_XBUDDY_MACHINE,
         .parent         = TYPE_MACHINE,
 		.class_size		= sizeof(xBuddyMachineClass),
+        .instance_init  = xbuddy_instance_init,
+        .instance_size  = sizeof(xBuddyMachineState),
         .abstract       = true,
     }, {
         .name           = MACHINE_TYPE_NAME("prusa-mk4-027c"),

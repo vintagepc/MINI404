@@ -24,14 +24,13 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
-#include "sysemu/sysemu.h"
+#include "system/address-spaces.h"
 #include "hw/misc/unimp.h"
 #include "chardev/char.h"
 #include "net/net.h"
 #include "hw/arm/armv7m.h"
 #include "hw/i2c/smbus_eeprom.h"
-#include "exec/ramblock.h"
+#include "system/ramblock.h"
 #include "../stm32_common/stm32_shared.h"
 #include "../stm32_common/stm32_chip_macros.h"
 #include "../stm32_common/stm32_rcc.h"
@@ -158,7 +157,7 @@ static void stm32f030_soc_realize(DeviceState *dev_soc, Error **errp)
 	stm32_soc_realize_all_peripherals(dev_soc, &error_fatal);
 }
 
-static void stm32f030_soc_class_init(ObjectClass *klass, void *data)
+static void stm32f030_soc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = stm32f030_soc_realize;
@@ -188,15 +187,15 @@ stm32_f030xx_register_types(void)
 			.class_init    = stm32f030_soc_class_init,
 			.class_data = (void *)&stm32f030xx_cfg,
 		};
-		type_register(&ti);
+		type_register_static(&ti);
 	}
 }
 
 type_init(stm32_f030xx_register_types);
 
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 
-static void stm32_f030xx_class_init(ObjectClass *oc, void *data)
+static void stm32_f030xx_class_init(ObjectClass *oc, const void *data)
 {
 	    MachineClass *mc = MACHINE_CLASS(oc);
 	    mc->desc = data;

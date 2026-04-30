@@ -15,13 +15,12 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "sysemu/sysemu.h"
 #include "chardev/char-fe.h"
-#include "hw/registerfields.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/char/esp32_uart.h"
 #include "trace.h"
 
@@ -29,14 +28,6 @@
 static gboolean uart_transmit(void *do_not_use, GIOCondition cond, void *opaque);
 static void uart_receive(void *opaque, const uint8_t *buf, int size);
 static void uart_set_rx_timeout(ESP32UARTState *s);
-
-static uint8_t fifo8_peek(Fifo8 *fifo)
-{
-    if (fifo->num == 0) {
-        abort();
-    }
-    return fifo->data[fifo->head];
-}
 
 static void uart_update_irq(ESP32UARTState *s)
 {
@@ -371,16 +362,15 @@ static void esp32_uart_init(Object *obj)
 }
 
 
-static Property esp32_uart_properties[] = {
+static const Property esp32_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", ESP32UARTState, chr),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void esp32_uart_class_init(ObjectClass *klass, void *data)
+static void esp32_uart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_uart_reset;
+    dc->legacy_reset = esp32_uart_reset;
     dc->realize = esp32_uart_realize;
     device_class_set_props(dc, esp32_uart_properties);
 }

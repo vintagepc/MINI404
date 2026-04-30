@@ -24,7 +24,7 @@
 #include "qapi/error.h"
 #include "hw/core/cpu.h"
 #include "hw/misc/mips_itu.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "target/mips/cpu.h"
 
 #define ITC_TAG_ADDRSPACE_SZ (ITC_ADDRESSMAP_NUM * 8)
@@ -533,15 +533,14 @@ static void mips_itu_reset(DeviceState *dev)
     itc_reset_cells(s);
 }
 
-static Property mips_itu_properties[] = {
+static const Property mips_itu_properties[] = {
     DEFINE_PROP_UINT32("num-fifo", MIPSITUState, num_fifo,
                       ITC_FIFO_NUM_MAX),
     DEFINE_PROP_UINT32("num-semaphores", MIPSITUState, num_semaphores,
                       ITC_SEMAPH_NUM_MAX),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void mips_itu_class_init(ObjectClass *klass, void *data)
+static void mips_itu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -29,7 +29,7 @@
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_clk.h"
-#include "hw/clock.h"
+#include "hw/core/clock.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Rcc), COM_CLASS_NAME(Rcc), STM32COM_RCC);
 

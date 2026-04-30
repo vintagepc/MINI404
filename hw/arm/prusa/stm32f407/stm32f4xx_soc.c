@@ -26,13 +26,12 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
-#include "sysemu/sysemu.h"
+#include "system/address-spaces.h"
 #include "hw/misc/unimp.h"
 #include "net/net.h"
 #include "hw/i2c/smbus_eeprom.h"
-#include "exec/ramblock.h"
-#include "hw/qdev-properties.h"
+#include "system/ramblock.h"
+#include "hw/core/qdev-properties.h"
 #include "../stm32_common/stm32_common.h"
 #include "../stm32_common/stm32_types.h"
 #include "../stm32_common/stm32_chip_macros.h"
@@ -258,7 +257,7 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 	}
 }
 
-static void stm32f4xx_soc_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_soc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = stm32f4xx_soc_realize;
@@ -292,7 +291,7 @@ stm32_f4xx_register_types(void)
 				.class_init    = stm32f4xx_soc_class_init,
 				.class_data = (void *)stm32_f4xx_variants[i],
 			};
-			type_register(&ti);
+			type_register_static(&ti);
 		}
     }
 
@@ -300,9 +299,9 @@ stm32_f4xx_register_types(void)
 
 type_init(stm32_f4xx_register_types);
 
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 
-static void stm32_f4xx_class_init(ObjectClass *oc, void *data)
+static void stm32_f4xx_class_init(ObjectClass *oc, const void *data)
 {
 	    MachineClass *mc = MACHINE_CLASS(oc);
 	    mc->desc = data;

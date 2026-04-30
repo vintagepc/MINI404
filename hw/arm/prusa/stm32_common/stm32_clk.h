@@ -65,7 +65,7 @@ static const VMStateDescription vmstate_stm32_common_rcc_clk = {
     .name = TYPE_STM32COM_RCC "-clk",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(enabled, struct Clk),
         VMSTATE_UINT32(input_freq,struct Clk),
         VMSTATE_UINT32(output_freq,struct Clk),

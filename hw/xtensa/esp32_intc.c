@@ -12,10 +12,10 @@
 #include "qemu/log.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/xtensa/esp32_intc.h"
 
 #define INTMATRIX_UNINT_VALUE   6
@@ -112,17 +112,16 @@ static void esp32_intmatrix_init(Object *obj)
     qdev_init_gpio_in(DEVICE(s), esp32_intmatrix_irq_handler, ESP32_INT_MATRIX_INPUTS);
 }
 
-static Property esp32_intmatrix_properties[] = {
+static const Property esp32_intmatrix_properties[] = {
     DEFINE_PROP_LINK("cpu0", Esp32IntMatrixState, cpu[0], TYPE_XTENSA_CPU, XtensaCPU *),
     DEFINE_PROP_LINK("cpu1", Esp32IntMatrixState, cpu[1], TYPE_XTENSA_CPU, XtensaCPU *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void esp32_intmatrix_class_init(ObjectClass *klass, void *data)
+static void esp32_intmatrix_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_intmatrix_reset;
+    dc->legacy_reset = esp32_intmatrix_reset;
     dc->realize = esp32_intmatrix_realize;
     device_class_set_props(dc, esp32_intmatrix_properties);
 }

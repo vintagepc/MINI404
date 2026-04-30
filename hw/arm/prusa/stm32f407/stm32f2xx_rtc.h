@@ -28,7 +28,7 @@
 #define STM32F2XX_RTC_H
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 
 // Define this to add extra BKUP registers past the normal ones implemented by the STM.

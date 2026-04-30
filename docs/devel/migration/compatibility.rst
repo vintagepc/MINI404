@@ -111,7 +111,7 @@ that array to see what value it needs to get for that feature.  And
 what are we going to put in that array, the value of a property.
 
 To create a property for a device, we need to use one of the
-DEFINE_PROP_*() macros. See include/hw/qdev-properties.h to find the
+DEFINE_PROP_*() macros. See include/hw/core/qdev-properties.h to find the
 macros that exist.  With it, we set the default value for that
 property, and that is what it is going to get in the latest released
 version.  But if we want a different value for a previous version, we
@@ -198,7 +198,7 @@ was done::
 
 The relevant parts for migration are::
 
-    @@ -1281,7 +1284,8 @@ static Property virtio_blk_properties[] = {
+    @@ -1281,7 +1284,8 @@ static const Property virtio_blk_properties[] = {
      #endif
          DEFINE_PROP_BIT("request-merging", VirtIOBlock, conf.request_merging, 0,
                          true),
@@ -395,13 +395,12 @@ the old behaviour or the new behaviour::
     index 8a87ccc8b0..5153ad63d6 100644
     --- a/hw/pci/pci.c
     +++ b/hw/pci/pci.c
-    @@ -79,6 +79,8 @@ static Property pci_props[] = {
+    @@ -79,6 +79,8 @@ static const Property pci_props[] = {
          DEFINE_PROP_STRING("failover_pair_id", PCIDevice,
                             failover_pair_id),
          DEFINE_PROP_UINT32("acpi-index",  PCIDevice, acpi_index, 0),
     +    DEFINE_PROP_BIT("x-pcie-err-unc-mask", PCIDevice, cap_present,
     +                    QEMU_PCIE_ERR_UNC_MASK_BITNR, true),
-         DEFINE_PROP_END_OF_LIST()
      };
 
 Notice that we enable the feature for new machine types.

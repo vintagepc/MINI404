@@ -22,11 +22,11 @@
 #include "qemu/osdep.h"
 #include "../utility/macros.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 #define TYPE_CBTLV3257 "cbtl3257"
 
@@ -120,7 +120,7 @@ static const VMStateDescription vmstate_cbtl3257 = {
     .name = TYPE_CBTLV3257,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(oe,CBTLV3257State),
         VMSTATE_BOOL(select,CBTLV3257State),
 		VMSTATE_INT32_2DARRAY(levels, CBTLV3257State, 2,4),
@@ -128,7 +128,7 @@ static const VMStateDescription vmstate_cbtl3257 = {
     }
 };
 
-static void cbtl3257_class_init(ObjectClass *oc, void *data)
+static void cbtl3257_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, cbtl3257_reset);

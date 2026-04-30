@@ -16,9 +16,7 @@ _proc_macro_error_attr_rs = rust.proc_macro(
   files('src/lib.rs'),
   override_options: ['rust_std=2018', 'build.rust_std=2018'],
   rust_args: [
-    '--cfg', 'use_fallback',
-    '--cfg', 'feature="syn-error"',
-    '--cfg', 'feature="proc-macro"'
+    '--cap-lints', 'allow',
   ],
   dependencies: [
     proc_macro2_dep,

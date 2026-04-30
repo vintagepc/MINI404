@@ -211,10 +211,10 @@ static void test_idle_rto(void)
 	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_RTOR), 5);
 
 
+	ns = qtest_clock_step(ts, 1);
 	qtest_set_irq_in(ts, "/machine/soc/UART1", "byte-in", 0, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_RDR)),==, 0xBE);
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & (BIT(4) | BIT(11)) ,==, 0);
-	ns = qtest_clock_step(ts, 0);
 
 	ns2 = qtest_clock_step_next(ts); // IDLE
 	g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & BIT(4),==, BIT(4));
@@ -307,7 +307,7 @@ static void test_prescale(void)
 	{
 		// Technically we should disable UE before changing this...
 		qtest_writel(ts, STM32_RI_ADDRESS(base, RI_PRESC), i);
-        int64_t current_ns = qtest_clock_step(ts, 0);
+        int64_t current_ns = qtest_clock_step(ts, 1);
 		qtest_writel(ts, STM32_RI_ADDRESS(base, RI_TDR), 0xFF);
 		g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_ISR)) & BIT(6), ==, 0);
 		// Advance the clock:

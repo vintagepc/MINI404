@@ -32,10 +32,11 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/net/mii.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "exec/cpu-common.h"
 #include "net/net.h"
 #include "qemu/module.h"
 #include "net/eth.h"
@@ -698,6 +699,15 @@ static void open_eth_reg_write(void *opaque,
     }
 }
 
+static const MemoryRegionOps open_eth_reg_ops = {
+    .read = open_eth_reg_read,
+    .write = open_eth_reg_write,
+    .impl = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+};
+
 static uint64_t open_eth_desc_read(void *opaque,
         hwaddr addr, unsigned int size)
 {
@@ -720,12 +730,6 @@ static void open_eth_desc_write(void *opaque,
     memcpy((uint8_t *)s->desc + addr, &val, size);
     open_eth_check_start_xmit(s);
 }
-
-
-static const MemoryRegionOps open_eth_reg_ops = {
-    .read = open_eth_reg_read,
-    .write = open_eth_reg_write,
-};
 
 static const MemoryRegionOps open_eth_desc_ops = {
     .read = open_eth_desc_read,
@@ -759,12 +763,11 @@ static void qdev_open_eth_reset(DeviceState *dev)
     open_eth_reset(d);
 }
 
-static Property open_eth_properties[] = {
+static const Property open_eth_properties[] = {
     DEFINE_NIC_PROPERTIES(OpenEthState, conf),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void open_eth_class_init(ObjectClass *klass, void *data)
+static void open_eth_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

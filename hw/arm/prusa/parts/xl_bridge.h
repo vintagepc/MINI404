@@ -31,7 +31,8 @@ enum {
 	XL_DEV_T4,
 	XL_DEV_T5,
     XL_DEV_ESP32,
-	XL_BRIDGE_COUNT
+	XL_BRIDGE_COUNT,
+    XL_INIT_START=XL_DEV_T5 // Change to ESP32 to wait for that too.
 };
 
 // GPIO indices. Use these to index output GPIOS directly.

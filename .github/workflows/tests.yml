@@ -65,8 +65,13 @@ jobs:
     - name: Build qemu-system-buddy
       run: cd ${{ runner.workspace }}/MINI404/build && ninja
     
+    # Run tests and if they fail, print the log to the console and upload it as an artifact. Return an exit code if the tests fail to avoid sending coverage reports for failed tests.
     - name: Run QTest
       run: cd ${{ runner.workspace }}/MINI404/build && make check-qtest-buddy
+
+    - name: Print test log on failure
+      if: failure()
+      run: cat ${{ runner.workspace }}/MINI404/build/meson-logs/testlog.txt
     
     - name: Upload log
       if: failure()

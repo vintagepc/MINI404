@@ -23,14 +23,14 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "migration/vmstate.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "qemu/log.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/timer.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_f2xx_f4xx_dma_regdata.h"
@@ -547,7 +547,7 @@ static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
     .name = TYPE_STM32F2xx_DMA,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,STM32F2XX_STRUCT_NAME(Dma), RI_MAX),
         VMSTATE_UINT32_ARRAY(original_ndtrs,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
         VMSTATE_UINT32_ARRAY(original_cmars,STM32F2XX_STRUCT_NAME(Dma), STM32_F2xx_DMA_MAX_CHAN),
@@ -556,13 +556,12 @@ static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
     }
 };
 
-static Property stm32_f2xx_f4xx_dma_properties[] = {
-    DEFINE_PROP_LINK("system-memory", STM32F2XX_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
-    DEFINE_PROP_END_OF_LIST()
+static const Property stm32_f2xx_f4xx_dma_properties[] = {
+    DEFINE_PROP_LINK("system-memory", STM32F2XX_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*)  
 };
 
 static void
-stm32_f2xx_f4xx_dma_class_init(ObjectClass *klass, void *data)
+stm32_f2xx_f4xx_dma_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_f2xx_f4xx_dma;

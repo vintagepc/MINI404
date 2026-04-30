@@ -29,9 +29,9 @@
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "math.h"
 #define TYPE_LOADCELL "loadcell"
 
@@ -223,14 +223,14 @@ static const VMStateDescription vmstate_loadcell = {
     .name = TYPE_LOADCELL,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(is_zero,LoadcellState),
         VMSTATE_INT32(last_pos, LoadcellState),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void loadcell_class_init(ObjectClass *oc, void *data)
+static void loadcell_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, loadcell_reset);

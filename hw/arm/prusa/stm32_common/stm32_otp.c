@@ -22,14 +22,14 @@
 #include "qemu/osdep.h"
 #include "migration/vmstate.h"
 #include "stm32_common.h"
+#include "hw/block/block.h"
 #include "qemu/log.h"
 #include "../utility/macros.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
-#include "hw/sysbus.h"
-#include "exec/memory.h"
-#include "sysemu/block-backend.h"
+#include "hw/core/sysbus.h"
+#include "system/memory.h"
+#include "system/block-backend.h"
 
 typedef struct COM_CLASS_NAME(Otp) {
 	STM32PeripheralClass parent_class;
@@ -177,24 +177,24 @@ stm32_common_otp_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 }
 
-static Property stm32_common_otp_props[] = {
+static const Property stm32_common_otp_props[] = {
     DEFINE_PROP_DRIVE("drive", COM_STRUCT_NAME(Otp), blk),
 	DEFINE_PROP_ARRAY("otp-data", COM_STRUCT_NAME(Otp),nr_init, init_data, qdev_prop_uint32, uint32_t),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static const VMStateDescription vmstate_stm32_common_otp = {
     .name = TYPE_STM32COM_OTP,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(data, COM_STRUCT_NAME(Otp), MAX_OTP_SIZE_BYTES/sizeof(uint32_t)),
         VMSTATE_END_OF_LIST()
     }
 };
 
 static void
-stm32_common_otp_class_init(ObjectClass *klass, void *data)
+stm32_common_otp_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32_common_otp_realize;
@@ -202,7 +202,7 @@ stm32_common_otp_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, stm32_common_otp_props);
 
 	COM_CLASS_NAME(Otp) *k = STM32COM_OTP_CLASS(klass);
-	stm32_reginfo_t* d = data;
+	const stm32_reginfo_t* d = data;
 	k->otp_size = d[DATA_SIZE].mask;
     k->init_temp_cal = (data == &stm32g070_otp_reginfo);
 }
@@ -228,7 +228,7 @@ stm32_common_otp_register_types(void)
     		.class_init    = stm32_common_otp_class_init,
             .class_data = (void *)stm32_common_otp_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 
 }

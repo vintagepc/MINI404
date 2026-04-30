@@ -151,14 +151,14 @@ static const VMStateDescription vmstate_stm32f2xx_pwr = {
     .name = TYPE_STM32F2XX_PWR,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, f2xx_pwr,R_PWR_MAX),
         VMSTATE_END_OF_LIST()
     }
 };
 
 static void
-f2xx_pwr_class_init(ObjectClass *klass, void *data)
+f2xx_pwr_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, f2xx_pwr_reset);

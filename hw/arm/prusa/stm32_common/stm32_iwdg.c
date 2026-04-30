@@ -22,16 +22,16 @@
 
 #include "qemu/osdep.h"
 #include "qemu/timer.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
-#include "sysemu/watchdog.h"
-#include "sysemu/runstate.h"
+#include "system/watchdog.h"
+#include "system/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-events-run-state.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "stm32_rcc_if.h"
 #include "stm32_iwdg_regdata.h"
 
@@ -265,7 +265,7 @@ static const VMStateDescription vmstate_stm32_common_iwdg = {
     .name = TYPE_STM32COM_IWDG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,COM_STRUCT_NAME(Iwdg), RI_END),
         VMSTATE_TIMER_PTR(timer, COM_STRUCT_NAME(Iwdg)),
         VMSTATE_BOOL(time_changed,COM_STRUCT_NAME(Iwdg)),
@@ -275,7 +275,7 @@ static const VMStateDescription vmstate_stm32_common_iwdg = {
 };
 
 static void
-stm32_common_iwdg_class_init(ObjectClass *klass, void *data)
+stm32_common_iwdg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_iwdg;
@@ -307,7 +307,7 @@ stm32_common_iwdg_register_types(void)
     		.class_init    = stm32_common_iwdg_class_init,
             .class_data = (void *)stm32_iwdg_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 
 }

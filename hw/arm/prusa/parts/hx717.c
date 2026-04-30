@@ -28,9 +28,9 @@
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_HX717 "hx717"
 
@@ -202,7 +202,7 @@ static const VMStateDescription vmstate_hx717 = {
     .name = TYPE_HX717,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL(channel,HX717State),
         VMSTATE_UINT8(gain, HX717State),
         VMSTATE_UINT8(sck_count, HX717State),
@@ -215,7 +215,7 @@ static const VMStateDescription vmstate_hx717 = {
     }
 };
 
-static void hx717_class_init(ObjectClass *oc, void *data)
+static void hx717_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, hx717_reset);

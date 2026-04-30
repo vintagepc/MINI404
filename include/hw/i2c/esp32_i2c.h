@@ -1,10 +1,10 @@
 #ifndef ESP32_I2C_H
 #define ESP32_I2C_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/fifo8.h"
 #include "hw/i2c/i2c.h"
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 
 #define TYPE_ESP32_I2C "esp32.i2c"
 #define Esp32_I2C(obj) OBJECT_CHECK(Esp32I2CState, (obj), TYPE_ESP32_I2C)

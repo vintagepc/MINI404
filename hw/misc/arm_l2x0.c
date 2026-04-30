@@ -19,8 +19,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -173,12 +173,11 @@ static void l2x0_priv_init(Object *obj)
     sysbus_init_mmio(dev, &s->iomem);
 }
 
-static Property l2x0_properties[] = {
+static const Property l2x0_properties[] = {
     DEFINE_PROP_UINT32("cache-type", L2x0State, cache_type, 0x1c100100),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void l2x0_class_init(ObjectClass *klass, void *data)
+static void l2x0_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

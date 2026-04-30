@@ -30,8 +30,13 @@ static uint64_t interval = 100000000;
 
 static void plugin_exit(qemu_plugin_id_t id, void *p)
 {
+    Vcpu *vcpu;
+
     for (int i = 0; i < qemu_plugin_num_vcpus(); i++) {
-        fclose(((Vcpu *)qemu_plugin_scoreboard_find(vcpus, i))->file);
+        vcpu = qemu_plugin_scoreboard_find(vcpus, i);
+        if (vcpu->file) {
+            fclose(vcpu->file);
+        }
     }
 
     g_hash_table_unref(bbs);
@@ -109,7 +114,7 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         bb = g_new(Bb, 1);
         bb->vaddr = vaddr;
         bb->count = qemu_plugin_scoreboard_new(sizeof(uint64_t));
-        bb->index = g_hash_table_size(bbs);
+        bb->index = g_hash_table_size(bbs) + 1;
         g_hash_table_replace(bbs, &bb->vaddr, bb);
     }
     g_rw_lock_writer_unlock(&bbs_lock);

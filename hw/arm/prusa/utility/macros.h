@@ -28,7 +28,7 @@
     static void \
     module_obj_name##_finalize(Object *obj); \
     static void \
-    module_obj_name##_class_init(ObjectClass *oc, void *data); \
+    module_obj_name##_class_init(ObjectClass *oc, const void *data); \
     static void \
     module_obj_name##_init(Object *obj); \
     \

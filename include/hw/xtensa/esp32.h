@@ -1,7 +1,7 @@
 #pragma once
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
+
 #include "target/xtensa/cpu.h"
 #include "hw/misc/esp32_reg.h"
 #include "hw/char/esp32_uart.h"

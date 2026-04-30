@@ -1,8 +1,8 @@
 #pragma once
 
-#include "hw/hw.h"
-#include "hw/registerfields.h"
-#include "hw/sysbus.h"
+
+#include "hw/core/registerfields.h"
+#include "hw/core/sysbus.h"
 #include "hw/misc/esp32_reg.h"
 
 #define TYPE_ESP32_FRC_TIMER "timer.esp32.frc"

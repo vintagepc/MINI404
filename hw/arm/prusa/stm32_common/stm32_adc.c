@@ -27,9 +27,9 @@
 
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/typedefs.h"
 #include "qemu/timer.h"
 #include "migration/vmstate.h"
@@ -528,9 +528,8 @@ static void stm32_adc_write(void *opaque, hwaddr addr,
 	}
 }
 
-static Property stm32common_adc_properties[] = {
-	DEFINE_PROP_LINK("adcc", COM_STRUCT_NAME(Adc), adcc, TYPE_STM32COM_ADCC, COM_STRUCT_NAME(Adcc) *),
-	DEFINE_PROP_END_OF_LIST()
+static const Property stm32common_adc_properties[] = {
+	DEFINE_PROP_LINK("adcc", COM_STRUCT_NAME(Adc), adcc, TYPE_STM32COM_ADCC, COM_STRUCT_NAME(Adcc) *)
 };
 
 static const MemoryRegionOps stm32_adc_ops = {
@@ -546,7 +545,7 @@ static const VMStateDescription vmstate_stm32_adc = {
 	.name = TYPE_STM32COM_ADC,
 	.version_id = 1,
 	.minimum_version_id = 1,
-	.fields = (VMStateField[]) {
+	.fields = (const VMStateField[]) {
 		VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(Adc), RI_END),
 		VMSTATE_INT32_ARRAY(adc_data,COM_STRUCT_NAME(Adc), STM32_COM_ADC_MAX_REG_CHANNELS),
 		VMSTATE_UINT8(adc_sequence_position,COM_STRUCT_NAME(Adc)),
@@ -594,13 +593,11 @@ static void stm32_adc_init(Object *obj)
 	s->smpr_table = k->smpr_table;
 }
 
-static void stm32_adc_class_init(ObjectClass *klass, void *data)
+static void stm32_adc_class_init(ObjectClass *klass, const void *data)
 {
 	DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_adc_reset);
 	dc->vmsd = &vmstate_stm32_adc;
-
-	device_class_set_props(dc, stm32common_adc_properties);
 
 	COM_CLASS_NAME(Adc) *k = STM32COM_ADC_CLASS(klass);
 	memcpy(k->var_reginfo, data, sizeof(k->var_reginfo));
@@ -612,6 +609,7 @@ static void stm32_adc_class_init(ObjectClass *klass, void *data)
 	{
 		k->smpr_table = SMPR_G070;
 	}
+	device_class_set_props(dc, stm32common_adc_properties);
 	QEMU_BUILD_BUG_MSG(sizeof(k->var_reginfo) != sizeof(stm32_reginfo_t[RI_END]), "Reginfo not sized correctly!");
 }
 
@@ -632,9 +630,9 @@ static void stm32_adc_register_types(void)
 			.parent     = TYPE_STM32COM_ADC,
 			.instance_init = stm32_adc_init,
 			.class_init    = stm32_adc_class_init,
-			.class_data = (void *)stm32_adc_variants[i].variant_regs,
+			.class_data = stm32_adc_variants[i].variant_regs,
 		};
-		type_register(&ti);
+		type_register_static(&ti);
 	}
 }
 

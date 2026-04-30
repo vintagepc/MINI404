@@ -31,11 +31,11 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 #include "hw/net/msf2-emac.h"
 #include "hw/net/mii.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 
 REG32(CFG1, 0x0)
@@ -546,11 +546,10 @@ static void msf2_emac_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
-static Property msf2_emac_properties[] = {
+static const Property msf2_emac_properties[] = {
     DEFINE_PROP_LINK("ahb-bus", MSF2EmacState, dma_mr,
                      TYPE_MEMORY_REGION, MemoryRegion *),
     DEFINE_NIC_PROPERTIES(MSF2EmacState, conf),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_msf2_emac = {
@@ -566,7 +565,7 @@ static const VMStateDescription vmstate_msf2_emac = {
     }
 };
 
-static void msf2_emac_class_init(ObjectClass *klass, void *data)
+static void msf2_emac_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
