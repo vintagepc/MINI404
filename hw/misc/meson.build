@@ -147,6 +147,13 @@ system_ss.add(when: 'CONFIG_ASPEED_SOC', if_true: files(
 
 system_ss.add(when: 'CONFIG_MSF2', if_true: files('msf2-sysreg.c'))
 system_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_rng.c'))
+
+if not config_host_data.get('CONFIG_GCOV')
+  system_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files(
+    'esp32_ledc.c',
+  ))
+endif
+
 system_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files(
   'esp32_crosscore_int.c',
   'esp32_dport.c',
@@ -154,7 +161,6 @@ system_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files(
   'esp32_rtc_cntl.c',
   'esp32_sha.c',
   'esp32_aes.c',
-  'esp32_ledc.c',
   'esp32_flash_enc.c',
   'ssi_psram.c'
 ))

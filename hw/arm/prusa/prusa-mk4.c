@@ -389,6 +389,25 @@ static const mk4_cfg_t ix_027c_cfg = {
 	.xflash_fn = XFLASH_FN(iX)
 };
 
+typedef struct xBuddyMachineState {
+    MachineState parent;
+    bool force_mmu;
+} xBuddyMachineState;
+
+OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
+
+static bool xbuddy_get_force_mmu(Object *obj, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    return s->force_mmu;
+}
+
+static void xbuddy_set_force_mmu(Object *obj, bool value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    s->force_mmu = value;
+}
+
 static void mk4_init(MachineState *machine)
 {
 
@@ -937,7 +956,8 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
-    if (kernel_len == 0)
+    xBuddyMachineState *s = XBUDDY_MACHINE(machine);
+    if (kernel_len == 0 && !s->force_mmu)
     {
         // No bridge setup in this case...
     }
@@ -990,10 +1010,18 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 	    mc->no_parallel = 1;
 		mc->no_serial = 1;
 
+        object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
+
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
         xmc->has_mmu = d->has_mmu;
         xmc->has_modbed = d->has_modbed;
+}
+
+static void xbuddy_instance_init(Object *obj)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    s->force_mmu = false; // Set default
 }
 
 static const xBuddyData mk4_027c = {
@@ -1040,6 +1068,8 @@ static const TypeInfo xbuddy_machine_types[] = {
         .name           = TYPE_XBUDDY_MACHINE,
         .parent         = TYPE_MACHINE,
 		.class_size		= sizeof(xBuddyMachineClass),
+        .instance_init  = xbuddy_instance_init,
+        .instance_size  = sizeof(xBuddyMachineState),
         .abstract       = true,
     }, {
         .name           = MACHINE_TYPE_NAME("prusa-mk4-027c"),

@@ -43,8 +43,8 @@ static void test_resolution(void)
 		writel(STM32_RI_ADDRESS(base, RI_CR), 0x1 );
 	 	// Start
 		g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_CHSELR)), !=, 0);
+		int64_t start =	qtest_clock_step(global_qtest, 1), end = 0;
 		writel(STM32_RI_ADDRESS(base, RI_CR), BIT(2));
-		int64_t start =	qtest_clock_step(global_qtest, 0), end = 0;
 		// Wait for EOC
 
 		while ( (readl(STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
@@ -218,8 +218,8 @@ static void test_samplerates(void)
 	qtest_set_irq_in(global_qtest, "/machine/soc/ADC1", "adc_data_in", 0, 4095);
 	writel(STM32_RI_ADDRESS(base, RI_CHSELR), 0x1 );
 	//Enable ADC:
+	int64_t t = qtest_clock_step(global_qtest, 1), t2 =0;
 	writel(STM32_RI_ADDRESS(base, RI_CR), 0x1 );
-	int64_t t = qtest_clock_step(global_qtest, 0), t2 =0;
 
 	// Expected G070 sample rates in nsec.
 	// Calculated by converting 12.5+(smpr) clock cycles at 16 KHz to ns.
@@ -302,10 +302,9 @@ static void test_prescale(void)
 		writel(stm32g070xx_cfg.perhipherals[STM32_P_ADCC].base_addr, i << 18U);
 		g_assert_cmphex(readl(stm32g070xx_cfg.perhipherals[STM32_P_ADCC].base_addr), ==, i << 18);
 
-		// Start
+		// Start time. Cannot step 0, so step 1ns.
+		int64_t start = qtest_clock_step(global_qtest, 1), end =0;
 		writel(STM32_RI_ADDRESS(base, RI_CR), BIT(2));
-		int64_t start = qtest_clock_step(global_qtest, 0), end =0;
-
 		// Wait for EOC
 		while ( (readl(STM32_RI_ADDRESS(base, RI_ISR)) & BIT(2)) != BIT(2) )
 		{

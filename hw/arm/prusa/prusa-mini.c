@@ -378,6 +378,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
     // Needs to come last because it has the scripting engine setup.
     dev = qdev_new("p404-scriptcon");
+    object_property_add_child(periphs, "p404-scriptcon", OBJECT(dev));
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     // Check for high-level non configuration arguments like help outputs and handle them.
