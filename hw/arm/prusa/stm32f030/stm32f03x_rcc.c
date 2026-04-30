@@ -22,15 +22,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
 #include <stdio.h>
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/units.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_types.h"
@@ -627,7 +627,7 @@ static const VMStateDescription vmstate_stm32f2xx_rcc = {
     .name = TYPE_STM32F030_RCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(HSI14,STM32F030_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(SYSCLK,STM32F030_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
         VMSTATE_STRUCT(PLLM,STM32F030_STRUCT_NAME(Rcc), 1, vmstate_stm32_common_rcc_clk, Clk_t),
@@ -643,7 +643,7 @@ static const VMStateDescription vmstate_stm32f2xx_rcc = {
 };
 
 
-static void stm32_rcc_class_init(ObjectClass *klass, void *data)
+static void stm32_rcc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_rcc_reset);

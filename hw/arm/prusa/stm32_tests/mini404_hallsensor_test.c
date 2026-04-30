@@ -16,16 +16,13 @@
 
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
+#include "scriptcon_helper.h"
 
 #define QOM_PATH "/machine/peripheral/hall-sensor"
 #define CMD_TOGGLE  "hall-sensor::Toggle()\n"
 #define CMD_SET     "hall-sensor::Set(1)\n"
 #define CMD_CLEAR   "hall-sensor::Set(2)\n"
 
-static void send_scriptcmd(const char* cmd, int fd)
-{
-    g_assert_true(send(fd, cmd, strlen(cmd), 0) == strlen(cmd));
-}
 
 static void test_reset(void)
 {
@@ -108,30 +105,30 @@ static void test_scripting(void)
 
     /* Assertions and other test logic */
     g_assert_false(qtest_get_irq(ts,0));
-    send_scriptcmd(CMD_TOGGLE, fd);
+    send_scriptcmd(CMD_TOGGLE, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     g_assert_false(qtest_get_irq(ts,0));
     // Turn it back off
-    send_scriptcmd(CMD_TOGGLE, fd);
+    send_scriptcmd(CMD_TOGGLE, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     g_assert_true(qtest_get_irq(ts,0));
     // Now use Set
-    send_scriptcmd(CMD_SET, fd);
+    send_scriptcmd(CMD_SET, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     g_assert_true(qtest_get_irq(ts,0));
-    send_scriptcmd(CMD_SET, fd);
+    send_scriptcmd(CMD_SET, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     g_assert_true(qtest_get_irq(ts,0));
     // Now use clear
-    send_scriptcmd(CMD_CLEAR, fd);
+    send_scriptcmd(CMD_CLEAR, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);

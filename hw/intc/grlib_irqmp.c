@@ -27,10 +27,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
 
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/intc/grlib_irqmp.h"
 
 #include "trace.h"
@@ -330,7 +330,7 @@ static void grlib_irqmp_write(void *opaque, hwaddr addr,
 static const MemoryRegionOps grlib_irqmp_ops = {
     .read = grlib_irqmp_read,
     .write = grlib_irqmp_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_BIG_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -376,12 +376,11 @@ static void grlib_irqmp_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &irqmp->iomem);
 }
 
-static Property grlib_irqmp_properties[] = {
+static const Property grlib_irqmp_properties[] = {
     DEFINE_PROP_UINT32("ncpus", IRQMP, ncpus, 1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void grlib_irqmp_class_init(ObjectClass *klass, void *data)
+static void grlib_irqmp_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -23,12 +23,12 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/bitops.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/xlnx-versal-ospi.h"
 
 #ifndef XILINX_VERSAL_OSPI_ERR_DEBUG
@@ -1825,14 +1825,13 @@ static const VMStateDescription vmstate_xlnx_versal_ospi = {
     }
 };
 
-static Property xlnx_versal_ospi_properties[] = {
+static const Property xlnx_versal_ospi_properties[] = {
     DEFINE_PROP_BOOL("dac-with-indac", XlnxVersalOspi, dac_with_indac, false),
     DEFINE_PROP_BOOL("indac-write-disabled", XlnxVersalOspi,
                      ind_write_disabled, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void xlnx_versal_ospi_class_init(ObjectClass *klass, void *data)
+static void xlnx_versal_ospi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

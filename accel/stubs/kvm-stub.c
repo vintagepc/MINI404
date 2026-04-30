@@ -11,7 +11,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/kvm.h"
+#include "system/kvm.h"
 #include "hw/pci/msi.h"
 
 KVMState *kvm_state;
@@ -26,10 +26,6 @@ bool kvm_readonly_mem_allowed;
 bool kvm_msi_use_devid;
 
 void kvm_flush_coalesced_mmio_buffer(void)
-{
-}
-
-void kvm_cpu_synchronize_state(CPUState *cpu)
 {
 }
 
@@ -83,6 +79,24 @@ void kvm_irqchip_change_notify(void)
 {
 }
 
+void kvm_vmfd_add_change_notifier(NotifierWithReturn *n)
+{
+}
+
+void kvm_vmfd_remove_change_notifier(NotifierWithReturn *n)
+{
+}
+
+void kvm_vcpufd_add_change_notifier(NotifierWithReturn *n)
+{
+    return;
+}
+
+void kvm_vcpufd_remove_change_notifier(NotifierWithReturn *n)
+{
+    return;
+}
+
 int kvm_irqchip_add_irqfd_notifier_gsi(KVMState *s, EventNotifier *n,
                                        EventNotifier *rn, int virq)
 {
@@ -103,11 +117,6 @@ unsigned int kvm_get_max_memslots(void)
 unsigned int kvm_get_free_memslots(void)
 {
     return 0;
-}
-
-void kvm_init_cpu_signals(CPUState *cpu)
-{
-    abort();
 }
 
 bool kvm_arm_supports_user_irq(void)

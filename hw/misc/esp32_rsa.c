@@ -12,9 +12,9 @@
 #include "qemu/log.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/boards.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/boards.h"
 #include "hw/misc/esp32_rsa.h"
 #include <gcrypt.h>
 
@@ -342,11 +342,11 @@ static void esp32_rsa_init(Object *obj)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static void esp32_rsa_class_init(ObjectClass *klass, void *data)
+static void esp32_rsa_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_rsa_reset;
+    dc->legacy_reset = esp32_rsa_reset;
 }
 
 static const TypeInfo esp32_rsa_info = {

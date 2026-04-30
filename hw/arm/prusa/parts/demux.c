@@ -21,9 +21,9 @@
 
 #include "qemu/osdep.h"
 #include "../utility/macros.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 
 #define TYPE_GPIODEMUX "cs-demux"
@@ -80,13 +80,13 @@ static const VMStateDescription vmstate_demux = {
     .name = TYPE_GPIODEMUX,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(address,DemuxState), // Current selected channel.
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void demux_class_init(ObjectClass *oc, void *data)
+static void demux_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, demux_reset);

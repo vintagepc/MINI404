@@ -24,12 +24,12 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "qapi/visitor.h"
 #include "qemu/error-report.h"
-#include "sysemu/reset.h"
-#include "hw/qdev-core.h"
-#include "hw/boards.h"
+#include "system/reset.h"
+#include "hw/core/qdev.h"
+#include "hw/core/boards.h"
 
 typedef struct FWBootEntry FWBootEntry;
 

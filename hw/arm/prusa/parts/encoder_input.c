@@ -28,12 +28,12 @@
 #include "../utility/ArgHelper.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/timer.h"
 #include "ui/console.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "sysemu/runstate.h"
+#include "hw/core/sysbus.h"
+#include "system/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-events-run-state.h"
 
@@ -264,7 +264,7 @@ static const VMStateDescription vmstate_encoder_input = {
     }
 };
 
-static void encoder_input_class_init(ObjectClass *oc, void *data)
+static void encoder_input_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, encoder_input_reset);

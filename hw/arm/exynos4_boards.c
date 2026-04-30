@@ -25,15 +25,16 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "net/net.h"
 #include "hw/arm/boot.h"
-#include "exec/address-spaces.h"
+#include "hw/arm/machines-qom.h"
+#include "system/address-spaces.h"
 #include "hw/arm/exynos4210.h"
 #include "hw/net/lan9118.h"
-#include "hw/qdev-properties.h"
-#include "hw/boards.h"
-#include "hw/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/boards.h"
+#include "hw/core/irq.h"
 #include "target/arm/cpu-qom.h"
 
 #define SMDK_LAN9118_BASE_ADDR      0x05000000
@@ -154,7 +155,7 @@ static const char * const valid_cpu_types[] = {
     NULL
 };
 
-static void nuri_class_init(ObjectClass *oc, void *data)
+static void nuri_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -165,15 +166,17 @@ static void nuri_class_init(ObjectClass *oc, void *data)
     mc->min_cpus = EXYNOS4210_NCPUS;
     mc->default_cpus = EXYNOS4210_NCPUS;
     mc->ignore_memory_transaction_failures = true;
+    mc->auto_create_sdcard = true;
 }
 
 static const TypeInfo nuri_type = {
     .name = MACHINE_TYPE_NAME("nuri"),
     .parent = TYPE_MACHINE,
     .class_init = nuri_class_init,
+    .interfaces = arm_machine_interfaces,
 };
 
-static void smdkc210_class_init(ObjectClass *oc, void *data)
+static void smdkc210_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -184,12 +187,14 @@ static void smdkc210_class_init(ObjectClass *oc, void *data)
     mc->min_cpus = EXYNOS4210_NCPUS;
     mc->default_cpus = EXYNOS4210_NCPUS;
     mc->ignore_memory_transaction_failures = true;
+    mc->auto_create_sdcard = true;
 }
 
 static const TypeInfo smdkc210_type = {
     .name = MACHINE_TYPE_NAME("smdkc210"),
     .parent = TYPE_MACHINE,
     .class_init = smdkc210_class_init,
+    .interfaces = arm_machine_interfaces,
 };
 
 static void exynos4_machines_init(void)

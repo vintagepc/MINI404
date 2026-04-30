@@ -12,10 +12,10 @@
 #include "qemu/log.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/registerfields.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/misc/esp32_reg.h"
 #include "hw/misc/esp32_crosscore_int.h"
 
@@ -62,12 +62,11 @@ static void esp32_crosscore_int_init(Object *obj)
 
 }
 
-static Property esp32_crosscore_int_properties[] = {
+static const Property esp32_crosscore_int_properties[] = {
     DEFINE_PROP_INT32("n_irqs", Esp32CrosscoreInt, n_irqs, 4),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void esp32_crosscore_int_class_init(ObjectClass *klass, void *data)
+static void esp32_crosscore_int_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -34,7 +34,7 @@
 #include "block/thread-pool.h"
 #include "migration/vmstate.h"
 #include "qemu/pmem.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 /* DIMM health bitmap bitmap indicators. Taken from kernel's papr_scm.c */
 /* SCM device is unable to persist memory contents */
@@ -235,8 +235,6 @@ void spapr_dt_persistent_memory(SpaprMachineState *spapr, void *fdt)
         spapr_dt_nvdimm(spapr, fdt, offset, nvdimm);
     }
     g_slist_free(nvdimms);
-
-    return;
 }
 
 static target_ulong h_scm_read_metadata(PowerPCCPU *cpu,
@@ -884,22 +882,22 @@ static void spapr_nvdimm_unrealize(NVDIMMDevice *dimm)
     vmstate_unregister(NULL, &vmstate_spapr_nvdimm_states, dimm);
 }
 
-static Property spapr_nvdimm_properties[] = {
 #ifdef CONFIG_LIBPMEM
+static const Property spapr_nvdimm_properties[] = {
     DEFINE_PROP_BOOL("pmem-override", SpaprNVDIMMDevice, pmem_override, false),
-#endif
-    DEFINE_PROP_END_OF_LIST(),
 };
+#endif
 
-static void spapr_nvdimm_class_init(ObjectClass *oc, void *data)
+static void spapr_nvdimm_class_init(ObjectClass *oc, const void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(oc);
     NVDIMMClass *nvc = NVDIMM_CLASS(oc);
 
     nvc->realize = spapr_nvdimm_realize;
     nvc->unrealize = spapr_nvdimm_unrealize;
 
-    device_class_set_props(dc, spapr_nvdimm_properties);
+#ifdef CONFIG_LIBPMEM
+    device_class_set_props(DEVICE_CLASS(oc), spapr_nvdimm_properties);
+#endif
 }
 
 static void spapr_nvdimm_init(Object *obj)

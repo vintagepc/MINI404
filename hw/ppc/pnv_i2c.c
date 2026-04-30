@@ -9,16 +9,17 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/log.h"
-#include "sysemu/reset.h"
+#include "system/reset.h"
 
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 
 #include "hw/ppc/pnv.h"
 #include "hw/ppc/pnv_chip.h"
 #include "hw/ppc/pnv_i2c.h"
 #include "hw/ppc/pnv_xscom.h"
 #include "hw/ppc/fdt.h"
+#include "migration/vmstate.h"
 
 #include <libfdt.h>
 
@@ -543,14 +544,22 @@ static void pnv_i2c_realize(DeviceState *dev, Error **errp)
     qdev_init_gpio_out(DEVICE(dev), &i2c->psi_irq, 1);
 }
 
-static Property pnv_i2c_properties[] = {
+static const Property pnv_i2c_properties[] = {
     DEFINE_PROP_LINK("chip", PnvI2C, chip, TYPE_PNV_CHIP, PnvChip *),
     DEFINE_PROP_UINT32("engine", PnvI2C, engine, 1),
     DEFINE_PROP_UINT32("num-busses", PnvI2C, num_busses, 1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pnv_i2c_class_init(ObjectClass *klass, void *data)
+static const VMStateDescription pnv_i2c_vmstate = {
+    .name = TYPE_PNV_I2C,
+    .version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT64_ARRAY(regs, PnvI2C, PNV_I2C_REGS),
+        VMSTATE_END_OF_LIST(),
+    },
+};
+
+static void pnv_i2c_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PnvXScomInterfaceClass *xscomc = PNV_XSCOM_INTERFACE_CLASS(klass);
@@ -562,6 +571,7 @@ static void pnv_i2c_class_init(ObjectClass *klass, void *data)
 
     dc->desc = "PowerNV I2C";
     dc->realize = pnv_i2c_realize;
+    dc->vmsd = &pnv_i2c_vmstate;
     device_class_set_props(dc, pnv_i2c_properties);
 }
 
@@ -570,7 +580,7 @@ static const TypeInfo pnv_i2c_info = {
     .parent        = TYPE_DEVICE,
     .instance_size = sizeof(PnvI2C),
     .class_init    = pnv_i2c_class_init,
-    .interfaces    = (InterfaceInfo[]) {
+    .interfaces    = (const InterfaceInfo[]) {
         { TYPE_PNV_XSCOM_INTERFACE },
         { }
     }

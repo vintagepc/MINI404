@@ -1,6 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
-#ifndef _ASM_S390_UNISTD_64_H
-#define _ASM_S390_UNISTD_64_H
+#ifndef _ASM_UNISTD_64_H
+#define _ASM_UNISTD_64_H
 
 #define __NR_exit 1
 #define __NR_fork 2
@@ -383,5 +382,14 @@
 #define __NR_lsm_set_self_attr 460
 #define __NR_lsm_list_modules 461
 #define __NR_mseal 462
+#define __NR_setxattrat 463
+#define __NR_getxattrat 464
+#define __NR_listxattrat 465
+#define __NR_removexattrat 466
+#define __NR_open_tree_attr 467
+#define __NR_file_getattr 468
+#define __NR_file_setattr 469
+#define __NR_listns 470
 
-#endif /* _ASM_S390_UNISTD_64_H */
+
+#endif /* _ASM_UNISTD_64_H */

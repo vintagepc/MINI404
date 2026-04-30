@@ -24,8 +24,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/reset.h"
-#include "hw/resettable.h"
+#include "system/reset.h"
+#include "hw/core/resettable.h"
 #include "hw/core/resetcontainer.h"
 
 /*
@@ -84,7 +84,7 @@ static void legacy_reset_finalize(Object *obj)
 {
 }
 
-static void legacy_reset_class_init(ObjectClass *klass, void *data)
+static void legacy_reset_class_init(ObjectClass *klass, const void *data)
 {
     ResettableClass *rc = RESETTABLE_CLASS(klass);
 

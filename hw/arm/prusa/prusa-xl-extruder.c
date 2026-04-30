@@ -24,16 +24,16 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/xl_bridge.h"
 
@@ -124,7 +124,7 @@ static void prusa_xl_extruder_init(MachineState *machine)
 {
     DeviceState *dev;
     const xlExtruderMachineClass *mc = XLBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
-    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");
 
 	const prusa_xl_e_cfg_t* cfg = extruder_cfg_map[mc->hw_type];
 
@@ -162,18 +162,20 @@ static void prusa_xl_extruder_init(MachineState *machine)
 		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
 	}
 
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-
-	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
-	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C
-	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 13), 1524); // VREFINT
-
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
 
     char* kfn = machine->kernel_filename;
     int kernel_len = kfn ? strlen(kfn) : 0;
     if (kernel_len > 0) arghelper_setargs(machine->kernel_cmdline);
+	uint64_t flash_size = stm32_soc_get_flash_size(dev);
+    qdev_prop_set_uint32(dev,"flash-size", flash_size);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
+	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 13), 1524); // VREFINT
+    
     if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
         // TODO... use initrd_image as a bootloader alternative?
@@ -389,7 +391,7 @@ static void prusa_xl_extruder_init(MachineState *machine)
 	}
 };
 
-static void xl_extruder_class_init(ObjectClass *oc, void *data)
+static void xl_extruder_class_init(ObjectClass *oc, const void *data)
 {
 		const xlExtruderData* d = (xlExtruderData*)data;
 	    MachineClass *mc = MACHINE_CLASS(oc);

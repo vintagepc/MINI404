@@ -8,9 +8,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "ui/console.h"
 #include "framebuffer.h"
@@ -535,10 +535,9 @@ static const GraphicHwOps pl110_gfx_ops = {
     .gfx_update  = pl110_update_display,
 };
 
-static Property pl110_properties[] = {
+static const Property pl110_properties[] = {
     DEFINE_PROP_LINK("framebuffer-memory", PL110State, fbmem,
                      TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void pl110_realize(DeviceState *dev, Error **errp)
@@ -581,7 +580,7 @@ static void pl111_init(Object *obj)
     s->version = VERSION_PL111;
 }
 
-static void pl110_class_init(ObjectClass *klass, void *data)
+static void pl110_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

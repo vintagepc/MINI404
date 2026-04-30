@@ -41,9 +41,9 @@
 #include "hw/sparc/sparc32_dma.h"
 #include "migration/vmstate.h"
 #include "hw/net/lance.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "trace.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 
 
 static void parent_lance_reset(void *opaque, int irq, int level)
@@ -137,14 +137,13 @@ static void lance_instance_init(Object *obj)
                                   DEVICE(obj));
 }
 
-static Property lance_properties[] = {
+static const Property lance_properties[] = {
     DEFINE_PROP_LINK("dma", SysBusPCNetState, state.dma_opaque,
                      TYPE_DEVICE, DeviceState *),
     DEFINE_NIC_PROPERTIES(SysBusPCNetState, state.conf),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void lance_class_init(ObjectClass *klass, void *data)
+static void lance_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -23,8 +23,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "sysemu/runstate.h"
+#include "hw/core/sysbus.h"
+#include "system/runstate.h"
 
 #define TYPE_GPIOPWR "gpio-pwr"
 OBJECT_DECLARE_SIMPLE_TYPE(GPIO_PWR_State, GPIOPWR)

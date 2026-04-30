@@ -23,14 +23,14 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "exec/memory.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "system/memory.h"
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "stm32_syscfg_regdata.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Syscfg), COM_CLASS_NAME(Syscfg),  STM32COM_SYSCFG);
@@ -340,20 +340,20 @@ static const VMStateDescription vmstate_stm32_common_syscfg = {
     .name = TYPE_STM32COM_SYSCFG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,COM_STRUCT_NAME(Syscfg), RI_END),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property stm32_common_syscfg_properties[] = {
+static const Property stm32_common_syscfg_properties[] = {
     DEFINE_PROP_LINK("flash", COM_STRUCT_NAME(Syscfg), flash, TYPE_MEMORY_REGION, MemoryRegion*),
     DEFINE_PROP_LINK("sram",  COM_STRUCT_NAME(Syscfg), sram, TYPE_MEMORY_REGION, MemoryRegion*),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void
-stm32_common_syscfg_class_init(ObjectClass *klass, void *data)
+stm32_common_syscfg_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_common_syscfg;
@@ -386,7 +386,7 @@ stm32_common_syscfg_register_types(void)
 			.class_init    = stm32_common_syscfg_class_init,
             .class_data = (void *)stm32_syscfg_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

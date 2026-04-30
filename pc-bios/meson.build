@@ -28,6 +28,7 @@ if unpack_edk2_blobs
 endif
 
 blobs = [
+  'ast27x0_bootrom.bin',
   'bios.bin',
   'bios-256k.bin',
   'bios-microvm.bin',
@@ -63,18 +64,17 @@ blobs = [
   'esp32-v3-rom.bin',
   'esp32-v3-rom-app.bin',
   'qemu-nsis.bmp',
-  'multiboot.bin',
   'multiboot_dma.bin',
-  'linuxboot.bin',
   'linuxboot_dma.bin',
   'kvmvapic.bin',
   'pvh.bin',
   's390-ccw.img',
   'slof.bin',
   'skiboot.lid',
+  'pnv-pnor.bin',
   'palcode-clipper',
   'u-boot.e500',
-  'u-boot-sam460-20100605.bin',
+  'u-boot-sam460.bin',
   'qemu_vga.ndrv',
   'edk2-licenses.txt',
   'hppa-firmware.img',
@@ -82,34 +82,15 @@ blobs = [
   'opensbi-riscv32-generic-fw_dynamic.bin',
   'opensbi-riscv64-generic-fw_dynamic.bin',
   'npcm7xx_bootrom.bin',
+  'npcm8xx_bootrom.bin',
   'vof.bin',
   'vof-nvram.bin',
 ]
 
-dtc = find_program('dtc', required: false)
-foreach f : [
-  'bamboo.dts',
-  'canyonlands.dts',
-  'petalogix-s3adsp1800.dts',
-  'petalogix-ml605.dts',
-]
-  out = fs.replace_suffix(f, '.dtb')
-  if dtc.found()
-    custom_target(f,
-        build_by_default: have_system,
-        input: files(f),
-        output: out,
-        install: get_option('install_blobs'),
-        install_dir: qemu_datadir,
-        command: [ dtc, '-I', 'dts', '-O', 'dtb', '-o', '@OUTPUT@', '@INPUT0@' ])
-  else
-    blobs += out
-  endif
-endforeach
-
 if get_option('install_blobs')
-  install_data(blobs, install_dir: qemu_datadir)
+  install_data(blobs, install_dir: qemu_datadir, install_mode: 'rw-r--r--')
 endif
 
 subdir('descriptors')
+subdir('dtb')
 subdir('keymaps')

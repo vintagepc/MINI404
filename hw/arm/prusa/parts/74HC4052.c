@@ -22,11 +22,11 @@
 #include "qemu/osdep.h"
 #include "../utility/macros.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 #define TYPE_HC4052 "hc4052"
 
@@ -109,19 +109,19 @@ static const VMStateDescription vmstate_hc4052 = {
     .name = TYPE_HC4052,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(channel,HC4052State), // Current selected channel.
         VMSTATE_INT32_2DARRAY(levels, HC4052State, 2,4),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property hc4052_properties[] = {
+static const Property hc4052_properties[] = {
     DEFINE_PROP_UINT8("start_channel", HC4052State, start_channel, 0),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
-static void hc4052_class_init(ObjectClass *oc, void *data)
+static void hc4052_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, hc4052_reset);

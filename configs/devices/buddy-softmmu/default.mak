@@ -1,20 +1,18 @@
-# Default configuration for buddy-softmmu
+# Default configuration for arm-softmmu
 
-# TODO: ARM_V7M is currently always required - make this more flexible!
-CONFIG_ARM_V7M=y
+# Uncomment the following lines to disable these optional devices:
+# CONFIG_I2C_DEVICES=n
+CONFIG_PCI_DEVICES=n
+# CONFIG_TEST_DEVICES=n
 
-#CONFIG_ARM_VIRT=y
+# Boards are selected by default, uncomment to keep out of the build.
+CONFIG_ARM_VIRT=n
 CONFIG_BUDDYBOARD=y
-CONFIG_SEMIHOSTING=y
-CONFIG_ARM_COMPATIBLE_SEMIHOSTING=y
-CONFIG_UNIMP=y
-#CONFIG_ACPI_APEI=y
 CONFIG_STM32F407_SOC=y
-
-# Disable all other ARM machines
+# These are selected by default when TCG is enabled, uncomment them to
+# keep out of the build.
 CONFIG_CUBIEBOARD=n
 CONFIG_EXYNOS4=n
-CONFIG_HIGHBANK=n
 CONFIG_INTEGRATOR=n
 CONFIG_FSL_IMX31=n
 CONFIG_MUSICPAL=n
@@ -45,4 +43,4 @@ CONFIG_FSL_IMX7=n
 CONFIG_FSL_IMX6UL=n
 CONFIG_ALLWINNER_H3=n
 CONFIG_ALLWINNER_R40=n
-CONFIG_ARM_VIRT=n
+CONFIG_MAX78000FTHR=n

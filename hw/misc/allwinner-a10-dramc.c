@@ -22,7 +22,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -114,7 +114,7 @@ static void allwinner_a10_dramc_write(void *opaque, hwaddr offset,
 static const MemoryRegionOps allwinner_a10_dramc_ops = {
     .read = allwinner_a10_dramc_read,
     .write = allwinner_a10_dramc_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -154,7 +154,7 @@ static const VMStateDescription allwinner_a10_dramc_vmstate = {
     }
 };
 
-static void allwinner_a10_dramc_class_init(ObjectClass *klass, void *data)
+static void allwinner_a10_dramc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);

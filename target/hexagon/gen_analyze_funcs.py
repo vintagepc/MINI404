@@ -67,6 +67,8 @@ def gen_analyze_func(f, tag, regs, imms):
         if reg.is_read():
             reg.analyze_read(f, regno)
 
+    f.write("    mark_implicit_reads(ctx);\n")
+
     ## Analyze the register writes
     for regno, register in enumerate(regs):
         reg_type, reg_id = register
@@ -74,15 +76,19 @@ def gen_analyze_func(f, tag, regs, imms):
         if reg.is_written():
             reg.analyze_write(f, tag, regno)
 
+    f.write("    mark_implicit_writes(ctx);\n")
+
     f.write("}\n\n")
 
 
 def main():
-    hex_common.read_common_files()
+    args = hex_common.parse_common_args(
+        "Emit functions analyzing register accesses"
+    )
     tagregs = hex_common.get_tagregs()
     tagimms = hex_common.get_tagimms()
 
-    with open(sys.argv[-1], "w") as f:
+    with open(args.out, "w") as f:
         f.write("#ifndef HEXAGON_ANALYZE_FUNCS_C_INC\n")
         f.write("#define HEXAGON_ANALYZE_FUNCS_C_INC\n\n")
 

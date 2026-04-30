@@ -11,18 +11,20 @@
 #include "tcg/tcg-op-gvec.h"
 #include "exec/translation-block.h"
 #include "exec/translator.h"
+#include "exec/target_page.h"
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
 #include "exec/log.h"
 #include "qemu/qemu-print.h"
 #include "fpu/softfloat.h"
+#include "tcg_loongarch.h"
 #include "translate.h"
 #include "internals.h"
 #include "vec.h"
 
 /* Global register indices */
 TCGv cpu_gpr[32], cpu_pc;
-static TCGv cpu_lladdr, cpu_llval;
+static TCGv cpu_lladdr, cpu_llval, cpu_llval_high, cpu_llbit_scq;
 
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
@@ -97,16 +99,16 @@ void generate_exception(DisasContext *ctx, int excp)
     ctx->base.is_jmp = DISAS_NORETURN;
 }
 
-static inline void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
+static void gen_goto_tb(DisasContext *ctx, unsigned tb_slot_idx, vaddr dest)
 {
     if (ctx->va32) {
         dest = (uint32_t) dest;
     }
 
     if (translator_use_goto_tb(&ctx->base, dest)) {
-        tcg_gen_goto_tb(n);
+        tcg_gen_goto_tb(tb_slot_idx);
         tcg_gen_movi_tl(cpu_pc, dest);
-        tcg_gen_exit_tb(ctx->base.tb, n);
+        tcg_gen_exit_tb(ctx->base.tb, tb_slot_idx);
     } else {
         tcg_gen_movi_tl(cpu_pc, dest);
         tcg_gen_lookup_and_goto_ptr();
@@ -157,7 +159,7 @@ static void loongarch_tr_insn_start(DisasContextBase *dcbase, CPUState *cs)
 {
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
 
-    tcg_gen_insn_start(ctx->base.pc_next);
+    tcg_gen_insn_start(ctx->base.pc_next, 0, 0);
 }
 
 /*
@@ -284,11 +286,12 @@ static void loongarch_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
 {
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
 
-    ctx->opcode = translator_ldl(cpu_env(cs), &ctx->base, ctx->base.pc_next);
+    ctx->opcode = translator_ldl_end(cpu_env(cs), &ctx->base,
+                                     ctx->base.pc_next, MO_LE);
 
     if (!decode(ctx, ctx->opcode)) {
         qemu_log_mask(LOG_UNIMP, "Error: unknown opcode. "
-                      TARGET_FMT_lx ": 0x%x\n",
+                      "0x%" VADDR_PRIx ": 0x%x\n",
                       ctx->base.pc_next, ctx->opcode);
         generate_exception(ctx, EXCCODE_INE);
     }
@@ -333,8 +336,8 @@ static const TranslatorOps loongarch_tr_ops = {
     .tb_stop            = loongarch_tr_tb_stop,
 };
 
-void gen_intermediate_code(CPUState *cs, TranslationBlock *tb, int *max_insns,
-                           vaddr pc, void *host_pc)
+void loongarch_translate_code(CPUState *cs, TranslationBlock *tb,
+                              int *max_insns, vaddr pc, void *host_pc)
 {
     DisasContext ctx;
 
@@ -358,4 +361,12 @@ void loongarch_translate_init(void)
                     offsetof(CPULoongArchState, lladdr), "lladdr");
     cpu_llval = tcg_global_mem_new(tcg_env,
                     offsetof(CPULoongArchState, llval), "llval");
+    cpu_llval_high = tcg_global_mem_new(tcg_env,
+                    offsetof(CPULoongArchState, llval_high), "llval_high");
+    cpu_llbit_scq = tcg_global_mem_new(tcg_env,
+                    offsetof(CPULoongArchState, llbit_scq), "llbit_scq");
+
+#ifndef CONFIG_USER_ONLY
+    loongarch_csr_translate_init();
+#endif
 }

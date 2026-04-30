@@ -21,7 +21,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "../stm32_common/stm32_common.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
@@ -243,14 +243,14 @@ stm32_g070_exti_init(Object *obj)
 	.name = TYPE_STM32G070_EXTI,
 	.version_id = 1,
 	.minimum_version_id = 1,
-	.fields = (VMStateField[]) {
+	.fields = (const VMStateField[]) {
 		VMSTATE_UINT32_ARRAY(regs.raw, STM32G070_STRUCT_NAME(Exti), RI_END),
 		VMSTATE_END_OF_LIST()
 	}
 };
 
 static void
-stm32_g070_exti_class_init(ObjectClass *klass, void *data)
+stm32_g070_exti_class_init(ObjectClass *klass, const void *data)
 {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->vmsd = &vmstate_stm32g070_exti;

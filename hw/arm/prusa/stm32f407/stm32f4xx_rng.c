@@ -23,10 +23,10 @@
 #include "../stm32_common/stm32_rcc_if.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "../utility/macros.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
 
@@ -173,14 +173,14 @@ static const VMStateDescription vmstate_stm32f4xx_rng = {
     .name = TYPE_STM32F4XX_RNG,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs.raw,Stm32f4xxRNGState, R_RNG_MAX),
         VMSTATE_END_OF_LIST()
     }
 };
 
 static void
-stm32f4xx_rng_class_init(ObjectClass *klass, void *data)
+stm32f4xx_rng_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32f4xx_rng_realize;

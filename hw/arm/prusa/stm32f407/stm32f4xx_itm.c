@@ -20,10 +20,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "chardev/char-fe.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties-system.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "../stm32_common/stm32_common.h"
@@ -46,7 +46,7 @@ typedef struct STM32F4XX_STRUCT_NAME(Itm) {
     uint32_t regs[RI_END];
     bool unlocked; // Set when LAR is written properly
 
-	CharBackend chr;
+	CharFrontend chr;
 
 }STM32F4XX_STRUCT_NAME(Itm);
 
@@ -126,20 +126,20 @@ static const VMStateDescription vmstate_stm32f4xx_itm = {
     .name = TYPE_STM32F4xx_ITM,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs,STM32F4XX_STRUCT_NAME(Itm), RI_END),
         VMSTATE_BOOL(unlocked, STM32F4XX_STRUCT_NAME(Itm)),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property stm32_itm_properties[] = {
+static const Property stm32_itm_properties[] = {
     DEFINE_PROP_CHR("chardev", STM32F4XX_STRUCT_NAME(Itm), chr),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void
-stm32f4xx_itm_class_init(ObjectClass *klass, void *data)
+stm32f4xx_itm_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32f4xx_itm;

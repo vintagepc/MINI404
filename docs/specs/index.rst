@@ -37,3 +37,6 @@ guest hardware that is specific to QEMU.
    rapl-msr
    rocker
    riscv-iommu
+   riscv-aia
+   aspeed-intc
+   iommu-testdev

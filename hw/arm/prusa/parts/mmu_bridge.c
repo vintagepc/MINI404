@@ -26,10 +26,10 @@
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
-#include "hw/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "mmu_bridge.h"
 #include "qemu/atomic.h"
 #include "qemu/option.h"
@@ -50,7 +50,7 @@ struct MMUBridgeState {
     /*< public >*/
     char* input_name;
 	// Output backend
-	CharBackend chr;
+	CharFrontend chr;
 	qemu_irq fs_out;
 
 };
@@ -115,7 +115,7 @@ static void mmu_bridge_realize(DeviceState *dev, Error **errp)
     else
     {
         QemuOpts *opts;
-        printf("Socket ID %s - not found, creating it instead.\n", CHARDEV_NAME);
+        printf("#Socket ID %s - not found, creating it instead.\n", CHARDEV_NAME);
         opts = qemu_opts_create(qemu_find_opts("chardev"), g_strdup(CHARDEV_NAME), 1, NULL);
             qemu_opt_set(opts, "backend","serial", errp);
             qemu_opt_set(opts, "path", g_strdup_printf("/tmp/MK404-MMU-sideband"), errp);
@@ -145,13 +145,12 @@ static const VMStateDescription vmstate_mmu_bridge = {
     }
 };
 
-static Property mmu_bridge_properties[] = {
+static const Property mmu_bridge_properties[] = {
     DEFINE_PROP_STRING("input_id", MMUBridgeState, input_name),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 
-static void mmu_bridge_class_init(ObjectClass *oc, void *data)
+static void mmu_bridge_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, mmu_bridge_reset);

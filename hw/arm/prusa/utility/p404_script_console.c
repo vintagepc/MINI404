@@ -27,10 +27,9 @@
 #include "chardev/char-fe.h"
 #include "../utility/macros.h"
 #include "../utility/ArgHelper.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
-#include "sysemu/sysemu.h"
-#include "hw/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
+#include "hw/core/sysbus.h"
 #include "qemu/readline.h"
 #include "ui/console.h"
 
@@ -39,7 +38,7 @@ struct ScriptConsoleState {
 
     Chardev *input_source;
 
-    CharBackend be;
+    CharFrontend be;
 
     char* scriptcon_name;
 
@@ -90,6 +89,11 @@ static void scriptcon_execute(void *opaque, const char *cmdline,
     {
         timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
     }
+#ifdef CONFIG_GCOV
+    //Help test cases know when the event timer has been scheduled for step_next()
+    const char* response = "ACK\r\n";
+    qemu_chr_fe_write_all(&s->be, (uint8_t*)response, strlen(response));
+#endif
 }
 
 static void scriptcon_auto_return(void *opaque, const char* cmd_completed)
@@ -157,7 +161,10 @@ static void scriptcon_event(void *opaque, QEMUChrEvent event)
 
     switch (event) {
         case CHR_EVENT_OPENED:
-            scriptcon_printf(s, "P404 Script console. Use Tab for completion options.\r\n");
+        // Don't print this during unit tests.
+            if (!s->disable_echo) {
+                scriptcon_printf(s, "P404 Script console. Use Tab for completion options.\r\n");
+            }
             readline_restart(s->rl_state);
             readline_show_prompt(s->rl_state);
         break;
@@ -201,7 +208,12 @@ static void scriptcon_read_command(ScriptConsoleState *s)
     if (!s->rl_state) {
         return;
     }
-    readline_start(s->rl_state, "P404> ", 0, scriptcon_execute, NULL);
+    #ifdef CONFIG_GCOV
+        const char prompt[] = "";
+    #else
+        const char prompt[] = "p404> ";
+    #endif
+    readline_start(s->rl_state, prompt, 0, scriptcon_execute, NULL);
     readline_show_prompt(s->rl_state);
 }
 
@@ -282,14 +294,18 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 
 }
 
-static Property scriptcon_properties[] = {
+static const Property scriptcon_properties[] = {
+#ifdef CONFIG_GCOV
+    // Suppress echo for unit testing, less headaches.
+    DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, true),
+#else
     DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, false),
+#endif
     DEFINE_PROP_STRING("input_id", ScriptConsoleState, scriptcon_name),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 
-static void scriptcon_class_init(ObjectClass *klass, void *data)
+static void scriptcon_class_init(ObjectClass *klass, const void *data)
 {
    // ChardevClass *cc = CHARDEV_CLASS(klass);
     // cc->chr_write = scriptcon_read;

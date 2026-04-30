@@ -26,11 +26,11 @@
 
 #include "qemu/osdep.h"
 #include "hw/timer/grlib_gptimer.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
-#include "hw/ptimer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/ptimer.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 
 #include "trace.h"
@@ -332,7 +332,7 @@ static void grlib_gptimer_write(void *opaque, hwaddr addr,
 static const MemoryRegionOps grlib_gptimer_ops = {
     .read = grlib_gptimer_read,
     .write = grlib_gptimer_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_BIG_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -403,14 +403,13 @@ static void grlib_gptimer_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(sbd, &unit->iomem);
 }
 
-static Property grlib_gptimer_properties[] = {
+static const Property grlib_gptimer_properties[] = {
     DEFINE_PROP_UINT32("frequency", GPTimerUnit, freq_hz,   40000000),
     DEFINE_PROP_UINT32("irq-line",  GPTimerUnit, irq_line,  8),
     DEFINE_PROP_UINT32("nr-timers", GPTimerUnit, nr_timers, 2),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void grlib_gptimer_class_init(ObjectClass *klass, void *data)
+static void grlib_gptimer_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

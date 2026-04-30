@@ -438,6 +438,26 @@ Error *error_copy(const Error *err);
 void error_free(Error *err);
 
 /*
+ * Poison g_autoptr(Error) to prevent its use.
+ *
+ * Functions that report or propagate an error take ownership of the
+ * Error object.  Explicit error_free() is needed when you handle an
+ * error in some other way.  This is rare.
+ *
+ * g_autoptr(Error) would call error_free() automatically on return.
+ * To avoid a double-free, we'd have to manually clear the pointer
+ * every time we propagate or report.
+ *
+ * Thus, g_autoptr(Error) would make the rare case easier to get right
+ * (less prone to leaks), and the common case easier to get wrong
+ * (more prone to double-free).
+ */
+extern void
+__attribute__((error("Do not use g_autoptr() to declare Error * variables")))
+error_free_poisoned(Error *err);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(Error, error_free_poisoned)
+
+/*
  * Convenience function to assert that *@errp is set, then silently free it.
  */
 void error_free_or_abort(Error **errp);
@@ -465,6 +485,18 @@ void warn_reportf_err(Error *err, const char *fmt, ...)
  */
 void error_reportf_err(Error *err, const char *fmt, ...)
     G_GNUC_PRINTF(2, 3);
+
+/*
+ * Similar to warn_report_err(), except it prints the message just once.
+ * Return true when it prints, false otherwise.
+ */
+bool warn_report_err_once_cond(bool *printed, Error *err);
+
+#define warn_report_err_once(err)                           \
+    ({                                                      \
+        static bool print_once_;                            \
+        warn_report_err_once_cond(&print_once_, err);       \
+    })
 
 /*
  * Just like error_setg(), except you get to specify the error class.
@@ -518,12 +550,6 @@ static inline void error_propagator_cleanup(ErrorPropagator *prop)
 }
 
 G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC(ErrorPropagator, error_propagator_cleanup);
-
-/*
- * Special error destination to warn on error.
- * See error_setg() and error_propagate() for details.
- */
-extern Error *error_warn;
 
 /*
  * Special error destination to abort on error.

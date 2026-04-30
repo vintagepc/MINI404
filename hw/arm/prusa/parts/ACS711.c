@@ -17,10 +17,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
@@ -121,28 +121,23 @@ static void acs711_init(Object *obj)
     scripthost_register_scriptable(pScript);
 }
 
-static Property acs711_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static const VMStateDescription vmstate_acs711 = {
     .name = TYPE_ACS711,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(on_count, ACS711State),
         VMSTATE_BOOL_ARRAY(is_on, ACS711State,NUM_ITEMS),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void acs711_class_init(ObjectClass *klass, void *data)
+static void acs711_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_legacy_reset(dc, acs711_reset);
     dc->vmsd = &vmstate_acs711;
-    device_class_set_props(dc, acs711_properties);
 
     P404ScriptIFClass *sc = P404_SCRIPTABLE_CLASS(klass);
     sc->ScriptHandler = acs711_process_action;

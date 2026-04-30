@@ -23,8 +23,8 @@
 #include "qapi/error.h"
 #include "cpu.h"
 #include "net/net.h"
-#include "hw/boards.h"
-#include "hw/loader.h"
+#include "hw/core/boards.h"
+#include "hw/core/loader.h"
 #include "elf.h"
 #include "hw/tricore/tricore.h"
 #include "hw/tricore/tricore_testdevice.h"
@@ -42,7 +42,7 @@ static void tricore_load_kernel(CPUTriCoreState *env)
 
     kernel_size = load_elf(tricoretb_binfo.kernel_filename, NULL,
                            NULL, NULL, &entry, NULL,
-                           NULL, NULL, 0,
+                           NULL, NULL, ELFDATA2LSB,
                            EM_TRICORE, 1, 0);
     if (kernel_size <= 0) {
         error_report("no kernel file '%s'",

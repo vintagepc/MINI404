@@ -24,10 +24,10 @@
 #include "../utility/macros.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "dashboard_types.h"
 #include "../opengl/GLDashboardMgr.h"
 
@@ -109,12 +109,11 @@ static void gldashboard_init(Object *obj)
 
 }
 
-static Property gldashboard_properties[] = {
+static const Property gldashboard_properties[] = {
     DEFINE_PROP_UINT8("dashboard_type",GLDashboadState, dashboard_type, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void gldashboard_class_init(ObjectClass *oc, void *data)
+static void gldashboard_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, gldashboard_reset);

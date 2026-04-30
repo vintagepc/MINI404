@@ -13,7 +13,7 @@
 #ifndef HW_S390_FLIC_H
 #define HW_S390_FLIC_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/s390x/adapter.h"
 #include "hw/virtio/virtio.h"
 #include "qemu/queue.h"
@@ -41,10 +41,7 @@ OBJECT_DECLARE_TYPE(S390FLICState, S390FLICStateClass,
 
 struct S390FLICState {
     SysBusDevice parent_obj;
-    /* to limit AdapterRoutes.num_routes for compat */
-    uint32_t adapter_routes_max_batch;
     bool ais_supported;
-    bool migration_enabled;
 };
 
 

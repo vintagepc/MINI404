@@ -22,16 +22,16 @@
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "qapi/qapi-visit-common.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/cpus.h"
-#include "sysemu/numa.h"
-#include "sysemu/reset.h"
-#include "sysemu/runstate.h"
+#include "system/system.h"
+#include "system/cpus.h"
+#include "system/numa.h"
+#include "system/reset.h"
+#include "system/runstate.h"
 #include "acpi-microvm.h"
 #include "microvm-dt.h"
 
-#include "hw/loader.h"
-#include "hw/irq.h"
+#include "hw/core/loader.h"
+#include "hw/core/irq.h"
 #include "hw/i386/kvm/clock.h"
 #include "hw/i386/microvm.h"
 #include "hw/i386/x86.h"
@@ -49,6 +49,7 @@
 #include "hw/acpi/generic_event_device.h"
 #include "hw/pci-host/gpex.h"
 #include "hw/usb/xhci.h"
+#include "hw/vfio/types.h"
 
 #include "elf.h"
 #include "kvm/kvm_i386.h"
@@ -139,7 +140,7 @@ static void create_gpex(MicrovmMachineState *mms)
                                     mms->gpex.mmio64.base, mmio64_alias);
     }
 
-    for (i = 0; i < GPEX_NUM_IRQS; i++) {
+    for (i = 0; i < PCI_NUM_PINS; i++) {
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), i,
                            x86ms->gsi[mms->gpex.irq + i]);
     }
@@ -329,7 +330,7 @@ static void microvm_memory_init(MicrovmMachineState *mms)
     rom_set_fw(fw_cfg);
 
     if (machine->kernel_filename != NULL) {
-        mmc->x86_load_linux(x86ms, fw_cfg, 0, true);
+        mmc->x86_load_linux(x86ms, fw_cfg, 0);
     }
 
     if (mms->option_roms) {
@@ -451,10 +452,43 @@ static HotplugHandler *microvm_get_hotplug_handler(MachineState *machine,
     return NULL;
 }
 
+static void microvm_machine_done(Notifier *notifier, void *data)
+{
+    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
+                                            machine_done);
+    X86MachineState *x86ms = X86_MACHINE(mms);
+
+    acpi_setup_microvm(mms);
+    dt_setup_microvm(mms);
+    fw_cfg_add_e820(x86ms->fw_cfg);
+}
+
+static void microvm_powerdown_req(Notifier *notifier, void *data)
+{
+    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
+                                            powerdown_req);
+    X86MachineState *x86ms = X86_MACHINE(mms);
+
+    if (x86ms->acpi_dev) {
+        Object *obj = OBJECT(x86ms->acpi_dev);
+        AcpiDeviceIfClass *adevc = ACPI_DEVICE_IF_GET_CLASS(obj);
+        adevc->send_event(ACPI_DEVICE_IF(x86ms->acpi_dev),
+                          ACPI_POWER_DOWN_STATUS);
+    }
+}
+
 static void microvm_machine_state_init(MachineState *machine)
 {
     MicrovmMachineState *mms = MICROVM_MACHINE(machine);
     X86MachineState *x86ms = X86_MACHINE(machine);
+
+    /* State */
+    mms->kernel_cmdline_fixed = false;
+
+    mms->machine_done.notify = microvm_machine_done;
+    qemu_add_machine_init_done_notifier(&mms->machine_done);
+    mms->powerdown_req.notify = microvm_powerdown_req;
+    qemu_register_powerdown_notifier(&mms->powerdown_req);
 
     microvm_memory_init(mms);
 
@@ -581,31 +615,6 @@ static void microvm_machine_set_auto_kernel_cmdline(Object *obj, bool value,
     mms->auto_kernel_cmdline = value;
 }
 
-static void microvm_machine_done(Notifier *notifier, void *data)
-{
-    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
-                                            machine_done);
-    X86MachineState *x86ms = X86_MACHINE(mms);
-
-    acpi_setup_microvm(mms);
-    dt_setup_microvm(mms);
-    fw_cfg_add_e820(x86ms->fw_cfg);
-}
-
-static void microvm_powerdown_req(Notifier *notifier, void *data)
-{
-    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
-                                            powerdown_req);
-    X86MachineState *x86ms = X86_MACHINE(mms);
-
-    if (x86ms->acpi_dev) {
-        Object *obj = OBJECT(x86ms->acpi_dev);
-        AcpiDeviceIfClass *adevc = ACPI_DEVICE_IF_GET_CLASS(obj);
-        adevc->send_event(ACPI_DEVICE_IF(x86ms->acpi_dev),
-                          ACPI_POWER_DOWN_STATUS);
-    }
-}
-
 static void microvm_machine_initfn(Object *obj)
 {
     MicrovmMachineState *mms = MICROVM_MACHINE(obj);
@@ -617,14 +626,6 @@ static void microvm_machine_initfn(Object *obj)
     mms->isa_serial = true;
     mms->option_roms = true;
     mms->auto_kernel_cmdline = true;
-
-    /* State */
-    mms->kernel_cmdline_fixed = false;
-
-    mms->machine_done.notify = microvm_machine_done;
-    qemu_add_machine_init_done_notifier(&mms->machine_done);
-    mms->powerdown_req.notify = microvm_powerdown_req;
-    qemu_register_powerdown_notifier(&mms->powerdown_req);
 }
 
 GlobalProperty microvm_properties[] = {
@@ -633,11 +634,12 @@ GlobalProperty microvm_properties[] = {
      * so reserving io space is not going to work.  Turn it off.
      */
     { "pcie-root-port", "io-reserve", "0" },
+    { TYPE_RAMFB_DEVICE, "use-legacy-x86-rom", "true" },
+    { TYPE_VFIO_PCI_NOHOTPLUG, "use-legacy-x86-rom", "true" },
 };
 
-static void microvm_class_init(ObjectClass *oc, void *data)
+static void microvm_class_init(ObjectClass *oc, const void *data)
 {
-    X86MachineClass *x86mc = X86_MACHINE_CLASS(oc);
     MicrovmMachineClass *mmc = MICROVM_MACHINE_CLASS(oc);
     MachineClass *mc = MACHINE_CLASS(oc);
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(oc);
@@ -670,8 +672,6 @@ static void microvm_class_init(ObjectClass *oc, void *data)
     hc->plug = microvm_device_plug_cb;
     hc->unplug_request = microvm_device_unplug_request_cb;
     hc->unplug = microvm_device_unplug_cb;
-
-    x86mc->fwcfg_dma_enabled = true;
 
     object_class_property_add(oc, MICROVM_MACHINE_RTC, "OnOffAuto",
                               microvm_machine_get_rtc,
@@ -726,7 +726,7 @@ static const TypeInfo microvm_machine_info = {
     .instance_init = microvm_machine_initfn,
     .class_size    = sizeof(MicrovmMachineClass),
     .class_init    = microvm_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
          { TYPE_HOTPLUG_HANDLER },
          { }
     },

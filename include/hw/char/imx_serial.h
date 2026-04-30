@@ -18,7 +18,7 @@
 #ifndef IMX_SERIAL_H
 #define IMX_SERIAL_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
 #include "qemu/fifo32.h"
@@ -109,20 +109,20 @@ struct IMXSerialState {
     uint32_t ucr1;
     uint32_t ucr2;
     uint32_t uts1;
+    uint32_t ufcr;
 
     /*
      * The registers below are implemented just so that the
      * guest OS sees what it has written
      */
     uint32_t onems;
-    uint32_t ufcr;
     uint32_t ubmr;
     uint32_t ubrc;
     uint32_t ucr3;
     uint32_t ucr4;
 
     qemu_irq irq;
-    CharBackend chr;
+    CharFrontend chr;
 };
 
 #endif

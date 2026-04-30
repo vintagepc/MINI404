@@ -25,9 +25,7 @@ _bilge_impl_rs = rust.proc_macro(
   files('src/lib.rs'),
   override_options: ['rust_std=2021', 'build.rust_std=2021'],
   rust_args: [
-    '--cfg', 'use_fallback',
-    '--cfg', 'feature="syn-error"',
-    '--cfg', 'feature="proc-macro"',
+    '--cap-lints', 'allow',
   ],
   dependencies: [
     itertools_dep,

@@ -26,7 +26,7 @@
 #include "hw/misc/stm32f4xx_syscfg.h"
 #include "hw/timer/stm32f2xx_timer.h"
 #include "hw/misc/stm32f4xx_exti.h"
-#include "hw/or-irq.h"
+#include "hw/core/or-irq.h"
 #include "../stm32f407/stm32f4xx_adcc.h"
 #include "../stm32f407/stm32f2xx_i2c.h"
 #include "../stm32f407/stm32f2xx_pwr.h"

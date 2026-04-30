@@ -25,15 +25,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/register.h"
+#include "hw/core/register.h"
 #include "qemu/bitops.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/intc/xlnx-pmu-iomod-intc.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 
 #ifndef XLNX_PMU_IO_INTC_ERR_DEBUG
 #define XLNX_PMU_IO_INTC_ERR_DEBUG 0
@@ -474,11 +474,10 @@ static const MemoryRegionOps xlnx_pmu_io_intc_ops = {
     },
 };
 
-static Property xlnx_pmu_io_intc_properties[] = {
+static const Property xlnx_pmu_io_intc_properties[] = {
     DEFINE_PROP_UINT32("intc-intr-size", XlnxPMUIOIntc, cfg.intr_size, 0),
     DEFINE_PROP_UINT32("intc-level-edge", XlnxPMUIOIntc, cfg.level_edge, 0),
     DEFINE_PROP_UINT32("intc-positive", XlnxPMUIOIntc, cfg.positive, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void xlnx_pmu_io_intc_realize(DeviceState *dev, Error **errp)
@@ -532,7 +531,7 @@ static const VMStateDescription vmstate_xlnx_pmu_io_intc = {
     }
 };
 
-static void xlnx_pmu_io_intc_class_init(ObjectClass *klass, void *data)
+static void xlnx_pmu_io_intc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

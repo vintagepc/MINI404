@@ -26,7 +26,7 @@
 #include "qemu/osdep.h"
 #include "hw/ssi/ssi.h"
 #include "migration/vmstate.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/module.h"
 #include "ui/console.h"
 #include "qom/object.h"
@@ -132,7 +132,7 @@ struct SPIDisplayState {
 
 struct SPIDisplayClass {
     SSIPeripheralClass parent_class;
-    DisplayInfo *di;
+    const DisplayInfo *di;
 };
 
 #define DPY_ENTRY(_name, _rows, _cols, _pol) \
@@ -543,7 +543,7 @@ static const VMStateDescription vmstate_spi_display = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = spi_display_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_SSI_PERIPHERAL(ssidev,SPIDisplayState),
         VMSTATE_UINT32(cmd_len,SPIDisplayState),
         VMSTATE_INT32(cmd,SPIDisplayState),
@@ -565,7 +565,7 @@ static const VMStateDescription vmstate_spi_display = {
     }
 };
 
-static void spi_display_class_init(ObjectClass *klass, void *data)
+static void spi_display_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_spi_display;
@@ -611,7 +611,7 @@ static void spi_display_register_types(void)
             .class_init = spi_display_class_init,
             .class_data = (void *)&spi_display_models[i],
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 
 }

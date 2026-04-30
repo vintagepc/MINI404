@@ -21,6 +21,7 @@ import sys
 import re
 import string
 import textwrap
+import argparse
 
 behdict = {}  # tag ->behavior
 semdict = {}  # tag -> semantics
@@ -349,6 +350,7 @@ class Register:
             f"{self.helper_arg_type()} {self.helper_arg_name()}"
         )
 
+
 #
 # Every register is either Single or Pair or Hvx
 #
@@ -449,10 +451,9 @@ class GprDest(Register, Single, Dest):
         f.write(code_fmt(f"""\
             TCGv {self.reg_tcg()} = get_result_gpr(ctx, {self.reg_num});
         """))
-    def log_write(self, f, tag):
-        f.write(code_fmt(f"""\
-            gen_log_reg_write(ctx, {self.reg_num}, {self.reg_tcg()});
-        """))
+    def gen_write(self, f, tag):
+        ## No write needed
+        return
     def analyze_write(self, f, tag, regno):
         predicated = "true" if is_predicated(tag) else "false"
         f.write(code_fmt(f"""\
@@ -493,10 +494,9 @@ class GprReadWrite(Register, Single, ReadWrite):
             f.write(code_fmt(f"""\
                 tcg_gen_mov_tl({self.reg_tcg()}, hex_gpr[{self.reg_num}]);
             """))
-    def log_write(self, f, tag):
-        f.write(code_fmt(f"""\
-            gen_log_reg_write(ctx, {self.reg_num}, {self.reg_tcg()});
-        """))
+    def gen_write(self, f, tag):
+        ## No write needed
+        return
     def analyze_read(self, f, regno):
         f.write(code_fmt(f"""\
             ctx_log_reg_read(ctx, {self.reg_num});
@@ -517,7 +517,7 @@ class ControlDest(Register, Single, Dest):
         f.write(code_fmt(f"""\
             TCGv {self.reg_tcg()} = get_result_gpr(ctx, {self.reg_num});
         """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
             gen_write_ctrl_reg(ctx, {self.reg_num}, {self.reg_tcg()});
         """))
@@ -569,9 +569,9 @@ class PredDest(Register, Single, Dest):
         f.write(code_fmt(f"""\
             TCGv {self.reg_tcg()} = tcg_temp_new();
         """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
-            gen_log_pred_write(ctx, {self.reg_num}, {self.reg_tcg()});
+            gen_pred_write(ctx, {self.reg_num}, {self.reg_tcg()});
         """))
     def analyze_write(self, f, tag, regno):
         f.write(code_fmt(f"""\
@@ -606,9 +606,9 @@ class PredReadWrite(Register, Single, ReadWrite):
             TCGv {self.reg_tcg()} = tcg_temp_new();
             tcg_gen_mov_tl({self.reg_tcg()}, hex_pred[{self.reg_num}]);
         """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
-            gen_log_pred_write(ctx, {self.reg_num}, {self.reg_tcg()});
+            gen_pred_write(ctx, {self.reg_num}, {self.reg_tcg()});
         """))
     def analyze_read(self, f, regno):
         f.write(code_fmt(f"""\
@@ -626,9 +626,9 @@ class PairDest(Register, Pair, Dest):
             TCGv_i64 {self.reg_tcg()} =
                 get_result_gpr_pair(ctx, {self.reg_num});
         """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
-            gen_log_reg_write_pair(ctx, {self.reg_num}, {self.reg_tcg()});
+            gen_write_reg_pair(ctx, {self.reg_num}, {self.reg_tcg()});
         """))
     def analyze_write(self, f, tag, regno):
         predicated = "true" if is_predicated(tag) else "false"
@@ -660,9 +660,9 @@ class PairReadWrite(Register, Pair, ReadWrite):
                                    hex_gpr[{self.reg_num}],
                                    hex_gpr[{self.reg_num} + 1]);
         """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
-            gen_log_reg_write_pair(ctx, {self.reg_num}, {self.reg_tcg()});
+            gen_write_reg_pair(ctx, {self.reg_num}, {self.reg_tcg()});
         """))
     def analyze_read(self, f, regno):
         f.write(code_fmt(f"""\
@@ -685,7 +685,7 @@ class ControlPairDest(Register, Pair, Dest):
             TCGv_i64 {self.reg_tcg()} =
                 get_result_gpr_pair(ctx, {self.reg_num});
         """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
             gen_write_ctrl_reg_pair(ctx, {self.reg_num}, {self.reg_tcg()});
         """))
@@ -723,7 +723,7 @@ class VRegDest(Register, Hvx, Dest):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         pass
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -789,7 +789,7 @@ class VRegReadWrite(Register, Hvx, ReadWrite):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         pass
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -821,10 +821,10 @@ class VRegTmp(Register, Hvx, ReadWrite):
                                  vreg_src_off(ctx, {self.reg_num}),
                                  sizeof(MMVector), sizeof(MMVector));
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
-            gen_log_vreg_write(ctx, {self.hvx_off()}, {self.reg_num},
-                               {hvx_newv(tag)});
+            gen_vreg_write(ctx, {self.hvx_off()}, {self.reg_num},
+                           {hvx_newv(tag)});
         """))
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -854,7 +854,7 @@ class VRegPairDest(Register, Hvx, Dest):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         pass
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -913,10 +913,10 @@ class VRegPairReadWrite(Register, Hvx, ReadWrite):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         f.write(code_fmt(f"""\
-            gen_log_vreg_write_pair(ctx, {self.hvx_off()}, {self.reg_num},
-                                    {hvx_newv(tag)});
+            gen_vreg_write_pair(ctx, {self.hvx_off()}, {self.reg_num},
+                                {hvx_newv(tag)});
         """))
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -946,7 +946,7 @@ class QRegDest(Register, Hvx, Dest):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         pass
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -993,7 +993,7 @@ class QRegReadWrite(Register, Hvx, ReadWrite):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
-    def log_write(self, f, tag):
+    def gen_write(self, f, tag):
         pass
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
@@ -1069,11 +1069,22 @@ def init_registers():
     for reg in new_regs:
         new_registers[f"{reg.regtype}{reg.regid}"] = reg
 
-def get_register(tag, regtype, regid):
-    if f"{regtype}{regid}V" in semdict[tag]:
-        return registers[f"{regtype}{regid}"]
-    else:
-        return new_registers[f"{regtype}{regid}"]
+def is_new_reg(tag, regid):
+    if regid[0] in "NO":
+        return True
+    return regid[0] == "P" and \
+           f"{regid}N" in semdict[tag] and \
+           f"{regid}V" not in semdict[tag]
+
+def get_register(tag, regtype, regid, subtype=""):
+    regid = f"{regtype}{regid}"
+    is_new = is_new_reg(tag, regid)
+    try:
+        reg = new_registers[regid] if is_new else registers[regid]
+    except KeyError:
+        raise Exception(f"Unknown {'new ' if is_new else ''}register {regid}" +\
+                        f"from '{tag}' with syntax '{semdict[tag]}'") from None
+    return reg
 
 def helper_ret_type(tag, regs):
     ## If there is a scalar result, it is the return type
@@ -1181,22 +1192,20 @@ def helper_args(tag, regs, imms):
     return args
 
 
-def read_common_files():
-    read_semantics_file(sys.argv[1])
-    read_overrides_file(sys.argv[2])
-    read_overrides_file(sys.argv[3])
-    ## Whether or not idef-parser is enabled is
-    ## determined by the number of arguments to
-    ## this script:
-    ##
-    ##   4 args. -> not enabled,
-    ##   5 args. -> idef-parser enabled.
-    ##
-    ## The 5:th arg. then holds a list of the successfully
-    ## parsed instructions.
-    is_idef_parser_enabled = len(sys.argv) > 5
-    if is_idef_parser_enabled:
-        read_idef_parser_enabled_file(sys.argv[4])
+def parse_common_args(desc):
+    parser = argparse.ArgumentParser(desc)
+    parser.add_argument("semantics", help="semantics file")
+    parser.add_argument("overrides", help="overrides file")
+    parser.add_argument("overrides_vec", help="vector overrides file")
+    parser.add_argument("out", help="output file")
+    parser.add_argument("--idef-parser",
+                        help="file of instructions translated by idef-parser")
+    args = parser.parse_args()
+    read_semantics_file(args.semantics)
+    read_overrides_file(args.overrides)
+    read_overrides_file(args.overrides_vec)
+    if args.idef_parser:
+        read_idef_parser_enabled_file(args.idef_parser)
     calculate_attribs()
     init_registers()
-    return is_idef_parser_enabled
+    return args

@@ -10,12 +10,14 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
+#include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-migration.h"
 #include "trace.h"
 
+#include "hw/core/hw-error.h"
 #include "hw/i386/pc.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/i386/apic-msidef.h"
 #include "hw/xen/xen-x86.h"
 #include "qemu/range.h"
@@ -24,6 +26,10 @@
 #include "hw/xen/arch_hvm.h"
 #include <xen/hvm/e820.h>
 #include "exec/target_page.h"
+#include "target/i386/cpu.h"
+#include "system/runstate.h"
+#include "system/xen-mapcache.h"
+#include "system/xen.h"
 
 static MemoryRegion ram_640k, ram_lo, ram_hi;
 static MemoryRegion *framebuffer;
@@ -616,7 +622,7 @@ void xen_hvm_init_pc(PCMachineState *pcms, MemoryRegion **ram_memory)
 
     xen_register_ioreq(state, max_cpus,
                        HVM_IOREQSRV_BUFIOREQ_ATOMIC,
-                       &xen_memory_listener);
+                       &xen_memory_listener, true);
 
     xen_is_stubdomain = xen_check_stubdomain(state->xenstore);
 
@@ -714,7 +720,8 @@ void arch_xen_set_memory(XenIOState *state, MemoryRegionSection *section,
         return;
     }
 
-    if (log_dirty != add) {
+    if (log_dirty != add &&
+        !(section->mr == framebuffer && start_addr > 0xbffff)) {
         return;
     }
 
@@ -752,6 +759,4 @@ void arch_handle_ioreq(XenIOState *state, ioreq_t *req)
     default:
         hw_error("Invalid ioreq type 0x%x\n", req->type);
     }
-
-    return;
 }

@@ -13,10 +13,10 @@
 
 #include "hw/virtio/virtio-pci.h"
 #include "hw/virtio/virtio-iommu.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/pci/pci_bus.h"
 #include "qom/object.h"
 
@@ -34,12 +34,11 @@ struct VirtIOIOMMUPCI {
     VirtIOIOMMU vdev;
 };
 
-static Property virtio_iommu_pci_properties[] = {
+static const Property virtio_iommu_pci_properties[] = {
     DEFINE_PROP_UINT32("class", VirtIOPCIProxy, class_code, 0),
     DEFINE_PROP_ARRAY("reserved-regions", VirtIOIOMMUPCI,
                       vdev.nr_prop_resv_regions, vdev.prop_resv_regions,
                       qdev_prop_reserved_region, ReservedRegion),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void virtio_iommu_pci_realize(VirtIOPCIProxy *vpci_dev, Error **errp)
@@ -74,7 +73,7 @@ static void virtio_iommu_pci_realize(VirtIOPCIProxy *vpci_dev, Error **errp)
     qdev_realize(vdev, BUS(&vpci_dev->bus), errp);
 }
 
-static void virtio_iommu_pci_class_init(ObjectClass *klass, void *data)
+static void virtio_iommu_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioPCIClass *k = VIRTIO_PCI_CLASS(klass);
@@ -95,18 +94,10 @@ static void virtio_iommu_pci_instance_init(Object *obj)
                                 TYPE_VIRTIO_IOMMU);
 }
 
-static void virtio_iommu_pci_instance_finalize(Object *obj)
-{
-    VirtIOIOMMUPCI *dev = VIRTIO_IOMMU_PCI(obj);
-
-    g_free(dev->vdev.prop_resv_regions);
-}
-
 static const VirtioPCIDeviceTypeInfo virtio_iommu_pci_info = {
     .generic_name  = TYPE_VIRTIO_IOMMU_PCI,
     .instance_size = sizeof(VirtIOIOMMUPCI),
     .instance_init = virtio_iommu_pci_instance_init,
-    .instance_finalize = virtio_iommu_pci_instance_finalize,
     .class_init    = virtio_iommu_pci_class_init,
 };
 

@@ -16,9 +16,9 @@
 #include "hw/i386/apic_internal.h"
 #include "hw/i386/apic-msidef.h"
 #include "hw/pci/msi.h"
-#include "sysemu/hw_accel.h"
-#include "sysemu/whpx.h"
-#include "whpx-internal.h"
+#include "system/hw_accel.h"
+#include "system/whpx.h"
+#include "system/whpx-internal.h"
 
 struct whpx_lapic_state {
     struct {
@@ -151,9 +151,8 @@ static void whpx_apic_put(CPUState *cs, run_on_cpu_data data)
     }
 }
 
-void whpx_apic_get(DeviceState *dev)
+void whpx_apic_get(APICCommonState *s)
 {
-    APICCommonState *s = APIC_COMMON(dev);
     CPUState *cpu = CPU(s->cpu);
     struct whpx_lapic_state kapic;
 
@@ -193,6 +192,11 @@ static void whpx_send_msi(MSIMessage *msg)
     uint8_t trigger_mode = (data >> MSI_DATA_TRIGGER_SHIFT) & 0x1;
     uint8_t delivery = (data >> MSI_DATA_DELIVERY_MODE_SHIFT) & 0x7;
 
+    if (vector == 0) {
+        warn_report("Ignoring request for interrupt vector 0");
+        return;
+    }
+
     WHV_INTERRUPT_CONTROL interrupt = {
         /* Values correspond to delivery modes */
         .Type = delivery,
@@ -231,7 +235,7 @@ static void whpx_apic_mem_write(void *opaque, hwaddr addr,
 static const MemoryRegionOps whpx_apic_io_ops = {
     .read = whpx_apic_mem_read,
     .write = whpx_apic_mem_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
 static void whpx_apic_reset(APICCommonState *s)
@@ -252,7 +256,7 @@ static void whpx_apic_realize(DeviceState *dev, Error **errp)
     msi_nonbroken = true;
 }
 
-static void whpx_apic_class_init(ObjectClass *klass, void *data)
+static void whpx_apic_class_init(ObjectClass *klass, const void *data)
 {
     APICCommonClass *k = APIC_COMMON_CLASS(klass);
 

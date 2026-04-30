@@ -28,6 +28,7 @@
 #include <sys/un.h>
 #include "qemu/xattr.h"
 #include "qapi/error.h"
+#include "qemu/bswap.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
 #include "qemu/option.h"
@@ -468,12 +469,16 @@ static ssize_t local_readlink(FsContext *fs_ctx, V9fsPath *fs_path,
 
         fd = local_open_nofollow(fs_ctx, fs_path->data, O_RDONLY, 0);
         if (fd == -1) {
+            if (errno == ELOOP) {
+                goto native_symlink;
+            }
             return -1;
         }
         tsize = RETRY_ON_EINTR(read(fd, (void *)buf, bufsz));
         close_preserve_errno(fd);
     } else if ((fs_ctx->export_flags & V9FS_SM_PASSTHROUGH) ||
                (fs_ctx->export_flags & V9FS_SM_NONE)) {
+    native_symlink:;
         char *dirpath = g_path_get_dirname(fs_path->data);
         char *name = g_path_get_basename(fs_path->data);
         int dirfd;
@@ -766,16 +771,19 @@ out:
     return err;
 }
 
+static int local_fid_fd(int fid_type, V9fsFidOpenState *fs)
+{
+    if (fid_type == P9_FID_DIR) {
+        return dirfd(fs->dir.stream);
+    } else {
+        return fs->fd;
+    }
+}
+
 static int local_fstat(FsContext *fs_ctx, int fid_type,
                        V9fsFidOpenState *fs, struct stat *stbuf)
 {
-    int err, fd;
-
-    if (fid_type == P9_FID_DIR) {
-        fd = dirfd(fs->dir.stream);
-    } else {
-        fd = fs->fd;
-    }
+    int err, fd = local_fid_fd(fid_type, fs);
 
     err = fstat(fd, stbuf);
     if (err) {
@@ -1039,6 +1047,14 @@ static int local_truncate(FsContext *ctx, V9fsPath *fs_path, off_t size)
     return ret;
 }
 
+static int local_ftruncate(FsContext *ctx, int fid_type, V9fsFidOpenState *fs,
+                           off_t size)
+{
+    int fd = local_fid_fd(fid_type, fs);
+
+    return ftruncate(fd, size);
+}
+
 static int local_chown(FsContext *fs_ctx, V9fsPath *fs_path, FsCred *credp)
 {
     char *dirpath = g_path_get_dirname(fs_path->data);
@@ -1087,6 +1103,14 @@ out:
     g_free(dirpath);
     g_free(name);
     return ret;
+}
+
+static int local_futimens(FsContext *s, int fid_type, V9fsFidOpenState *fs,
+                          const struct timespec *times)
+{
+    int fd = local_fid_fd(fid_type, fs);
+
+    return qemu_futimens(fd, times);
 }
 
 static int local_unlinkat_common(FsContext *ctx, int dirfd, const char *name,
@@ -1167,13 +1191,7 @@ out:
 static int local_fsync(FsContext *ctx, int fid_type,
                        V9fsFidOpenState *fs, int datasync)
 {
-    int fd;
-
-    if (fid_type == P9_FID_DIR) {
-        fd = dirfd(fs->dir.stream);
-    } else {
-        fd = fs->fd;
-    }
+    int fd = local_fid_fd(fid_type, fs);
 
     if (datasync) {
         return qemu_fdatasync(fd);
@@ -1443,7 +1461,7 @@ static int local_init(FsContext *ctx, Error **errp)
 
     data->mountfd = open(ctx->fs_root, O_DIRECTORY | O_RDONLY);
     if (data->mountfd == -1) {
-        error_setg_errno(errp, errno, "failed to open '%s'", ctx->fs_root);
+        error_setg_file_open(errp, errno, ctx->fs_root);
         goto err;
     }
 
@@ -1538,6 +1556,9 @@ static int local_parse_opts(QemuOpts *opts, FsDriverEntry *fse, Error **errp)
                               "[remap|forbid|warn]\n");
             return -1;
         }
+    } else {
+        fse->export_flags &= ~V9FS_FORBID_MULTIDEVS;
+        fse->export_flags |= V9FS_REMAP_INODES;
     }
 
     if (!path) {
@@ -1570,6 +1591,13 @@ static int local_parse_opts(QemuOpts *opts, FsDriverEntry *fse, Error **errp)
     fse->path = g_strdup(path);
 
     return 0;
+}
+
+static bool local_has_valid_file_handle(int fid_type, V9fsFidOpenState *fs)
+{
+    return
+        (fid_type == P9_FID_FILE && fs->fd != -1) ||
+        (fid_type == P9_FID_DIR && fs->dir.stream != NULL);
 }
 
 FileOperations local_ops = {
@@ -1609,4 +1637,7 @@ FileOperations local_ops = {
     .name_to_path = local_name_to_path,
     .renameat  = local_renameat,
     .unlinkat = local_unlinkat,
+    .has_valid_file_handle = local_has_valid_file_handle,
+    .ftruncate = local_ftruncate,
+    .futimens = local_futimens,
 };

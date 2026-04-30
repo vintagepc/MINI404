@@ -13,8 +13,8 @@
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
+
+#include "hw/core/sysbus.h"
 #include "hw/misc/esp32_rng.h"
 
 

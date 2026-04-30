@@ -26,8 +26,8 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/timer/mss-timer.h"
 #include "migration/vmstate.h"
 
@@ -279,14 +279,13 @@ static const VMStateDescription vmstate_mss_timer = {
     }
 };
 
-static Property mss_timer_properties[] = {
+static const Property mss_timer_properties[] = {
     /* Libero GUI shows 100Mhz as default for clocks */
     DEFINE_PROP_UINT32("clock-frequency", MSSTimerState, freq_hz,
                       100 * 1000000),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void mss_timer_class_init(ObjectClass *klass, void *data)
+static void mss_timer_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

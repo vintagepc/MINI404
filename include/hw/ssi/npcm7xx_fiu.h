@@ -17,7 +17,7 @@
 #define NPCM7XX_FIU_H
 
 #include "hw/ssi/ssi.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 /*
  * Number of registers in our device state structure. Don't change this without
@@ -60,6 +60,7 @@ struct NPCM7xxFIUState {
     int32_t cs_count;
     int32_t active_cs;
     qemu_irq *cs_lines;
+    uint64_t flash_size;
     NPCM7xxFIUFlash *flash;
 
     SSIBus *spi;

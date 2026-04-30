@@ -28,9 +28,9 @@
 #include "../utility/ArgHelper.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_IRSENSOR "ir-sensor"
 
@@ -127,7 +127,7 @@ static const VMStateDescription vmstate_irsensor = {
     }
 };
 
-static void irsensor_class_init(ObjectClass *oc, void *data)
+static void irsensor_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, irsensor_reset);
