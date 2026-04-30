@@ -38,6 +38,7 @@
 #include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/xl_bridge.h"
+#include "qobject/qlist.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -167,19 +168,16 @@ static void prusa_bed_init(MachineState *machine)
 		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
 		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
 		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
-
+        uint32_t otp_data[OTP_DATA_COUNT];
+        memset(otp_data, 0xFF, sizeof(otp_data));
+        otp_data[OTP_CAL1_INDEX] = (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1;
+        otp_data[OTP_CAL2_INDEX] = OTP_TS_CAL2 << 16;
 		DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
-		qdev_prop_set_uint32(otp, "len-otp-data", OTP_DATA_COUNT);
-		for (int i = 0; i < 256; i++) {
-			gchar prop[32];
-			snprintf(prop, sizeof(prop), "otp-data[%d]", i);
-			qdev_prop_set_uint32(otp, prop, 0xFFFFFFFF);
-		}
-		gchar prop[32];
-		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL1_INDEX);
-		qdev_prop_set_uint32(otp, prop, (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1);
-		snprintf(prop, sizeof(prop), "otp-data[%d]", OTP_CAL2_INDEX);
-		qdev_prop_set_uint32(otp, prop, OTP_TS_CAL2 << 16);
+        QList *otp_list = qlist_new();
+        for (int i = 0; i < OTP_DATA_COUNT; i++) {
+            qlist_append_int(otp_list, otp_data[i]);
+        }
+        qdev_prop_set_array(otp, "otp-data", otp_list);
 	}
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
