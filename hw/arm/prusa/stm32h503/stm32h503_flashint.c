@@ -21,11 +21,12 @@
 
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
+#include "exec/cpu-common.h"
 #include "qemu/log.h"
 #include "../stm32_common/stm32_common.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "../stm32_registers/generated/stm32h503/FLASH_registers.h"
 #include "trace.h"
 
@@ -283,13 +284,12 @@ static const VMStateDescription vmstate_stm32h503_fint = {
     }
 };
 
-static Property stm32h503_fint_properties[] = {
+static const Property stm32h503_fint_properties[] = {
     DEFINE_PROP_LINK("flash", STM32H503_STRUCT_NAME(FlashIF), flash, TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST()
 };
 
 static void
-stm32h503_fint_class_init(ObjectClass *klass, void *data)
+stm32h503_fint_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32h503_fint_reset);

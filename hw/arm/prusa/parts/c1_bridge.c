@@ -23,19 +23,19 @@
 #include "qemu/osdep.h"
 #include "../utility/macros.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/timer.h"
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "c1_bridge.h"
 #include "qemu/atomic.h"
 #include "qemu/option.h"
 #include "qemu/config-file.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-events-run-state.h"
 #include "trace.h"
@@ -70,8 +70,8 @@ struct C1BridgeState {
 	// Clients (anything not the board) only use their chardev and connect
 	// to the appropriate socket. Base XLBuddy creates all sockets and waits for
 	// at least one extruder and one bed.
-	CharBackend chr[C1_BRIDGE_COUNT];
-	CharBackend gpio[C1_BRIDGE_COUNT];
+	CharFrontend chr[C1_BRIDGE_COUNT];
+	CharFrontend gpio[C1_BRIDGE_COUNT];
 
 	qemu_irq byte_receive;
 
@@ -381,9 +381,8 @@ static void c1_bridge_reset(DeviceState *dev)
 	s->data_4b.u32 = 0;
 }
 
-static Property c1_bridge_properties[] = {
+static const Property c1_bridge_properties[] = {
     DEFINE_PROP_UINT8("device", C1BridgeState, id, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void c1_bridge_init(Object *obj)
@@ -411,7 +410,7 @@ static const VMStateDescription vmstate_c1_bridge = {
     }
 };
 
-static void c1_bridge_class_init(ObjectClass *oc, void *data)
+static void c1_bridge_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, c1_bridge_reset);

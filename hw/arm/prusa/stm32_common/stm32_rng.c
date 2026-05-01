@@ -21,17 +21,17 @@
 
 #include "stm32_rng.h"
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "stm32_common.h"
 #include "stm32_rcc_if.h"
 #include "stm32_shared.h"
 #include "stm32_types.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "../utility/macros.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
 
@@ -287,7 +287,7 @@ static const VMStateDescription vmstate_stm32_common_rng = {
 };
 
 static void
-stm32_common_rng_class_init(ObjectClass *klass, void *data)
+stm32_common_rng_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = &stm32_common_rng_realize;
@@ -319,7 +319,7 @@ static void stm32_common_rng_register_types(void)
     		.class_init    = stm32_common_rng_class_init,
             .class_data = (void *)stm32_rng_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

@@ -25,9 +25,9 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/i2c/i2c.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_types.h"
@@ -276,7 +276,7 @@ static const VMStateDescription vmstate_stm32h503_i2c = {
 };
 
 
-static void stm32_h503_i2c_class_init(ObjectClass *klass, void *data)
+static void stm32_h503_i2c_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_h503_i2c_reset);

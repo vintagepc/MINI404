@@ -24,23 +24,23 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/i2c/i2c.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "hw/arm/boot.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/c1_bridge.h"
 #include "otp.h"
 #include "parts/fan.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 
 enum HW_VER
 {
@@ -85,6 +85,8 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 	DeviceState* dev_soc = dev;
 	qdev_prop_set_string(dev, "flash-file", "pruxa-xbuddy-extension-flash.bin");
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m33"));
+    qdev_prop_set_uint32(dev,"flash-size", FLASH_SIZE);
+
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
     QList *otp_list = qlist_new();
@@ -111,10 +113,8 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
-        load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-            BOOTLOADER_IMAGE, 0,
-            FLASH_SIZE);
+        stm32_soc_load_targphys(OBJECT(dev), machine->kernel_filename,0x08000000);
+        stm32_soc_load_kernel(OBJECT(dev), BOOTLOADER_IMAGE);
     }
     else // Raw bin or ELF file, load directly.
     {

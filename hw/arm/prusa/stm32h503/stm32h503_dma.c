@@ -20,15 +20,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qemu/timer.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "../stm32_common/stm32_common.h"
 #include "../stm32_common/stm32_shared.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "qemu/log.h"
 #include "../stm32_common/stm32_rcc_if.h"
 
@@ -453,13 +453,12 @@ static const VMStateDescription vmstate_stm32_h503_dma = {
     }
 };
 
-static Property stm32_h503_dma_properties[] = {
+static const Property stm32_h503_dma_properties[] = {
     DEFINE_PROP_LINK("system-memory", STM32H503_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
-    DEFINE_PROP_END_OF_LIST()
 };
 
 static void
-stm32_h503_dma_class_init(ObjectClass *klass, void *data)
+stm32_h503_dma_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_stm32_h503_dma;
