@@ -35,7 +35,6 @@ import hex_common
 ##        TCGv RsV = hex_gpr[insn->regno[1]];
 ##        TCGv RtV = hex_gpr[insn->regno[2]];
 ##        <GEN>
-##        gen_log_reg_write(ctx, RdN, RdV);
 ##    }
 ##
 ##       where <GEN> depends on hex_common.skip_qemu_helper(tag)
@@ -77,6 +76,10 @@ def gen_tcg_func(f, tag, regs, imms):
         f.write(f"    emit_{tag}({arguments});\n")
 
     elif hex_common.skip_qemu_helper(tag):
+        if "A_FPOP" in hex_common.attribdict[tag]:
+            f.write("    TCGv pkt_need_commit = ")
+            f.write("tcg_constant_tl(ctx->need_commit);\n")
+
         f.write(f"    fGEN_TCG_{tag}({hex_common.semdict[tag]});\n")
     else:
         ## Generate the call to the helper
@@ -95,7 +98,7 @@ def gen_tcg_func(f, tag, regs, imms):
     for regtype, regid in regs:
         reg = hex_common.get_register(tag, regtype, regid)
         if reg.is_written():
-            reg.log_write(f, tag)
+            reg.gen_write(f, tag)
 
     f.write("}\n\n")
 
@@ -108,15 +111,16 @@ def gen_def_tcg_func(f, tag, tagregs, tagimms):
 
 
 def main():
-    is_idef_parser_enabled = hex_common.read_common_files()
+    args = hex_common.parse_common_args(
+        "Emit functions calling generated code implementing instruction semantics (helpers, idef-parser)"
+    )
     tagregs = hex_common.get_tagregs()
     tagimms = hex_common.get_tagimms()
 
-    output_file = sys.argv[-1]
-    with open(output_file, "w") as f:
+    with open(args.out, "w") as f:
         f.write("#ifndef HEXAGON_TCG_FUNCS_H\n")
         f.write("#define HEXAGON_TCG_FUNCS_H\n\n")
-        if is_idef_parser_enabled:
+        if args.idef_parser:
             f.write('#include "idef-generated-emitter.h.inc"\n\n')
 
         for tag in hex_common.tags:

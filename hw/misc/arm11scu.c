@@ -10,7 +10,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/misc/arm11scu.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 
@@ -75,12 +75,11 @@ static void arm11_scu_init(Object *obj)
     sysbus_init_mmio(sbd, &s->iomem);
 }
 
-static Property arm11_scu_properties[] = {
+static const Property arm11_scu_properties[] = {
     DEFINE_PROP_UINT32("num-cpu", ARM11SCUState, num_cpu, 1),
-    DEFINE_PROP_END_OF_LIST()
 };
 
-static void arm11_scu_class_init(ObjectClass *oc, void *data)
+static void arm11_scu_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

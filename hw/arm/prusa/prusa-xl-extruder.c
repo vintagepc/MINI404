@@ -24,18 +24,19 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/xl_bridge.h"
+#include "qobject/qlist.h"
 
 #define BOOTLOADER_IMAGE "bl_dwarf.elf.bin"
 #define TYPE_XLEXTRUDER_MACHINE "xlextruder-machine"
@@ -124,7 +125,7 @@ static void prusa_xl_extruder_init(MachineState *machine)
 {
     DeviceState *dev;
     const xlExtruderMachineClass *mc = XLBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
-    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");
 
 	const prusa_xl_e_cfg_t* cfg = extruder_cfg_map[mc->hw_type];
 
@@ -136,13 +137,43 @@ static void prusa_xl_extruder_init(MachineState *machine)
 	DeviceState* dev_soc = dev;
 	qdev_prop_set_string(dev, "flash-file", mc->flash_filename);
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m0"));
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
+	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
+	// Without these the firmware's MCU temp calculation divides by zero.
+	// Must be set before realize — OTP properties are frozen after that.
+	{
+		#define OTP_TS_CAL1     835U
+		#define OTP_VREFINT_CAL 1524U
+		#define OTP_TS_CAL2     1045U
+		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
+		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
+		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
+        uint32_t otp_data[OTP_DATA_COUNT];
+        memset(otp_data, 0xFF, sizeof(otp_data));
+        otp_data[OTP_CAL1_INDEX] = (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1;
+        otp_data[OTP_CAL2_INDEX] = OTP_TS_CAL2 << 16;
+		DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+        QList *otp_list = qlist_new();
+        for (int i = 0; i < OTP_DATA_COUNT; i++) {
+            qlist_append_int(otp_list, otp_data[i]);
+        }
+        qdev_prop_set_array(otp, "otp-data", otp_list);
+	}
+
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
 
     char* kfn = machine->kernel_filename;
     int kernel_len = kfn ? strlen(kfn) : 0;
     if (kernel_len > 0) arghelper_setargs(machine->kernel_cmdline);
+	uint64_t flash_size = stm32_soc_get_flash_size(dev);
+    qdev_prop_set_uint32(dev,"flash-size", flash_size);
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
+	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 13), 1524); // VREFINT
+    
     if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
     {
         // TODO... use initrd_image as a bootloader alternative?
@@ -358,7 +389,7 @@ static void prusa_xl_extruder_init(MachineState *machine)
 	}
 };
 
-static void xl_extruder_class_init(ObjectClass *oc, void *data)
+static void xl_extruder_class_init(ObjectClass *oc, const void *data)
 {
 		const xlExtruderData* d = (xlExtruderData*)data;
 	    MachineClass *mc = MACHINE_CLASS(oc);

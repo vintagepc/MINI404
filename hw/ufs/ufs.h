@@ -146,6 +146,8 @@ typedef struct UfsHc {
     /* MCQ properties */
     UfsSq *sq[UFS_MAX_MCQ_QNUM];
     UfsCq *cq[UFS_MAX_MCQ_QNUM];
+
+    uint8_t temperature;
 } UfsHc;
 
 static inline uint32_t ufs_mcq_sq_tail(UfsHc *u, uint32_t qid)
@@ -196,6 +198,15 @@ static inline void ufs_mcq_update_cq_head(UfsHc *u, uint32_t qid, uint32_t db)
 static inline bool ufs_mcq_cq_empty(UfsHc *u, uint32_t qid)
 {
     return ufs_mcq_cq_tail(u, qid) == ufs_mcq_cq_head(u, qid);
+}
+
+static inline bool ufs_mcq_cq_full(UfsHc *u, uint32_t qid)
+{
+    uint32_t tail = ufs_mcq_cq_tail(u, qid);
+    uint16_t cq_size = u->cq[qid]->size;
+
+    tail = (tail + sizeof(UfsCqEntry)) % (sizeof(UfsCqEntry) * cq_size);
+    return tail == ufs_mcq_cq_head(u, qid);
 }
 
 #define TYPE_UFS "ufs"

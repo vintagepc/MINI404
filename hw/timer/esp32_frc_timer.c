@@ -13,12 +13,12 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/boards.h"
+
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/boards.h"
 #include "hw/timer/esp32_frc_timer.h"
 #include "trace.h"
 
@@ -216,17 +216,12 @@ static void esp32_frc_timer_init(Object *obj)
     s->has_alarm = true;
 }
 
-static Property esp32_frc_timer_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
-static void esp32_frc_timer_class_init(ObjectClass *klass, void *data)
+static void esp32_frc_timer_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->reset = esp32_frc_timer_reset;
+    dc->legacy_reset = esp32_frc_timer_reset;
     dc->realize = esp32_frc_timer_realize;
-    device_class_set_props(dc, esp32_frc_timer_properties);
 }
 
 static const TypeInfo esp32_frc_timer_info = {

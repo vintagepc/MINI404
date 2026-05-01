@@ -24,24 +24,24 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
 #include "hw/i2c/i2c.h"
 #include "hw/core/split-irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "hw/arm/boot.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/xl_bridge.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/armv7m.h"
 #include "parts/spi_rgb.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 
 #define TYPE_XLBUDDY_MACHINE "xlbuddy-machine"
 
@@ -264,16 +264,25 @@ static void xl_init(MachineState *machine)
     }
     qdev_prop_set_array(otp, "otp-data", otp_list);
 
-    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 	DeviceState* dev_soc = dev;
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
     // Parse those now.
     arghelper_setargs(machine->kernel_cmdline);
 	bool args_continue_running = arghelper_parseargs();
 
+	uint64_t flash_size = stm32_soc_get_flash_size(dev);
+	if (arghelper_is_arg("4x_flash"))
+    {
+        flash_size <<=2; // quadruple the flash size for debug code.
+		printf("Extended flash size: now %"PRIu64" kB\n", flash_size/1024);
+    }
+	qdev_prop_set_uint32(dev,"flash-size", flash_size);
+
     if (arghelper_is_arg("appendix")) {
         qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
+    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
     char* kfn = machine->kernel_filename;
     int kernel_len = kfn ? strlen(kfn) : 0;
     if (kernel_len >3 && strncmp(kfn + (kernel_len-3), "bbf",3) == 0 )
@@ -759,7 +768,7 @@ static void xl_init(MachineState *machine)
 
 };
 
-static void xlbuddy_class_init(ObjectClass *oc, void *data)
+static void xlbuddy_class_init(ObjectClass *oc, const void *data)
 {
 		const xlBuddyData* d = (xlBuddyData*)data;
 	    MachineClass *mc = MACHINE_CLASS(oc);

@@ -25,12 +25,13 @@
 #include "qemu/module.h"
 #include "qom/object.h"
 #include "../utility/macros.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/cpu-timers.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
+#include "system/block-backend.h"
+#include "exec/icount.h"
+#include "system/cpu-timers.h"
 #include "migration/vmstate.h"
 #include "../otp.h"
 #include "trace.h"
@@ -102,7 +103,7 @@ static const VMStateDescription vmstate_at21csxx = {
     .name = TYPE_AT21CSXX,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
 		VMSTATE_UINT8(cmd.raw, AT21CSxxState),
 		VMSTATE_TIMER_PTR(line_release, AT21CSxxState),
 		VMSTATE_INT64(low_start, AT21CSxxState),
@@ -364,13 +365,13 @@ static void at21csxx_init(Object *obj)
 	}
 }
 
-static Property at21csxx_eeprom_props[] = {
+static const Property at21csxx_eeprom_props[] = {
     DEFINE_PROP_DRIVE("drive", AT21CSxxState, blk),
     DEFINE_PROP_UINT32("icount-per-us", AT21CSxxState, refined_icount, ICOUNT_PER_US_INITIAL),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
-static void at21csxx_class_init(ObjectClass *oc, void *data)
+static void at21csxx_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, at21csxx_reset);

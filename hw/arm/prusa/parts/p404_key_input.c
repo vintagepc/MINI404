@@ -25,7 +25,7 @@
 #include "ui/console.h"
 #include "qemu/module.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_P404_KEY_INPUT "p404-key-input"
 
@@ -66,6 +66,6 @@ static void p404_key_init(Object *obj)
     qemu_input_handler_register(DEVICE(s), &p404_keyboard_handler);
 }
 
-static void p404_key_class_init(ObjectClass *oc, void *data)
+static void p404_key_class_init(ObjectClass *oc, const void *data)
 {
 }

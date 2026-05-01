@@ -10,9 +10,9 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/misc/ssi_psram.h"
 
 #define CMD_READ_ID 0x9f
@@ -85,13 +85,12 @@ static void psram_realize(SSIPeripheral *ss, Error **errp)
     s->dummy = 1;
 }
 
-static Property psram_properties[] = {
+static const Property psram_properties[] = {
     DEFINE_PROP_UINT32("size_mbytes", SsiPsramState, size_mbytes, 4),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 
-static void psram_class_init(ObjectClass *klass, void *data)
+static void psram_class_init(ObjectClass *klass, const void *data)
 {
     SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);

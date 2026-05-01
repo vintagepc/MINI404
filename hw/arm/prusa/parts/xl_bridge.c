@@ -23,19 +23,19 @@
 #include "qemu/osdep.h"
 #include "../utility/macros.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/timer.h"
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "xl_bridge.h"
 #include "qemu/atomic.h"
 #include "qemu/option.h"
 #include "qemu/config-file.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "qapi/qapi-commands-run-state.h"
 #include "qapi/qapi-events-run-state.h"
 
@@ -115,8 +115,8 @@ struct XLBridgeState {
 	// Clients (anything not the board) only use their chardev and connect
 	// to the appropriate socket. Base XLBuddy creates all sockets and waits for
 	// at least one extruder and one bed.
-	CharBackend chr[XL_BRIDGE_COUNT];
-	CharBackend gpio[XL_BRIDGE_COUNT];
+	CharFrontend chr[XL_BRIDGE_COUNT];
+	CharFrontend gpio[XL_BRIDGE_COUNT];
 
 	qemu_irq byte_receive[XLBRIDGE_UART_COUNT];
 
@@ -293,13 +293,13 @@ static void xl_bridge_warp(void *opaque, int64_t time)
         qemu_clock_run_all_timers();
         // timerlist_run_timers(aio_context->tlg.tl[QEMU_CLOCK_VIRTUAL]);
         int64_t clock2 = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
-        printf("advancing clock %ld -> %ld\n", clock, clock2);
+        printf("advancing clock %"PRIi64" -> %"PRIi64"\n", clock, clock2);
         clock = clock2;
     }
 
 }
 
-#include "sysemu/cpus.h"
+#include "system/cpus.h"
 
 static void xl_bridge_gpio_receive(void *opaque, const uint8_t *buf, int size)
 {
@@ -344,14 +344,14 @@ static void xl_bridge_gpio_receive(void *opaque, const uint8_t *buf, int size)
                 // Account for the initial desync due to start delay of xlbuddy being paused.
                 if (s->time_offset == 0)
                 {
-                    printf("First sync - offset %ld\n", diff);
+                    printf("First sync - offset %"PRIi64"\n", diff);
                     s->time_offset = diff;
                 }
                 diff -= s->time_offset;
                 s->tick++;
                 if (s->tick > 100)
                 {
-                    printf("Puppy %s clock is diff is %ld ms\n", shm_names[s->id], diff);
+                    printf("Puppy %s clock is diff is %"PRIi64" ms\n", shm_names[s->id], diff);
                     s->tick = 0;
                 }
                 if (false && diff < 0)
@@ -486,7 +486,7 @@ static void xl_bridge_realize(DeviceState *dev, Error **errp)
     XLBridgeState *s = XLBRIDGE(dev);
 	if (s->id == XL_DEV_XBUDDY)
 	{
-		for (int i=XL_DEV_ESP32; i>=XL_DEV_BED; i--) // just two tools for now, because of the "server" wait.
+		for (int i=XL_INIT_START; i>=XL_DEV_BED; i--) // just two tools for now, because of the "server" wait.
 		{
 			Chardev* d=qemu_chr_find(shm_names[i]);
 			gchar* io_name = g_strdup_printf("%s-io",shm_names[i]);
@@ -614,10 +614,9 @@ static void xl_bridge_reset(DeviceState *dev)
     s->time_offset=0;
 }
 
-static Property xl_bridge_properties[] = {
+static const Property xl_bridge_properties[] = {
     DEFINE_PROP_UINT8("device", XLBridgeState, id, 0),
     DEFINE_PROP_BOOL("is-iX", XLBridgeState, is_iX, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void xl_bridge_init(Object *obj)
@@ -646,7 +645,7 @@ static const VMStateDescription vmstate_xl_bridge = {
     }
 };
 
-static void xl_bridge_class_init(ObjectClass *oc, void *data)
+static void xl_bridge_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, xl_bridge_reset);

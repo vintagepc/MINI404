@@ -10,7 +10,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/datadir.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "elf.h"
 #include "boot.h"
 #include "qemu/error-report.h"
@@ -71,11 +71,9 @@ bool avr_load_firmware(AVRCPU *cpu, MachineState *ms,
         return false;
     }
 
-    bytes_loaded = load_elf_ram_sym(filename,
-                                    NULL, NULL, NULL,
-                                    &entry, NULL, NULL,
-                                    &e_flags, 0, EM_AVR, 0, 0,
-                                    NULL, true, NULL);
+    bytes_loaded = load_elf_as(filename, NULL, NULL, NULL,
+                               &entry, NULL, NULL,
+                               &e_flags, ELFDATA2LSB, EM_AVR, 0, 0, NULL);
     if (bytes_loaded >= 0) {
         /* If ELF file is provided, determine CPU type reading ELF e_flags. */
         const char *elf_cpu = avr_elf_e_flags_to_cpu_type(e_flags);

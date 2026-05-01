@@ -69,7 +69,7 @@ def gen_helper_function(f, tag, tagregs, tagimms):
     if hex_common.need_slot(tag):
         if "A_LOAD" in hex_common.attribdict[tag]:
             f.write(hex_common.code_fmt(f"""\
-                bool pkt_has_store_s1 = slotval & 0x1;
+                bool pkt_has_scalar_store_s1 = slotval & 0x1;
             """))
         f.write(hex_common.code_fmt(f"""\
             uint32_t slot = slotval >> 1;
@@ -84,11 +84,6 @@ def gen_helper_function(f, tag, tagregs, tagimms):
         {hex_common.semdict[tag]}
     """))
 
-    if "A_FPOP" in hex_common.attribdict[tag]:
-        f.write(hex_common.code_fmt(f"""\
-            arch_fpop_end(env);
-        """))
-
     ## Return the scalar result
     for regtype, regid in regs:
         reg = hex_common.get_register(tag, regtype, regid)
@@ -102,18 +97,22 @@ def gen_helper_function(f, tag, tagregs, tagimms):
 
 
 def main():
-    hex_common.read_common_files()
+    args = hex_common.parse_common_args(
+        "Emit helper function definitions for each instruction"
+    )
     tagregs = hex_common.get_tagregs()
     tagimms = hex_common.get_tagimms()
 
-    output_file = sys.argv[-1]
-    with open(output_file, "w") as f:
+    with open(args.out, "w") as f:
         for tag in hex_common.tags:
             ## Skip the priv instructions
             if "A_PRIV" in hex_common.attribdict[tag]:
                 continue
             ## Skip the guest instructions
             if "A_GUEST" in hex_common.attribdict[tag]:
+                continue
+            ## Skip the floating point instructions
+            if "A_FPOP" in hex_common.attribdict[tag]:
                 continue
             ## Skip the diag instructions
             if tag == "Y6_diag":

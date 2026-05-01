@@ -29,8 +29,8 @@
 #include "qemu/module.h"
 #include "chardev/char-fe.h"
 #include "hw/isa/isa.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qom/object.h"
 
 #define TYPE_ISA_DEBUGCON_DEVICE "isa-debugcon"
@@ -40,7 +40,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ISADebugconState, ISA_DEBUGCON_DEVICE)
 
 typedef struct DebugconState {
     MemoryRegion io;
-    CharBackend chr;
+    CharFrontend chr;
     uint32_t readback;
 } DebugconState;
 
@@ -114,14 +114,13 @@ static void debugcon_isa_realizefn(DeviceState *dev, Error **errp)
                                 isa->iobase, &s->io);
 }
 
-static Property debugcon_isa_properties[] = {
+static const Property debugcon_isa_properties[] = {
     DEFINE_PROP_UINT32("iobase", ISADebugconState, iobase, 0xe9),
     DEFINE_PROP_CHR("chardev",  ISADebugconState, state.chr),
     DEFINE_PROP_UINT32("readback", ISADebugconState, state.readback, 0xe9),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void debugcon_isa_class_initfn(ObjectClass *klass, void *data)
+static void debugcon_isa_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

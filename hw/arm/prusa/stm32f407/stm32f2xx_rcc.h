@@ -23,7 +23,7 @@
 
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 #include "stm32_clktree.h"
 #include "../utility/macros.h"

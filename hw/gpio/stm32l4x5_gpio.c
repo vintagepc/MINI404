@@ -19,10 +19,10 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "hw/gpio/stm32l4x5_gpio.h"
-#include "hw/irq.h"
-#include "hw/clock.h"
-#include "hw/qdev-clock.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/clock.h"
+#include "hw/core/qdev-clock.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/visitor.h"
 #include "qapi/error.h"
 #include "migration/vmstate.h"
@@ -447,15 +447,14 @@ static const VMStateDescription vmstate_stm32l4x5_gpio = {
     }
 };
 
-static Property stm32l4x5_gpio_properties[] = {
+static const Property stm32l4x5_gpio_properties[] = {
     DEFINE_PROP_STRING("name", Stm32l4x5GpioState, name),
     DEFINE_PROP_UINT32("mode-reset", Stm32l4x5GpioState, moder_reset, 0),
     DEFINE_PROP_UINT32("ospeed-reset", Stm32l4x5GpioState, ospeedr_reset, 0),
     DEFINE_PROP_UINT32("pupd-reset", Stm32l4x5GpioState, pupdr_reset, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void stm32l4x5_gpio_class_init(ObjectClass *klass, void *data)
+static void stm32l4x5_gpio_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);

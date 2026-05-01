@@ -23,9 +23,9 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-clock.h"
-#include "hw/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
+#include "hw/core/irq.h"
 #include "stm32_rcc.h"
 #include "stm32_rcc_if.h"
 #include "stm32_clk.h"
@@ -167,19 +167,19 @@ static void stm32_common_rcc_instance_init(Object* obj)
 	clock_set_mul_div(s->CPUCLOCK, 1, 1);
 }
 
-static Property stm32_common_rcc_properties[] = {
+static const Property stm32_common_rcc_properties[] = {
     DEFINE_PROP_UINT32("hse_freq", COM_STRUCT_NAME(Rcc), hse_freq, 0),
     DEFINE_PROP_UINT32("lse_freq", COM_STRUCT_NAME(Rcc), lse_freq, 0),
 	DEFINE_PROP_UINT32("hsi_freq", COM_STRUCT_NAME(Rcc), hsi_freq, 0),
     DEFINE_PROP_UINT32("lsi_freq", COM_STRUCT_NAME(Rcc), lsi_freq, 0),
-	DEFINE_PROP_END_OF_LIST()
+	
 };
 
 const VMStateDescription vmstate_stm32_common_rcc = {
     .name = TYPE_STM32COM_RCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(hsi_freq, COM_STRUCT_NAME(Rcc)),
         VMSTATE_UINT32(hse_freq, COM_STRUCT_NAME(Rcc)),
         VMSTATE_UINT32(lsi_freq, COM_STRUCT_NAME(Rcc)),
@@ -194,7 +194,7 @@ const VMStateDescription vmstate_stm32_common_rcc = {
 };
 
 
-static void stm32_common_rcc_class_init(ObjectClass* class, void* class_data)
+static void stm32_common_rcc_class_init(ObjectClass* class, const void* class_data)
 {
 	DeviceClass *dc = DEVICE_CLASS(class);
 	device_class_set_props(dc, stm32_common_rcc_properties);

@@ -17,10 +17,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "../utility/macros.h"
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
@@ -113,12 +113,11 @@ static void cs30bl_init(Object *obj)
     scripthost_register_scriptable(pScript);
 }
 
-static Property cs30bl_properties[] = {
+static const Property cs30bl_properties[] = {
     DEFINE_PROP_UINT32("mA", CS30BLState, start_current,0),
     DEFINE_PROP_UINT32("mOhmR", CS30BLState, rcsense,22),
     DEFINE_PROP_UINT32("gain", CS30BLState, gain,50),
     DEFINE_PROP_UINT32("fullscale-mA", CS30BLState, fullscale_mA,1700),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static int cs30bl_pre_save(void *opaque) {
@@ -139,7 +138,7 @@ static const VMStateDescription vmstate_cs30bl = {
     .minimum_version_id = 1,
     .pre_save = cs30bl_pre_save,
     .post_load = cs30bl_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(rcsense, CS30BLState),
         VMSTATE_UINT32(start_current, CS30BLState),
         VMSTATE_UINT32(gain, CS30BLState),
@@ -148,7 +147,7 @@ static const VMStateDescription vmstate_cs30bl = {
     }
 };
 
-static void cs30bl_class_init(ObjectClass *klass, void *data)
+static void cs30bl_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -31,9 +31,9 @@
 
 #include <zlib.h> /* for crc32 */
 
-#include "hw/irq.h"
-#include "hw/qdev-clock.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-clock.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/net/npcm7xx_emc.h"
 #include "net/eth.h"
 #include "migration/vmstate.h"
@@ -42,7 +42,7 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/units.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "trace.h"
 
 #define CRC_LENGTH 4
@@ -845,12 +845,11 @@ static const VMStateDescription vmstate_npcm7xx_emc = {
     },
 };
 
-static Property npcm7xx_emc_properties[] = {
+static const Property npcm7xx_emc_properties[] = {
     DEFINE_NIC_PROPERTIES(NPCM7xxEMCState, conf),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void npcm7xx_emc_class_init(ObjectClass *klass, void *data)
+static void npcm7xx_emc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -23,12 +23,12 @@
 #include "../utility/macros.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
 #include "../utility/p404_motor_if.h"
 #include "../utility/p404_keyclient.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 
 #define TYPE_COREXY "corexy-helper"
 
@@ -328,14 +328,13 @@ static const VMStateDescription vmstate_corexy = {
     }
 };
 
-static Property corexy_properties[] = {
+static const Property corexy_properties[] = {
     DEFINE_PROP_UINT32("x-max-um", CoreXYState, x_max_um, 375*1000),
     DEFINE_PROP_UINT32("y-max-um", CoreXYState, y_max_um, 466*1000),
     DEFINE_PROP_BOOL("swap-calc", CoreXYState, swap_calc, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void corexy_class_init(ObjectClass *oc, void *data)
+static void corexy_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, corexy_reset);

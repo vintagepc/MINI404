@@ -12,12 +12,13 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/ppc/ppc4xx.h"
 #include "hw/pci-host/ppc4xx.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/pci/pci.h"
-#include "sysemu/reset.h"
+#include "exec/cpu-common.h"
+#include "system/reset.h"
 #include "cpu.h"
 #include "ppc440.h"
 
@@ -1020,15 +1021,14 @@ static void ppc460ex_pcie_realize(DeviceState *dev, Error **errp)
     ppc460ex_pcie_register_dcrs(s);
 }
 
-static Property ppc460ex_pcie_props[] = {
+static const Property ppc460ex_pcie_props[] = {
     DEFINE_PROP_INT32("busnum", PPC460EXPCIEState, num, -1),
     DEFINE_PROP_INT32("dcrn-base", PPC460EXPCIEState, dcrn_base, -1),
     DEFINE_PROP_LINK("cpu", PPC460EXPCIEState, cpu, TYPE_POWERPC_CPU,
                      PowerPCCPU *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void ppc460ex_pcie_class_init(ObjectClass *klass, void *data)
+static void ppc460ex_pcie_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -23,8 +23,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "qemu/typedefs.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
@@ -159,7 +159,7 @@ static const VMStateDescription vmstate_stm32common_adcc = {
     .name = TYPE_STM32COM_ADCC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(regs.raw, COM_STRUCT_NAME(Adcc)),
         VMSTATE_END_OF_LIST()
     }
@@ -182,7 +182,7 @@ static void stm32_common_adcc_init(Object *obj)
 
 }
 
-static void stm32_common_adcc_class_init(ObjectClass *klass, void *data)
+static void stm32_common_adcc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_common_adcc_reset);
@@ -213,7 +213,7 @@ static void stm32_common_adcc_register_types(void)
 			.class_init    = stm32_common_adcc_class_init,
             .class_data = (void *)stm32_adcc_variants[i].variant_regs,
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

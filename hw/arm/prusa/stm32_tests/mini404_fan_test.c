@@ -26,10 +26,7 @@
 #define CMD_STALL "fan::Stall()\n"
 #define CMD_RESUME "fan::Resume()\n"
 
-static void send_scriptcmd(const char* cmd, int fd)
-{
-    g_assert_true(send(fd, cmd, strlen(cmd), 0) == strlen(cmd));
-}
+#include "scriptcon_helper.h"
 
 static void test_fan_rpm(void)
 {
@@ -68,12 +65,10 @@ static void test_fan_tach(void)
         {
             t_start = qtest_clock_step_next(ts);
         }
-        t_start = qtest_clock_step(ts,0);
         while(qtest_get_irq_level(ts, 0) == 0)
         {
             t_end = qtest_clock_step_next(ts);
         }
-        t_end = qtest_clock_step(ts,0);
         g_assert_cmpint((t_end - t_start)/1000, ==, tach_us_per_pulse[i]);
     }
 
@@ -81,69 +76,83 @@ static void test_fan_tach(void)
     qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 0);
     for (int i=0; i<10; i++)
     {
-        qtest_clock_step_next(ts);
+        qtest_clock_step(ts, 1000U*1E6); // 1000ms
         g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 1);
     }
 
     qtest_quit(ts);
 }
 
-static void test_fan_scripting(void)
+static void test_fan_scripting_getrpm(void)
 {
     /* Setup chardev */
     int fd = 0;
-	QTestState *ts = qtest_init_with_serial("-machine " MACHINE " -global p404-scriptcon.input_id=s0 -global p404-scriptcon.no_echo=true", &fd);
+	QTestState *ts = qtest_init_with_serial("-machine " MACHINE " -global p404-scriptcon.input_id=s0", &fd);
     qtest_irq_intercept_out_named(ts, QOM_PATH, "tach-out");
 
     qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 255);
 
     char buff[128] = {0};
-    while(recv(fd, buff, sizeof(buff), MSG_DONTWAIT) > 0); // Clear the buffer;
 
     // Check fan RPM reporting:
     memset(buff, 0, sizeof(buff));
-    send_scriptcmd(CMD_GET_RPM, fd);
+    send_scriptcmd(CMD_GET_RPM, fd, ts);
     while(recv(fd, buff, sizeof(buff), MSG_DONTWAIT) == -1)
     {
         qtest_clock_step_next(ts);
     };
-    g_assert_true(strncmp(buff, "6600", 4) == 0);
+    g_assert_cmpstr(buff, ==, "6600\r\n");
 
     qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 128);
 
-    send_scriptcmd(CMD_GET_RPM, fd);
+    send_scriptcmd(CMD_GET_RPM, fd, ts);
+    qtest_clock_step(ts, 1);
     while(recv(fd, buff, sizeof(buff), MSG_DONTWAIT) == -1)
     {
         qtest_clock_step_next(ts);
     };
-    g_assert_true(strncmp(buff, "3312", 4) == 0);
+    g_assert_cmpstr(buff, ==, "3312\r\n");
     memset(buff, 0, sizeof(buff));
 
-    // Wait for tach to be 1
+    qtest_quit(ts);
+}
+
+static void test_fan_scripting_stall(void)
+{
+    /* Setup chardev */
+    int fd = 0;
+    char buff[128] = {0};
+
+	QTestState *ts = qtest_init_with_serial("-machine " MACHINE " -global p404-scriptcon.input_id=s0", &fd);
+    qtest_irq_intercept_out_named(ts, QOM_PATH, "tach-out");
+
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 128);
+
     while(qtest_get_irq_level(ts, 0) != 1)
     {
-        qtest_clock_step_next(ts);
+        int64_t step = qtest_clock_step_next(ts);
+        printf("# stepped %"PRIi64" ns\n", step);
     }
 
     // stall the fan.
-    g_assert_true(qtest_get_irq_level(ts, 0) == 1);
-    send_scriptcmd(CMD_STALL, fd);
-    send_scriptcmd(CMD_GET_RPM, fd);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 1);
+    send_scriptcmd(CMD_STALL, fd, ts);
+    send_scriptcmd(CMD_GET_RPM, fd, ts);
     while(recv(fd, buff, sizeof(buff), MSG_DONTWAIT) == -1)
     {
         qtest_clock_step_next(ts);
     };
-    g_assert_true(qtest_get_irq_level(ts, 0) == 0);
-    g_assert_true(strncmp(buff, "0", 1) == 0);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 0);
+    g_assert_cmpstr(buff, ==, "0\r\n");
 
-    send_scriptcmd(CMD_RESUME, fd);
-    send_scriptcmd(CMD_GET_RPM, fd);
+    send_scriptcmd(CMD_RESUME, fd, ts);
+    send_scriptcmd(CMD_GET_RPM, fd, ts);
     while(recv(fd, buff, sizeof(buff), MSG_DONTWAIT) == -1)
     {
         qtest_clock_step_next(ts);
     };
     // g_assert_true(qtest_get_irq_level(ts, 0) == 1);
-    g_assert_true(strncmp(buff, "3312", 4) == 0);
+    g_assert_cmpstr(buff, ==, "3312\r\n");
 
 
     qtest_quit(ts);
@@ -160,7 +169,8 @@ int main(int argc, char **argv)
     /* Add your test case to the test suite */
     qtest_add_func(TEST_PREFIX "rpm-out", test_fan_rpm);
     qtest_add_func(TEST_PREFIX "tach-out", test_fan_tach);
-    qtest_add_func(TEST_PREFIX "script", test_fan_scripting);
+    qtest_add_func(TEST_PREFIX "script", test_fan_scripting_getrpm);
+    qtest_add_func(TEST_PREFIX "script-stall", test_fan_scripting_stall);
     /* Run the tests */
     ret = g_test_run();
 

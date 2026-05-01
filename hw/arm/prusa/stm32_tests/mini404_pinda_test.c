@@ -30,17 +30,17 @@ static void test_reset(void)
 	QTestState *ts = qtest_init("-machine prusa-mini");
 	qtest_irq_intercept_out(ts, QOM_PATH);
     /* Assertions and other test logic */
-    g_assert_false(qtest_get_irq(ts,0));
+    g_assert_cmpint(qtest_get_irq(ts,0), ==, 0);
 
     // Toggle sensor
     qtest_set_irq_in(ts, QOM_PATH, "position_xyz", 2, 0);
-    qtest_clock_step_next(ts);
+    qtest_clock_step(ts, 10E3);
 
-    g_assert_true(qtest_get_irq(ts,0));
+    g_assert_cmpint(qtest_get_irq(ts,0), ==, 1);
     qtest_hmp(ts, "system_reset");
-    qtest_clock_step_next(ts);
+    qtest_clock_step(ts, 10E3);
     // Did the sensor turn back off?
-    g_assert_false(qtest_get_irq(ts,0));
+    g_assert_cmpint(qtest_get_irq(ts,0), ==, 0);
 
     qtest_quit(ts);
 }

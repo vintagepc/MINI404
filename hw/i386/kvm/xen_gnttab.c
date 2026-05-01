@@ -17,18 +17,18 @@
 #include "qapi/error.h"
 #include "qom/object.h"
 #include "exec/target_page.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "migration/vmstate.h"
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/xen/xen.h"
 #include "hw/xen/xen_backend_ops.h"
 #include "xen_overlay.h"
 #include "xen_gnttab.h"
 #include "xen_primary_console.h"
 
-#include "sysemu/kvm.h"
-#include "sysemu/kvm_xen.h"
+#include "system/kvm.h"
+#include "system/kvm_xen.h"
 
 #include "hw/xen/interface/memory.h"
 #include "hw/xen/interface/grant_table.h"
@@ -135,7 +135,7 @@ static const VMStateDescription xen_gnttab_vmstate = {
     }
 };
 
-static void xen_gnttab_class_init(ObjectClass *klass, void *data)
+static void xen_gnttab_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

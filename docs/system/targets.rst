@@ -18,10 +18,11 @@ Contents:
 
    target-arm
    target-avr
+   target-loongarch
    target-m68k
    target-mips
+   target-or1k
    target-ppc
-   target-openrisc
    target-riscv
    target-rx
    target-s390x

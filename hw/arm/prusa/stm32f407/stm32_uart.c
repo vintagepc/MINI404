@@ -22,17 +22,17 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "exec/memory.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "system/memory.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
 #include "stm32.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "stm32_uart.h"
 #include "qemu/bitops.h"
 #include "assert.h"
@@ -589,25 +589,29 @@ static void stm32_uart_init(Object *obj)
 static void stm32_uart_realize(DeviceState *dev, Error **errp)
 {
     Stm32Uart *s = STM32_UART(dev);
-    qemu_chr_fe_set_handlers(&s->chr, stm32_uart_can_receive, stm32_uart_receive, NULL,
-            NULL,s,NULL,true);
-    qemu_chr_fe_set_echo(&s->chr, true);
-    // No symlink support for these.
-#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
-    if (CHARDEV_IS_PTY(s->chr.chr)) {
-        char link_path[] = "/tmp/stm32-uart0";
-        link_path[15] += (1U + s->parent.periph - STM32_P_USART1);
-        unlink(link_path);
-        if (symlink(s->chr.chr->filename+4, link_path) != 0)
-        {
-            printf("WARN: Can't create %s (%s)\n",link_path, strerror(errno));
+    if (qemu_chr_fe_backend_connected(&s->chr))
+    {
+        qemu_chr_fe_set_handlers(&s->chr, stm32_uart_can_receive, stm32_uart_receive, NULL,
+                NULL,s,NULL,true);
+        qemu_chr_fe_set_echo(&s->chr, true);
+        // No symlink support for these.
+    #if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__MINGW64__)
+        const char* pty_name = qemu_chr_get_pty_name(s->chr.chr);
+        if (pty_name) {
+            char link_path[] = "/tmp/stm32-uart0";
+            link_path[15] += (1U + s->parent.periph - STM32_P_USART1);
+            unlink(link_path);
+            if (symlink(s->chr.chr->label+4, link_path) != 0)
+            {
+                printf("WARN: Can't create %s (%s)\n",link_path, strerror(errno));
+            }
+            else
+            {
+                printf("%s now points to: %s\n",link_path, s->chr.chr->label);
+            }
         }
-        else
-        {
-            printf("%s now points to: %s\n",link_path, s->chr.chr->filename);
-        }
+    #endif
     }
-#endif
     // Throw compile errors if alignment is off
     CHECK_ALIGN(sizeof(s->defs), sizeof(s->regs), "USART");
     CHECK_ALIGN(sizeof(uint32_t)*7, sizeof(s->regs), "USART");
@@ -620,32 +624,34 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
     CHECK_REG_u32(s->defs.GTPR);
 }
 
-static Property stm32_uart_properties[] = {
+static const Property stm32_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", Stm32Uart, chr),
-    DEFINE_PROP_END_OF_LIST()
+
+};
+
+static const VMStateField vmsf_stm32_uart[] = {
+    VMSTATE_UINT32_ARRAY(regs, Stm32Uart,USART_R_END),
+    VMSTATE_UINT32(bits_per_sec,Stm32Uart),
+    VMSTATE_INT64(ns_per_char,Stm32Uart),
+    VMSTATE_UINT32(USART_TDR,Stm32Uart),
+    VMSTATE_BOOL(sr_read_since_ore_set,Stm32Uart),
+    VMSTATE_BOOL(receiving,Stm32Uart),
+    VMSTATE_TIMER_PTR(rx_timer,Stm32Uart),
+    VMSTATE_TIMER_PTR(tx_timer,Stm32Uart),
+    VMSTATE_INT32(curr_irq_level,Stm32Uart),
+    VMSTATE_UINT8_ARRAY(rcv_char_buf,Stm32Uart,USART_RCV_BUF_LEN),
+    VMSTATE_UINT32(rcv_char_bytes,Stm32Uart),
+    VMSTATE_END_OF_LIST()
 };
 
 static const VMStateDescription vmstate_stm32_uart = {
     .name = TYPE_STM32_UART,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs, Stm32Uart,USART_R_END),
-        VMSTATE_UINT32(bits_per_sec,Stm32Uart),
-        VMSTATE_INT64(ns_per_char,Stm32Uart),
-        VMSTATE_UINT32(USART_TDR,Stm32Uart),
-        VMSTATE_BOOL(sr_read_since_ore_set,Stm32Uart),
-        VMSTATE_BOOL(receiving,Stm32Uart),
-        VMSTATE_TIMER_PTR(rx_timer,Stm32Uart),
-        VMSTATE_TIMER_PTR(tx_timer,Stm32Uart),
-        VMSTATE_INT32(curr_irq_level,Stm32Uart),
-        VMSTATE_UINT8_ARRAY(rcv_char_buf,Stm32Uart,USART_RCV_BUF_LEN),
-        VMSTATE_UINT32(rcv_char_bytes,Stm32Uart),
-        VMSTATE_END_OF_LIST()
-    }
+    .fields = vmsf_stm32_uart
 };
 
-static void stm32_uart_class_init(ObjectClass *klass, void *data)
+static void stm32_uart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, stm32_uart_reset);
@@ -657,7 +663,7 @@ static void stm32_uart_class_init(ObjectClass *klass, void *data)
     k->clock_update = stm32_uart_baud_update;
 }
 
-static TypeInfo stm32_uart_info = {
+static const TypeInfo stm32_uart_info = {
     .name  = TYPE_STM32_UART,
     .parent = TYPE_STM32_PERIPHERAL,
     .instance_size  = sizeof(Stm32Uart),

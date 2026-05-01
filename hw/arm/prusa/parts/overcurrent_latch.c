@@ -27,9 +27,9 @@
 #include "../utility/ArgHelper.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_OCLATCH "oc-latch"
 
@@ -113,7 +113,7 @@ static const VMStateDescription vmstate_oc_latch = {
     }
 };
 
-static void oc_latch_class_init(ObjectClass *oc, void *data)
+static void oc_latch_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, oc_latch_reset);

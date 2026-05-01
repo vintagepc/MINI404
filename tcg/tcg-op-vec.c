@@ -23,6 +23,7 @@
 #include "tcg/tcg-op-common.h"
 #include "tcg/tcg-mo.h"
 #include "tcg-internal.h"
+#include "tcg-has.h"
 
 /*
  * Vector optional opcode tracking.
@@ -74,7 +75,6 @@ bool tcg_can_emit_vecop_list(const TCGOpcode *list,
         case INDEX_op_xor_vec:
         case INDEX_op_mov_vec:
         case INDEX_op_dup_vec:
-        case INDEX_op_dup2_vec:
         case INDEX_op_ld_vec:
         case INDEX_op_st_vec:
         case INDEX_op_bitsel_vec:
@@ -143,7 +143,7 @@ bool tcg_can_emit_vecop_list(const TCGOpcode *list,
 void vec_gen_2(TCGOpcode opc, TCGType type, unsigned vece, TCGArg r, TCGArg a)
 {
     TCGOp *op = tcg_emit_op(opc, 2);
-    TCGOP_VECL(op) = type - TCG_TYPE_V64;
+    TCGOP_TYPE(op) = type;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
     op->args[1] = a;
@@ -153,7 +153,7 @@ void vec_gen_3(TCGOpcode opc, TCGType type, unsigned vece,
                TCGArg r, TCGArg a, TCGArg b)
 {
     TCGOp *op = tcg_emit_op(opc, 3);
-    TCGOP_VECL(op) = type - TCG_TYPE_V64;
+    TCGOP_TYPE(op) = type;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
     op->args[1] = a;
@@ -164,7 +164,7 @@ void vec_gen_4(TCGOpcode opc, TCGType type, unsigned vece,
                TCGArg r, TCGArg a, TCGArg b, TCGArg c)
 {
     TCGOp *op = tcg_emit_op(opc, 4);
-    TCGOP_VECL(op) = type - TCG_TYPE_V64;
+    TCGOP_TYPE(op) = type;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
     op->args[1] = a;
@@ -176,7 +176,7 @@ void vec_gen_6(TCGOpcode opc, TCGType type, unsigned vece, TCGArg r,
                TCGArg a, TCGArg b, TCGArg c, TCGArg d, TCGArg e)
 {
     TCGOp *op = tcg_emit_op(opc, 6);
-    TCGOP_VECL(op) = type - TCG_TYPE_V64;
+    TCGOP_TYPE(op) = type;
     TCGOP_VECE(op) = vece;
     op->args[0] = r;
     op->args[1] = a;
@@ -227,20 +227,11 @@ void tcg_gen_dupi_vec(unsigned vece, TCGv_vec r, uint64_t a)
 void tcg_gen_dup_i64_vec(unsigned vece, TCGv_vec r, TCGv_i64 a)
 {
     TCGArg ri = tcgv_vec_arg(r);
+    TCGArg ai = tcgv_i64_arg(a);
     TCGTemp *rt = arg_temp(ri);
     TCGType type = rt->base_type;
 
-    if (TCG_TARGET_REG_BITS == 64) {
-        TCGArg ai = tcgv_i64_arg(a);
-        vec_gen_2(INDEX_op_dup_vec, type, vece, ri, ai);
-    } else if (vece == MO_64) {
-        TCGArg al = tcgv_i32_arg(TCGV_LOW(a));
-        TCGArg ah = tcgv_i32_arg(TCGV_HIGH(a));
-        vec_gen_3(INDEX_op_dup2_vec, type, MO_64, ri, al, ah);
-    } else {
-        TCGArg ai = tcgv_i32_arg(TCGV_LOW(a));
-        vec_gen_2(INDEX_op_dup_vec, type, vece, ri, ai);
-    }
+    vec_gen_2(INDEX_op_dup_vec, type, vece, ri, ai);
 }
 
 void tcg_gen_dup_i32_vec(unsigned vece, TCGv_vec r, TCGv_i32 a)

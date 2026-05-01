@@ -23,7 +23,7 @@
 #include "cpu.h"
 #include "s390x-internal.h"
 #include "qemu/qemu-print.h"
-#include "sysemu/tcg.h"
+#include "system/tcg.h"
 
 void s390_cpu_dump_state(CPUState *cs, FILE *f, int flags)
 {
@@ -63,6 +63,7 @@ void s390_cpu_dump_state(CPUState *cs, FILE *f, int flags)
                              (i % 4) == 3 ? '\n' : ' ');
             }
         }
+        qemu_fprintf(f, "FPC=%08" PRIx32 "\n", env->fpc);
     }
 
 #ifndef CONFIG_USER_ONLY

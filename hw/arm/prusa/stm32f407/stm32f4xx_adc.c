@@ -24,8 +24,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "qemu/typedefs.h"
 #include "qemu/timer.h"
 #include "migration/vmstate.h"
@@ -33,7 +33,7 @@
 #include "qemu/module.h"
 #include "../utility/macros.h"
 #include "stm32f4xx_adcc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "../stm32_common/stm32_types.h"
 #include "../stm32_common/stm32_rcc_if.h"
 
@@ -258,10 +258,15 @@ static void stm32f4xx_adc_recalc_times(STM32F4XXADCState *s) {
         assert(s->adc_smprs[i] < ARRAY_SIZE(adc_smpr_map));
         uint32_t ch_conv_cycles = conv_cycles + adc_smpr_map[s->adc_smprs[i]];
         s->adc_conv_times_ns[i] = 1000000000000U / (clock/ch_conv_cycles);
-        if (s->parent.periph == STM32_P_ADC3)
+        if (s->parent.periph == STM32_P_ADC3 && !s->defs.CR2.CONT)
         {
 		// Yes, this is an ugly-ass hack. The above calc is off by 1000 and I still need to determine
 		// how to deal with the other channels bogging down the simulation when they run at the "real" specified rate.
+		// Restrict the accelerator to one-shot conversions: the Buddy FW now puts ADC3 in
+		// continuous-scan mode (since BFW-6270, the MMU OCP analog watchdog), and at the
+		// "real" specified rate that produces a flood of EOC events which saturates the
+		// icount timer scheduler. Continuous-scan ADC3 falls back to the slow rate the
+		// other ADCs use; single conversions still get the accelerator.
 	    	 s->adc_conv_times_ns[i] /= 1000;
 		//printf("ADC conversion: %u cycles @ %"PRIu64" Hz (%lu nSec)\n", conv_cycles, clock, delay_ns);
 	    }
@@ -428,16 +433,25 @@ static void stm32f4xx_adc_write(void *opaque, hwaddr addr,
             s->regs[addr] = value;
             break;
         case RI_CR2:
-            s->regs[addr] = value;
-            if (s->defs.CR2.SWSTART)
             {
-                stm32f4xx_adc_schedule_next(s);
-            }
-            // Ugly hack alert. This is just because we don't run the ADC scheduling
-            // at full throttle and the Mini FW BSODs if the ADC isn't quite ready in time in non_DMA mode.
-            if (!s->defs.CR2.DMA)
-            {
-                s->defs.SR.EOC = 1;
+                uint8_t old_cont = s->defs.CR2.CONT;
+                s->regs[addr] = value;
+                // ADC3 conversion times depend on CONT (see recalc_times comment),
+                // so recalc when the firmware flips into/out of continuous mode.
+                if (s->defs.CR2.CONT != old_cont && s->parent.periph == STM32_P_ADC3)
+                {
+                    stm32f4xx_adc_recalc_times(s);
+                }
+                if (s->defs.CR2.SWSTART)
+                {
+                    stm32f4xx_adc_schedule_next(s);
+                }
+                // Ugly hack alert. This is just because we don't run the ADC scheduling
+                // at full throttle and the Mini FW BSODs if the ADC isn't quite ready in time in non_DMA mode.
+                if (!s->defs.CR2.DMA)
+                {
+                    s->defs.SR.EOC = 1;
+                }
             }
             break;
         case RI_SMPR1:
@@ -499,7 +513,7 @@ static const VMStateDescription vmstate_stm32f4xx_adc = {
     .name = TYPE_STM32F4xx_ADC,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, STM32F4XXADCState, RI_END),
         VMSTATE_INT32_ARRAY(adc_data,STM32F4XXADCState, ADC_NUM_REG_CHANNELS),
         VMSTATE_UINT8_ARRAY(adc_sequence,STM32F4XXADCState, ADC_NUM_REG_CHANNELS),
@@ -541,12 +555,12 @@ static void stm32f4xx_adc_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
-static Property stm32f4xx_adc_properties[] = {
+static const Property stm32f4xx_adc_properties[] = {
     DEFINE_PROP_LINK("common", STM32F4XXADCState, common, TYPE_STM32F4XX_ADCC, STM32F4XXADCCState *),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
-static void stm32f4xx_adc_class_init(ObjectClass *klass, void *data)
+static void stm32f4xx_adc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -27,8 +27,8 @@
 #ifndef XLNX_EFUSE_H
 #define XLNX_EFUSE_H
 
-#include "sysemu/block-backend.h"
-#include "hw/qdev-core.h"
+#include "system/block-backend.h"
+#include "hw/core/qdev.h"
 
 #define TYPE_XLNX_EFUSE "xlnx-efuse"
 OBJECT_DECLARE_SIMPLE_TYPE(XlnxEFuse, XLNX_EFUSE);

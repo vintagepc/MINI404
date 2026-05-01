@@ -29,7 +29,7 @@
 #ifndef HW_STM32F2XX_I2C_H
 #define HW_STM32F2XX_I2C_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
 #include "../stm32_common/stm32_common.h"

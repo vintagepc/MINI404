@@ -22,8 +22,8 @@
 #ifndef HW_TPM_PROP_H
 #define HW_TPM_PROP_H
 
-#include "sysemu/tpm_backend.h"
-#include "hw/qdev-properties.h"
+#include "system/tpm_backend.h"
+#include "hw/core/qdev-properties.h"
 
 extern const PropertyInfo qdev_prop_tpm;
 

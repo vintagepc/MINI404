@@ -27,8 +27,8 @@
 #include "qemu/module.h"
 #include "migration/vmstate.h"
 #include "hw/ssi/ssi.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 
 #define TYPE_SOFTWARE_SPI "software-spi"
 
@@ -105,7 +105,7 @@ static const VMStateDescription vmstate_software_spi = {
     .name = TYPE_SOFTWARE_SPI,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
 
         VMSTATE_END_OF_LIST()
     }
@@ -125,7 +125,7 @@ static void software_spi_init(Object *obj)
     s->ssi = ssi_create_bus(dev, "ssi");
 }
 
-static void software_spi_class_init(ObjectClass *klass, void *data)
+static void software_spi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

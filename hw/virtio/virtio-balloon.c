@@ -20,18 +20,19 @@
 #include "qemu/madvise.h"
 #include "hw/virtio/virtio.h"
 #include "hw/mem/pc-dimm.h"
-#include "hw/qdev-properties.h"
-#include "hw/boards.h"
-#include "sysemu/balloon.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/boards.h"
+#include "system/balloon.h"
+#include "system/ramblock.h"
 #include "hw/virtio/virtio-balloon.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-machine.h"
 #include "qapi/visitor.h"
 #include "trace.h"
 #include "qemu/error-report.h"
 #include "migration/misc.h"
-
+#include "system/reset.h"
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio-access.h"
 
@@ -707,9 +708,6 @@ static size_t virtio_balloon_config_size(VirtIOBalloon *s)
 {
     uint64_t features = s->host_features;
 
-    if (s->qemu_4_0_config_size) {
-        return sizeof(struct virtio_balloon_config);
-    }
     if (virtio_has_feature(features, VIRTIO_BALLOON_F_PAGE_POISON)) {
         return sizeof(struct virtio_balloon_config);
     }
@@ -910,6 +908,8 @@ static void virtio_balloon_device_realize(DeviceState *dev, Error **errp)
     }
 
     reset_stats(s);
+    s->stats_last_update = 0;
+    qemu_register_resettable(OBJECT(dev));
 }
 
 static void virtio_balloon_device_unrealize(DeviceState *dev)
@@ -917,6 +917,7 @@ static void virtio_balloon_device_unrealize(DeviceState *dev)
     VirtIODevice *vdev = VIRTIO_DEVICE(dev);
     VirtIOBalloon *s = VIRTIO_BALLOON(dev);
 
+    qemu_unregister_resettable(OBJECT(dev));
     if (s->free_page_bh) {
         qemu_bh_delete(s->free_page_bh);
         object_unref(OBJECT(s->iothread));
@@ -955,7 +956,7 @@ static void virtio_balloon_device_reset(VirtIODevice *vdev)
     s->poison_val = 0;
 }
 
-static void virtio_balloon_set_status(VirtIODevice *vdev, uint8_t status)
+static int virtio_balloon_set_status(VirtIODevice *vdev, uint8_t status)
 {
     VirtIOBalloon *s = VIRTIO_BALLOON(vdev);
 
@@ -985,6 +986,28 @@ static void virtio_balloon_set_status(VirtIODevice *vdev, uint8_t status)
             qemu_mutex_unlock(&s->free_page_lock);
         }
     }
+    return 0;
+}
+
+static ResettableState *virtio_balloon_get_reset_state(Object *obj)
+{
+    VirtIOBalloon *s = VIRTIO_BALLOON(obj);
+    return &s->reset_state;
+}
+
+static void virtio_balloon_reset_enter(Object *obj, ResetType type)
+{
+    VirtIOBalloon *s = VIRTIO_BALLOON(obj);
+
+    /*
+     * When waking up from standby/suspend-to-ram, do not reset stats.
+     */
+    if (type == RESET_TYPE_WAKEUP) {
+        return;
+    }
+
+    reset_stats(s);
+    s->stats_last_update = 0;
 }
 
 static void virtio_balloon_instance_init(Object *obj)
@@ -1015,7 +1038,7 @@ static const VMStateDescription vmstate_virtio_balloon = {
     },
 };
 
-static Property virtio_balloon_properties[] = {
+static const Property virtio_balloon_properties[] = {
     DEFINE_PROP_BIT("deflate-on-oom", VirtIOBalloon, host_features,
                     VIRTIO_BALLOON_F_DEFLATE_ON_OOM, false),
     DEFINE_PROP_BIT("free-page-hint", VirtIOBalloon, host_features,
@@ -1028,17 +1051,15 @@ static Property virtio_balloon_properties[] = {
      * is disabled, resulting in QEMU 3.1 migration incompatibility.  This
      * property retains this quirk for QEMU 4.1 machine types.
      */
-    DEFINE_PROP_BOOL("qemu-4-0-config-size", VirtIOBalloon,
-                     qemu_4_0_config_size, false),
     DEFINE_PROP_LINK("iothread", VirtIOBalloon, iothread, TYPE_IOTHREAD,
                      IOThread *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void virtio_balloon_class_init(ObjectClass *klass, void *data)
+static void virtio_balloon_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
 
     device_class_set_props(dc, virtio_balloon_properties);
     dc->vmsd = &vmstate_virtio_balloon;
@@ -1051,6 +1072,9 @@ static void virtio_balloon_class_init(ObjectClass *klass, void *data)
     vdc->get_features = virtio_balloon_get_features;
     vdc->set_status = virtio_balloon_set_status;
     vdc->vmsd = &vmstate_virtio_balloon_device;
+
+    rc->get_state = virtio_balloon_get_reset_state;
+    rc->phases.enter = virtio_balloon_reset_enter;
 }
 
 static const TypeInfo virtio_balloon_info = {

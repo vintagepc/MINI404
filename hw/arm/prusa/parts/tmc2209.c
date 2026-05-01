@@ -17,13 +17,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "chardev/char-fe.h"
 #include "qemu/module.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
 #include "../utility/macros.h"
@@ -56,23 +56,23 @@ typedef union
     // Add fields for specific ones down the line as you see fit...
     struct {
         struct {
-            uint8_t I_scale_analog  :1;
-            uint8_t internal_Rsense :1;
-            uint8_t en_spreadcycle :1;
-            uint8_t shaft   :1;
-            uint8_t index_otpw :1;
-            uint8_t index_step  :1;
-            uint8_t pdn_disable :1;
-            uint8_t mstep_reg_select :1;
-            uint8_t multistep_filt :1;
-            uint8_t test_mode   :1;
+            uint32_t I_scale_analog  :1;
+            uint32_t internal_Rsense :1;
+            uint32_t en_spreadcycle :1;
+            uint32_t shaft   :1;
+            uint32_t index_otpw :1;
+            uint32_t index_step  :1;
+            uint32_t pdn_disable :1;
+            uint32_t mstep_reg_select :1;
+            uint32_t multistep_filt :1;
+            uint32_t test_mode   :1;
             uint32_t :22;
         }  QEMU_PACKED GCONF;             // 0x00
         struct                 // 0x01
         {
-            uint8_t reset   :1;
-            uint8_t drv_err :1;
-            uint8_t uv_cp   :1;
+            uint32_t reset   :1;
+            uint32_t drv_err :1;
+            uint32_t uv_cp   :1;
             uint32_t :29; // unused
         }  QEMU_PACKED GSTAT; // 0x01
         struct                 // 0x01
@@ -110,23 +110,23 @@ typedef union
         uint32_t _unimplemented2[2]; //0x6D - 0x6E
         struct                       //0x6F
         {
-            uint8_t otpw        :1;
-            uint8_t ot          :1;
-            uint8_t sg2a        :1;
-            uint8_t sg2b        :1;
-            uint8_t s2vsa        :1;
-            uint8_t s2vsb        :1;
-            uint8_t ola         :1;
-            uint8_t olb         :1;
-            uint8_t t120         :1;
-            uint8_t t143         :1;
-            uint8_t t150         :1;
-            uint8_t t157         :1;
-            uint8_t _unused      :4;
-            uint8_t cs_actual   :5;
-            uint16_t _unus2      :9;
-            uint8_t stealth     :1;
-            uint8_t stst        :1;
+            uint32_t otpw        :1;
+            uint32_t ot          :1;
+            uint32_t sg2a        :1;
+            uint32_t sg2b        :1;
+            uint32_t s2vsa        :1;
+            uint32_t s2vsb        :1;
+            uint32_t ola         :1;
+            uint32_t olb         :1;
+            uint32_t t120         :1;
+            uint32_t t143         :1;
+            uint32_t t150         :1;
+            uint32_t t157         :1;
+            uint32_t _unused      :4;
+            uint32_t cs_actual   :5;
+            uint32_t _unus2      :9;
+            uint32_t stealth     :1;
+            uint32_t stst        :1;
         }  QEMU_PACKED DRV_STATUS;
     } QEMU_PACKED defs;
 } tmc2209_registers_t;
@@ -431,13 +431,13 @@ static void tmc2209_init(Object *obj){
 
 }
 
-static Property tmc2209_properties[] = {
+static const Property tmc2209_properties[] = {
     DEFINE_PROP_UINT8("axis", tmc2209_state, id,(uint8_t)' '),
     DEFINE_PROP_UINT8("address", tmc2209_state, address,0),
     DEFINE_PROP_UINT8("inverted",tmc2209_state, is_inverted, 0),
     DEFINE_PROP_UINT64("max_step", tmc2209_state, max_step,16*100),
     DEFINE_PROP_UINT32("fullstepspermm",tmc2209_state, max_steps_per_mm,160*16*100),
-    DEFINE_PROP_END_OF_LIST()
+    
 };
 
 static void tmc2209_finalize(Object *obj){
@@ -486,7 +486,7 @@ static const VMStateDescription vmstate_tmc2209 = {
     }
 };
 
-static void tmc2209_class_init(ObjectClass *klass, void *data)
+static void tmc2209_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, tmc2209_properties);

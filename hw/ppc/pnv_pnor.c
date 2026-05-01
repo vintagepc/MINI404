@@ -11,12 +11,12 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/units.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/blockdev.h"
-#include "hw/loader.h"
+#include "system/block-backend.h"
+#include "system/blockdev.h"
+#include "hw/core/loader.h"
 #include "hw/ppc/pnv_pnor.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 
 static uint64_t pnv_pnor_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -108,17 +108,18 @@ static void pnv_pnor_realize(DeviceState *dev, Error **errp)
         memset(s->storage, 0xFF, s->size);
     }
 
+    s->lpc_address = PNOR_SPI_OFFSET;
+
     memory_region_init_io(&s->mmio, OBJECT(s), &pnv_pnor_ops, s,
                           TYPE_PNV_PNOR, s->size);
 }
 
-static Property pnv_pnor_properties[] = {
+static const Property pnv_pnor_properties[] = {
     DEFINE_PROP_INT64("size", PnvPnor, size, 128 * MiB),
     DEFINE_PROP_DRIVE("drive", PnvPnor, blk),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void pnv_pnor_class_init(ObjectClass *klass, void *data)
+static void pnv_pnor_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

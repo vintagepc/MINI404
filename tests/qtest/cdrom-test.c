@@ -13,7 +13,7 @@
 #include "qemu/osdep.h"
 #include "libqtest.h"
 #include "boot-sector.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 
 static char isoimage[] = "cdrom-boot-iso-XXXXXX";
 
@@ -244,6 +244,13 @@ static void add_s390x_tests(void)
                             "-drive driver=null-co,read-zeroes=on,if=none,id=d1 "
                             "-device virtio-blk,drive=d2 "
                             "-drive if=none,id=d2,media=cdrom,file=",
+                            test_cdboot);
+    }
+    if (qtest_has_device("virtio-blk-pci")) {
+        qtest_add_data_func("cdrom/boot/pci-bus-with-bootindex",
+                            "-device virtio-scsi -device virtio-serial "
+                            "-device virtio-blk-pci,drive=d1,bootindex=1 "
+                            "-drive if=none,id=d1,media=cdrom,file=",
                             test_cdboot);
     }
 }

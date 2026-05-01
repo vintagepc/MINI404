@@ -26,7 +26,7 @@
 #include "qemu/osdep.h"
 #include "hw/ssi/ssi.h"
 #include "migration/vmstate.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/module.h"
 #include "ui/console.h"
 #include "qom/object.h"
@@ -132,7 +132,7 @@ struct SPIDisplayState {
 
 struct SPIDisplayClass {
     SSIPeripheralClass parent_class;
-    DisplayInfo *di;
+    const DisplayInfo *di;
 };
 
 #define DPY_ENTRY(_name, _rows, _cols, _pol) \
@@ -152,18 +152,30 @@ static const DisplayInfo spi_display_models[] = {
 // OBJECT_DECLARE_SIMPLE_TYPE(SPIDisplayState, ILI9488)
 OBJECT_DECLARE_TYPE(SPIDisplayState, SPIDisplayClass, SPI_DISPLAY)
 
+typedef union {
+    uint32_t full;
+    struct {
+        uint8_t b;
+        uint8_t g;
+        uint8_t r;
+        uint8_t a;
+    };
+} QEMU_PACKED pixel_color_t;
+
+// Write a pixel to the framebuffer and advance the cursor.
+static inline void spi_display_write_pixel(SPIDisplayState *s, pixel_color_t *color)
+{
+    color->a = 0xFF;
+    s->framebuffer[s->col + s->row * s->dpy_info->cols] = color->full;
+    s->col++;
+    if (s->col > s->col_end) { s->row++; s->col = s->col_start; }
+    if (s->row > s->row_end) { s->row = s->row_start; }
+}
+
 static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
 {
     SPIDisplayState *s = SPI_DISPLAY(dev);
-    union color{
-        uint32_t full;
-        struct{
-            uint8_t b;
-            uint8_t g;
-            uint8_t r;
-            uint8_t a;
-        };
-    }  QEMU_PACKED color;
+    pixel_color_t color;
     color.full = 0;
     uint16_t word = 0;
 	// If this is a read, pipe out the data appropriately.
@@ -228,6 +240,9 @@ static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
             uint32_t value = s->cmd_data[0];
             switch (value&0x07)
             {
+                case 0x1: // 3-bit/pixel tribit (1 bit per R,G,B), 2 pixels per byte
+                    s->bpp_mode = 3;
+                    break;
                 case 0x5: // 5-6-5, 16bpp
                     s->bpp_mode = 16;
                     break;
@@ -245,36 +260,44 @@ static uint32_t spi_display_transfer(SSIPeripheral *dev, uint32_t data)
                 s->row = s->row_start;
                 s->col = s->col_start;
                 // printf("RAWR: %d %d\n", sr->row, s->col);
-                DATA(s->bpp_mode == 16 ? 2 : 3);
+                DATA(s->bpp_mode == 16 ? 2 : (s->bpp_mode == 3 ? 1 : 3));
             } else {// One of an unknown number of 16-bit words.
                 switch (s->bpp_mode) {
+                    case 3: // Tribit: 2 pixels per byte, bits [5:3] and [2:0]
+                    {
+                        DATA(1);
+                        uint8_t byte = s->cmd_data[0];
+                        // Pixel 1: bits [5:3] -> R=bit5, G=bit4, B=bit3
+                        uint8_t hi = (byte >> 3) & 0x07;
+                        color.r = (hi & 0x4) ? 0xFC : 0x00;
+                        color.g = (hi & 0x2) ? 0xFC : 0x00;
+                        color.b = (hi & 0x1) ? 0xFC : 0x00;
+                        spi_display_write_pixel(s, &color);
+                        // Pixel 2: bits [2:0] -> R=bit2, G=bit1, B=bit0
+                        uint8_t lo = byte & 0x07;
+                        color.r = (lo & 0x4) ? 0xFC : 0x00;
+                        color.g = (lo & 0x2) ? 0xFC : 0x00;
+                        color.b = (lo & 0x1) ? 0xFC : 0x00;
+                        spi_display_write_pixel(s, &color);
+                        break;
+                    }
                     case 16:
                         DATA(2);
                         word = (s->cmd_data[0]<<8|s->cmd_data[1]);
                         color.r = (word & 0xF800)>>8;
                         color.g = (word & 0x7E0)>> 3;
                         color.b = (word & 0x1F) << 3;
+                        spi_display_write_pixel(s, &color);
                         break;
                     case 18:
                         DATA(3);
                         color.b = s->cmd_data[0];
                         color.g = s->cmd_data[1];
                         color.r = s->cmd_data[2];
+                        spi_display_write_pixel(s, &color);
                         break;
                     default:
                         printf("FIXME: unhandled bpp mode in RAMWR: %u\n", s->bpp_mode);
-                }
-                color.a = 0xFF;
-                s->framebuffer[(s->col) + (s->row*s->dpy_info->cols)] = color.full;
-                s->col++;
-                if (s->col>s->col_end)
-                {
-                    s->row++;
-                    s->col = s->col_start;
-                }
-                if (s->row>s->row_end)
-                {
-                    s->row = s->row_start;
                 }
                 s->cmd_len=0; // "remove" the data from the queue. We'll get more,
                 s->redraw = 1;
@@ -520,7 +543,7 @@ static const VMStateDescription vmstate_spi_display = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = spi_display_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_SSI_PERIPHERAL(ssidev,SPIDisplayState),
         VMSTATE_UINT32(cmd_len,SPIDisplayState),
         VMSTATE_INT32(cmd,SPIDisplayState),
@@ -542,7 +565,7 @@ static const VMStateDescription vmstate_spi_display = {
     }
 };
 
-static void spi_display_class_init(ObjectClass *klass, void *data)
+static void spi_display_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->vmsd = &vmstate_spi_display;
@@ -588,7 +611,7 @@ static void spi_display_register_types(void)
             .class_init = spi_display_class_init,
             .class_data = (void *)&spi_display_models[i],
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 
 }

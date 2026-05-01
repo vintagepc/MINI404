@@ -27,9 +27,9 @@
 #include "../utility/ArgHelper.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qom/object.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_DWARF_INPUT "dwarf-input"
 
@@ -99,7 +99,7 @@ static void dwarf_button_init(Object *obj)
     p404_register_keyhandler(pKey, 's' | P404_KEYCLIENT_RELEASE_MASK, "");
 }
 
-static void dwarf_button_class_init(ObjectClass *oc, void *data)
+static void dwarf_button_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     device_class_set_legacy_reset(dc, dwarf_button_reset);

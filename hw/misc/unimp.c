@@ -12,7 +12,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/misc/unimp.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -70,13 +70,12 @@ static void unimp_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
 }
 
-static Property unimp_properties[] = {
+static const Property unimp_properties[] = {
     DEFINE_PROP_UINT64("size", UnimplementedDeviceState, size, 0),
     DEFINE_PROP_STRING("name", UnimplementedDeviceState, name),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void unimp_class_init(ObjectClass *klass, void *data)
+static void unimp_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

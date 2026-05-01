@@ -24,20 +24,21 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/arm/armv7m.h"
 #include "hw/core/split-irq.h"
 #include "qemu/error-report.h"
 #include "stm32_common/stm32_common.h"
 #include "hw/arm/boot.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "utility/ArgHelper.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "parts/dashboard_types.h"
 #include "parts/xl_bridge.h"
+#include "qobject/qlist.h"
 
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
@@ -147,7 +148,7 @@ static void prusa_bed_init(MachineState *machine)
     const prusaBedMachineClass *mc = PRUSABED_MACHINE_GET_CLASS(OBJECT(machine));
     const prusa_modbed_cfg_t *cfg = bed_cfg_map[mc->hw_type];
 
-    Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");;
 
     dev = qdev_new(TYPE_STM32G070xB_SOC);
 	hwaddr FLASH_SIZE = stm32_soc_get_flash_size(dev);
@@ -156,6 +157,28 @@ static void prusa_bed_init(MachineState *machine)
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m0"));
 	qdev_prop_set_uint16(stm32_soc_get_periph(dev, STM32_P_GPIOC), "idr-mask", 0x0D);
 	qdev_prop_set_uint16(stm32_soc_get_periph(dev, STM32_P_GPIOC), "idr-force", 0x0F);
+
+	// STM32G0 temperature sensor calibration constants in OTP engineering bytes.
+	// Without these the firmware's MCU temp calculation divides by zero.
+	// Must be set before realize — OTP properties are frozen after that.
+	{
+		#define OTP_TS_CAL1     835U
+		#define OTP_VREFINT_CAL 1524U
+		#define OTP_TS_CAL2     1045U
+		#define OTP_CAL1_INDEX  (0x5A8 / 4)  // data[362]: [VREFINT_CAL:TS_CAL1]
+		#define OTP_CAL2_INDEX  (0x5CA / 4)  // data[370]: [TS_CAL2:...]
+		#define OTP_DATA_COUNT  (OTP_CAL2_INDEX + 1)
+        uint32_t otp_data[OTP_DATA_COUNT];
+        memset(otp_data, 0xFF, sizeof(otp_data));
+        otp_data[OTP_CAL1_INDEX] = (OTP_VREFINT_CAL << 16) | OTP_TS_CAL1;
+        otp_data[OTP_CAL2_INDEX] = OTP_TS_CAL2 << 16;
+		DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
+        QList *otp_list = qlist_new();
+        for (int i = 0; i < OTP_DATA_COUNT; i++) {
+            qlist_append_int(otp_list, otp_data[i]);
+        }
+        qdev_prop_set_array(otp, "otp-data", otp_list);
+	}
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     // We (ab)use the kernel command line to piggyback custom arguments into QEMU.
@@ -178,10 +201,8 @@ static void prusa_bed_init(MachineState *machine)
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
-        load_image_targphys(machine->kernel_filename,0x08000000,get_image_size(machine->kernel_filename));
-        armv7m_load_kernel(ARM_CPU(first_cpu),
-            BOOTLOADER_IMAGE, 0,
-            FLASH_SIZE);
+        stm32_soc_load_targphys(OBJECT(dev), machine->kernel_filename,0x08000000);
+        stm32_soc_load_kernel(OBJECT(dev), BOOTLOADER_IMAGE);
     }
     else // Raw bin or ELF file, load directly.
     {
@@ -191,6 +212,12 @@ static void prusa_bed_init(MachineState *machine)
     }
 
 	DeviceState* dev_soc = dev;
+
+	// Set initial ADC values for internal channels (temp sensor ch12, VREFINT ch13).
+	// These have no external peripheral providing data.
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 12), 856);  // ~40°C
+	qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC1), "adc_data_in", 13), 1524); // VREFINT
+
 // HACK
 	// SOC->usarts[0].rs485_dest = 0x08;
 	// SOC->usarts[0].do_rs485 = true;
@@ -342,7 +369,7 @@ static void prusa_bed_init(MachineState *machine)
 
 };
 
-static void prusabed_class_init(ObjectClass *oc, void *data)
+static void prusabed_class_init(ObjectClass *oc, const void *data)
 {
 		const prusaBedData* d = (prusaBedData*)data;
 	    MachineClass *mc = MACHINE_CLASS(oc);

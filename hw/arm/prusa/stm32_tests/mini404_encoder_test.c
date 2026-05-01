@@ -21,6 +21,7 @@
 
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
+#include "scriptcon_helper.h"
 
 #define QOM_PATH "/machine/peripheral/encoder-input"
 #define MACHINE "prusa-mini"
@@ -28,11 +29,6 @@
 #define CMD_TWDOWN "encoder-input::Twist(-1)\n"
 #define CMD_PUSH "encoder-input::Push()\n"
 #define CMD_RESET "encoder-input::Reset()\n"
-
-static void send_scriptcmd(const char* cmd, int fd)
-{
-    g_assert_true(send(fd, cmd, strlen(cmd), 0) == strlen(cmd));
-}
 
 static void test_key_twist(void)
 {
@@ -257,9 +253,10 @@ static void test_script_push(void)
     qtest_irq_intercept_out_named(ts, QOM_PATH, "encoder-button");
 
     // Emulate a keypress
-    send_scriptcmd(CMD_PUSH, fd);
-    qtest_clock_step_next(ts);
-    qtest_clock_step_next(ts);
+    send_scriptcmd(CMD_PUSH, fd, ts);
+    // Wait for the 
+    printf("# stepped %"PRIi64" ns\n",qtest_clock_step_next(ts));
+    printf("# stepped %"PRIi64" ns\n",qtest_clock_step_next(ts));
 
     g_assert_false(qtest_get_irq(ts,0));
 
@@ -286,7 +283,7 @@ static void test_script_twist(void)
     g_free(qtest_hmp(ts, "system_reset"));
 
     // Emulate a keypress
-    send_scriptcmd(CMD_TWDOWN, fd);
+    send_scriptcmd(CMD_TWDOWN, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step(ts, 101U*1E6); // 100ms
@@ -300,7 +297,7 @@ static void test_script_twist(void)
     g_assert_false(qtest_get_irq(ts,1));
 
     // Emulate a keypress
-    send_scriptcmd(CMD_TWDOWN, fd);
+    send_scriptcmd(CMD_TWDOWN, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step(ts, 105U*1E6); // 100ms
@@ -314,7 +311,7 @@ static void test_script_twist(void)
     g_assert_true(qtest_get_irq(ts,1));
 
     // Now the other direction:
-    send_scriptcmd(CMD_TWUP, fd);
+    send_scriptcmd(CMD_TWUP, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step(ts, 105U*1E6); // 100ms
@@ -327,7 +324,7 @@ static void test_script_twist(void)
     g_assert_false(qtest_get_irq(ts,1));
 
     // Now the other direction:
-    send_scriptcmd(CMD_TWUP, fd);
+    send_scriptcmd(CMD_TWUP, fd, ts);
     qtest_clock_step_next(ts);
     qtest_clock_step_next(ts);
     qtest_clock_step(ts, 101U*1E6); // 100ms
@@ -357,9 +354,9 @@ static void test_script_reset(void)
     QTestState *ts = qtest_init_with_serial("-machine " MACHINE " -global p404-scriptcon.input_id=s0", &fd);
 
     // Emulate a keypress
-    send_scriptcmd(CMD_RESET, fd);
-    qtest_clock_step_next(ts);
-    qtest_clock_step_next(ts);
+    send_scriptcmd(CMD_RESET, fd, ts);
+    printf("# stepped %"PRIi64" ns\n",qtest_clock_step_next(ts));
+    printf("# stepped %"PRIi64" ns\n",qtest_clock_step_next(ts));
     
     qtest_qmp_eventwait(ts, "RESET");
     

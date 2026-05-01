@@ -29,8 +29,8 @@
 #ifndef IMX_GPT_H
 #define IMX_GPT_H
 
-#include "hw/sysbus.h"
-#include "hw/ptimer.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/ptimer.h"
 #include "hw/misc/imx_ccm.h"
 #include "qom/object.h"
 
@@ -80,6 +80,7 @@
 #define TYPE_IMX6_GPT "imx6.gpt"
 #define TYPE_IMX6UL_GPT "imx6ul.gpt"
 #define TYPE_IMX7_GPT "imx7.gpt"
+#define TYPE_IMX8MP_GPT "imx8mp.gpt"
 
 #define TYPE_IMX_GPT TYPE_IMX25_GPT
 

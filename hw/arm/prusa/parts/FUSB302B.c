@@ -21,8 +21,8 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/i2c/i2c.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "qom/object.h"
 
 
@@ -80,12 +80,8 @@ void fusb302b_reset(DeviceState *state)
 {
 }
 
-static Property fusb302b_props[] = {
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static
-void fusb302b_class_init(ObjectClass *klass, void *data)
+void fusb302b_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
@@ -94,7 +90,6 @@ void fusb302b_class_init(ObjectClass *klass, void *data)
     k->recv = &fusb302b_recv;
     k->send = &fusb302b_send;
 
-    device_class_set_props(dc, fusb302b_props);
     device_class_set_legacy_reset(dc, fusb302b_reset);
 }
 
