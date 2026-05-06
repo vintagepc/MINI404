@@ -127,6 +127,9 @@ class stm32h503xx(STM32Fixups):
         # for old in ["BOOTR", 'EPOCHR']:
         #     chip.periph_map["FLASH"]["{old}_CUR"] = chip.periph_map["FLASH"][old]
         #     chip.periph_map["FLASH"]["{old}_PRG"] = chip.periph_map["FLASH"].pop(old)
+        chip.periph_map["FDCAN"] = chip.periph_map.pop("FDCAN_Global")
+        chip.periph_map["FDCAN"]["CKDIV"] = chip.periph_map["FDCAN_Config"]["CKDIV"]
+        chip.periph_map.pop("FDCAN_Config")
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):

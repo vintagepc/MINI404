@@ -4,6 +4,7 @@
 // Helpers for enforcing type name consistency.
 #define _STM_VAR_PART(var,part) "stm32"#var"-"#part
 #define _STM_COM_PART(x) _STM_VAR_PART(com,x)
+#define _STM_C092_PART(x) _STM_VAR_PART(c092,x)
 #define _STM_F030_PART(x) _STM_VAR_PART(f030,x)
 #define _STM_G070_PART(x) _STM_VAR_PART(g070,x)
 #define _STM_H503_PART(x) _STM_VAR_PART(h503,x)
@@ -15,6 +16,10 @@
 #define TYPE_STM32_MACHINE "stm32-machine"
 
 // Base names:
+#define TYPE_STM32C092xx "stm32c092xx"
+#define TYPE_STM32C092xB "stm32c092xB"
+#define TYPE_STM32C092xC "stm32c092xC"
+
 #define TYPE_STM32F030xx "stm32f030xx"
 #define TYPE_STM32F030x4 "stm32f030x4"
 #define TYPE_STM32F030x6 "stm32f030x6"
@@ -36,6 +41,9 @@
 
 // Chip types:
 
+#define TYPE_STM32C092xB_SOC _STM32_SOC(TYPE_STM32C092xB)
+#define TYPE_STM32C092xC_SOC _STM32_SOC(TYPE_STM32C092xC)
+
 #define TYPE_STM32F030x4_SOC _STM32_SOC(TYPE_STM32F030x4)
 #define TYPE_STM32F030x6_SOC _STM32_SOC(TYPE_STM32F030x6)
 #define TYPE_STM32F030x8_SOC _STM32_SOC(TYPE_STM32F030x8)
@@ -54,6 +62,7 @@
 
 
 // Conveniences for naming consistency
+#define STM32C092_STRUCT_NAME(part) _JOIN3R(STM32C092,part,State)
 #define STM32F030_STRUCT_NAME(part) _JOIN3R(STM32F030,part,State)
 #define STM32G070_STRUCT_NAME(part) _JOIN3R(STM32G070,part,State)
 #define STM32H503_STRUCT_NAME(part) _JOIN3R(STM32H503,part,State)
@@ -80,6 +89,8 @@
 #define TYPE_STM32COM_RNG _STM_COM_PART(rng)
 #define TYPE_STM32_PERIPHERAL _STM_COM_PART(peripheral)
 #define TYPE_STM32_SOC _STM_COM_PART(soc)
+
+#define TYPE_STM32C092XX_BASE _STM_C092_PART(base)
 #define TYPE_STM32F030XX_BASE _STM_F030_PART(base)
 #define TYPE_STM32G070XX_BASE _STM_G070_PART(base)
 #define TYPE_STM32H503XX_BASE _STM_H503_PART(base)
@@ -126,7 +137,10 @@
 
 #define TYPE_STM32G070_EXTI _STM_G070_PART(exti)
 
+#define TYPE_STM32H503_FDCAN _STM_H503_PART(fdcan)
+
 #define TYPE_STM32H503_I2C _STM_H503_PART(i2c)
+
 
 #define TYPE_STM32H503_ICACHE _STM_H503_PART(icache)
 

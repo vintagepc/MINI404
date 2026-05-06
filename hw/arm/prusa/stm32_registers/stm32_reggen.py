@@ -3,6 +3,7 @@ import re
 import dataclasses
 
 from stm32f030xx import *
+from stm32c092xx import *
 from stm32f427xx import *
 from stm32g070xx import *
 from stm32h503xx import *
@@ -13,7 +14,7 @@ from stm32h503xx import *
 
 reg_pattern = re.compile(r'.+uint32_t (\w+);.+/\*!<\s*(.+)\s+Address offset: +(0x\w+)\s+\*/')
 reg_pattern2 = re.compile(r'.+uint32_t (\w+);.+/\*!<\s+(.+)\s+Address offset: (0x\w+)\s+\+.+\*/')
-typedef_pattern = re.compile(r'}\s?([\w_]+)_TypeDef;')
+typedef_pattern = re.compile(r'}\s?([\w_]+)TypeDef;')
 
 def parse_register(line: str) -> Register:
 	# Construct a regexp to find register name and address:
@@ -220,7 +221,7 @@ def process_chip(info: STM32Chip):
 						tmp_dict[reg.name] = reg
 				match = typedef_pattern.match(line)
 				if match:
-					info.periph_map[match.group(1)] = tmp_dict
+					info.periph_map[match.group(1).rstrip("_")] = tmp_dict
 					# print("Found Peripheral: ", match.group(1))
 			if not in_bitfield and ("Pos" in line or "Msk" in line):
 				print("Started bitfields...")
@@ -241,7 +242,8 @@ chip_data = [
 #	STM32Chip(name="stm32f030", header="stm32f030xc.h", fixups=stm32f030xx, gen_list=[]),
 #	STM32Chip(name="stm32f427", header="stm32f427xx.h", fixups=stm32f427xx, gen_list=[]),
 #	STM32Chip(name="stm32g070", header="stm32g070xx.h", fixups=stm32g070xx, gen_list=[]),
-	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA", "EXTI", "I2C", "FLASH"]),
+	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA", "EXTI", "I2C", "FLASH", "FDCAN"]),
+	STM32Chip(name="stm32c092", header="stm32c092xx.h", fixups=stm32c092xx, gen_list=["FDCAN"]),
 	]
 
 

@@ -37,6 +37,7 @@ endif
 
 subdir('stm32_common')
 subdir('stm32f407')
+subdir('stm32c092')
 subdir('stm32f030')
 subdir('stm32g070')
 subdir('stm32h503')
