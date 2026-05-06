@@ -28,6 +28,7 @@
 #include "system/address-spaces.h"
 #include "hw/misc/unimp.h"
 #include "chardev/char.h"
+#include "target/arm/cpu.h"
 #include "net/net.h"
 #include "hw/arm/armv7m.h"
 #include "hw/i2c/smbus_eeprom.h"
@@ -125,6 +126,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {
         return; // LCOV_EXCL_BR_LINE
     }
+	unset_feature(&s->armv7m.cpu->env, ARM_FEATURE_M_SECURITY);
     /* System configuration controller */
 	// object_property_set_link(
 	// 		OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_SYSCFG)),
