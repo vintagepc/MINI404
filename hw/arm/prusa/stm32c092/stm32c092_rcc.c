@@ -268,7 +268,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr addr,
 	uint32_t index = addr >> 2U;
 	CHECK_BOUNDS_R(index, RI_END, stm32_c092_rcc_reginfo, "RCC");
 
-	uint32_t value = s->regs.raw[addr];
+	uint32_t value = s->regs.raw[index];
 
 	ADJUST_FOR_OFFSET_AND_SIZE_R(value, size, offset, 0b111);
     return value;
@@ -404,7 +404,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
      * turning the clock on.
      */
 
-	clktree_create_clk(&s->RESERVED, "RESERVED", 1, 1, false, 0, CLKTREE_NO_INPUT, NULL, NULL);
+	 clktree_create_src_clk(&s->RESERVED, "RESERVED", 0, false);
 
 	clktree_create_clk(&s->HSISYS, "HSISYS", 1, 1, true, s->parent.hsi_freq, 0, &s->parent.HSICLK, NULL);
 	clktree_create_clk(&s->HSIKER, "HSIKER", 1, 1, true, s->parent.hsi_freq, 0, &s->parent.HSICLK, NULL);
