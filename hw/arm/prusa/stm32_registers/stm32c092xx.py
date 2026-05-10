@@ -18,6 +18,19 @@ class stm32c092xx(STM32Fixups):
         rcc["AHBSMENR"].reset_value = rcc["AHBSMENR"].get_valid_mask()
         rcc["APBSMENR2"].reset_value = rcc["APBSMENR2"].get_valid_mask()
 
+        flash = chip.periph_map["FLASH"]
+        flash["ACR"].reset_value = 1 << 18 | 1 << 9
+        flash["CR"].reset_value = 0xC0000000
+        for reg in "PCROP1BSR","PCROP1BER","PCROP1AER","PCROP1ASR":
+            flash[reg].unimplemented = True
+    
+        exti = chip.periph_map["EXTI"]
+        exti["IMR1"].reset_value = 0xFFF80000
+        for reg in "IMR1", "EMR1":
+            exti[reg].unimplemented = True
+
+
+
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
@@ -34,6 +47,12 @@ class stm32c092xx(STM32Fixups):
             name = f"ITLINE{i}"
             address = 0x80 + (i * 4)
             syscfg[name] = Register(name=name, desc="Interrupt line status register", hex_addr= "".join(hex(address)) , int_addr=address, fields={}, access=None, reset_value=0)
+
+        exti = chip.periph_map["EXTI"]
+        for i in range(4):
+            name = f"EXTICR{1+i}"
+            address = 0x60 + (i * 4)
+            exti[name] = Register(name=name, desc="External interrupt configuration register", hex_addr= "".join(hex(address)) , int_addr=address, fields={}, access=None, reset_value=0)
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):

@@ -36,3 +36,7 @@ class stm32g070xx(STM32Fixups):
         chip.periph_map["ADC"]["G070_TR3"] = chip.periph_map["ADC"]["TR3"]
         chip.periph_map["ADC"]["G070_TR3"].name = "G070_TR3"
         chip.periph_map["ADC"].pop("TR3")
+        exti = chip.periph_map["EXTI"]
+        exti["IMR1"].reset_value = 0xFFF80000
+        for reg in "IMR1", "EMR1":
+            exti[reg].unimplemented = True

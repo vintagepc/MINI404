@@ -24,19 +24,19 @@
 #define HW_ARM_STM32G070_EXTI_REGDEF_H
 
 enum reg_index {
-	RI_RTSR,
-	RI_FTSR,
-	RI_SWIER,
-	RI_RPR,
-	RI_FPR,
+	RI_RTSR1                = (0x00 /4U), /* EXTI Rising Trigger Selection Register 1, */
+	RI_FTSR1                = (0x04 /4U), /* EXTI Falling Trigger Selection Register 1, */
+	RI_SWIER1               = (0x08 /4U), /* EXTI Software Interrupt event Register 1, */
+	RI_RPR1                 = (0x0C /4U), /* EXTI Rising Pending Register 1, */
+	RI_FPR1                 = (0x10 /4U), /* EXTI Falling Pending Register 1, */
 	RI_EXTICR_BEGIN = 0x60U/4U,
 	RI_EXTICR1 = RI_EXTICR_BEGIN,
 	RI_EXTICR2,
 	RI_EXTICR3,
 	RI_EXTICR4,
 	RI_EXTICR_END,
-	RI_IMR = 0x80U/4U,
-	RI_EMR,
+	RI_IMR1                 = (0x80 /4U), /* EXTI Interrupt Mask Register 1, */
+	RI_EMR1                 = (0x84 /4U), /* EXTI Event Mask Register 1, */
 	RI_END
 };
 
