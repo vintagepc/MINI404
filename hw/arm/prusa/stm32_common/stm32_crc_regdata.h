@@ -13,6 +13,8 @@ enum regIndex
 	RI_END
 };
 
+#include "../stm32_registers/generated/stm32c092/CRC_reginfo.h"
+
 #include "../stm32_registers/generated/stm32f030/CRC_reginfo.h"
 
 #include "../stm32_registers/generated/stm32g070/CRC_reginfo.h"

@@ -187,7 +187,10 @@ def global_supplemental_data(info: STM32Chip):
 		for field in info.periph_map["ADCC"]["CCR"].fields.values():
 			if field.name not in ["PRESC", "VREFEN"]:
 				field.unimplemented = True
-
+	if "I2C" in info.periph_map:
+		chip.periph_map["I2C"]["ISR"].reset_value = 0x00000001
+		for f in ["OAR1", "OAR2", "TIMINGR", "PECR", "TIMEOUTR" ]:
+			chip.periph_map["I2C"][f].unimplemented = True
 
 def process_chip(info: STM32Chip):
 	in_bitfield = False
@@ -242,8 +245,8 @@ chip_data = [
 #	STM32Chip(name="stm32f030", header="stm32f030xc.h", fixups=stm32f030xx, gen_list=[]),
 #	STM32Chip(name="stm32f427", header="stm32f427xx.h", fixups=stm32f427xx, gen_list=[]),
 #	STM32Chip(name="stm32g070", header="stm32g070xx.h", fixups=stm32g070xx, gen_list=[]),
-	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA", "EXTI", "I2C", "FLASH", "FDCAN"]),
-	STM32Chip(name="stm32c092", header="stm32c092xx.h", fixups=stm32c092xx, gen_list=["FDCAN"]),
+#	STM32Chip(name="stm32h503", header="stm32h503xx.h", fixups=stm32h503xx, gen_list=["RCC", "PWR", "ICACHE", "DMA", "EXTI", "FLASH", "FDCAN"]),
+	STM32Chip(name="stm32c092", header="stm32c092xx.h", fixups=stm32c092xx, gen_list=["FDCAN", "RCC", "SYSCFG"]),
 	]
 
 

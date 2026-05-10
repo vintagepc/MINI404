@@ -147,7 +147,7 @@ static const stm32_reginfo_t* stm32f030_gpio_reginfo[MAX_GPIO_BANKS] =
 
 };
 
-static const stm32_reginfo_t stm32g070_gpio_bank_a[RI_END] =
+static const stm32_reginfo_t stm32g070_c092_gpio_bank_a[RI_END] =
 {
 	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0xEBFFFFFF },
 	[RI_OTYPER] = {.mask = UINT16_MAX},
@@ -161,7 +161,7 @@ static const stm32_reginfo_t stm32g070_gpio_bank_a[RI_END] =
 	[RI_AFRH] = {.mask = UINT32_MAX},
 	[RI_BRR] = {.mask = UINT16_MAX},
 };
-static const stm32_reginfo_t stm32g070_gpio_bank_b_f[RI_END] =
+static const stm32_reginfo_t stm32g070_c092_gpio_bank_b_f[RI_END] =
 {
 	[RI_MODER] = {.mask = UINT32_MAX, .reset_val = 0xFFFFFFFF },
 	[RI_OTYPER] = {.mask = UINT16_MAX},
@@ -176,10 +176,10 @@ static const stm32_reginfo_t stm32g070_gpio_bank_b_f[RI_END] =
 	[RI_BRR] = {.mask = UINT16_MAX},
 };
 
-static const stm32_reginfo_t* stm32g070_gpio_reginfo[RI_END] =
+static const stm32_reginfo_t* stm32g070_c092_gpio_reginfo[RI_END] =
 {
-	[BANK_A] = stm32g070_gpio_bank_a,
-	[BANK_B ... BANK_F] = stm32g070_gpio_bank_b_f,
+	[BANK_A] = stm32g070_c092_gpio_bank_a,
+	[BANK_B ... BANK_F] = stm32g070_c092_gpio_bank_b_f,
 	[BANK_G ... BANK_K] = stm32_gpio_bank_not_present,
 };
 

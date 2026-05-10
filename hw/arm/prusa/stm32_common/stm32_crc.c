@@ -145,7 +145,8 @@ typedef struct COM_CLASS_NAME(Crc) {
     stm32_reginfo_t var_reginfo[RI_END];
 } COM_CLASS_NAME(Crc);
 
-static const stm32_periph_variant_t stm32_crc_variants[5] = {
+static const stm32_periph_variant_t stm32_crc_variants[6] = {
+	{TYPE_STM32C092_CRC, stm32_c092_crc_reginfo},
 	{TYPE_STM32F030_CRC, stm32_f030_crc_reginfo},
 	{TYPE_STM32G070_CRC, stm32_g070_crc_reginfo},
 	{TYPE_STM32H503_CRC, stm32_h503_crc_reginfo},

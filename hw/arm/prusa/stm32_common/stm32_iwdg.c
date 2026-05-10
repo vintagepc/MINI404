@@ -82,13 +82,15 @@ typedef struct COM_CLASS_NAME(Iwdg) {
 } COM_CLASS_NAME(Iwdg);
 
 
+#include "../stm32_registers/generated/stm32c092/IWDG_reginfo.h"
 #include "../stm32_registers/generated/stm32f030/IWDG_reginfo.h"
 #include "../stm32_registers/generated/stm32g070/IWDG_reginfo.h"
 #include "../stm32_registers/generated/stm32f427/IWDG_reginfo.h"
 #include "../stm32_registers/generated/stm32h503/IWDG_reginfo.h"
 
 
-static const stm32_periph_variant_t stm32_iwdg_variants[4] = {
+static const stm32_periph_variant_t stm32_iwdg_variants[] = {
+	{TYPE_STM32C092_IWDG, stm32_c092_iwdg_reginfo},
 	{TYPE_STM32F030_IWDG, stm32_f030_iwdg_reginfo},
 	{TYPE_STM32G070_IWDG, stm32_g070_iwdg_reginfo},
 	{TYPE_STM32F4xx_IWDG, stm32_f427_iwdg_reginfo},

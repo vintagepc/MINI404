@@ -99,8 +99,6 @@ class stm32h503xx(STM32Fixups):
         for f in chip.periph_map["DMA"]["CCR"].fields:
             if f not in ["EN", "TCIE", "HTIE"]:
                 chip.periph_map["DMA"]["CCR"].fields[f].unimplemented = True
-        for f in ["OAR1", "OAR2", "TIMINGR", "PECR", "TIMEOUTR" ]:
-            chip.periph_map["I2C"][f].unimplemented = True
         for f,v in chip.periph_map["FLASH"].items():
             if f != "ACR":
                 v.unimplemented = True

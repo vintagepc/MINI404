@@ -115,7 +115,8 @@ typedef struct stm32_reginfo_t
 	_P(ICACHE), \
     _P(ETM), \
     _P(SYSRAM), \
-    _P(DYNMAP),
+    _P(DYNMAP), \
+	_P(CRS),
 
 #define _P(x) STM32_P_##x
 
