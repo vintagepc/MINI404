@@ -54,6 +54,19 @@ class stm32c092xx(STM32Fixups):
             address = 0x60 + (i * 4)
             exti[name] = Register(name=name, desc="External interrupt configuration register", hex_addr= "".join(hex(address)) , int_addr=address, fields={}, access=None, reset_value=0)
 
+        can = chip.periph_map["FDCAN"]
+        can["CREL"].reset_value = 0x32141218
+        can["ENDN"].reset_value = 0x87654321
+        can["DBTP"].reset_value = 0xA33
+        can["CCCR"].reset_value = 0x1
+        can["NBTP"].reset_value = 0x06000A03
+        can["TOCC"].reset_value = 0xFFFF0000
+        can["TOCV"].reset_value = 0x0000FFFF
+        can["PSR"].reset_value = 0x0707
+        can["XIDAM"].reset_value = 0x1FFFFFFF
+        can["TXFQS"].reset_value = 0x00000003
+
+
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
         syscfg = chip.periph_map["SYSCFG"]

@@ -55,6 +55,8 @@ struct STM32C092_STRUCT_NAME() {
     MemoryRegion flash;
     MemoryRegion flash_alias;
 
+	MemoryRegion can_sram;
+
 };
 
 static void stm32c092_soc_initfn(Object *obj)
@@ -99,6 +101,15 @@ static void stm32c092_soc_realize(DeviceState *dev_soc, Error **errp)
 	// disabled unless otherwise set such by syscfg.
 	memory_region_set_enabled(&s->sram_alias, false);
 	memory_region_add_subregion(system_memory, 0, &s->sram_alias);
+
+	memory_region_init_ram(&s->can_sram, OBJECT(dev_soc), "STM32C092.can_sram", 6*KiB, &err);
+	memory_region_add_subregion(system_memory, C092_SRAMCAN_ADDR, &s->can_sram);
+	object_property_set_link(
+			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_CAN1)),
+			"sram",
+			OBJECT(&s->can_sram),
+		&error_fatal);
+
 
     if (err != NULL) {
         error_propagate(errp, err);
