@@ -309,6 +309,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
 
     dev = qdev_new("heater");
+    object_property_add_child(OBJECT(periphs), "heater-E", OBJECT(dev));
     qdev_prop_set_uint8(dev, "thermal_mass_x10",30);
     qdev_prop_set_uint8(dev,"label", 'E');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -324,6 +325,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
     // Bed.
     dev = qdev_new("heater");
+    object_property_add_child(OBJECT(periphs), "heater-B", OBJECT(dev));
     qdev_prop_set_uint8(dev, "thermal_mass_x10",3);
     qdev_prop_set_uint8(dev,"label", 'B');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
