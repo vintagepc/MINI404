@@ -674,6 +674,10 @@ struct STM32F4xxUSBState {
 
     char cdc_in;
 
+    /* Initial dwDTERate sent in SET_LINE_CODING. Buddy FW gates syslog routing on
+       57600 (default) and Marlin console on 115200; FW may then re-set it later. */
+    uint32_t cdc_baud;
+
     CharFrontend cdc;
 
 };
@@ -700,10 +704,14 @@ static const uint32_t DEV_GETDESC[] = {0x000C0040, 0x03020680, 0x00FF0000};
 static const uint32_t DEV_GETDESC2[] = {0x000C0040, 0x03010680, 0x00FF0000};
 static const uint32_t DEV_GETDESC3[] = {0x000C0040, 0x03030680, 0x00FF0000};
 static const uint32_t DEV_SETCONF[] = {0x000C0040, 0x00010900, 0x00000000};
-// ALERT: this is a bit of a bastardization of the protocol where we cheat to "skip ahead" to the ACK stage and avoid a third cycle.
-// This really should be 0x2021 in the second ui32 followed by a "status" packet at the very end...
-static const uint32_t DEV_SETCODING[] = {0x000C0040, 0x000020A1, 0x00070000};
-static const uint32_t DEV_SETCODING2[] = {0x00040070, 0x00002580, 0x00080000};
+// SET_LINE_CODING SETUP packet: bmRequestType=0x21 (H->D, class, interface), bRequest=0x20, wLength=7.
+// Packet header: PKTSTS=SETUP(6), BCNT=4 (FW reads 8 bytes regardless).
+static const uint32_t DEV_SETCODING[] = {0x000C0040, 0x00002021, 0x00070000};
+// OUT data stage: 7 bytes of line coding (dwDTERate[4], bCharFormat[1], bParityType[1], bDataBits[1]).
+// dwDTERate is patched at runtime from the cdc_baud device property; bDataBits=8 in the high byte of the third word.
+// Packet header: PKTSTS=OUT(2), BCNT=7.
+#define DEV_SETCODING2_HEADER 0x00040070u
+#define DEV_SETCODING2_TAIL   0x00080000u   /* bCharFormat=0 (1 stop), bParityType=0 (none), bDataBits=8 */
 static const uint32_t DEV_SETCTLLINE[] = {0x000C0040, 0x00032221, 0x00000000};
 static const uint32_t DEV_OUT_HEADER = 0x40012;
 static const uint32_t DEV_OUT_AT[] = {0x00040022, 0x00000a0d};
@@ -750,6 +758,7 @@ enum {
      DEVSTATE(SETCFG)
      DEVSTATE(LINECODING)
     //  DEVSTATE(LINECODING_DATA)
+     DEV_ST_LINECODING_STATUS_WAIT,
      DEVSTATE(SETCTLLINE)
      DEV_ST_IO_READY,
      DEVSTATE(USBIP)
@@ -1146,10 +1155,45 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			s->device_state++;
 			break;
 		case DEV_ST_LINECODING_WAIT:
-			f4xx_usb_cdc_sendpkt(s, DEV_SETCODING2, sizeof(DEV_SETCODING2)/sizeof(uint32_t));
+		{
+			/* FW armed EP0 OUT for the data stage of SET_LINE_CODING. Push the 7
+			   bytes of line coding (dwDTERate, bCharFormat, bParityType, bDataBits)
+			   into the RX FIFO. dwDTERate comes from the cdc_baud property. */
+			uint32_t pkt[3];
+			pkt[0] = DEV_SETCODING2_HEADER;
+			pkt[1] = s->cdc_baud;            /* dwDTERate (bytes 0-3) */
+			pkt[2] = DEV_SETCODING2_TAIL;    /* byte 4=charfmt, 5=parity, 6=databits=8 */
+			f4xx_usb_cdc_sendpkt(s, pkt, ARRAY_SIZE(pkt));
+			/* Real OTG decrements DOEPTSIZ.XFRSIZ by the bytes received. TinyUSB
+			   computes xferred_bytes = total_len - DOEPTSIZ.XFRSIZ on a short packet
+			   (dcd_dwc2.c handle_rxflvl_irq OUTRX path); if we don't update XFRSIZ,
+			   FW sees xferred=0, the memcpy into &p_cdc->line_coding copies nothing,
+			   bit_rate stays at TinyUSB's 115200 default and line_coding_cb fires
+			   switch_to_marlin instead of switch_to_logging. */
+			if (s->drego[0].DIEPTSIZ.XFRSIZ >= 7) {
+				s->drego[0].DIEPTSIZ.XFRSIZ -= 7;
+			} else {
+				s->drego[0].DIEPTSIZ.XFRSIZ = 0;
+			}
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_XFERCOMPLMSK);
-            timer_mod(s->cdc_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 100);
-			s->device_state++;
+            /* Don't auto-advance — wait for FW to arm EP0 IN for the status ZLP.
+               That EPENA write triggers cdc_schedule via STM32F4xx_dregin_write. */
+			s->device_state++;   /* -> DEV_ST_LINECODING_STATUS_WAIT */
+			break;
+		}
+		case DEV_ST_LINECODING_STATUS_WAIT:
+			/* FW armed DIEP0 EPENA with PKTCNT=1, XFRSIZ=0 to send the status-IN
+			   ZLP that ACKs SET_LINE_CODING. Consume it and advance. */
+			s->fifo_head[0] = s->fifo_tail[0] = s->fifo_level[0] = 0;
+			s->dregi[0].DIEPTSIZ.XFRSIZ = 0;
+			if (s->dregi[0].DIEPTSIZ.PKTCNT > 0) {
+				s->dregi[0].DIEPTSIZ.PKTCNT--;
+			}
+			s->dregi[0].DIEPCTL.EPENA = 0;
+			STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_XFERCOMPLMSK);
+			STM32F4xx_update_device_common_irq(s);
+			s->device_state = DEV_ST_SETCTLLINE;
+			STM32F4xx_cdc_schedule(s);
 			break;
 		case DEV_ST_SETCTLLINE:
             f4xx_usb_cdc_sendpkt(s, DEV_SETCTLLINE, sizeof(DEV_SETCTLLINE)/sizeof(uint32_t));
@@ -1158,8 +1202,16 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             s->device_state++;
             break;
 		case DEV_ST_SETCTLLINE_WAIT:
+			/* FW armed DIEP0 EPENA for the status-IN ZLP of SET_CONTROL_LINE_STATE.
+			   Raise XFRC on EP0 IN so TinyUSB reaches CONTROL_STAGE_ACK and stores
+			   p_cdc->line_state (which is what tud_cdc_connected() checks for DTR). */
 			s->fifo_head[0] = s->fifo_tail[0] = s->fifo_level[0] = 0;
 			s->dregi[0].DIEPTSIZ.XFRSIZ = 0;
+			if (s->dregi[0].DIEPTSIZ.PKTCNT > 0) {
+				s->dregi[0].DIEPTSIZ.PKTCNT--;
+			}
+			s->dregi[0].DIEPCTL.EPENA = 0;
+			STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_XFERCOMPLMSK);
 			STM32F4xx_update_device_common_irq(s);
 			printf("Control line set\n");
 			s->device_state = DEV_ST_IO_READY;
@@ -3315,6 +3367,7 @@ static const Property STM32F4xx_usb_properties[] = {
     DEFINE_PROP_CHR("chardev", STM32F4xxUSBState, cdc),
 	DEFINE_PROP_LINK("system-memory", STM32F4xxUSBState, cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
     DEFINE_PROP_BOOL("disable_sof_interrupt", STM32F4xxUSBState, disable_sofi, false),
+    DEFINE_PROP_UINT32("cdc_baud", STM32F4xxUSBState, cdc_baud, 57600),
 };
 
 static void STM32F4xx_class_init(ObjectClass *klass, const void *data)
