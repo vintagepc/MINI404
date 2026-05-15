@@ -47,8 +47,7 @@ static int32_t measure_rise(QTestState *ts, int ticks)
 
 static void test_heater_sock_off(void)
 {
-    QTestState *ts = qtest_init("-machine " MACHINE
-                                " -global heater.has_sock=off");
+    QTestState *ts = qtest_init("-machine " MACHINE",has_sock=off");
     int32_t rise = measure_rise(ts, TICKS);
     /* Expect ~3840 (15.0 °C * 256). Allow a generous tolerance band to
      * absorb floating-point rounding and any first-tick scheduling jitter. */
@@ -59,8 +58,7 @@ static void test_heater_sock_off(void)
 
 static void test_heater_sock_on(void)
 {
-    QTestState *ts = qtest_init("-machine " MACHINE
-                                " -global heater.has_sock=on");
+    QTestState *ts = qtest_init("-machine " MACHINE",has_sock=on");
     int32_t rise = measure_rise(ts, TICKS);
     /* Expect ~3264 (12.75 °C * 256). */
     g_assert_cmpint(rise, >, 3000);
@@ -70,13 +68,11 @@ static void test_heater_sock_on(void)
 
 static void test_heater_sock_ratio(void)
 {
-    QTestState *ts_off = qtest_init("-machine " MACHINE
-                                    " -global heater.has_sock=off");
+    QTestState *ts_off = qtest_init("-machine " MACHINE",has_sock=off");
     int32_t r_off = measure_rise(ts_off, TICKS);
     qtest_quit(ts_off);
 
-    QTestState *ts_on = qtest_init("-machine " MACHINE
-                                   " -global heater.has_sock=on");
+    QTestState *ts_on = qtest_init("-machine " MACHINE",has_sock=on");
     int32_t r_on = measure_rise(ts_on, TICKS);
     qtest_quit(ts_on);
 
