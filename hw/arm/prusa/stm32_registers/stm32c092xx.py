@@ -34,6 +34,9 @@ class stm32c092xx(STM32Fixups):
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
+        # FDCAN_Global and FDCAN_Config are separate typedefs in the header;
+        # merge them into a single FDCAN peripheral as they represent one
+        # logical block (per-instance registers + shared config).
         chip.periph_map["FDCAN"] = chip.periph_map.pop("FDCAN_Global")
         chip.periph_map["FDCAN"]["CKDIV"] = chip.periph_map["FDCAN_Config"]["CKDIV"]
         chip.periph_map.pop("FDCAN_Config")
@@ -41,18 +44,17 @@ class stm32c092xx(STM32Fixups):
         rcc = chip.periph_map["RCC"]
         rcc["ICSCR"].unimplemented = True
 
+        # EXTICR[4] is auto-expanded by the parser from the array declaration.
+        # IT_LINE_SR[32] is also auto-expanded, but the HAL array name differs
+        # from the datasheet naming (ITLINE0..31).  Rename here so that the
+        # bitfield defines (SYSCFG_ITLINE{N}_SR_*) are captured in phase 2.
         syscfg = chip.periph_map["SYSCFG"]
-        # Add entries for SYSCFG_ITLINE0-31:
         for i in range(32):
-            name = f"ITLINE{i}"
-            address = 0x80 + (i * 4)
-            syscfg[name] = Register(name=name, desc="Interrupt line status register", hex_addr= "".join(hex(address)) , int_addr=address, fields={}, access=None, reset_value=0)
-
-        exti = chip.periph_map["EXTI"]
-        for i in range(4):
-            name = f"EXTICR{1+i}"
-            address = 0x60 + (i * 4)
-            exti[name] = Register(name=name, desc="External interrupt configuration register", hex_addr= "".join(hex(address)) , int_addr=address, fields={}, access=None, reset_value=0)
+            old_name = f"IT_LINE_SR{i + 1}"
+            if old_name in syscfg:
+                reg = syscfg.pop(old_name)
+                reg.name = f"ITLINE{i}"
+                syscfg[f"ITLINE{i}"] = reg
 
         can = chip.periph_map["FDCAN"]
         can["CREL"].reset_value = 0x32141218
@@ -73,12 +75,19 @@ class stm32c092xx(STM32Fixups):
         for field in syscfg["CFGR1"].fields.values():
             if field.name not in ["MEM_MODE"]:
                 field.unimplemented = True
-        for reg in "CFGR2","CFGR3":
+        for reg in "CFGR2", "CFGR3":
             syscfg[reg].unimplemented = True
+        # ITLINE0..31 were renamed from IT_LINE_SR1..32 in post_register_fixups so
+        # the bitfield parser could capture SYSCFG_ITLINE{N}_SR_* defines.
+        # Strip the SR_ prefix the HAL uses (removeprefix is literal, unlike lstrip)
+        # and mark all registers unimplemented.
         for i in range(32):
-            name = f"ITLINE{i}"
-            reg = syscfg[name]
+            reg = syscfg[f"ITLINE{i}"]
             reg.unimplemented = True
-            for field in reg.fields.values():
-                field.name = field.name.lstrip("SR_")
+            new_fields = {}
+            for fname, field in reg.fields.items():
+                new_name = fname.removeprefix("SR_")
+                field.name = new_name
+                new_fields[new_name] = field
+            reg.fields = new_fields
     

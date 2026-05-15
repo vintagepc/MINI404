@@ -106,22 +106,35 @@ class stm32h503xx(STM32Fixups):
         chip.periph_map["FLASH"]["ACR"].fields["WRHIGHFREQ"].unimplemented = True
         chip.periph_map["FLASH"]["ACR"].reset_value = 0x00000013
         chip.periph_map["FLASH"]["OPTCR"].reset_value = 0x00000001
+        # ST does not define _Pos/_Msk macros for key registers (the full 32-bit
+        # width is a single implicit field).  Add the field explicitly so the
+        # generated mask reflects that all bits are non-reserved.
+        for reg_name in ["KEYR", "OPTKEYR"]:
+            chip.periph_map["FLASH"][reg_name].fields["KEY"] = RegisterBitField(
+                name="KEY", desc="Key", shift=0, width=32, permissions=None, unimplemented=False)
+        chip.periph_map["FLASH"]["KEYR"].unimplemented = False
 
         
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
-        # Merge the DMA_Channel registers into the DMA periph:
+        # Merge the DMA_Channel registers into the DMA periph.
+        # DMA_Channel_TypeDef is a separate typedef in the HAL header; the parser
+        # creates it as a standalone peripheral which we fold into DMA here.
         for i in chip.periph_map["DMA_Channel"]:
             chip.periph_map["DMA"][i] = chip.periph_map["DMA_Channel"][i]
         chip.periph_map.pop("DMA_Channel")
-        for i in range(1, 5):
-            chip.periph_map["EXTI"]["EXTICR"+str(i)] = Register(name="EXTICR"+str(i), desc="External interrupt configuration register "+str(i), hex_addr=f"0x{0x5C+(4*i):02X}", int_addr=0x5C+(4*i), fields={}, access=None, reset_value=0)
-        for old, new in [["PRIVCFGR1", "PRIVENR1"], ["PRIVCFGR2", "PRIVENR2"], ]:
-            chip.periph_map["EXTI"][new] = chip.periph_map["EXTI"].pop(old)
-        for old, new in [["NSCR", "CR"], ["NSSR", "SR"], ["NSKEYR", "KEYR"] ,["NSCCR", "CCR"], ["OPTSR_CUR", "OPTSR"], ["OPTSR2_CUR", "OPTSR2"] ]:
-            chip.periph_map["FLASH"][new] = chip.periph_map["FLASH"].pop(old)
+        # EXTICR[4] is now auto-expanded by the parser from the array declaration
+        # in the HAL header; no manual insertion is needed.
+        for old, new in [["PRIVCFGR1", "PRIVENR1"], ["PRIVCFGR2", "PRIVENR2"]]:
+            reg = chip.periph_map["EXTI"].pop(old)
+            reg.name = new
+            chip.periph_map["EXTI"][new] = reg
+        for old, new in [["NSCR", "CR"], ["NSSR", "SR"], ["NSKEYR", "KEYR"], ["NSCCR", "CCR"], ["OPTSR_CUR", "OPTSR"], ["OPTSR2_CUR", "OPTSR2"]]:
+            reg = chip.periph_map["FLASH"].pop(old)
+            reg.name = new
+            chip.periph_map["FLASH"][new] = reg
         # for old in ["BOOTR", 'EPOCHR']:
         #     chip.periph_map["FLASH"]["{old}_CUR"] = chip.periph_map["FLASH"][old]
         #     chip.periph_map["FLASH"]["{old}_PRG"] = chip.periph_map["FLASH"].pop(old)

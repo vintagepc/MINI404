@@ -6,6 +6,15 @@ class stm32g070xx(STM32Fixups):
         chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
         # For some reason this is a uint8_t in the header and it fails the regex match.
         #chip.periph_map["CRC"]["IDR"] = Register(name="IDR", desc="CRC independent data register", hex_addr="0x04", int_addr=0x04, fields={}, access=None, reset_value=0)
+        # Rename IT_LINE_SR{1..32} to datasheet names ITLINE{0..31} so that the
+        # bitfield parser can capture SYSCFG_ITLINE{N}_SR_* defines in phase 2.
+        syscfg = chip.periph_map["SYSCFG"]
+        for i in range(32):
+            old_name = f"IT_LINE_SR{i + 1}"
+            if old_name in syscfg:
+                reg = syscfg.pop(old_name)
+                reg.name = f"ITLINE{i}"
+                syscfg[f"ITLINE{i}"] = reg
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
