@@ -41,6 +41,9 @@
 #include "hw/arm/armv7m.h"
 #include "qobject/qlist.h"
 
+
+#define TYPE_BUDDY_MACHINE "buddy-machine"
+
 #define BOOTLOADER_IMAGE "bootloader.bin"
 
 #define XFLASH_FN  "Prusa_Mini_xflash.bin"
@@ -52,6 +55,11 @@ typedef struct mini_config_t {
     const char* flash_fn;
     int flash_size;
 } mini_config_t;
+
+typedef struct buddyData {
+    const char* descr;
+    const mini_config_t* cfg;
+} buddyData;
 
 static const mini_config_t mini_100_cfg = {
     .flash_chip = "w25q64jv",
@@ -65,23 +73,37 @@ static const mini_config_t mini_014_cfg = {
     .flash_size = 1U*MiB
 };
 
-static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg);
+OBJECT_DECLARE_TYPE(buddyMachineState, buddyMachineClass, BUDDY_MACHINE);
 
-static void prusa_mini_014_init(MachineState *machine)
+typedef struct buddyMachineClass {
+    MachineClass parent_class;
+    const mini_config_t* cfg;
+} buddyMachineClass;
+
+typedef struct buddyMachineState {
+    MachineState parent;
+    bool has_sock;
+} buddyMachineState;
+
+static bool buddy_get_has_sock(Object *obj, Error **errp)
 {
-    prusa_mini_init(machine, &mini_014_cfg);
+    buddyMachineState *s = BUDDY_MACHINE(obj);
+    return s->has_sock;
 }
 
-static void prusa_mini_100_init(MachineState *machine)
+static void buddy_set_has_sock(Object *obj, bool value, Error **errp)
 {
-    prusa_mini_init(machine, &mini_100_cfg);
+    buddyMachineState *s = BUDDY_MACHINE(obj);
+    s->has_sock = value;
 }
 
-
-static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
+static void prusa_mini_init(MachineState *machine)
 {
     DeviceState *dev;
     Object* periphs = machine_get_container("peripheral");
+    const buddyMachineState *s = BUDDY_MACHINE(machine);
+    const buddyMachineClass *mc = BUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+    const mini_config_t* cfg = mc->cfg;
 
     dev = qdev_new(TYPE_STM32F407xG_SOC);
 	object_property_add_child(OBJECT(machine), "soc", OBJECT(dev));
@@ -309,8 +331,10 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
 
     dev = qdev_new("heater");
+    object_property_add_child(OBJECT(periphs), "heater-E", OBJECT(dev));
     qdev_prop_set_uint8(dev, "thermal_mass_x10",30);
     qdev_prop_set_uint8(dev,"label", 'E');
+    qdev_prop_set_bit(dev, "has_sock", s->has_sock);
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",3,qdev_get_gpio_in_named(dev, "pwm_in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
@@ -324,6 +348,7 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
     // Bed.
     dev = qdev_new("heater");
+    object_property_add_child(OBJECT(periphs), "heater-B", OBJECT(dev));
     qdev_prop_set_uint8(dev, "thermal_mass_x10",3);
     qdev_prop_set_uint8(dev,"label", 'B');
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -390,30 +415,63 @@ static void prusa_mini_init(MachineState *machine, const mini_config_t* cfg)
 
 };
 
-
-static void prusa_mini_machine_init(MachineClass *mc)
+static void buddy_class_init(ObjectClass *oc, const void *data)
 {
-    mc->desc = "Prusa Mini 1.0+";
+    const buddyData* d = data;
+    MachineClass *mc = MACHINE_CLASS(oc);
+    mc->desc = d->descr;
     mc->family = "Prusa Mini";
-    mc->init = prusa_mini_100_init;
+    mc->init = prusa_mini_init;
     mc->default_ram_size = 0; // 0 = use default RAM from chip.
     mc->no_parallel = 1;
 	mc->no_serial = 1;
+
+    object_class_property_add_bool(oc, "has-sock", buddy_get_has_sock, buddy_set_has_sock);
+
+    buddyMachineClass *bmc = BUDDY_MACHINE_CLASS(oc);
+    bmc->cfg = d->cfg;    
 }
 
-DEFINE_MACHINE("prusa-mini", prusa_mini_machine_init)
-
-static void prusa_mini_014_machine_init(MachineClass *mc)
+static void buddy_instance_init(Object *obj)
 {
-    mc->desc = "Prusa Mini 0.1.4";
-    mc->family = "Prusa Mini";
-    mc->init = prusa_mini_014_init;
-    mc->default_ram_size = 0; // 0 = use default RAM from chip.
-    mc->no_parallel = 1;
-	mc->no_serial = 1;
+    buddyMachineState *s = BUDDY_MACHINE(obj);
+    s->has_sock = false;
 }
 
-DEFINE_MACHINE("prusa-mini-014", prusa_mini_014_machine_init)
+static const buddyData mini_data_100 = {
+    .descr = "Prusa Mini 1.0+",
+    .cfg = &mini_100_cfg
+};
+
+static const buddyData mini_data_014 = {
+    .descr = "Prusa Mini 0.1.4",
+    .cfg = &mini_014_cfg
+};
+
+static const TypeInfo buddy_machine_types[] = {
+    {
+        .name = TYPE_BUDDY_MACHINE, 
+        .parent = TYPE_MACHINE,
+        .class_size = sizeof(buddyMachineClass),
+        .instance_size = sizeof(buddyMachineState),
+        .instance_init = buddy_instance_init,
+        .abstract = true,
+    },
+    {
+        .name = MACHINE_TYPE_NAME("prusa-mini"),
+        .parent = TYPE_BUDDY_MACHINE,
+        .class_init = buddy_class_init,
+        .class_data = (void*)&mini_data_100
+    },
+    {
+        .name = MACHINE_TYPE_NAME("prusa-mini-014"),
+        .parent = TYPE_BUDDY_MACHINE,
+        .class_init = buddy_class_init,
+        .class_data = (void*)&mini_data_014    
+    }
+};
+
+DEFINE_TYPES(buddy_machine_types)
 
 // Don't enable this for tests, it breaks because it doesn't run.
 #ifndef CONFIG_GCOV
