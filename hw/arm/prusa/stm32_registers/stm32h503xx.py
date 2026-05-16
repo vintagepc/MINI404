@@ -126,6 +126,8 @@ class stm32h503xx(STM32Fixups):
         "ADCC":  "ADCC_TYPE_A",
         "FDCAN": "FDCAN_TYPE_A",
         "RNG":   "RNG_TYPE_A",
+        "EXTI":  "EXTI_TYPE_A",
+        "USART": "USART_TYPE_A",
     }
 
     @staticmethod
