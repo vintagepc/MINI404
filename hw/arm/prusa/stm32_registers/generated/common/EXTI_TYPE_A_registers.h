@@ -322,7 +322,7 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(com_exti_type_a,exticr4),bits);
 
 typedef union {
 	struct {
-		uint32_t IM            :16; // /*!< Interrupt Mask All */
+		uint32_t IM0           : 1; // /*!< Interrupt Mask on line 0 */
 		uint32_t IM1           : 1; // /*!< Interrupt Mask on line 1 */
 		uint32_t IM2           : 1; // /*!< Interrupt Mask on line 2 */
 		uint32_t IM3           : 1; // /*!< Interrupt Mask on line 3 */
@@ -341,9 +341,9 @@ typedef union {
 		uint32_t IM16          : 1; // /*!< Interrupt Mask on line 16 */
 		uint32_t IM17          : 1; // /*!< Interrupt Mask on line 17 */
 		uint32_t _reserved18   : 1;
-		uint32_t IM_1          : 1; 
-		uint32_t IM_2          : 1; 
-		uint32_t IM_3          : 1; 
+		uint32_t IM19          : 1; // /*!< Interrupt Mask on line 19 */
+		uint32_t _reserved20   : 1;
+		uint32_t IM21          : 1; // /*!< Interrupt Mask on line 21 */
 		uint32_t IM22          : 1; // /*!< Interrupt Mask on line 22 */
 		uint32_t IM23          : 1; // /*!< Interrupt Mask on line 23 */
 		uint32_t IM24          : 1; // /*!< Interrupt Mask on line 24 */

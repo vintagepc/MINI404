@@ -27,7 +27,7 @@ static const stm32_reginfo_t stm32_h503_exti_reginfo[RI_END] =
 	[RI_EXTICR2        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0F0F0F0F }, /* mask = 0b00001111000011110000111100001111 */
 	[RI_EXTICR3        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0F0F0F0F }, /* mask = 0b00001111000011110000111100001111 */
 	[RI_EXTICR4        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x0F0F0F0F }, /* mask = 0b00001111000011110000111100001111 */
-	[RI_IMR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x3FEBFFFF }, /* mask = 0b00111111111010111111111111111111 */
+	[RI_IMR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x3F6BFFFF }, /* mask = 0b00111111011010111111111111111111 */
 	[RI_EMR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x3F6BFFFF }, /* mask = 0b00111111011010111111111111111111 */
 	[RI_IMR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x002687E0 }, /* mask = 0b00000000001001101000011111100000 */
 	[RI_EMR2           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x002687E0 }, /* mask = 0b00000000001001101000011111100000 */

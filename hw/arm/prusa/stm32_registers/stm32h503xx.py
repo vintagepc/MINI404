@@ -109,7 +109,7 @@ _FLASH_PRE = PeripheralFixup(renames={
 _EXTI = PeripheralFixup(registers={
     "IMR2": RegisterFixup(fields_remove=["IM", "IM_2", "IM_3"]),
     "EMR1": RegisterFixup(fields_remove=["EM"]),
-    "IMR1": RegisterFixup(fields_remove=["IM_2"]),
+    "IMR1": RegisterFixup(fields_remove=["IM", "IM_1", "IM_2", "IM_3"]),
     "EMR2": RegisterFixup(fields_remove=["EM", "EM_2", "EM_3"]),
 })
 

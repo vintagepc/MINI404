@@ -20,7 +20,7 @@ static const stm32_reginfo_t stm32_c092_exti_reginfo[RI_END] =
 	[RI_EXTICR2        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x07070707 }, /* mask = 0b00000111000001110000011100000111 */
 	[RI_EXTICR3        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x07070707 }, /* mask = 0b00000111000001110000011100000111 */
 	[RI_EXTICR4        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x07070707 }, /* mask = 0b00000111000001110000011100000111 */
-	[RI_IMR1           ] = { .reset_val = 0xFFF80000, .not_reserved = true, .unimp_mask = 0x82C8FFFF, .mask = 0x82C8FFFF }, /* mask = 0b10000010110010001111111111111111 */
+	[RI_IMR1           ] = { .reset_val = 0xFFF80000, .not_reserved = true, .unimp_mask = 0x8288FFFF, .mask = 0x8288FFFF }, /* mask = 0b10000010100010001111111111111111 */
 	[RI_EMR1           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x828FFFFF, .mask = 0x828FFFFF }, /* mask = 0b10000010100011111111111111111111 */
 };
 
