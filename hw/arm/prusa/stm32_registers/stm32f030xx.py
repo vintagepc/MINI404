@@ -11,6 +11,8 @@ _ADC = PeripheralFixup(registers={
 })
 
 class stm32f030xx(STM32Fixups):
+    common_periph = {"CRC": "CRC_TYPE_A", "I2C": "I2C_TYPE_A", "IWDG": "IWDG_TYPE_A", "ADCC": "ADCC_TYPE_A"}
+
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         # IDR is uint8_t in the header; the regex match fails, so inject it manually.

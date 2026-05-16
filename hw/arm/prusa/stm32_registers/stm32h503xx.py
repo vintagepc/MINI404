@@ -119,6 +119,15 @@ _I2C = PeripheralFixup(registers={
 })
 
 class stm32h503xx(STM32Fixups):
+    common_periph = {
+        "CRC":   "CRC_TYPE_A",
+        "I2C":   "I2C_TYPE_A",
+        "IWDG":  "IWDG_TYPE_A",
+        "ADCC":  "ADCC_TYPE_A",
+        "FDCAN": "FDCAN_TYPE_A",
+        "RNG":   "RNG_TYPE_A",
+    }
+
     @staticmethod
     def supplemental_data(chip: STM32Chip):
         reg_map = chip.periph_map

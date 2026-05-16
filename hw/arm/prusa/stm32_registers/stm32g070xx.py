@@ -4,6 +4,13 @@ from peripherals.adcc import inject_adc_ccr, split_adcc
 from peripherals.crc import CRC_TYPE_A
 from peripherals.exti import EXTI_TYPE_A
 
+_ADCC = PeripheralFixup(
+    registers={
+        # LFMEN (bit 25) appears in the G070 HAL header but is not documented
+        # in the G070 datasheet ADC_CCR register — suppress it.
+        "CCR": RegisterFixup(fields_remove=["LFMEN"]),
+    })
+
 _ADC = PeripheralFixup(
     renames={"AWD1TR": "TR1", "AWD2TR": "TR2", "AWD3TR": "TR3", "TR3": "G070_TR3"},
     registers={
@@ -14,6 +21,8 @@ _ADC = PeripheralFixup(
     })
 
 class stm32g070xx(STM32Fixups):
+    common_periph = {"CRC": "CRC_TYPE_A", "I2C": "I2C_TYPE_A", "IWDG": "IWDG_TYPE_A", "ADCC": "ADCC_TYPE_A"}
+
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         inject_adc_ccr(chip.periph_map)
@@ -33,6 +42,7 @@ class stm32g070xx(STM32Fixups):
 
     @staticmethod
     def supplemental_data(chip: STM32Chip):
+        apply_peripheral_fixup(chip.periph_map, "ADCC", _ADCC)
         apply_peripheral_fixup(chip.periph_map, "CRC", CRC_TYPE_A)
         apply_peripheral_fixup(chip.periph_map, "ADC", _ADC)
         apply_peripheral_fixup(chip.periph_map, "EXTI", EXTI_TYPE_A)

@@ -42,6 +42,8 @@ _SYSCFG = PeripheralFixup(registers={
 })
 
 class stm32c092xx(STM32Fixups):
+    common_periph = {"CRC": "CRC_TYPE_A", "I2C": "I2C_TYPE_A", "IWDG": "IWDG_TYPE_A", "FDCAN": "FDCAN_TYPE_A"}
+
     @staticmethod
     def supplemental_data(chip: STM32Chip):
         apply_peripheral_fixup(chip.periph_map, "CRC", CRC_TYPE_A)

@@ -11,6 +11,6 @@
 #include "../../stm32_gen_common.h"
 static const stm32_reginfo_t stm32_g070_adcc_reginfo[RI_END] =
 {
-	[RI_CCR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x03800000, .mask = 0x03FC0000 }, /* mask = 0b00000011111111000000000000000000 */
+	[RI_CCR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x01800000, .mask = 0x01FC0000 }, /* mask = 0b00000001111111000000000000000000 */
 };
 

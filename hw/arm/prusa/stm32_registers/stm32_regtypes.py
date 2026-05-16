@@ -14,6 +14,12 @@ class RegisterAccess(Enum):
     WORD = 4
 
 class STM32Fixups(ABC):
+    # Declare which of this chip's peripherals contribute to a cross-chip common group.
+    # Maps {periph_name_in_periph_map: group_name} where group_name determines the output
+    # file name (e.g. "CRC" → generated/common/CRC_index.h + CRC_registers.h).
+    # Override in subclasses for each chip that participates in common generation.
+    common_periph: dict = {}
+
     @staticmethod
     @abstractmethod
     def post_register_fixups(chip):

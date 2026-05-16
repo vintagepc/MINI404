@@ -3,6 +3,10 @@ from stm32_fixupspec import apply_peripheral_fixup
 from peripherals.rng import RNG_TYPE_A
 
 class stm32f427xx(STM32Fixups):
+    common_periph = {"CRC": "CRC_TYPE_A", "IWDG": "IWDG_TYPE_A", "RNG": "RNG_TYPE_A"}
+    # I2C not declared: F4xx I2C has a fundamentally different register layout
+    # (DR/SR1/SR2/CCR/TRISE vs TIMINGR/ISR/ICR/RXDR/TXDR at the same addresses).
+
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         # IDR is a uint8_t in the header; inject manually so it is captured.
