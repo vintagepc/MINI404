@@ -8,6 +8,7 @@ from peripherals.adcc import ADCC_TYPE_A
 from peripherals.iwdg import apply_iwdg_fixup
 from peripherals.i2c import I2C_TYPE_A
 from peripherals.usart import fix_usart
+from peripherals.tim import TIM_TYPE_A as TIM_TYPE_A_FIXUP
 
 from stm32f030xx import *
 from stm32c092xx import *
@@ -21,6 +22,7 @@ def global_supplemental_data(info: STM32Chip):
 	apply_peripheral_fixup(info.periph_map, "ADCC", ADCC_TYPE_A)
 	apply_peripheral_fixup(info.periph_map, "I2C", I2C_TYPE_A)
 	fix_usart(info.periph_map)
+	apply_peripheral_fixup(info.periph_map, "TIM", TIM_TYPE_A_FIXUP)
 
 
 def process_chip(info: STM32Chip):

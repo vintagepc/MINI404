@@ -3,6 +3,10 @@ from stm32_fixupspec import PeripheralFixup, RegisterFixup, apply_peripheral_fix
 from peripherals.adcc import inject_adc_ccr, split_adcc
 from peripherals.crc import CRC_TYPE_A
 from peripherals.exti import EXTI_TYPE_A
+from peripherals.tim import TIM_TYPE_A
+from stm32_fixupspec import PeripheralFixup
+
+_TIM_PRE = PeripheralFixup(renames={"OR1": "OR"})
 
 _ADCC = PeripheralFixup(
     registers={
@@ -21,7 +25,7 @@ _ADC = PeripheralFixup(
     })
 
 class stm32g070xx(STM32Fixups):
-    common_periph = {"CRC": "CRC_TYPE_A", "I2C": "I2C_TYPE_A", "IWDG": "IWDG_TYPE_A", "ADCC": "ADCC_TYPE_A", "EXTI": "EXTI_TYPE_A", "USART": "USART_TYPE_A"}
+    common_periph = {"CRC": "CRC_TYPE_A", "I2C": "I2C_TYPE_A", "IWDG": "IWDG_TYPE_A", "ADCC": "ADCC_TYPE_A", "EXTI": "EXTI_TYPE_A", "USART": "USART_TYPE_A", "SPI": "SPI_TYPE_A", "TIM": "TIM_TYPE_A"}
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
@@ -46,3 +50,4 @@ class stm32g070xx(STM32Fixups):
         apply_peripheral_fixup(chip.periph_map, "CRC", CRC_TYPE_A)
         apply_peripheral_fixup(chip.periph_map, "ADC", _ADC)
         apply_peripheral_fixup(chip.periph_map, "EXTI", EXTI_TYPE_A)
+        apply_peripheral_fixup(chip.periph_map, "TIM", _TIM_PRE)
