@@ -1,160 +1,166 @@
 from stm32_regtypes import *
+from stm32_fixupspec import PeripheralFixup, RegisterFixup, apply_peripheral_fixup
+from peripherals.adcc import split_adcc
+from peripherals.crc import CRC_H503
+from peripherals.fdcan import merge_fdcan
+from peripherals.rng import RNG_TYPE_A, RNG_H503
+
+_RCC = PeripheralFixup(registers={
+    "CR":         RegisterFixup(reset_value=0x0000002B),
+    "HSICFGR":    RegisterFixup(reset_value=0x00400000, unimplemented=True),
+    "CRRCR":      RegisterFixup(unimplemented=True),
+    "CSICFGR":    RegisterFixup(reset_value=0x00200000, unimplemented=True),
+    "CFGR1":      RegisterFixup(fields_unimplemented=["STOPWUCK", "STOPKERWUCK", "MCO1PRE", "MCO1SEL", "MCO2PRE", "MCO2SEL"]),
+    "PLL1CFGR":   RegisterFixup(fields_unimplemented=["PLL1RGE", "PLL1VCOSEL"]),
+    "PLL2CFGR":   RegisterFixup(fields_unimplemented=["PLL2RGE", "PLL2VCOSEL"]),
+    "PLL1DIVR":   RegisterFixup(reset_value=0x01010280),
+    "PLL2DIVR":   RegisterFixup(reset_value=0x01010280),
+    "AHB1ENR":    RegisterFixup(reset_value=0x90000100),
+    "AHB2ENR":    RegisterFixup(reset_value=0x40000000),
+    "AHB1LPENR":  RegisterFixup(reset_value=0xFFFFFFFF),
+    "AHB2LPENR":  RegisterFixup(reset_value=0xFFFFFFFF),
+    "APB1LLPENR": RegisterFixup(reset_value=0xFFFFFFFF),
+    "APB1HLPENR": RegisterFixup(reset_value=0xFFFFFFFF),
+    "APB2LPENR":  RegisterFixup(reset_value=0xFFFFFFFF),
+    "APB3LPENR":  RegisterFixup(reset_value=0xFFFFFFFF, fields_unimplemented=["RTCAPBLPEN"]),
+    "CCIPR2":     RegisterFixup(fields_unimplemented=["LPTIM1SEL", "LPTIM2SEL"]),
+    "CCIPR3":     RegisterFixup(fields_unimplemented=["LPUART1SEL"]),
+    "CCIPR5":     RegisterFixup(fields_unimplemented=["DACSEL", "FDCANSEL"]),
+    "PRIVCFGR":   RegisterFixup(fields_unimplemented=["PRIV"]),
+    "RSR":        RegisterFixup(reset_value=0x0C000000),
+})
+
+_PWR = PeripheralFixup(
+    all_unimplemented=True,
+    registers={
+        "PMCR":   RegisterFixup(reset_value=0x0000000C),
+        "VOSSR":  RegisterFixup(reset_value=0x00002008),
+        "SCCR":   RegisterFixup(reset_value=0x00000100),
+        "IORETR": RegisterFixup(reset_value=0x00010001),
+        "WUSCR":  RegisterFixup(fields_remove=["CWUF"]),
+        "WUCR":   RegisterFixup(fields_remove=["WUPEN"]),
+    })
+
+_ICACHE = PeripheralFixup(
+    all_unimplemented=True,
+    registers={
+        "CR": RegisterFixup(reset_value=0x00000004),
+    })
+
+_DMA = PeripheralFixup(registers={
+    "CSR":      RegisterFixup(reset_value=0x00000001),
+    "CLLR":     RegisterFixup(unimplemented=True),
+    "CBR2":     RegisterFixup(unimplemented=True),
+    "CTR3":     RegisterFixup(unimplemented=True),
+    "CTR2":     RegisterFixup(unimplemented=True),
+    "CLBAR":    RegisterFixup(unimplemented=True),
+    "PRIVCFGR": RegisterFixup(unimplemented=True),
+    "CBR1":     RegisterFixup(fields_unimplemented_except=["BNDT"]),
+    "CTR1":     RegisterFixup(fields_unimplemented_except=["SDW_LOG2", "DDW_LOG2", "SINC", "DINC"]),
+    "CCR":      RegisterFixup(fields_unimplemented_except=["EN", "TCIE", "HTIE"]),
+})
+
+_FLASH = PeripheralFixup(
+    all_unimplemented=True,
+    registers={
+        "ACR":   RegisterFixup(reset_value=0x00000013, unimplemented=False,
+                               fields_unimplemented=["PRFTEN", "WRHIGHFREQ"]),
+        "OPTCR": RegisterFixup(reset_value=0x00000001),
+    })
+
+_ADC = PeripheralFixup(
+    renames={"TR3": "H503_TR3", "CFGR": "CFGR1", "SMPR1": "SMPR"},
+    registers={
+        "CR":       RegisterFixup(reset_value=0x20000000),
+        "CFGR1":    RegisterFixup(reset_value=0x80000000),
+        "TR1":      RegisterFixup(reset_value=0x0FFF0000, unimplemented=True),
+        "TR2":      RegisterFixup(reset_value=0x00FF0000, unimplemented=True),
+        "H503_TR3": RegisterFixup(reset_value=0x00FF0000, unimplemented=True),
+        "JSQR":     RegisterFixup(unimplemented=True),
+        "JDR1":     RegisterFixup(unimplemented=True),
+        "JDR2":     RegisterFixup(unimplemented=True),
+        "JDR3":     RegisterFixup(unimplemented=True),
+        "JDR4":     RegisterFixup(unimplemented=True),
+        "OFR1":     RegisterFixup(unimplemented=True),
+        "OFR2":     RegisterFixup(unimplemented=True),
+        "OFR3":     RegisterFixup(unimplemented=True),
+        "OFR4":     RegisterFixup(unimplemented=True),
+        "AWD2CR":   RegisterFixup(unimplemented=True),
+        "AWD3CR":   RegisterFixup(unimplemented=True),
+        "DIFSEL":   RegisterFixup(unimplemented=True),
+        "CALFACT":  RegisterFixup(unimplemented=True),
+        "OR":       RegisterFixup(unimplemented=True),
+    })
+
+_EXTI_PRE = PeripheralFixup(renames={
+    "PRIVCFGR1": "PRIVENR1",
+    "PRIVCFGR2": "PRIVENR2",
+})
+
+_FLASH_PRE = PeripheralFixup(renames={
+    "NSCR":       "CR",
+    "NSSR":       "SR",
+    "NSKEYR":     "KEYR",
+    "NSCCR":      "CCR",
+    "OPTSR_CUR":  "OPTSR",
+    "OPTSR2_CUR": "OPTSR2",
+})
+
+_EXTI = PeripheralFixup(registers={
+    "IMR2": RegisterFixup(fields_remove=["IM", "IM_2", "IM_3"]),
+    "EMR1": RegisterFixup(fields_remove=["EM"]),
+    "IMR1": RegisterFixup(fields_remove=["IM_2"]),
+    "EMR2": RegisterFixup(fields_remove=["EM", "EM_2", "EM_3"]),
+})
+
+_I2C = PeripheralFixup(registers={
+    "OAR2": RegisterFixup(fields_remove=["OA2MASK01", "OA2MASK02", "OA2MASK03", "OA2MASK04",
+                                         "OA2MASK05", "OA2MASK06", "OA2MASK07", "OA2MASK05_1"]),
+})
 
 class stm32h503xx(STM32Fixups):
     @staticmethod
     def supplemental_data(chip: STM32Chip):
         reg_map = chip.periph_map
-        # These are direct from the datasheet(s):
-        reg_map["RCC"]["CR"].reset_value = 0x0000002B
-        reg_map["RCC"]["HSICFGR"].reset_value = 0x00400000
-        reg_map["RCC"]["HSICFGR"].unimplemented = True
-        reg_map["RCC"]["CRRCR"].unimplemented = True
-        reg_map["RCC"]["CSICFGR"].reset_value = 0x00200000
-        reg_map["RCC"]["CSICFGR"].unimplemented = True
-        reg_map["RCC"]["CFGR1"].fields["STOPWUCK"].unimplemented = True
-        reg_map["RCC"]["CFGR1"].fields["STOPKERWUCK"].unimplemented = True
-        reg_map["RCC"]["CFGR1"].fields["MCO1PRE"].unimplemented = True
-        reg_map["RCC"]["CFGR1"].fields["MCO1SEL"].unimplemented = True
-        reg_map["RCC"]["CFGR1"].fields["MCO2PRE"].unimplemented = True
-        reg_map["RCC"]["CFGR1"].fields["MCO2SEL"].unimplemented = True
-        reg_map["RCC"]["PLL1CFGR"].fields["PLL1RGE"].unimplemented = True
-        reg_map["RCC"]["PLL2CFGR"].fields["PLL2RGE"].unimplemented = True
-        reg_map["RCC"]["PLL1CFGR"].fields["PLL1VCOSEL"].unimplemented = True
-        reg_map["RCC"]["PLL2CFGR"].fields["PLL2VCOSEL"].unimplemented = True
-        reg_map["RCC"]["PLL1DIVR"].reset_value = 0x01010280
-        reg_map["RCC"]["PLL2DIVR"].reset_value = 0x01010280
-        reg_map["RCC"]["AHB1ENR"].reset_value = 0x90000100
-        reg_map["RCC"]["AHB2ENR"].reset_value = 0x40000000
-        reg_map["RCC"]["AHB1LPENR"].reset_value = 0xFFFFFFFF
-        reg_map["RCC"]["AHB2LPENR"].reset_value = 0xFFFFFFFF
-        reg_map["RCC"]["APB1LLPENR"].reset_value = 0xFFFFFFFF
-        reg_map["RCC"]["APB1HLPENR"].reset_value = 0xFFFFFFFF
-        reg_map["RCC"]["APB2LPENR"].reset_value = 0xFFFFFFFF
-        reg_map["RCC"]["APB3LPENR"].reset_value = 0xFFFFFFFF
-        reg_map["RCC"]["APB3LPENR"].fields["RTCAPBLPEN"].unimplemented = True
-        reg_map["RCC"]["CCIPR2"].fields["LPTIM1SEL"].unimplemented = True
-        reg_map["RCC"]["CCIPR2"].fields["LPTIM2SEL"].unimplemented = True
-        reg_map["RCC"]["CCIPR3"].fields["LPUART1SEL"].unimplemented = True
-        reg_map["RCC"]["CCIPR5"].fields["DACSEL"].unimplemented = True
-        reg_map["RCC"]["CCIPR5"].fields["FDCANSEL"].unimplemented = True
-        reg_map["RCC"]["PRIVCFGR"].fields["PRIV"].unimplemented = True
-        reg_map["RCC"]["RSR"].reset_value = 0x0C000000
+        apply_peripheral_fixup(reg_map, "RCC", _RCC)
+        apply_peripheral_fixup(reg_map, "PWR", _PWR)
+        apply_peripheral_fixup(reg_map, "ICACHE", _ICACHE)
 
-        reg_map["PWR"]["PMCR"].reset_value = 0x0000000C
-        reg_map["PWR"]["VOSSR"].reset_value = 0x00002008
-        reg_map["PWR"]["SCCR"].reset_value = 0x00000100
-        reg_map["PWR"]["IORETR"].reset_value = 0x00010001
-        for k,v in reg_map["PWR"].items():
-            v.unimplemented = True
-
-        reg_map["ICACHE"]["CR"].reset_value = 0x00000004
-        for k,v in reg_map["ICACHE"].items():
-            v.unimplemented = True
-        
         usb = reg_map.pop("USB_DRD")
         reg_map["USB"] = usb
-        reg_map["GPIO"]["AFRL"] = Register(name = "AFRL", desc="GPIO alternate function low register", hex_addr = "0x20", int_addr = 0x20, fields = {}, access = None, reset_value = 0)
-        reg_map["GPIO"]["AFRH"] = Register(name = "AFRH", desc="GPIO alternate function High register", hex_addr = "0x24", int_addr = 0x24, fields = {}, access = None, reset_value = 0)
+        reg_map["GPIO"]["AFRL"] = Register(name="AFRL", desc="GPIO alternate function low register", hex_addr="0x20", int_addr=0x20, fields={}, access=None, reset_value=0)
+        reg_map["GPIO"]["AFRH"] = Register(name="AFRH", desc="GPIO alternate function High register", hex_addr="0x24", int_addr=0x24, fields={}, access=None, reset_value=0)
 
-        reg_map["CRC"]["DR"].reset_value = 0xFFFFFFFF
-        reg_map["CRC"]["INIT"].reset_value = 0xFFFFFFFF
-        reg_map["CRC"]["POL"].reset_value = 0x04C11DB7
-        reg_map["CRC"].pop("HWCFGR")        
-        reg_map["CRC"].pop("VERR")
-        reg_map["CRC"].pop("PIDR")
-        reg_map["CRC"].pop("SIDR")
+        apply_peripheral_fixup(reg_map, "CRC", CRC_H503)
+        apply_peripheral_fixup(reg_map, "RNG", RNG_H503)
+        apply_peripheral_fixup(reg_map, "RNG", RNG_TYPE_A)
 
-        reg_map["RNG"]["CR"].reset_value = 0x0080D00
-        reg_map["RNG"]["HTCR"].reset_value = 0x000072AC
-        reg_map["RNG"]["DR"].fields["DR"] = RegisterBitField(name="DR", desc="Data register", shift=0, width=32, permissions=None, unimplemented=False)
-        reg_map["RNG"]["HTCR"].unimplemented = True
-        for k,v in reg_map["RNG"]["CR"].fields.items():
-            if k != "RNGEN" and k != "IE":
-                v.unimplemented = True
-        reg_map["RNG"]["SR"].fields["SECS"].unimplemented = True
-        reg_map["RNG"]["SR"].fields["SEIS"].unimplemented = True
+        apply_peripheral_fixup(reg_map, "ADC", _ADC)
+        apply_peripheral_fixup(reg_map, "DMA", _DMA)
 
-        reg_map["ADC"]["CR"].reset_value = 0x20000000
-        reg_map["ADC"]["CFGR"].reset_value = 0x80000000
-        for i in ["TR1", "TR2", "TR3"]:
-            chip.periph_map["ADC"][i].reset_value = 0x0FFF0000 if i == "TR1" else 0x00FF0000
-            chip.periph_map["ADC"][i].unimplemented = True
-        for i in ["JSQR", "JDR1", "JDR2", "JDR3", "JDR4", "OFR1", "OFR2", "OFR3", "OFR4", "AWD2CR","AWD3CR", "DIFSEL", "CALFACT", "OR"]:
-            chip.periph_map["ADC"][i].unimplemented = True
-        # Clarify TR3, it's not consistent depending on whether CHSELR is used:
-        # Do some more renames too:
-        for old,new in [["TR3", "H503_TR3"], ["CFGR", "CFGR1"], ["SMPR1", "SMPR"]]:
-            chip.periph_map["ADC"][old].name = new
-            chip.periph_map["ADC"][new] = chip.periph_map["ADC"].pop(old)
-        # Set DMA defaults and extras:
-        chip.periph_map["DMA"]["CSR"].reset_value = 0x00000001
-        for i in ["CLLR", "CBR2", "CTR3", "CTR2", "CLBAR", "PRIVCFGR"]:
-            chip.periph_map["DMA"][i].unimplemented = True
-        for f in chip.periph_map["DMA"]["CBR1"].fields:
-            if f != "BNDT":
-                chip.periph_map["DMA"]["CBR1"].fields[f].unimplemented = True
-        for f in chip.periph_map["DMA"]["CTR1"].fields:
-            if f not in ["SDW_LOG2", "DDW_LOG2", "SINC", "DINC"]:
-                chip.periph_map["DMA"]["CTR1"].fields[f].unimplemented = True
-        for f in chip.periph_map["DMA"]["CCR"].fields:
-            if f not in ["EN", "TCIE", "HTIE"]:
-                chip.periph_map["DMA"]["CCR"].fields[f].unimplemented = True
-        for f,v in chip.periph_map["FLASH"].items():
-            if f != "ACR":
-                v.unimplemented = True
-        chip.periph_map["FLASH"]["ACR"].fields["PRFTEN"].unimplemented = True
-        chip.periph_map["FLASH"]["ACR"].fields["WRHIGHFREQ"].unimplemented = True
-        chip.periph_map["FLASH"]["ACR"].reset_value = 0x00000013
-        chip.periph_map["FLASH"]["OPTCR"].reset_value = 0x00000001
+        apply_peripheral_fixup(reg_map, "FLASH", _FLASH)
         # ST does not define _Pos/_Msk macros for key registers (the full 32-bit
         # width is a single implicit field).  Add the field explicitly so the
         # generated mask reflects that all bits are non-reserved.
         for reg_name in ["KEYR", "OPTKEYR"]:
-            chip.periph_map["FLASH"][reg_name].fields["KEY"] = RegisterBitField(
+            reg_map["FLASH"][reg_name].fields["KEY"] = RegisterBitField(
                 name="KEY", desc="Key", shift=0, width=32, permissions=None, unimplemented=False)
-        chip.periph_map["FLASH"]["KEYR"].unimplemented = False
+        reg_map["FLASH"]["KEYR"].unimplemented = False
 
-        
+        apply_peripheral_fixup(reg_map, "EXTI", _EXTI)
+        apply_peripheral_fixup(reg_map, "I2C", _I2C)
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):
         chip.periph_map["ADC"]["CCR"] = Register(name="CCR", desc="ADC common control register", hex_addr="0x0", int_addr=0x0, fields={}, access=None, reset_value=0)
         # Merge the DMA_Channel registers into the DMA periph.
-        # DMA_Channel_TypeDef is a separate typedef in the HAL header; the parser
-        # creates it as a standalone peripheral which we fold into DMA here.
         for i in chip.periph_map["DMA_Channel"]:
             chip.periph_map["DMA"][i] = chip.periph_map["DMA_Channel"][i]
         chip.periph_map.pop("DMA_Channel")
-        # EXTICR[4] is now auto-expanded by the parser from the array declaration
-        # in the HAL header; no manual insertion is needed.
-        for old, new in [["PRIVCFGR1", "PRIVENR1"], ["PRIVCFGR2", "PRIVENR2"]]:
-            reg = chip.periph_map["EXTI"].pop(old)
-            reg.name = new
-            chip.periph_map["EXTI"][new] = reg
-        for old, new in [["NSCR", "CR"], ["NSSR", "SR"], ["NSKEYR", "KEYR"], ["NSCCR", "CCR"], ["OPTSR_CUR", "OPTSR"], ["OPTSR2_CUR", "OPTSR2"]]:
-            reg = chip.periph_map["FLASH"].pop(old)
-            reg.name = new
-            chip.periph_map["FLASH"][new] = reg
-        # for old in ["BOOTR", 'EPOCHR']:
-        #     chip.periph_map["FLASH"]["{old}_CUR"] = chip.periph_map["FLASH"][old]
-        #     chip.periph_map["FLASH"]["{old}_PRG"] = chip.periph_map["FLASH"].pop(old)
-        chip.periph_map["FDCAN"] = chip.periph_map.pop("FDCAN_Global")
-        chip.periph_map["FDCAN"]["CKDIV"] = chip.periph_map["FDCAN_Config"]["CKDIV"]
-        chip.periph_map.pop("FDCAN_Config")
+        apply_peripheral_fixup(chip.periph_map, "EXTI", _EXTI_PRE)
+        apply_peripheral_fixup(chip.periph_map, "FLASH", _FLASH_PRE)
+        merge_fdcan(chip.periph_map)
 
     @staticmethod
     def post_bitfield_fixups(chip: STM32Chip):
-        chip.periph_map["PWR"]["WUSCR"].fields.pop("CWUF")
-        chip.periph_map["PWR"]["WUCR"].fields.pop("WUPEN")
-        # Relocate the ADC CCR register to its own class for better overlap with how it's implemented in QEMU:
-        chip.periph_map["ADCC"] = {}
-        chip.periph_map["ADCC"]["CCR"] = chip.periph_map["ADC"]["CCR"]
-        chip.periph_map["ADC"].pop("CCR")
-        for i in ["IM", "IM_2", "IM_3"]:
-            chip.periph_map["EXTI"]["IMR2"].fields.pop(i)
-        chip.periph_map["EXTI"]["EMR1"].fields.pop("EM")
-        chip.periph_map["EXTI"]["IMR1"].fields.pop("IM_2")
-        for i in ["EM", "EM_2", "EM_3"]:
-            chip.periph_map["EXTI"]["EMR2"].fields.pop(i)
-        for i in ["OA2MASK01", "OA2MASK02", "OA2MASK03", "OA2MASK04", "OA2MASK05", "OA2MASK06", "OA2MASK07", "OA2MASK05_1"]:
-            chip.periph_map["I2C"]["OAR2"].fields.pop(i)
+        split_adcc(chip.periph_map)

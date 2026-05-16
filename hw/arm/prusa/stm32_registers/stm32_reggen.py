@@ -1,5 +1,9 @@
 from stm32_regtypes import Register, RegisterAccess, RegisterBitField, RegisterPermission, STM32Chip
 from stm32_headerparser import STM32HeaderParser
+from stm32_fixupspec import apply_peripheral_fixup
+from peripherals.adcc import ADCC_TYPE_A
+from peripherals.iwdg import apply_iwdg_fixup
+from peripherals.i2c import I2C_TYPE_A
 
 from stm32f030xx import *
 from stm32c092xx import *
@@ -9,24 +13,9 @@ from stm32h503xx import *
 
 
 def global_supplemental_data(info: STM32Chip):
-	if "IWDG" in info.periph_map:
-		info.periph_map["IWDG"]["RLR"].reset_value = info.periph_map["IWDG"]["RLR"].get_valid_mask()
-		if "WINR" in info.periph_map["IWDG"]:
-			info.periph_map["IWDG"]["WINR"].reset_value = info.periph_map["IWDG"]["WINR"].get_valid_mask()
-		if "EWCR" in info.periph_map["IWDG"]:
-			info.periph_map["IWDG"]["EWCR"].unimplemented = True
-		if "WINR" in info.periph_map["IWDG"]:
-			info.periph_map["IWDG"]["WINR"].unimplemented = True
-	if "ADCC" in info.periph_map:
-		for field in info.periph_map["ADCC"]["CCR"].fields.values():
-			if field.name not in ["PRESC", "VREFEN"]:
-				field.unimplemented = True
-	if "I2C" in info.periph_map:
-		if "ISR" in info.periph_map["I2C"]:
-			info.periph_map["I2C"]["ISR"].reset_value = 0x00000001
-		for f in ["OAR1", "OAR2", "TIMINGR", "PECR", "TIMEOUTR"]:
-			if f in info.periph_map["I2C"]:
-				info.periph_map["I2C"][f].unimplemented = True
+	apply_iwdg_fixup(info.periph_map)
+	apply_peripheral_fixup(info.periph_map, "ADCC", ADCC_TYPE_A)
+	apply_peripheral_fixup(info.periph_map, "I2C", I2C_TYPE_A)
 
 
 def process_chip(info: STM32Chip):
