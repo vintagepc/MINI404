@@ -12,6 +12,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'encoder_input.c',
         'fan.c',
         'FUSB302B.c',
+        'LDC1612.c',
         'gl_dashboard.c',
         'gt911.c',
         '2d-dashboard.c',
