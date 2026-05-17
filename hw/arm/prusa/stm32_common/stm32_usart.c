@@ -506,16 +506,13 @@ static void stm32_common_usart_fill_receive_data_register(COM_STRUCT_NAME(Usart)
     uint8_t byte = s->rcv_char_buf[0];
     memmove(&s->rcv_char_buf[0], &s->rcv_char_buf[1], --(s->rcv_char_bytes));
 
-	if (s->rcv_char_bytes == 0) // If no more data, tickle the timeout timers.
+	if (s->rcv_char_bytes == 0 && enabled) // If no more data, tickle the timeout timers.
 	{
 		if (s->regs.defs.CR2.RTOEN)
 		{
 			timer_mod(s->rto_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char * (s->regs.defs.RTOR.RTO)));
 		}
-		if (s->regs.defs.CR1.IDLEIE)
-		{
-    		timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
-		}
+		timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
 	}
 
     /* Only handle the received character if the module is enabled, */

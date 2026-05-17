@@ -1004,7 +1004,7 @@ static void mk4_init(MachineState *machine)
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
     xBuddyMachineState *s = XBUDDY_MACHINE(machine);
-	if (kernel_len > 0 && !s->force_mmu)
+	if (kernel_len > 0 || s->force_mmu)
 	{
 		if (mc->has_extboard)
 		{

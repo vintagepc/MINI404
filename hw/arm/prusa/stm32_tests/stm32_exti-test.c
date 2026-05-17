@@ -163,12 +163,12 @@ static void test_mapping(void)
 	// Setup each CR to map a different gpio bank.
 	writel(STM32_RI_ADDRESS(base, RI_EXTICR1), 0x03020100);
 	writel(STM32_RI_ADDRESS(base, RI_EXTICR2), 0x07060504);
-	writel(STM32_RI_ADDRESS(base, RI_EXTICR3), 0x0B0A0908);
-	writel(STM32_RI_ADDRESS(base, RI_EXTICR4), 0x0F0E0D0C);
+	writel(STM32_RI_ADDRESS(base, RI_EXTICR3), 0x07060706);
+	writel(STM32_RI_ADDRESS(base, RI_EXTICR4), 0x07060706);
 	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_EXTICR1)), ==, 0x03020100);
 	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_EXTICR2)), ==, 0x07060504);
-	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_EXTICR3)), ==, 0x0B0A0908);
-	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_EXTICR4)), ==, 0x0F0E0D0C);
+	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_EXTICR3)), ==, 0x07060706);
+	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_EXTICR4)), ==, 0x07060706);
 
 	int gpio_count = STM32G070_GPIO_END - STM32_P_GPIO_BEGIN;
 	for (int i=0; i<gpio_count; i++)
