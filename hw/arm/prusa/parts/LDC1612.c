@@ -198,6 +198,8 @@ typedef struct LDC1612State {
 
     qemu_irq interrupt;
 
+    bool shutdown;  /* true when SD pin is asserted (active-low) */
+
     LDC1612Regs_t regs;
 } LDC1612State;
 
@@ -239,6 +241,9 @@ static bool ldc1612_is_readonly(uint8_t reg)
 
 static void ldc1612_inject_data(LDC1612State *s, int ch, uint32_t val)
 {
+    if (s->shutdown) {
+        return;
+    }
     if (ch == 0) {
         s->regs.defs.data_ch0.DATA_MSB = val >> 16;
         s->regs.defs.data_ch0_lsb = val & 0xFFFF;
@@ -258,9 +263,27 @@ static void ldc1612_data_in(void *opaque, int n, int level)
     ldc1612_inject_data(s, n, (uint32_t)level);
 }
 
+/* SD is active-low: level=0 asserts shutdown, level=1 releases it */
+static void ldc1612_sd_in(void *opaque, int n, int level)
+{
+    LDC1612State *s = LDC1612(opaque);
+    s->shutdown = !level;
+    if (s->shutdown) {
+        s->regs.defs.status.DRDY = 0;
+        ldc1612_update_irq(s);
+    } else {
+        /* Exiting shutdown resets the device, mirroring a real power cycle */
+        ldc1612_reset_regs(s);
+        ldc1612_update_irq(s);
+    }
+}
+
 static int ldc1612_event(I2CSlave *ss, enum i2c_event event)
 {
     LDC1612State *s = LDC1612(ss);
+    if (s->shutdown) {
+        return 1;  /* NAK: I2C interface disabled during shutdown */
+    }
     if (event == I2C_START_SEND) {
         s->is_addr = true;
         s->tx_byte = 0;
@@ -273,7 +296,7 @@ static int ldc1612_event(I2CSlave *ss, enum i2c_event event)
 static uint8_t ldc1612_recv(I2CSlave *ss)
 {
     LDC1612State *s = LDC1612(ss);
-    if (s->reg_addr >= LDC1612_NUM_REGS) {
+    if (s->shutdown || s->reg_addr >= LDC1612_NUM_REGS) {
         return 0;
     }
 
@@ -297,6 +320,9 @@ static uint8_t ldc1612_recv(I2CSlave *ss)
 static int ldc1612_send(I2CSlave *ss, uint8_t data)
 {
     LDC1612State *s = LDC1612(ss);
+    if (s->shutdown) {
+        return 1;  /* NAK */
+    }
     if (s->is_addr) {
         s->reg_addr = data;
         s->is_addr  = false;
@@ -340,12 +366,14 @@ static void ldc1612_realize(DeviceState *dev, Error **errp)
     ldc1612_reset_regs(s);
     qdev_init_gpio_out(DEVICE(dev), &s->interrupt, 1);
     qdev_init_gpio_in_named(DEVICE(dev), ldc1612_data_in, "ch", 2);
+    qdev_init_gpio_in_named(DEVICE(dev), ldc1612_sd_in, "sd", 1);
     ldc1612_update_irq(s);
 }
 
 static void ldc1612_reset(DeviceState *dev)
 {
     LDC1612State *s = LDC1612(dev);
+    s->shutdown = false;
     ldc1612_reset_regs(s);
     ldc1612_update_irq(s);
 }
