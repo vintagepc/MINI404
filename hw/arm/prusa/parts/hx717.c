@@ -53,7 +53,7 @@ struct HX717State {
     QEMUTimer *tick;
 
     qemu_irq irq;
-
+    script_handle handle;
 };
 
 enum {
@@ -187,15 +187,15 @@ static void hx717_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj),hx717_channel_in,"input_x1000",2);
     qdev_init_gpio_in_named(DEVICE(obj),hx717_channel_in_raw,"input",2);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_HX717);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_HX717);
 
-    script_register_action(pScript, "Set", "Sets the load cell output to the given value", ACT_SET);
-    script_add_arg_int(pScript, ACT_SET);
+    script_register_action(s->handle, "Set", "Sets the load cell output to the given value", ACT_SET);
+    script_add_arg_int(s->handle, ACT_SET);
 
     s->tick = timer_new_ms(QEMU_CLOCK_VIRTUAL,
         (QEMUTimerCB *)hx717_data_ready, s);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 }
 
 static const VMStateDescription vmstate_hx717 = {

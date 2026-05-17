@@ -50,6 +50,7 @@ struct LoadcellState {
 
 	uint8_t tap;
 	p404_key_handle key;
+    script_handle handle;
 	QEMUTimer* timer;
 };
 
@@ -210,8 +211,8 @@ static void loadcell_init(Object *obj)
     qdev_init_gpio_in(DEVICE(obj), loadcell_pos_in,3);
     qdev_init_gpio_in_named(DEVICE(obj), loadcell_cal_pin_in,"cal-pin-state", 1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_LOADCELL);
-    scripthost_register_scriptable(pScript);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_LOADCELL);
+    scripthost_register_scriptable(s->handle);
 
 	s->key = p404_new_keyhandler(P404_KEYCLIENT(obj));
     p404_register_keyhandler(s->key, 't',"Taps the loadcell");

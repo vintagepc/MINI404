@@ -42,6 +42,7 @@ struct PSState {
 
     qemu_irq irq;
 	qemu_irq panic;
+    script_handle handle;
 };
 
 enum {
@@ -114,11 +115,11 @@ static void powersource_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), &s->panic, "panic", 1);
     qdev_init_gpio_in_named(DEVICE(obj),powersource_read_request,"adc_read_request",1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_POWERSOURCE);
-    script_register_action(pScript, "SetV","Sets the voltage readout to a given value.",ActSetV);
-    script_add_arg_float(pScript, ActSetV);
-	script_register_action(pScript, "SetPanic", "Trips the Power Panic line", ActSetPanic);
-    scripthost_register_scriptable(pScript);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_POWERSOURCE);
+    script_register_action(s->handle, "SetV","Sets the voltage readout to a given value.",ActSetV);
+    script_add_arg_float(s->handle, ActSetV);
+	script_register_action(s->handle, "SetPanic", "Trips the Power Panic line", ActSetPanic);
+    scripthost_register_scriptable(s->handle);
 
 	p404_key_handle pKey = p404_new_keyhandler(P404_KEYCLIENT(obj));
     p404_register_keyhandler(pKey, 'p',"Trips power panic");

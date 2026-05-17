@@ -182,6 +182,8 @@ typedef struct tmc2130_state {
 
 	p404_motorif_status_t vis;
 
+    script_handle handle;
+
 } tmc2130_state;
 
 enum {
@@ -475,6 +477,7 @@ static void tmc2130_realize(SSIPeripheral *obj, Error **errp){
 	script_register_action(pScript, "SetStall", "Sets the stallguard value as specified.", ActSetStall);
 	script_add_arg_bool(pScript, ActSetStall);
     scripthost_register_scriptable(pScript);
+    s->handle = pScript;
 	s->vis.label = s->id;
     s->vis.max_pos = (float)s->max_step/(float)s->max_steps_per_mm;
     s->vis.status.changed = true;
