@@ -67,7 +67,7 @@ static void _prusa_clo_init(MachineState *machine, int index, int type)
 {
     DeviceState *dev;
 
-    // Object* periphs = container_get(OBJECT(machine), "/peripheral");
+    Object* periphs = machine_get_container("peripheral");
 
 	const prusa_clo_cfg_t* cfg ATTRIBUTE_UNUSED = clo_cfg_map[type];
 
@@ -101,15 +101,21 @@ static void _prusa_clo_init(MachineState *machine, int index, int type)
 		stm32_soc_load_kernel(OBJECT(dev), machine->kernel_filename);
     }
 
-    // void* bus = qdev_get_child_bus(
-	// 			stm32_soc_get_periph(dev_soc, STM32_P_I2C1),
-	// 		"i2c");
+    void* bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, STM32_P_I2C1),"i2c");
+    dev = qdev_new("ldc1612");
+    qdev_prop_set_uint8(dev, "address", 0x2B);
+    object_property_add_child(OBJECT(periphs), "ldc1612", OBJECT(dev));
+    qdev_realize(dev, bus, &error_fatal);
 
-	//i2c_slave_create_simple(bus, "pca9557", 0x40);
+    qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA), 1));
 
-	LEDState* led = led_create_simple(OBJECT(dev), GPIO_POLARITY_ACTIVE_HIGH,
-                                      LED_COLOR_GREEN, "User LED PA7");
-	led_set_state(led, 1);
+	DeviceState* dashboard = qdev_new("2d-dashboard");
+    qdev_prop_set_string(dashboard, "indicators", "U");
+    qdev_prop_set_string(dashboard, "title", "CLO Board");
+
+	sysbus_realize(SYS_BUS_DEVICE(dashboard), &error_fatal);
+
+	qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),7,qdev_get_gpio_in_named(dashboard, "led-digital",0));
 
 	if (kernel_len==0 || arghelper_is_arg("no-bridge"))
 	{

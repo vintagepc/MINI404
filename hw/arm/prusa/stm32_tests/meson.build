@@ -5,7 +5,7 @@ qtests_buddy = [
     'prusa/stm32_tests/mini404_fan_test',
     'prusa/stm32_tests/mini404_irsensor_test',
     'prusa/stm32_tests/mini404_hx717_test',
-    # 'prusa/stm32_tests/mini404_ldc1612_test',  # TODO: enable when board model with LDC1612 exists
+    'prusa/stm32_tests/mini404_ldc1612_test',
     'prusa/stm32_tests/mini404_hallsensor_test',
     'prusa/stm32_tests/mini404_mmu_bridge_test',
     'prusa/stm32_tests/mini404_pinda_test',
