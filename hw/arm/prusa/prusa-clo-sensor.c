@@ -81,6 +81,7 @@ static void _prusa_clo_init(MachineState *machine, int index, int type)
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m0"));
     qdev_prop_set_uint32(dev,"flash-size", FLASH_SIZE);
 
+    object_property_add_child(OBJECT(machine), "soc", OBJECT(dev_soc));
 
 	// DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
     // QList *otp_list = qlist_new();

@@ -315,7 +315,11 @@ static void stm32_common_i2c_update_irq(COM_STRUCT_NAME(I2c) *s)
 {
 	// Note only the H503 has split EVT/ERR IRQs.
 	uint32_t irq_level = 0;
-	uint32_t en_mask =  (s->regs.CR1.raw & IRQ_CR1_MSK);
+	uint32_t en_mask = (s->regs.CR1.raw & IRQ_CR1_MSK);
+	/* TCR shares the TCIE enable (CR1 bit 6) but lives at ISR bit 7 */
+	if (s->regs.CR1.bits.TCIE) {
+		en_mask |= IRQ_TCR;
+	}
 
 	if (s->has_split_irq)
 	{
@@ -330,8 +334,6 @@ static void stm32_common_i2c_update_irq(COM_STRUCT_NAME(I2c) *s)
 	{
 		irq_level = (s->regs.ISR.raw & IRQ_ALL) & en_mask;
 	}
-
-	irq_level |= s->regs.ISR.bits.TCR;
 
 	if (en_mask)
 	{
@@ -357,30 +359,24 @@ stm32_common_i2c_read(void *dev, hwaddr offset, unsigned size)
 	switch(index) {
 		case RI_RXDR:
 		{
-			bool needs_stop = s->regs.CR2.bits.STOP || (s->regs.CR2.bits.NBYTES == 0 && s->regs.CR2.bits.AUTOEND);
-			if (s->regs.ISR.bits.RXNE && i2c_bus_busy(s->bus)) {
-				if (s->dr_unread) {
-					s->dr_unread = false;
-				} else {
-					s->regs.RXDR.bits.RXDATA = s->shiftreg;
+			if (s->regs.ISR.bits.RXNE) {
+				s->regs.RXDR.bits.RXDATA = s->shiftreg;
+				s->shift_full = false;
+				if (s->regs.CR2.bits.NBYTES > 0) {
+					s->regs.CR2.bits.NBYTES--;
+				}
+				if (s->regs.CR2.bits.NBYTES > 0 && i2c_bus_busy(s->bus)) {
 					s->shiftreg = i2c_recv(s->bus);
-				}
-			} else if (s->regs.ISR.bits.RXNE) {
-				if (s->dr_unread) {
-					// Special case for 2 bytes left, don't clobber the wanted value currently in DR.
-				} else if (s->shift_full) {
-					s->regs.RXDR.bits.RXDATA = s->shiftreg;
-					s->shift_full = false;
-					s->regs.ISR.bits.RXNE = false;
+					s->shift_full = true;
 				} else {
-					s->regs.RXDR.bits.RXDATA = 0;
-					printf("FIXME: READ with no data!\n");
+					s->regs.ISR.bits.RXNE = false;
+					bool needs_stop = s->regs.CR2.bits.STOP || s->regs.CR2.bits.AUTOEND;
+					if (needs_stop && i2c_bus_busy(s->bus)) {
+						i2c_end_transfer(s->bus);
+						s->regs.CR2.bits.STOP = false;
+						s->regs.ISR.bits.STOPF = true;
+					}
 				}
-			}
-			if (needs_stop)	{
-				i2c_end_transfer(s->bus);
-				s->regs.CR2.bits.STOP = false;
-				s->regs.ISR.bits.STOPF = true;
 			}
 			s->dr_unread = false;
 		}
@@ -410,14 +406,13 @@ stm32_common_i2c_write(void *dev, hwaddr offset, uint64_t data, unsigned size)
 
 	CHECK_UNIMP_RESVD_V2(data, s->regs.raw[index], s->reginfo, index);
 
-	bool is_read = s->regs.CR2.bits.RD_WRN;
-
 	s->regs.raw[index] = data;
 
 	switch (index) {
         case RI_CR2:
             if (s->regs.CR2.bits.START) {
                 s->regs.CR2.bits.START = false; // and clear START.
+				bool is_read = s->regs.CR2.bits.RD_WRN;
 				if (i2c_start_transfer(s->bus, s->regs.CR2.bits.SADD, is_read)){
 					// Failed.
 					s->regs.ISR.bits.NACKF = true;
@@ -426,9 +421,16 @@ stm32_common_i2c_write(void *dev, hwaddr offset, uint64_t data, unsigned size)
 				{
 					s->regs.ISR.bits.NACKF = false;
 					trace_stm32_common_i2c_txis(_PERIPHNAMES[s->parent.periph]);
-					s->regs.ISR.bits.TXIS = true;
-					s->regs.ISR.bits.TXE = true;
-
+					if (is_read) {
+						s->shiftreg = i2c_recv(s->bus);
+						s->shift_full = true;
+						s->regs.ISR.bits.RXNE = true;
+						s->regs.ISR.bits.TXIS = false;
+						s->regs.ISR.bits.TXE = false;
+					} else {
+						s->regs.ISR.bits.TXIS = true;
+						s->regs.ISR.bits.TXE = true;
+					}
 				}
             }
 			// Stop has to happen after the next byte is sent.
@@ -440,7 +442,7 @@ stm32_common_i2c_write(void *dev, hwaddr offset, uint64_t data, unsigned size)
 		case RI_TXDR:
 		{
 			bool needs_stop = s->regs.CR2.bits.STOP;
-            if (s->regs.ISR.bits.TXE) { // Continuing to transmit.
+            if (s->regs.ISR.bits.TXE && i2c_bus_busy(s->bus)) { // Continuing to transmit.
                 i2c_send(s->bus, data& 0xFF); // Send the byte.
 				s->regs.CR2.bits.NBYTES--;
 				trace_stm32_common_i2c_txdr(_PERIPHNAMES[s->parent.periph], s->regs.TXDR.bits.TXDATA, s->regs.CR2.bits.NBYTES);

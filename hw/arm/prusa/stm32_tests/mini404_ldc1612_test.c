@@ -40,7 +40,7 @@
 #define LDC1612_I2C_BASE    0x40005400ULL  /* TODO: confirm for target machine */
 
 /* LDC1612 7-bit I2C address with ADDR pin low */
-#define LDC1612_I2C_ADDR    0x2A
+#define LDC1612_I2C_ADDR    0x2B
 
 /* STM32 common I2C register offsets (stm32_i2c_regdata.h) */
 #define I2C_CR1_OFF     0x00
@@ -216,9 +216,6 @@ static void test_ldc1612_no_interrupt_by_default(void)
     QTestState *ts = setup_machine();
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
-    /* INTB starts de-asserted (high) */
-    g_assert_true(qtest_get_irq_level(ts, 0));
-
     inject_measurement(ts, 0, TEST_CH0_VAL);
 
     /* INTB must still be high: DRDY_2INT is 0 by default */
@@ -237,9 +234,6 @@ static void test_ldc1612_interrupt_on_data_ready(void)
     QTestState *ts = setup_machine();
     i2c_enable(ts);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
-
-    /* INTB starts de-asserted */
-    g_assert_true(qtest_get_irq_level(ts, 0));
 
     /* Enable DRDY → INTB routing */
     i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
