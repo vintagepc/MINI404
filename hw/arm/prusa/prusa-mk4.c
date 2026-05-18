@@ -909,6 +909,15 @@ static void mk4_init(MachineState *machine)
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",cfg.f_rpms[i]);
         //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
+        /* HBR fan: ignore tach_blocked so autoFan's RPM watchdog isn't
+         * fooled by PF13 being parked on the print-fan side of the mux.
+         * The selftest's fan check explicitly sweeps the mux and runs each
+         * fan in isolation, so emitting HBR tach unconditionally doesn't
+         * skew the per-fan RPM measurement (HBR PWM is 0 during the
+         * print-fan phase, so no pulses are emitted regardless). */
+        if (i == FAN_HBR) {
+            qdev_prop_set_bit(dev, "always_emit_tach", true);
+        }
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.f_tach[i])), PIN(cfg.f_tach[i])));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
