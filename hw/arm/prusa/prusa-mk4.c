@@ -441,6 +441,7 @@ static const mk4_cfg_t core1_cfg = {
 typedef struct xBuddyMachineState {
     MachineState parent;
     bool force_mmu;
+    bool has_sock;
 } xBuddyMachineState;
 
 OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
@@ -457,10 +458,24 @@ static void xbuddy_set_force_mmu(Object *obj, bool value, Error **errp)
     s->force_mmu = value;
 }
 
+static bool xbuddy_get_has_sock(Object *obj, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    return s->has_sock;
+}
+
+static void xbuddy_set_has_sock(Object *obj, bool value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    s->has_sock = value;
+}
+
 static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+    xBuddyMachineState *s = XBUDDY_MACHINE(machine);
+
     Object* periphs = machine_get_container("peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
@@ -796,6 +811,8 @@ static void mk4_init(MachineState *machine)
     dev = qdev_new("heater");
     qdev_prop_set_uint8(dev, "thermal_mass_x10",cfg.e_t_mass);
     qdev_prop_set_uint8(dev,"label", 'E');
+    qdev_prop_set_bit(dev, "has_sock", s->has_sock);
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     if (mc->has_modbed)
     {
@@ -1012,7 +1029,7 @@ static void mk4_init(MachineState *machine)
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
     xBuddyMachineState *s = XBUDDY_MACHINE(machine);
-	if (kernel_len > 0 && !s->force_mmu)
+	if (kernel_len > 0 || s->force_mmu)
 	{
 		if (mc->has_extboard)
 		{
@@ -1076,6 +1093,7 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 		mc->no_serial = 1;
 
         object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
+        object_class_property_add_bool(oc, "has_sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
@@ -1088,6 +1106,7 @@ static void xbuddy_instance_init(Object *obj)
 {
     xBuddyMachineState *s = XBUDDY_MACHINE(obj);
     s->force_mmu = false; // Set default
+    s->has_sock = false; // Set default 
 }
 
 static const xBuddyData mk4_027c = {
