@@ -74,9 +74,7 @@ typedef union {
 	struct {
 		uint32_t _reserved0    : 1;
 		uint32_t OA2           : 7; // /*!< Interface own address 2 */
-		uint32_t OA2MASK07     : 3; // /*!< OA2[7:1] is masked, No comparison is done      */
-		uint32_t OA2MASK06     : 2; // /*!< OA2[6:1] is masked, Only OA2[7] are compared   */
-		uint32_t OA2MASK05_1   : 1; 
+		uint32_t OA2MSK        : 3; // /*!< Own address 2 masks */
 		uint32_t _reserved11   : 4;
 		uint32_t OA2EN         : 1; // /*!< Own address 2 enable */
 		uint32_t _reserved16   :16;

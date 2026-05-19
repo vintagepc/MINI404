@@ -24,16 +24,6 @@
 #ifndef HW_ARM_STM32_IWDG_REGDEF_H
 #define HW_ARM_STM32_IWDG_REGDEF_H
 
-enum reg_index {
-	RI_KR                   = (0x00 /4U), /* IWDG Key register, */
-	RI_PR                   = (0x04 /4U), /* IWDG Prescaler register, */
-	RI_RLR                  = (0x08 /4U), /* IWDG Reload register, */
-	RI_SR                   = (0x0C /4U), /* IWDG Status register, */
-	RI_WINR                 = (0x10 /4U), /* IWDG Window register, */
-	RI_EWCR                 = (0x14 /4U), /* IWDG Early Wakeup register, */
-	RI_END
-};
-
 static const uint16_t IWDG_PRESCALES[8] = { 4, 8, 16, 32, 64, 128, 256, 256 };
 
 #endif

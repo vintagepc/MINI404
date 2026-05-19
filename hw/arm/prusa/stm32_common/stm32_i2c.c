@@ -32,8 +32,8 @@
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_types.h"
 #include "../stm32_common/stm32_common.h"
-#include "stm32_i2c_regdata.h"
 #include "trace.h"
+#include "../stm32_registers/generated/common/I2C_TYPE_A_registers.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(I2c), COM_CLASS_NAME(I2c), STM32COM_I2C);
 
@@ -73,212 +73,6 @@ static const stm32_periph_variant_t stm32_i2c_variants[] = {
 	{TYPE_STM32H503_I2C, stm32_h503_i2c_reginfo}
 };
 
-typedef union {
-	struct {
-		uint32_t PE            : 1; // /*!< Peripheral enable */
-		uint32_t TXIE          : 1; // /*!< TX interrupt enable */
-		uint32_t RXIE          : 1; // /*!< RX interrupt enable */
-		uint32_t ADDRIE        : 1; // /*!< Address match interrupt enable */
-		uint32_t NACKIE        : 1; // /*!< NACK received interrupt enable */
-		uint32_t STOPIE        : 1; // /*!< STOP detection interrupt enable */
-		uint32_t TCIE          : 1; // /*!< Transfer complete interrupt enable */
-		uint32_t ERRIE         : 1; // /*!< Errors interrupt enable */
-		uint32_t DNF           : 4; // /*!< Digital noise filter */
-		uint32_t ANFOFF        : 1; // /*!< Analog noise filter OFF */
-		uint32_t SWRST         : 1; // /*!< Software reset */
-		uint32_t TXDMAEN       : 1; // /*!< DMA transmission requests enable */
-		uint32_t RXDMAEN       : 1; // /*!< DMA reception requests enable */
-		uint32_t SBC           : 1; // /*!< Slave byte control */
-		uint32_t NOSTRETCH     : 1; // /*!< Clock stretching disable */
-		uint32_t WUPEN         : 1; // /*!< Wakeup from STOP enable */
-		uint32_t GCEN          : 1; // /*!< General call enable */
-		uint32_t SMBHEN        : 1; // /*!< SMBus host address enable */
-		uint32_t SMBDEN        : 1; // /*!< SMBus device default address enable */
-		uint32_t ALERTEN       : 1; // /*!< SMBus alert enable */
-		uint32_t PECEN         : 1; // /*!< PEC enable */
-		uint32_t FMP           : 1; // /*!< Fast-mode Plus 20 mA drive enable */
-		uint32_t _reserved25   : 5;
-		uint32_t ADDRACLR      : 1; // /*!< ADDRACLR enable */
-		uint32_t STOPFACLR     : 1; // /*!< STOPFACLR enable */
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,cr1);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,cr1),bits);
-
-typedef union {
-	struct {
-		uint32_t SADD          :10; // /*!< Slave address (master mode) */
-		uint32_t RD_WRN        : 1; // /*!< Transfer direction (master mode) */
-		uint32_t ADD10         : 1; // /*!< 10-bit addressing mode (master mode) */
-		uint32_t HEAD10R       : 1; // /*!< 10-bit address header only read direction (master mode) */
-		uint32_t START         : 1; // /*!< START generation */
-		uint32_t STOP          : 1; // /*!< STOP generation (master mode) */
-		uint32_t NACK          : 1; // /*!< NACK generation (slave mode) */
-		uint32_t NBYTES        : 8; // /*!< Number of bytes */
-		uint32_t RELOAD        : 1; // /*!< NBYTES reload mode */
-		uint32_t AUTOEND       : 1; // /*!< Automatic end mode (master mode) */
-		uint32_t PECBYTE       : 1; // /*!< Packet error checking byte */
-		uint32_t _reserved27   : 5;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,cr2);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,cr2),bits);
-
-typedef union {
-	struct {
-		uint32_t OA1           :10; // /*!< Interface own address 1 */
-		uint32_t OA1MODE       : 1; // /*!< Own address 1 10-bit mode */
-		uint32_t _reserved11   : 4;
-		uint32_t OA1EN         : 1; // /*!< Own address 1 enable */
-		uint32_t _reserved16   :16;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,oar1);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,oar1),bits);
-
-typedef union {
-	struct {
-		uint32_t _reserved0    : 1;
-		uint32_t OA2           : 7; // /*!< Interface own address 2 */
-		uint32_t OA2MSK        : 3; // /*!< Own address 2 masks */
-		uint32_t _reserved11   : 4;
-		uint32_t OA2EN         : 1; // /*!< Own address 2 enable */
-		uint32_t _reserved16   :16;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,oar2);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,oar2),bits);
-
-typedef union {
-	struct {
-		uint32_t SCLL          : 8; // /*!< SCL low period (master mode) */
-		uint32_t SCLH          : 8; // /*!< SCL high period (master mode) */
-		uint32_t SDADEL        : 4; // /*!< Data hold time */
-		uint32_t SCLDEL        : 4; // /*!< Data setup time */
-		uint32_t _reserved24   : 4;
-		uint32_t PRESC         : 4; // /*!< Timings prescaler */
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,timingr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,timingr),bits);
-
-typedef union {
-	struct {
-		uint32_t TIMEOUTA      :12; // /*!< Bus timeout A */
-		uint32_t TIDLE         : 1; // /*!< Idle clock timeout detection */
-		uint32_t _reserved13   : 2;
-		uint32_t TIMOUTEN      : 1; // /*!< Clock timeout enable */
-		uint32_t TIMEOUTB      :12; // /*!< Bus timeout B*/
-		uint32_t _reserved28   : 3;
-		uint32_t TEXTEN        : 1; // /*!< Extended clock timeout enable */
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,timeoutr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,timeoutr),bits);
-
-typedef union {
-	struct {
-		uint32_t TXE           : 1; // /*!< Transmit data register empty */
-		uint32_t TXIS          : 1; // /*!< Transmit interrupt status */
-		uint32_t RXNE          : 1; // /*!< Receive data register not empty */
-		uint32_t ADDR          : 1; // /*!< Address matched (slave mode)*/
-		uint32_t NACKF         : 1; // /*!< NACK received flag */
-		uint32_t STOPF         : 1; // /*!< STOP detection flag */
-		uint32_t TC            : 1; // /*!< Transfer complete (master mode) */
-		uint32_t TCR           : 1; // /*!< Transfer complete reload */
-		uint32_t BERR          : 1; // /*!< Bus error */
-		uint32_t ARLO          : 1; // /*!< Arbitration lost */
-		uint32_t OVR           : 1; // /*!< Overrun/Underrun */
-		uint32_t PECERR        : 1; // /*!< PEC error in reception */
-		uint32_t TIMEOUT       : 1; // /*!< Timeout or Tlow detection flag */
-		uint32_t ALERT         : 1; // /*!< SMBus alert */
-		uint32_t _reserved14   : 1;
-		uint32_t BUSY          : 1; // /*!< Bus busy */
-		uint32_t DIR           : 1; // /*!< Transfer direction (slave mode) */
-		uint32_t ADDCODE       : 7; // /*!< Address match code (slave mode) */
-		uint32_t _reserved24   : 8;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,isr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,isr),bits);
-
-typedef union {
-	struct {
-		uint32_t _reserved0    : 3;
-		uint32_t ADDRCF        : 1; // /*!< Address matched clear flag */
-		uint32_t NACKCF        : 1; // /*!< NACK clear flag */
-		uint32_t STOPCF        : 1; // /*!< STOP detection clear flag */
-		uint32_t _reserved6    : 2;
-		uint32_t BERRCF        : 1; // /*!< Bus error clear flag */
-		uint32_t ARLOCF        : 1; // /*!< Arbitration lost clear flag */
-		uint32_t OVRCF         : 1; // /*!< Overrun/Underrun clear flag */
-		uint32_t PECCF         : 1; // /*!< PAC error clear flag */
-		uint32_t TIMOUTCF      : 1; // /*!< Timeout clear flag */
-		uint32_t ALERTCF       : 1; // /*!< Alert clear flag */
-		uint32_t _reserved14   :18;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,icr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,icr),bits);
-
-typedef union {
-	struct {
-		uint32_t PEC           : 8; // /*!< PEC register */
-		uint32_t _reserved8    :24;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,pecr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,pecr),bits);
-
-typedef union {
-	struct {
-		uint32_t RXDATA        : 8; // /*!< 8-bit receive data */
-		uint32_t _reserved8    :24;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,rxdr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,rxdr),bits);
-
-typedef union {
-	struct {
-		uint32_t TXDATA        : 8; // /*!< 8-bit transmit data */
-		uint32_t _reserved8    :24;
-	} QEMU_PACKED bits;
-	uint32_t raw;
-}  REGDEF_NAME(i2c,txdr);
-CHECK_TYPEDEF_u32(REGDEF_NAME(i2c,txdr),bits);
-
-typedef union {
-	struct {
-		REGDEF_NAME(i2c,cr1) CR1;
-		REGDEF_NAME(i2c,cr2) CR2;
-		REGDEF_NAME(i2c,oar1) OAR1;
-		REGDEF_NAME(i2c,oar2) OAR2;
-		REGDEF_NAME(i2c,timingr) TIMINGR;
-		REGDEF_NAME(i2c,timeoutr) TIMEOUTR;
-		REGDEF_NAME(i2c,isr) ISR;
-		REGDEF_NAME(i2c,icr) ICR;
-		REGDEF_NAME(i2c,pecr) PECR;
-		REGDEF_NAME(i2c,rxdr) RXDR;
-		REGDEF_NAME(i2c,txdr) TXDR;
-	} /*QEMU_PACKED*/;
-	uint32_t raw[RI_END];
-}  REGDEF_NAME(stm32com,i2c);
-
-QEMU_BUILD_BUG_MSG(sizeof(REGDEF_NAME(stm32com,i2c)) != sizeof(uint32_t)*RI_END , "Structure Size mismatch - expected uint32[RI_END]");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), CR1) != 0, "Offset mismatch for CR1");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), CR2) != 4, "Offset mismatch for CR2");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), OAR1) != 8, "Offset mismatch for OAR1");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), OAR2) != 12, "Offset mismatch for OAR2");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), TIMINGR) != 16, "Offset mismatch for TIMINGR");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), TIMEOUTR) != 20, "Offset mismatch for TIMEOUTR");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), ISR) != 24, "Offset mismatch for ISR");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), ICR) != 28, "Offset mismatch for ICR");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), PECR) != 32, "Offset mismatch for PECR");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), RXDR) != 36, "Offset mismatch for RXDR");
-QEMU_BUILD_BUG_MSG(offsetof(REGDEF_NAME(stm32com,i2c), TXDR) != 40, "Offset mismatch for TXDR");
-
-
 typedef struct COM_STRUCT_NAME(I2c) {
     /* <private> */
     STM32Peripheral parent;
@@ -287,7 +81,7 @@ typedef struct COM_STRUCT_NAME(I2c) {
 	/* Memory region */
 	MemoryRegion mmio;
 
-	REGDEF_NAME(stm32com,i2c) regs;
+	REGDEF_NAME(stm32com,i2c_type_a) regs;
 
 	qemu_irq event, error;
 

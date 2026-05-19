@@ -39,34 +39,22 @@
 #include "qemu/log.h"
 #include "hw/core/qdev-properties.h"
 #include "stm32_rcc_if.h"
-#include "stm32_crc_regdata.h"
+
+#include "../stm32_registers/generated/common/CRC_TYPE_A_registers.h"
+
+#include "../stm32_registers/generated/stm32c092/CRC_reginfo.h"
+#include "../stm32_registers/generated/stm32f030/CRC_reginfo.h"
+#include "../stm32_registers/generated/stm32g070/CRC_reginfo.h"
+#include "../stm32_registers/generated/stm32h503/CRC_reginfo.h"
+#include "../stm32_registers/generated/stm32f427/CRC_reginfo.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Crc), COM_CLASS_NAME(Crc), STM32COM_CRC);
-
-REGDEF_BLOCK_BEGIN()
-	REG_B32(RESET);
-	REG_R(2);
-	REG_K32(POLYSIZE,2);
-	REG_K32(REV_IN,2);
-	REG_B32(REV_OUT);
-	REG_R(24);
-REGDEF_BLOCK_END(crc, cr);
 
 typedef struct COM_STRUCT_NAME(Crc) {
     STM32Peripheral parent;
     MemoryRegion iomem;
 
-	union {
-		struct {
-			uint32_t DR;
-			uint32_t IDR;
-			REGDEF_NAME(crc,cr) CR;
-			uint32_t _reserved;
-			uint32_t INIT;
-			uint32_t POL;
-		} defs;
-		uint32_t raw[RI_END];
-	} regs;
+	REGDEF_NAME(stm32com,crc_type_a) regs;
 
 	const stm32_reginfo_t* reginfo;
 
@@ -177,7 +165,7 @@ stm32_common_crc_read(void *arg, hwaddr addr, unsigned int size)
 		case RI_DR:
 			if (stm32_rcc_if_check_periph_clk(&s->parent))
 			{
-				return s->regs.defs.DR;
+				return s->regs.DR.bits.DR;
 			}
 			else
 			{
@@ -213,24 +201,24 @@ stm32_common_crc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 
     switch(addr) {
 		case RI_DR:
-			s->regs.defs.DR = update_crc(s->regs.defs.DR, (data >> 24) & 0xff);
-			s->regs.defs.DR = update_crc(s->regs.defs.DR, (data >> 16) & 0xff);
-			s->regs.defs.DR = update_crc(s->regs.defs.DR, (data >> 8) & 0xff);
-			s->regs.defs.DR = update_crc(s->regs.defs.DR, data & 0xff);
+			s->regs.DR.bits.DR = update_crc(s->regs.DR.bits.DR, (data >> 24) & 0xff);
+			s->regs.DR.bits.DR = update_crc(s->regs.DR.bits.DR, (data >> 16) & 0xff);
+			s->regs.DR.bits.DR = update_crc(s->regs.DR.bits.DR, (data >> 8) & 0xff);
+			s->regs.DR.bits.DR = update_crc(s->regs.DR.bits.DR, data & 0xff);
 			break;
 		case RI_IDR:
-			s->regs.defs.IDR = data;
+			s->regs.IDR.bits.IDR = data;
 			break;
 		case RI_CR:
-			s->regs.defs.CR.raw = data;
-			if (s->regs.defs.CR.RESET) {
-				s->regs.defs.DR = s->regs.defs.INIT;
-				s->regs.defs.CR.RESET = 0;
+			s->regs.CR.raw = data;
+			if (s->regs.CR.bits.RESET) {
+				s->regs.DR.bits.DR = s->regs.INIT.bits.INIT;
+				s->regs.CR.bits.RESET = 0;
 			}
 			break;
 		case RI_INIT:
-			s->regs.defs.INIT = data;
-			s->regs.defs.DR = data;
+			s->regs.INIT.bits.INIT = data;
+			s->regs.DR.bits.DR = data;
 			break;
     }
 }
@@ -261,9 +249,9 @@ static void
 stm32_common_crc_init(Object *obj)
 {
     COM_STRUCT_NAME(Crc) *s = STM32COM_CRC(obj);
-	CHECK_ALIGN(sizeof(s->regs.raw), sizeof(s->regs.defs), "Union misaligned!");
-	CHECK_ALIGN(sizeof(s->regs.defs), sizeof(uint32_t)*RI_END, "Union overall size");
-	CHECK_REG_u32(s->regs.defs.CR);
+	CHECK_ALIGN(sizeof(s->regs.raw), sizeof(s->regs), "Union misaligned!");
+	CHECK_ALIGN(sizeof(s->regs), sizeof(uint32_t)*RI_END, "Union overall size");
+	CHECK_REG_u32(s->regs.CR);
 
 	COM_CLASS_NAME(Crc) *k = STM32COM_CRC_GET_CLASS(obj);
 

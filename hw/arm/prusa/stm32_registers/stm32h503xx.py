@@ -113,11 +113,6 @@ _EXTI = PeripheralFixup(registers={
     "EMR2": RegisterFixup(fields_remove=["EM", "EM_2", "EM_3"]),
 })
 
-_I2C = PeripheralFixup(registers={
-    "OAR2": RegisterFixup(fields_remove=["OA2MASK01", "OA2MASK02", "OA2MASK03", "OA2MASK04",
-                                         "OA2MASK05", "OA2MASK06", "OA2MASK07", "OA2MASK05_1"]),
-})
-
 class stm32h503xx(STM32Fixups):
     common_periph = {
         "CRC":   "CRC_TYPE_A",
@@ -159,7 +154,6 @@ class stm32h503xx(STM32Fixups):
         reg_map["FLASH"]["KEYR"].unimplemented = False
 
         apply_peripheral_fixup(reg_map, "EXTI", _EXTI)
-        apply_peripheral_fixup(reg_map, "I2C", _I2C)
 
     @staticmethod
     def post_register_fixups(chip: STM32Chip):

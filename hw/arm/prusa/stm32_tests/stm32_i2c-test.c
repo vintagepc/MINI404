@@ -20,7 +20,7 @@
 #include "qemu/bitops.h"
 #include "libqtest-single.h"
 
-#include "../stm32_common/stm32_i2c_regdata.h"
+#include "../stm32_registers/generated/common/I2C_TYPE_A_registers.h"
 #include "../stm32_common/stm32_shared.h"
 
 /*

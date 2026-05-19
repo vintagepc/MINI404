@@ -25,37 +25,7 @@
 #include "../stm32_common/stm32_common.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
-#include "stm32_exti_regdata.h"
-
-// Mostly just convenience for easier debugging while inspecting the struct.
-// All the logic takes advantage of the regularity using bitshifts and indexing.
-REGDEF_BLOCK_BEGIN()
-	REG_K32(EXTI0,8);
-	REG_K32(EXTI1,8);
-	REG_K32(EXTI2,8);
-	REG_K32(EXTI3,8);
-REGDEF_BLOCK_END(exti, exticr1);
-
-REGDEF_BLOCK_BEGIN()
-	REG_K32(EXTI4,8);
-	REG_K32(EXTI5,8);
-	REG_K32(EXTI6,8);
-	REG_K32(EXTI7,8);
-REGDEF_BLOCK_END(exti, exticr2);
-
-REGDEF_BLOCK_BEGIN()
-	REG_K32(EXTI8,8);
-	REG_K32(EXTI9,8);
-	REG_K32(EXTI10,8);
-	REG_K32(EXTI11,8);
-REGDEF_BLOCK_END(exti, exticr3);
-
-REGDEF_BLOCK_BEGIN()
-	REG_K32(EXTI12,8);
-	REG_K32(EXTI13,8);
-	REG_K32(EXTI14,8);
-	REG_K32(EXTI15,8);
-REGDEF_BLOCK_END(exti, exticr4);
+#include "../stm32_registers/generated/common/EXTI_TYPE_A_registers.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Exti), COM_CLASS_NAME(Exti), STM32COM_EXTI);
 
@@ -63,24 +33,7 @@ typedef struct COM_STRUCT_NAME(Exti) {
     STM32Peripheral  parent;
     MemoryRegion  iomem;
 
-    union {
-        struct {
-            REG_S32(RT, 16) RTSR; // 0x00
-            REG_S32(FT, 16) FTSR; // 0x04
-            REG_S32(SWI, 16) SWIER; // 0x08
-            REG_S32(RPIF, 16) RPR; // 0x0C
-            REG_S32(FPIF, 16) FPR; // 0x10
-			REGDEF_RANGE32(0x14,0x5C);
-			REGDEF_NAME(exti,exticr1) EXTICR1;
-			REGDEF_NAME(exti,exticr2) EXTICR2;
-			REGDEF_NAME(exti,exticr3) EXTICR3;
-			REGDEF_NAME(exti,exticr4) EXTICR4;
-           	REGDEF_RANGE32(0x70, 0x7C);
-			uint32_t IMR1;
-			uint32_t EMR1;
-        } defs;
-        uint32_t raw[RI_END];
-    } regs;
+    REGDEF_NAME(stm32com,exti_type_a) regs;
 
 	const stm32_reginfo_t* reginfo;
 
@@ -117,17 +70,17 @@ static void stm32_common_exti_in(void *opaque, int n, int level)
 		switch (level)
 		{
 			case EXTI_RISING:
-				if (s->regs.defs.RTSR.RT & pin_mask)
+				if (s->regs.RTSR1.raw & pin_mask)
 				{
 					qemu_irq_pulse(s->exti_out[pin]);
-					s->regs.defs.RPR.RPIF |= pin_mask;
+					s->regs.RPR1.raw |= pin_mask;
 				}
 				break;
 			case EXTI_FALLING:
-			if (s->regs.defs.FTSR.FT & pin_mask)
+			if (s->regs.FTSR1.raw & pin_mask)
 				{
 					qemu_irq_pulse(s->exti_out[pin]);
-					s->regs.defs.FPR.FPIF |= pin_mask;
+					s->regs.FPR1.raw |= pin_mask;
 				}
 				break;
 			default:
@@ -172,7 +125,7 @@ stm32_common_exti_write(void *opaque, hwaddr addr, uint64_t data, unsigned int s
 	switch (addr) {
 		case RI_SWIER1:
 			// SW generates a rising edge and HW auto clears the bit, so we may as well not set it...
-			s->regs.defs.RPR.RPIF |= raw_data;
+			s->regs.RPR1.raw |= raw_data;
 			int index = 0;
 			while (raw_data){
 				if (raw_data & 1U)
@@ -220,14 +173,14 @@ stm32_common_exti_init(Object *obj)
 {
 	COM_STRUCT_NAME(Exti) *s = STM32COM_EXTI(obj);
 	assert(sizeof(s->regs)==sizeof(s->regs.raw)); // Make sure packing is correct.
-	CHECK_REG_u32(s->regs.defs.EXTICR1);
-	CHECK_REG_u32(s->regs.defs.EXTICR2);
-	CHECK_REG_u32(s->regs.defs.EXTICR3);
-	CHECK_REG_u32(s->regs.defs.EXTICR4);
-	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.defs.EXTICR1, regs.raw[RI_EXTICR1]);
-	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.defs.RPR, regs.raw[RI_RPR1]);
-	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.defs.IMR1, regs.raw[RI_IMR1]);
-	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.defs.EMR1, regs.raw[RI_EMR1]);
+	CHECK_REG_u32(s->regs.EXTICR1);
+	CHECK_REG_u32(s->regs.EXTICR2);
+	CHECK_REG_u32(s->regs.EXTICR3);
+	CHECK_REG_u32(s->regs.EXTICR4);
+	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.EXTICR1, regs.raw[RI_EXTICR1]);
+	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.RPR1, regs.raw[RI_RPR1]);
+	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.IMR1, regs.raw[RI_IMR1]);
+	CHECK_UNION(COM_STRUCT_NAME(Exti), regs.EMR1, regs.raw[RI_EMR1]);
 
 	COM_CLASS_NAME(Exti) *k = STM32COM_EXTI_GET_CLASS(obj);
 	s->reginfo = k->var_reginfo;
