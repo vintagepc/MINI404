@@ -367,7 +367,7 @@ static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
 	if (ratio>=0)
 	{
 		qemu_set_irq(s->pwm_ratio_changed[n-1], ratio);
-		trace_tim_update_ccr(_PERIPHNAMES[s->parent.periph], n, ratio);
+		//trace_tim_update_ccr(_PERIPHNAMES[s->parent.periph], n, ratio);
 	}
 }
 

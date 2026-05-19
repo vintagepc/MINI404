@@ -72,10 +72,12 @@ typedef struct COM_CLASS_NAME(Fdcan)
 
 
 #include "../stm32_registers/generated/stm32c092/FDCAN_reginfo.h"
+#include "../stm32_registers/generated/stm32h503/FDCAN_reginfo.h"
 
 static const stm32_periph_variant_t stm32_fdcan_variants[] =
 {
 	{TYPE_STM32C092_FDCAN, stm32_c092_fdcan_reginfo},
+	{TYPE_STM32H503_FDCAN, stm32_h503_fdcan_reginfo},
 };
 
 /* Fixed SRAM layout offsets (byte offsets from SRAMCAN base, per RM0490 Fig 323) */

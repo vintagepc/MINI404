@@ -55,7 +55,7 @@ struct STM32H503_STRUCT_NAME() {
     MemoryRegion flash;
     MemoryRegion flash_alias;
     MemoryRegion ccmsram;
-
+	MemoryRegion can_sram;
 	MemoryRegion engineering_bytes;
 };
 
@@ -99,6 +99,16 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 	// memory_region_init_alias(&s->sram_alias, OBJECT(dev_soc),
 	// 	"STM32F030.sram.alias", &s->sram, 0,
 	// 	sram_size);
+
+	memory_region_init_ram(&s->can_sram, OBJECT(dev_soc), "STM32H503.can_sram", 6*KiB, &err);
+	memory_region_add_subregion(system_memory, H503_SRAMCAN_ADDR, &s->can_sram);
+	object_property_set_link(
+			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_CAN1)),
+			"sram",
+			OBJECT(&s->can_sram),
+		&error_fatal);
+
+
 
 	// disabled unless otherwise set such by syscfg.
 	// memory_region_set_enabled(&s->sram_alias, false);
