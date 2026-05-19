@@ -64,6 +64,7 @@ struct heater_state {
     uint64_t last_tick, last_off, last_on;
 
     bool is_ticking, use_custom_pwm;
+    bool sock_on;
 
     qemu_irq temp_out, pwm_out;
     QEMUTimer *temp_tick, *softpwm_timeout;
@@ -77,6 +78,14 @@ enum {
     ActOpen,
     ActSet,
 };
+
+/* Reduction factor applied to thermal_mass_x10 when the silicone heatblock
+   sock is fitted. Real with-sock heatup is slower because the sock adds
+   thermal mass to the assembly. The MK4 FW compensates with a -20 °C offset
+   on the heater selftest range (hotend_type.cpp::hotend_type_heater_selftest_offset
+   on HAS_NEXTRUDER); 0.85 lands the 42 s nozzle test reading inside that
+   shifted range. */
+#define HEATER_SOCK_MASS_FACTOR 0.85f
 extern float heater_calculate_current(heater_state *s);
 
 // Calculate current consumption based on given voltage/resistance, and scale by PWM.
@@ -178,11 +187,17 @@ static void heater_soft_pwm_change(void* opaque, int n, int level)
     }
 }
 
+static void heater_apply_sock(heater_state *s)
+{
+    float base = ((float)s->mass10x) / 10.f;
+    s->thermalMass = s->sock_on ? base * HEATER_SOCK_MASS_FACTOR : base;
+}
+
 static void heater_reset(DeviceState *dev)
 {
     heater_state *s = HEATER(dev);
 
-    s->thermalMass = ((float)s->mass10x)/10.f;
+    heater_apply_sock(s);
     s->ambientTemp = 18.f;
     s->currentTemp = s->ambientTemp;
     qemu_set_irq(s->temp_out, s->currentTemp*256.f);
@@ -256,6 +271,7 @@ static const Property heater_properties[] = {
     DEFINE_PROP_UINT8("label",heater_state, chrLabel, (uint8_t)' '),
 	DEFINE_PROP_UINT16("voltage_x100", heater_state, voltagex100, 2400),
 	DEFINE_PROP_UINT16("resistance_x100", heater_state, resistancex100, 0),
+	DEFINE_PROP_BOOL("has_sock", heater_state, sock_on, false),
 };
 
 static int heater_pre_save(void *opaque) {
@@ -269,7 +285,7 @@ static int heater_post_load(void *opaque, int version) {
     heater_state *s = HEATER(opaque);
     s->ambientTemp = (float)s->ambient_x100/100.f;
     s->currentTemp = (float)s->current_x100/100.f;
-    s->thermalMass = ((float)s->mass10x)/10.f;
+    heater_apply_sock(s);
     return 0;
 }
 
@@ -301,10 +317,17 @@ static const VMStateDescription vmstate_heater = {
 };
 
 
+static void heater_realize(DeviceState *dev, Error **errp)
+{
+    heater_state *s = HEATER(dev);
+    heater_apply_sock(s);
+}
+
 static void heater_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_legacy_reset(dc, heater_reset);
+    dc->realize = heater_realize;
     dc->vmsd = &vmstate_heater;
     device_class_set_props(dc, heater_properties);
 

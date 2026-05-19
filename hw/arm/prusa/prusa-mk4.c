@@ -138,6 +138,7 @@ typedef struct mk4_cfg_t {
     uint8_t m_spi;
 	uint8_t m_uart;
 	bool is_400step;
+	bool has_door_sensor;
 	uint8_t dm_ver;
 	const char* boot_fn;
 	const char* eeprom_fn;
@@ -413,7 +414,7 @@ static const mk4_cfg_t core1_cfg = {
 	.has_loadcell = true,
 	.temps =
 	{
-		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
+		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_UNDEFINED },
 		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
@@ -429,6 +430,7 @@ static const mk4_cfg_t core1_cfg = {
 	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
+	.has_door_sensor = true,
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(COREONE),
 	.eeprom_fn = EEPROM_FN(COREONE),
@@ -439,6 +441,7 @@ static const mk4_cfg_t core1_cfg = {
 typedef struct xBuddyMachineState {
     MachineState parent;
     bool force_mmu;
+    bool has_sock;
 } xBuddyMachineState;
 
 OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
@@ -455,10 +458,24 @@ static void xbuddy_set_force_mmu(Object *obj, bool value, Error **errp)
     s->force_mmu = value;
 }
 
+static bool xbuddy_get_has_sock(Object *obj, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    return s->has_sock;
+}
+
+static void xbuddy_set_has_sock(Object *obj, bool value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    s->has_sock = value;
+}
+
 static void mk4_init(MachineState *machine)
 {
 
 	const xBuddyMachineClass *mc = XBUDDY_MACHINE_GET_CLASS(OBJECT(machine));
+    xBuddyMachineState *s = XBUDDY_MACHINE(machine);
+
     Object* periphs = machine_get_container("peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
@@ -784,10 +801,18 @@ static void mk4_init(MachineState *machine)
 		}
 	}
 
+	// Fake a door sensor just to get a fw boot for now:
+	if (cfg.has_door_sensor)
+	{
+		qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3), "adc_data_in", 15), 20);
+	}
+
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
     dev = qdev_new("heater");
     qdev_prop_set_uint8(dev, "thermal_mass_x10",cfg.e_t_mass);
     qdev_prop_set_uint8(dev,"label", 'E');
+    qdev_prop_set_bit(dev, "has_sock", s->has_sock);
+
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     if (mc->has_modbed)
     {
@@ -1068,6 +1093,7 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 		mc->no_serial = 1;
 
         object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
+        object_class_property_add_bool(oc, "has_sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
@@ -1080,6 +1106,7 @@ static void xbuddy_instance_init(Object *obj)
 {
     xBuddyMachineState *s = XBUDDY_MACHINE(obj);
     s->force_mmu = false; // Set default
+    s->has_sock = false; // Set default 
 }
 
 static const xBuddyData mk4_027c = {

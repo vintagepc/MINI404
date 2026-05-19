@@ -201,6 +201,11 @@ static void
 f2xx_tim_timer(void *arg)
 {
     f2xx_tim *s = arg;
+	// If this is a oneshot timer, clear CEN.
+	if (s->defs.CR1.OPM)
+	{
+		s->defs.CR1.CEN = 0;
+	}
 
     if (s->defs.CR1.CEN) {
         timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
@@ -422,10 +427,6 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_set_irq(s->pwm_enable[0], 0);
             printf("pwm dis\n");
 
-        }
-        if (data & 1<<3)
-        {
-            printf("%u OPM!\n", 1U + s->parent.periph - STM32_P_TIM1);
         }
         s->regs[addr] = data;
         break;
