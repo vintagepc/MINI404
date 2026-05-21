@@ -1028,7 +1028,6 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
-    xBuddyMachineState *s = XBUDDY_MACHINE(machine);
 	if (kernel_len > 0 || s->force_mmu)
 	{
 		if (mc->has_extboard)

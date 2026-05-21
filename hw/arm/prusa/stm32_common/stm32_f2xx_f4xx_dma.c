@@ -139,6 +139,7 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
 	uint32_t original_cmars[STM32_F2xx_DMA_MAX_CHAN];
 	uint32_t original_cpars[STM32_F2xx_DMA_MAX_CHAN];
 	uint8_t dma_pending[STM32_F2xx_DMA_MAX_CHAN];
+	uint32_t pending_dmar[2][STM32_F2xx_DMA_MAX_CHAN]; // [direction][slot], 0 = empty
 
 	QEMUTimer* dma_timer;
 
@@ -350,11 +351,12 @@ static void stm32_f2xx_f4xx_dma_dmar(void *opaque, int n, int level)
 
 	REGDEF_NAME(dma,sxcr) *cr;
 	int idx = 0;
+	bool matched = false;
 	for (int i=RI_CHAN_BASE; i<RI_CHAN_END; i+= CH_OFF_END, idx++)
 	{
 		cr = (REGDEF_NAME(dma,sxcr)*)&s->regs.raw[i+CH_OFF_SxCR];
 		// Is this our peripheral?
-		if (s->regs.raw[i+CH_OFF_SxPAR] != level)
+		if (s->regs.raw[i+CH_OFF_SxPAR] != (uint32_t)level)
 		{
 			continue;
 		}
@@ -368,6 +370,16 @@ static void stm32_f2xx_f4xx_dma_dmar(void *opaque, int n, int level)
 		}
 		s->dma_pending[idx]++;
 		timer_mod_ns(s->dma_timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+		matched = true;
+	}
+	if (!matched) {
+		for (int i = 0; i < STM32_F2xx_DMA_MAX_CHAN; i++) {
+			if (s->pending_dmar[n][i] == (uint32_t)level) return;
+			if (s->pending_dmar[n][i] == 0) {
+				s->pending_dmar[n][i] = (uint32_t)level;
+				return;
+			}
+		}
 	}
 }
 
@@ -418,8 +430,15 @@ stm32_f2xx_f4xx_dma_chan_write(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr addr, uint6
 			REGDEF_NAME(dma,sxcr) new = {.raw = data};
 			if (!old.EN && new.EN)
 			{
-				// printf("Enabled DMA channel %u\n", chan);
-				// Channel was enabled... if P2M we wait for P to signal DMAR anyway.
+				uint32_t par = s->regs.raw[addr + CH_OFF_SxPAR];
+				for (int i = 0; i < STM32_F2xx_DMA_MAX_CHAN; i++) {
+					if (s->pending_dmar[new.DIR][i] == par) {
+						s->pending_dmar[new.DIR][i] = 0;
+						s->dma_pending[chan]++;
+						timer_mod_ns(s->dma_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+						break;
+					}
+				}
 			}
 			else if (!new.EN && old.EN)
 			{
@@ -501,6 +520,7 @@ static void stm32_f2xx_f4xx_dma_reset(DeviceState *dev)
 {
 	STM32F2XX_STRUCT_NAME(Dma) *s = STM32F4xx_DMA(dev);
     memset(&s->regs, 0, sizeof(s->regs));
+	memset(s->pending_dmar, 0, sizeof(s->pending_dmar));
 }
 
 static void stm32_f2xx_f4xx_dma_realize(DeviceState *dev, Error **errp)
