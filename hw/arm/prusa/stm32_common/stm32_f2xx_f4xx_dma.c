@@ -34,7 +34,7 @@
 #include "stm32_common.h"
 #include "stm32_shared.h"
 #include "stm32_f2xx_f4xx_dma_regdata.h"
-
+#include "trace.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F2XX_STRUCT_NAME(Dma), STM32F4xx_DMA);
 
@@ -145,6 +145,11 @@ typedef struct STM32F2XX_STRUCT_NAME(Dma) {
 
 	qemu_irq irq[STM32_F2xx_DMA_MAX_CHAN];
 
+    // DMA trace logging is a hard performance hit, set up a pointer array 
+    // so you can use event filters to ONLY get the stream and DMA controller you want, eg DMA1_stream5.
+    void (*trace_dma_xfr[STM32_F2xx_DMA_MAX_CHAN])(uint32_t src, uint32_t dest, uint32_t size, uint32_t ndtr);
+
+
 } STM32F2XX_STRUCT_NAME(Dma);
 
 
@@ -204,7 +209,7 @@ static void stm32_f2xx_f4xx_update_irqs(STM32F2XX_STRUCT_NAME(Dma) *s, uint8_t c
 	if (sr != 0 && (sr & int_en))
 	{
         qemu_irq_raise(s->irq[channel]);
-	}   
+	}
 	else
 	{
 		qemu_irq_lower(s->irq[channel]);
@@ -298,10 +303,9 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 		printf("FIXME: M2M transfer!");
 		abort();
 	}
-	// if (*src == 0x40004404)
-	// {
-	// 	printf("DMA Transfer: 0x%" PRIx32 "->0x%" PRIx32 ", size %u ndtr %u\n",*src, *dest, xfersize, *ndtr);
-	// }
+    if (s->trace_dma_xfr[channel]) {
+        s->trace_dma_xfr[channel](*src, *dest, dir, *ndtr);
+    }
 	uint8_t buff[4] = {0,0,0,0};
 	dma_memory_read(
 		&s->cpu_as,
@@ -310,6 +314,10 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 		src_size,
 		MEMTXATTRS_UNSPECIFIED
 	);
+    // NOTE: we have to decrement here because the _write_ may trigger
+    // another M2P DMAR - but with an undecremented NDTR of 1, it would not be properly "queued" 
+	(*ndtr)--; // NDTR is in transfers, not bytes.
+
 	dma_memory_write(
 		&s->cpu_as,
 		*dest,
@@ -318,7 +326,6 @@ static void stm32_f2xx_f4xx_dma_do_xfer(STM32F2XX_STRUCT_NAME(Dma) *s, hwaddr ch
 		MEMTXATTRS_UNSPECIFIED
 	);
 
-	(*ndtr)--; // NDTR is in transfers, not bytes.
 	*dest += dest_inc;
 	*src +=  src_inc;
 
@@ -368,6 +375,7 @@ static void stm32_f2xx_f4xx_dma_dmar(void *opaque, int n, int level)
 		{
 			continue;
 		}
+		trace_stm32_f4xx_dma_dmar(_PERIPHNAMES[s->parent.periph], n, level);
 		s->dma_pending[idx]++;
 		timer_mod_ns(s->dma_timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 		matched = true;
@@ -375,7 +383,9 @@ static void stm32_f2xx_f4xx_dma_dmar(void *opaque, int n, int level)
 	if (!matched) {
 		for (int i = 0; i < STM32_F2xx_DMA_MAX_CHAN; i++) {
 			if (s->pending_dmar[n][i] == (uint32_t)level) return;
-			if (s->pending_dmar[n][i] == 0) {
+			if (s->pending_dmar[n][i] == 0)
+			{
+				trace_stm32_f4xx_dma_dmar_queued(_PERIPHNAMES[s->parent.periph], n, level);
 				s->pending_dmar[n][i] = (uint32_t)level;
 				return;
 			}
@@ -534,6 +544,36 @@ static void stm32_f2xx_f4xx_dma_realize(DeviceState *dev, Error **errp)
 	gchar* name = g_strdup_printf("STM32COM_DMA_%d", s->parent.periph - STM32_P_DMA_BEGIN);
 	address_space_init(&s->cpu_as, s->cpu_mr, name);
 	g_free(name);
+
+    if (s->parent.periph == STM32_P_DMA1)
+    {
+        s->trace_dma_xfr[0] = trace_stm32_f4xx_dma1_ch0_xfr;
+        s->trace_dma_xfr[1] = trace_stm32_f4xx_dma1_ch1_xfr;
+        s->trace_dma_xfr[2] = trace_stm32_f4xx_dma1_ch2_xfr;
+        s->trace_dma_xfr[3] = trace_stm32_f4xx_dma1_ch3_xfr;
+        s->trace_dma_xfr[4] = trace_stm32_f4xx_dma1_ch4_xfr;
+        s->trace_dma_xfr[5] = trace_stm32_f4xx_dma1_ch5_xfr;
+        s->trace_dma_xfr[6] = trace_stm32_f4xx_dma1_ch6_xfr;
+        s->trace_dma_xfr[7] = trace_stm32_f4xx_dma1_ch7_xfr;
+    }
+    else if (s->parent.periph == STM32_P_DMA2)
+    {
+        s->trace_dma_xfr[0] = trace_stm32_f4xx_dma2_ch0_xfr;
+        s->trace_dma_xfr[1] = trace_stm32_f4xx_dma2_ch1_xfr;
+        s->trace_dma_xfr[2] = trace_stm32_f4xx_dma2_ch2_xfr;
+        s->trace_dma_xfr[3] = trace_stm32_f4xx_dma2_ch3_xfr;
+        s->trace_dma_xfr[4] = trace_stm32_f4xx_dma2_ch4_xfr;
+        s->trace_dma_xfr[5] = trace_stm32_f4xx_dma2_ch5_xfr;
+        s->trace_dma_xfr[6] = trace_stm32_f4xx_dma2_ch6_xfr;
+        s->trace_dma_xfr[7] = trace_stm32_f4xx_dma2_ch7_xfr;
+    }
+    else
+    {
+        for (int i=0; i< STM32_F2xx_DMA_MAX_CHAN; i++)
+        {
+            s->trace_dma_xfr[i] = NULL;
+        }
+    }
 }
 
 static void
@@ -577,7 +617,7 @@ static const VMStateDescription vmstate_stm32_f2xx_f4xx_dma = {
 };
 
 static const Property stm32_f2xx_f4xx_dma_properties[] = {
-    DEFINE_PROP_LINK("system-memory", STM32F2XX_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*)  
+    DEFINE_PROP_LINK("system-memory", STM32F2XX_STRUCT_NAME(Dma), cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*)
 };
 
 static void
