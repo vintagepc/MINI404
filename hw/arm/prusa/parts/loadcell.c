@@ -33,6 +33,8 @@
 #include "qom/object.h"
 #include "hw/core/sysbus.h"
 #include "math.h"
+#include "trace.h"
+
 #define TYPE_LOADCELL "loadcell"
 
 OBJECT_DECLARE_SIMPLE_TYPE(LoadcellState, LOADCELL)
@@ -114,7 +116,7 @@ static void handle_zpos_buildplate(LoadcellState *s, int level)
             s->is_zero = false;
             int val_out = START_HEIGHT-(level);
             qemu_set_irq(s->irq, val_out*-250);
-            // printf("LC out: %d\n",val_out);
+            trace_loadcell_value(val_out);
         }
     } else {
         if (level>START_HEIGHT+20 && !s->is_zero) {
@@ -124,7 +126,8 @@ static void handle_zpos_buildplate(LoadcellState *s, int level)
             s->is_zero = false;
             int val_out = START_HEIGHT-20-(level);
             qemu_set_irq(s->irq, val_out*-250);
-            // printf("LC out: %d\n",val_out);
+            trace_loadcell_value(val_out);
+
         }
     }
     s->last_pos = level;

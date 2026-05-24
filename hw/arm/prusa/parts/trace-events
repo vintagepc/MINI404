@@ -27,4 +27,7 @@ at21csxx_enter_discovery(void)
 at21csxx_discovery_ack(void)
 
 #door_switch.c
-door_switch_state(bool open) "Door-switch state change: %u"
+door_switch_state(bool open) "is_open: %u"
+
+# loadcell.c
+loadcell_value(int value) "Loadcell value: %d"
