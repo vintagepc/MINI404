@@ -300,13 +300,13 @@ static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, bool enabled, uint32_t CCR, uint
     }
     switch (mode)
     {
-        case 0x00: // frozen
+        case OCxM_Frozen: // frozen
             return -1;
     //    case 0x4: // Force inactive/active:
     //    case 0x5:
             return 255*is_inverted;
-        case 0x6:
-        case 0x7:
+        case OCxM_PWM1:
+        case OCxM_PWM2:
             ratio = (CCR*255)/s->defs.ARR;
             if (is_inverted^active_low) ratio = 255-ratio;
             return ratio;
@@ -415,17 +415,17 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_log_mask(LOG_UNIMP, "f2xx %s non-zero CR1 unimplemented\n", _PERIPHNAMES[s->parent.periph]);
         }
         if ((s->regs[addr] & 1) == 0 && data & 1) {
-            printf("f2xx tim started: %u\n", 1U + s->parent.periph - STM32_P_TIM1);
+            trace_stm32f2xx_tim_start(_PERIPHNAMES[s->parent.periph]);
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
             qemu_set_irq(s->pwm_enable[0], 1);
 			s->defs.CR1.CEN = 1;
 			for (int i=1; i<5; i++)
 				f2xx_tim_update_pwm(s, i);
-            printf("pwm en\n");
+            // printf("pwm en\n");
         } else if (s->regs[addr] & 1 && (data & 1) == 0) {
             timer_del(s->timer);
             qemu_set_irq(s->pwm_enable[0], 0);
-            printf("pwm dis\n");
+            // printf("pwm dis\n");
 
         }
         s->regs[addr] = data;

@@ -47,3 +47,6 @@ usb_stm_work_timer(void) ""
 usb_stm_reset_enter(void) "=== RESET enter ==="
 usb_stm_reset_hold(void) "=== RESET hold ==="
 usb_stm_reset_exit(void) "=== RESET exit ==="
+
+# stm32f2xx_tim.c
+stm32f2xx_tim_start(const char* id) "F2xx %s start"

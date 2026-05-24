@@ -25,3 +25,6 @@ at21csxx_sio_high_icount(uint32_t icount) "SIO high: %u"
 at21csxx_start_condition(void)
 at21csxx_enter_discovery(void)
 at21csxx_discovery_ack(void)
+
+#door_switch.c
+door_switch_state(bool open) "Door-switch state change: %u"

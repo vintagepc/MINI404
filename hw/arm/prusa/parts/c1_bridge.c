@@ -123,6 +123,9 @@ static void c1_bridge_tx_assert(void *opaque, int n, int level)
 					break;
 				case 0x21:
 					qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0x21)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
+                    break;
+                case 0xdd:
+				// 	qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0xdd)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 					break;
 				default: // catch-all.
 					printf("Unexpected message starting byte, %02x\n",s->buffer[0]);
