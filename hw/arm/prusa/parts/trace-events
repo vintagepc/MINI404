@@ -31,3 +31,10 @@ door_switch_state(bool open) "is_open: %u"
 
 # loadcell.c
 loadcell_value(int value) "Loadcell value: %d"
+
+# c1_bridge.c
+c1_msg_xb_broadcast(int size) "%d bytes"
+c1_msg_boot_xb_to_extboard(int size) "%d bytes"
+c1_msg_boot_extboard_to_xb(int size) "%d bytes"
+c1_msg_xb_to_extboard(int size) "%d bytes"
+c1_msg_extboard_to_xb(int size) "%d bytes"
