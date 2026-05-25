@@ -131,6 +131,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_bit(armv7m, "enable-bitband", false);
 	qdev_prop_set_uint32(armv7m, "mpu-ns-regions", 8);
 	qdev_prop_set_uint32(armv7m, "mpu-s-regions", 8);
+	qdev_prop_set_uint32(armv7m, "num-prio-bits", 4);
     object_property_set_link(OBJECT(&s->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {
