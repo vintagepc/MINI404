@@ -157,8 +157,8 @@ system_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files(
   'esp32_sha.c',
   'esp32_aes.c',
   'esp32_flash_enc.c',
-  'ssi_psram.c'
-  'esp32_ledc.c',
+  'ssi_psram.c',
+  'esp32_ledc.c'
 ))
 
 if gcrypt.found()

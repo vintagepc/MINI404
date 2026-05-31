@@ -22,6 +22,7 @@
  * THE SOFTWARE.
  */
 
+#include "hw/arm/prusa/stm32_common/stm32_shared.h"
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/core/boards.h"
@@ -148,8 +149,8 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",0,qdev_get_gpio_in_named(dashboard, "led-w",1));
 
 	// Fan 1 and 2 are T3 CCR2, fan 3 is T3 CCR3
-  	uint16_t fan_max_rpms[] = { 5000, 6000, 7000 };
-	uint8_t fan_tach_exti_lines[] = { 8, 9, 10};
+  	uint16_t fan_max_rpms[] = { 8500, 8500, 3400 };
+	uint8_t fan_tach_icc_lines[] = { 0, 1, 2};
     uint8_t fan_labels[] = {'1','2', '3'};
 	DeviceState* fans[3] = {NULL};
     for (int i=0; i<ARRAY_SIZE(fan_labels); i++)
@@ -158,7 +159,7 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",fan_max_rpms[i]);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),fan_tach_exti_lines[i]));
+        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM1),"input-capture",fan_tach_icc_lines[i]));
 		qdev_connect_gpio_out_named(dev, "rpm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-rpm", i));
 		if (i == 1)
 		{
@@ -166,13 +167,13 @@ static void _prusa_xb_ext_init(MachineState *machine, int index, int type)
 				qdev_get_gpio_in_named(fans[0], "pwm-in", FAN_PWM_INPUT_INVERTED),
 				qdev_get_gpio_in_named(fans[1], "pwm-in", FAN_PWM_INPUT_INVERTED)
 			);
-			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",2,split_pwm);
+			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",1,split_pwm);
 			qdev_connect_gpio_out_named(fans[0], "pwm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-pwm",0));
 			qdev_connect_gpio_out_named(fans[1], "pwm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-pwm",1));
 		}
 		else
 		{
-			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",3,qdev_get_gpio_in_named(fans[i], "pwm-in", FAN_PWM_INPUT));
+			qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",2,qdev_get_gpio_in_named(fans[i], "pwm-in", FAN_PWM_INPUT_INVERTED));
 			qdev_connect_gpio_out_named(fans[i], "pwm-out", 0, qdev_get_gpio_in_named(dashboard, "fan-pwm",i));
 		}
     }

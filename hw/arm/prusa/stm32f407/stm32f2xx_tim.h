@@ -186,7 +186,9 @@ struct f2xx_tim {
                 uint32_t CC3NP :1;
                 uint32_t CC4E :1;
                 uint32_t CC4P :1;
-                uint32_t :32-14;
+                uint32_t CC4NE :1;
+                uint32_t CC4NP :1;
+                uint32_t :32-16;
             } QEMU_PACKED  CCER;
             uint32_t CNT;
             SHORT_REG_32(PSC, 16);
@@ -219,6 +221,14 @@ struct f2xx_tim {
     };
     qemu_irq pwm_ratio_changed[4];
     qemu_irq pwm_enable[4], pwm_pin[4];
+
+    // Stores lookup of input to timer channel
+    uint8_t icc_to_channel[4];
+    struct {
+        bool last_state;  // Stores last state for tracking edges.
+        uint8_t edge_type; // Indicate/abstract edge type
+        bool is_input;
+    } icc_cfg[4];
 
     int64_t count_timebase;
 
