@@ -55,7 +55,7 @@ struct STM32H503_STRUCT_NAME() {
     MemoryRegion flash;
     MemoryRegion flash_alias;
     MemoryRegion ccmsram;
-
+	MemoryRegion can_sram;
 	MemoryRegion engineering_bytes;
 };
 
@@ -100,6 +100,16 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
 	// 	"STM32F030.sram.alias", &s->sram, 0,
 	// 	sram_size);
 
+	memory_region_init_ram(&s->can_sram, OBJECT(dev_soc), "STM32H503.can_sram", 6*KiB, &err);
+	memory_region_add_subregion(system_memory, H503_SRAMCAN_ADDR, &s->can_sram);
+	object_property_set_link(
+			OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_CAN1)),
+			"sram",
+			OBJECT(&s->can_sram),
+		&error_fatal);
+
+
+
 	// disabled unless otherwise set such by syscfg.
 	// memory_region_set_enabled(&s->sram_alias, false);
 	// memory_region_add_subregion(system_memory, 0, &s->sram_alias);
@@ -121,6 +131,7 @@ static void stm32h503_soc_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_bit(armv7m, "enable-bitband", false);
 	qdev_prop_set_uint32(armv7m, "mpu-ns-regions", 8);
 	qdev_prop_set_uint32(armv7m, "mpu-s-regions", 8);
+	qdev_prop_set_uint32(armv7m, "num-prio-bits", 4);
     object_property_set_link(OBJECT(&s->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {

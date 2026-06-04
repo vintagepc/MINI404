@@ -1,7 +1,7 @@
 /*
-    stm32g070_flashint.c - Flash I/F Configuration block for STM32G0x0
+    stm32g070_flashint.c - Flash I/F Configuration block for STM32G0x0, STM32C092
 
-	Copyright 2022 VintagePC <https://github.com/vintagepc/>
+	Copyright 2022-6 VintagePC <https://github.com/vintagepc/>
 
  	This file is part of Mini404.
 
@@ -24,12 +24,12 @@
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
-#include "../stm32_common/stm32_common.h"
+#include "stm32_common.h"
 #include "hw/core/irq.h"
-#include "stm32g070_flashint_regdata.h"
+#include "stm32_flashint_regdata.h"
 #include "exec/cpu-common.h"
 
-OBJECT_DECLARE_SIMPLE_TYPE(STM32G070_STRUCT_NAME(FlashIF), STM32G070_FINT);
+OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(FlashIF), COM_CLASS_NAME(FlashIF), STM32COM_FINT);
 
 REGDEF_BLOCK_BEGIN()
     REG_K32(LATENCY, 3);
@@ -81,7 +81,7 @@ REGDEF_BLOCK_BEGIN()
 REGDEF_BLOCK_END(flashif, wrp);
 
 
-typedef struct STM32G070_STRUCT_NAME(FlashIF) {
+typedef struct COM_STRUCT_NAME(FlashIF) {
     STM32Peripheral parent;
     MemoryRegion iomem;
 
@@ -119,7 +119,14 @@ typedef struct STM32G070_STRUCT_NAME(FlashIF) {
 
     qemu_irq irq;
 
-} STM32G070_STRUCT_NAME(FlashIF);
+	const stm32_reginfo_t* reginfo;
+
+} COM_STRUCT_NAME(FlashIF);
+
+typedef struct COM_CLASS_NAME(FlashIF) {
+	STM32PeripheralClass parent_class;
+	const stm32_reginfo_t* var_reginfo;
+} COM_CLASS_NAME(FlashIF);
 
 enum wp_state
 {
@@ -141,6 +148,16 @@ static const stm32_reginfo_t stm32g070_flashif_reginfo[RI_END] = {
 	[RI_WRP2AR ... RI_WRP2BR] = {.mask = 0x7F007F, .unimp_mask = 0x7F007F},
 };
 
+#include "../stm32_registers/generated/stm32c092/FLASH_reginfo.h"
+#include "../stm32_registers/generated/stm32g070/FLASH_reginfo.h"
+
+
+static const stm32_periph_variant_t stm32_fint_variants[] = {
+	{TYPE_STM32C092_FINT, stm32_c092_flash_reginfo},
+	{TYPE_STM32G070_FINT, stm32_g070_flash_reginfo},
+};
+
+
 #define KEY1 0x45670123UL
 #define KEY2 0xCDEF89ABUL
 
@@ -148,37 +165,47 @@ static const stm32_reginfo_t stm32g070_flashif_reginfo[RI_END] = {
 #define OPTKEY2 0x4C5D6E7FUL
 
 #define BOUNDARY_LN(start,size) {  (start)*KiB, (  (start+size)*KiB)-1U},
-#define BOUNDARY_DECADE(start) \
-	BOUNDARY_LN(start+0,2) \
-	BOUNDARY_LN(start+2,2) \
-	BOUNDARY_LN(start+4,2) \
-	BOUNDARY_LN(start+6,2) \
-	BOUNDARY_LN(start+8,2)
 
+#define BOUNDARY_2K(start) BOUNDARY_LN(start+0,2)
+
+#define BOUNDARY_10K(start) \
+	BOUNDARY_2K(start+0) \
+	BOUNDARY_2K(start+2) \
+	BOUNDARY_2K(start+4) \
+	BOUNDARY_2K(start+6) \
+	BOUNDARY_2K(start+8)
+
+#define BOUNDARY_100K(start) \
+	BOUNDARY_10K(start) \
+	BOUNDARY_10K(start+10) \
+	BOUNDARY_10K(start+20) \
+	BOUNDARY_10K(start+30) \
+	BOUNDARY_10K(start+40) \
+	BOUNDARY_10K(start+50) \
+	BOUNDARY_10K(start+60) \
+	BOUNDARY_10K(start+70) \
+	BOUNDARY_10K(start+80) \
+	BOUNDARY_10K(start+90)
+
+// Up to 256K (127 2k pages)
 static uint32_t sector_boundaries[][2] =
 {
-	BOUNDARY_DECADE(0)
-	BOUNDARY_DECADE(10)
-	BOUNDARY_DECADE(20)
-	BOUNDARY_DECADE(30)
-	BOUNDARY_DECADE(40)
-	BOUNDARY_DECADE(50)
-	BOUNDARY_DECADE(60)
-	BOUNDARY_DECADE(70)
-	BOUNDARY_DECADE(80)
-	BOUNDARY_DECADE(90)
-	BOUNDARY_DECADE(100)
-	BOUNDARY_DECADE(110)
-	BOUNDARY_LN(120, 2)
-	BOUNDARY_LN(122, 2)
-	BOUNDARY_LN(124, 2)
-	BOUNDARY_LN(126, 2)
+	BOUNDARY_100K(0)
+	BOUNDARY_100K(100)
+	BOUNDARY_10K(200)
+	BOUNDARY_10K(210)
+	BOUNDARY_10K(220)
+	BOUNDARY_10K(230)
+	BOUNDARY_10K(240)
+	BOUNDARY_2K(250)
+	BOUNDARY_2K(252)
+	BOUNDARY_2K(254)
 };
 
 static uint64_t
-stm32g070_fint_read(void *arg, hwaddr offset, unsigned int size)
+stm32_common_fint_read(void *arg, hwaddr offset, unsigned int size)
 {
-    STM32G070_STRUCT_NAME(FlashIF) *s = arg;
+    COM_STRUCT_NAME(FlashIF) *s = arg;
     uint32_t r;
 
     uint32_t index = offset >> 2U;
@@ -200,7 +227,7 @@ stm32g070_fint_read(void *arg, hwaddr offset, unsigned int size)
     return r;
 }
 
-static void stm32g070_flashif_sector_erase(STM32G070_STRUCT_NAME(FlashIF) *s)
+static void stm32g070_flashif_sector_erase(COM_STRUCT_NAME(FlashIF) *s)
 {
     if (s->regs.defs.CR.LOCK)
     {
@@ -218,14 +245,14 @@ static void stm32g070_flashif_sector_erase(STM32G070_STRUCT_NAME(FlashIF) *s)
 }
 
 static void
-stm32g070_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
+stm32_common_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 {
-    STM32G070_STRUCT_NAME(FlashIF) *s = arg;
+    COM_STRUCT_NAME(FlashIF) *s = arg;
     int offset = addr & 0x03;
 
     addr >>= 2;
     CHECK_BOUNDS_W(addr, data, RI_END, stm32g070_flashif_reginfo, "F4xx Flash IF"); // LCOV_EXCL_LINE
-    ADJUST_FOR_OFFSET_AND_SIZE_W(stm32g070_fint_read(arg, addr<<2U, 4U), data, size, offset, 0b111)
+    ADJUST_FOR_OFFSET_AND_SIZE_W(stm32_common_fint_read(arg, addr<<2U, 4U), data, size, offset, 0b111)
     CHECK_UNIMP_RESVD(data, stm32g070_flashif_reginfo, addr);
 
     if (s->flash_state == KEY1_OK && addr != RI_KEYR)
@@ -284,9 +311,9 @@ stm32g070_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
     }
 }
 
-static const MemoryRegionOps stm32g070_fint_ops = {
-    .read = stm32g070_fint_read,
-    .write = stm32g070_fint_write,
+static const MemoryRegionOps stm32_common_fint_ops = {
+    .read = stm32_common_fint_read,
+    .write = stm32_common_fint_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
     .valid = {
         .min_access_size = 1,
@@ -295,9 +322,9 @@ static const MemoryRegionOps stm32g070_fint_ops = {
 };
 
 static void
-stm32g070_fint_reset(DeviceState *dev)
+stm32_common_fint_reset(DeviceState *dev)
 {
-    STM32G070_STRUCT_NAME(FlashIF) *s = STM32G070_FINT(dev);
+    COM_STRUCT_NAME(FlashIF) *s = STM32COM_FINT(dev);
     s->flash_state = LOCKED;
     if (s->flash)
     {
@@ -310,64 +337,80 @@ stm32g070_fint_reset(DeviceState *dev)
 }
 
 static void
-stm32g070_fint_init(Object *obj)
+stm32_common_fint_init(Object *obj)
 {
-    STM32G070_STRUCT_NAME(FlashIF) *s = STM32G070_FINT(obj);
-    STM32_MR_IO_INIT(&s->iomem, obj, &stm32g070_fint_ops, s, 1U *KiB);
+    COM_STRUCT_NAME(FlashIF) *s = STM32COM_FINT(obj);
+    STM32_MR_IO_INIT(&s->iomem, obj, &stm32_common_fint_ops, s, 1U *KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.ACR, regs.raw[RI_ACR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.KEYR, regs.raw[RI_KEYR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.OPTKEYR, regs.raw[RI_OPTKEYR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.SR, regs.raw[RI_SR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.CR, regs.raw[RI_CR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.ECCR, regs.raw[RI_ECCR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.OPTR, regs.raw[RI_OPTR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.WRP1AR, regs.raw[RI_WRP1AR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.WRP1BR, regs.raw[RI_WRP1BR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.WRP2AR, regs.raw[RI_WRP2AR]);
-	CHECK_UNION(STM32G070_STRUCT_NAME(FlashIF), regs.defs.WRP2BR, regs.raw[RI_WRP2BR]);
+	COM_CLASS_NAME(FlashIF) *k = STM32COM_FINT_GET_CLASS(obj);
+	s->reginfo = k->var_reginfo;
+
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.ACR, regs.raw[RI_ACR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.KEYR, regs.raw[RI_KEYR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.OPTKEYR, regs.raw[RI_OPTKEYR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.SR, regs.raw[RI_SR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.CR, regs.raw[RI_CR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.ECCR, regs.raw[RI_ECCR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.OPTR, regs.raw[RI_OPTR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.WRP1AR, regs.raw[RI_WRP1AR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.WRP1BR, regs.raw[RI_WRP1BR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.WRP2AR, regs.raw[RI_WRP2AR]);
+	CHECK_UNION(COM_STRUCT_NAME(FlashIF), regs.defs.WRP2BR, regs.raw[RI_WRP2BR]);
 
 }
 
-static const VMStateDescription vmstate_stm32g070_fint = {
+static const VMStateDescription vmstate_stm32_common_fint = {
     .name = TYPE_STM32G070_FINT,
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (const VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs.raw, STM32G070_STRUCT_NAME(FlashIF),RI_END),
-        VMSTATE_UINT8(flash_state, STM32G070_STRUCT_NAME(FlashIF)),
+        VMSTATE_UINT32_ARRAY(regs.raw, COM_STRUCT_NAME(FlashIF),RI_END),
+        VMSTATE_UINT8(flash_state, COM_STRUCT_NAME(FlashIF)),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static const Property stm32g070_fint_properties[] = {
-    DEFINE_PROP_LINK("flash", STM32G070_STRUCT_NAME(FlashIF), flash, TYPE_MEMORY_REGION, MemoryRegion *),
-    
+static const Property stm32_common_fint_properties[] = {
+    DEFINE_PROP_LINK("flash", COM_STRUCT_NAME(FlashIF), flash, TYPE_MEMORY_REGION, MemoryRegion *),
+
 };
 
 static void
-stm32g070_fint_class_init(ObjectClass *klass, const void *data)
+stm32_common_fint_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    device_class_set_legacy_reset(dc, stm32g070_fint_reset);
-    dc->vmsd = &vmstate_stm32g070_fint;
-	device_class_set_props(dc, stm32g070_fint_properties);
+    device_class_set_legacy_reset(dc, stm32_common_fint_reset);
+    dc->vmsd = &vmstate_stm32_common_fint;
+	device_class_set_props(dc, stm32_common_fint_properties);
+
+	COM_CLASS_NAME(FlashIF) *k = STM32COM_FINT_CLASS(klass);
+	k->var_reginfo = (const stm32_reginfo_t*)data;
 }
 
-static const TypeInfo stm32g070_fint_info = {
-    .name = TYPE_STM32G070_FINT,
+static const TypeInfo stm32_common_fint_info = {
+    .name = TYPE_STM32COM_FINT,
     .parent = TYPE_STM32_PERIPHERAL,
-    .instance_size = sizeof(STM32G070_STRUCT_NAME(FlashIF)),
-	.instance_init = stm32g070_fint_init,
-	.class_init = stm32g070_fint_class_init,
+    .instance_size = sizeof(COM_STRUCT_NAME(FlashIF)),
+	.class_size = sizeof(COM_CLASS_NAME(FlashIF)),
+	.instance_init = stm32_common_fint_init,
+	.class_init = stm32_common_fint_class_init,
+	.abstract = true
 };
 
 static void
-stm32g070_fint_register_types(void)
+stm32_common_fint_register_types(void)
 {
-    type_register_static(&stm32g070_fint_info);
+    type_register_static(&stm32_common_fint_info);
+	for (int i = 0; i < ARRAY_SIZE(stm32_fint_variants); ++i) {
+        TypeInfo ti = {
+            .name       = stm32_fint_variants[i].variant_name,
+            .parent     = TYPE_STM32COM_FINT,
+            .class_data = (void *)stm32_fint_variants[i].variant_regs,
+		};
+		type_register_static(&ti);
+	}
 }
 
-type_init(stm32g070_fint_register_types)
+type_init(stm32_common_fint_register_types)

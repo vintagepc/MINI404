@@ -27,7 +27,6 @@
 #include "hw/misc/stm32f4xx_exti.h"
 #include "hw/timer/stm32f2xx_timer.h"
 #include "hw/misc/stm32f4xx_syscfg.h"
-#include "../stm32f407/stm32f2xx_i2c.h"
 #include "../stm32f407/stm32f2xx_pwr.h"
 #include "../stm32f407/stm32f2xx_rtc.h"
 #include "../stm32f407/stm32f2xx_tim.h"

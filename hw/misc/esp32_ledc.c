@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "hw/misc/esp32_ledc.h"
@@ -127,8 +128,10 @@ static void esp32_ledc_init(Object *obj)
                           TYPE_ESP32_LEDC, ESP32_LEDC_REGS_SIZE);
     sysbus_init_mmio(sbd, &s->iomem);
     for (int i = 0; i < ESP32_LEDC_CHANNEL_CNT; i++) {
-        object_initialize_child(obj, g_strdup_printf("led%d", i + 1), &s->led[i], TYPE_LED);
-        s->led[i].color = (char *)"blue";
+        char name[16];
+        snprintf(name, sizeof(name), "led%d", i + 1);
+        object_initialize_child(obj, name, &s->led[i], TYPE_LED);
+        qdev_prop_set_string(DEVICE(&s->led[i]), "color", "blue");
     }
 }
 

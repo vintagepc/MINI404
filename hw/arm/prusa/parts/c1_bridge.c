@@ -119,15 +119,21 @@ static void c1_bridge_tx_assert(void *opaque, int n, int level)
 		{
 			switch (s->buffer[0]) {
 				case 0x11:	// Tool. Route appropriately.
+                    trace_c1_msg_boot_xb_to_extboard(s->buffer_level);
 					qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0x11)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 					break;
 				case 0x21:
+                    trace_c1_msg_xb_to_extboard(s->buffer_level);
 					qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0x21)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
+                    break;
+                case 0xdd:
+				// 	qemu_chr_fe_write_all(&s->chr[C1_DEV_EXT + (s->buffer[0] - 0xdd)],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 					break;
 				default: // catch-all.
 					printf("Unexpected message starting byte, %02x\n",s->buffer[0]);
 					/* FALLTHRU */
 				case 0x00: // Broadcast message (e.g. bootstrap)
+                    trace_c1_msg_xb_broadcast(s->buffer_level);
 					for (int i=C1_DEV_XBUDDY+1; i<C1_BRIDGE_COUNT; i++)
 					{
 						qemu_chr_fe_write_all(&s->chr[i],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
@@ -138,6 +144,11 @@ static void c1_bridge_tx_assert(void *opaque, int n, int level)
 		else
 		{
 			// Just a single transmit, from downstream to base.
+            switch (s->id) {
+                case C1_DEV_EXT:
+                    trace_c1_msg_extboard_to_xb(s->buffer_level);
+                    break;
+            }
 			qemu_chr_fe_write_all(&s->chr[s->id],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 
 		}
@@ -167,6 +178,7 @@ static void c1_bridge_byte_send(void *opaque, int n, int level)
 			uint8_t len = s->buffer[2] + 5;
 			if (s->buffer_level == len)
 			{
+                trace_c1_msg_boot_extboard_to_xb(s->buffer_level);
 				qemu_chr_fe_write_all(&s->chr[s->id],(uint8_t*)s->buffer, sizeof(s->buffer[0]) * s->buffer_level);
 				//printf("XL Puppy: sent %u bytes\n",s->buffer_level);
 				s->buffer_level = 0;

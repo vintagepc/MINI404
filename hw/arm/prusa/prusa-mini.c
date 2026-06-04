@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/core/boards.h"
+#include "system/qtest.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
@@ -473,14 +474,31 @@ static const TypeInfo buddy_machine_types[] = {
 
 DEFINE_TYPES(buddy_machine_types)
 
-// Don't enable this for tests, it breaks because it doesn't run.
-#ifndef CONFIG_GCOV
-
+// Don't register the deprecated compat machine when running under qtest:
+// it cannot be properly instantiated and breaks introspection/HMP tests.
+// DEFINE_MACHINE generates a type_init constructor that runs before argument
+// parsing, so qtest_enabled() is not yet valid here — use the env var instead.
 static void buddy_machine_init(MachineClass *mc)
 {
     mc->desc = "Prusa Mini Board";
     mc->deprecation_reason = "prusabuddy has been deprecated because it's a board, not a machine. Use -machine prusa-mini instead";
 }
 
-DEFINE_MACHINE("prusabuddy", buddy_machine_init)
-#endif
+static void buddy_machine_init_class_init(ObjectClass *oc, const void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+    buddy_machine_init(mc);
+}
+static const TypeInfo buddy_machine_init_typeinfo = {
+    .name          = MACHINE_TYPE_NAME("prusabuddy"),
+    .parent        = TYPE_MACHINE,
+    .class_init    = buddy_machine_init_class_init,
+    .instance_size = sizeof(MachineState),
+};
+static void buddy_machine_init_register_types(void)
+{
+    if (!getenv("QTEST_QEMU_BINARY")) {
+        type_register_static(&buddy_machine_init_typeinfo);
+    }
+}
+type_init(buddy_machine_init_register_types)

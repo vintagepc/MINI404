@@ -19,6 +19,7 @@
 
 #include "../stm32_chips/stm32f030xx.h"
 #include "../stm32_common/stm32_iwdg_regdata.h"
+#include "../stm32_registers/generated/common/IWDG_TYPE_A_index.h"
 
 
 static void test_lock(void)

@@ -26,7 +26,7 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_flash,acr),bits);
 
 typedef union {
 	struct {
-		uint32_t _reserved0    :32;
+		uint32_t KEY           :32; // Key
 	} QEMU_PACKED bits;
 	uint32_t raw;
 }  REGDEF_NAME(h503_flash,optkeyr);
@@ -296,7 +296,7 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_flash,sr),bits);
 
 typedef union {
 	struct {
-		uint32_t _reserved0    :32;
+		uint32_t KEY           :32; // Key
 	} QEMU_PACKED bits;
 	uint32_t raw;
 }  REGDEF_NAME(h503_flash,keyr);
@@ -359,8 +359,8 @@ CHECK_TYPEDEF_u32(REGDEF_NAME(h503_flash,optsr2),bits);
 static const stm32_reginfo_t stm32_h503_flash_reginfo[RI_END] =
 {
 	[RI_ACR            ] = { .reset_val = 0x00000013, .not_reserved = true, .unimp_mask = 0x00000130, .mask = 0x0000013F }, /* mask = 0b00000000000000000000000100111111 */
-	[RI_KEYR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b00000000000000000000000000000000 */
-	[RI_OPTKEYR        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
+	[RI_KEYR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
+	[RI_OPTKEYR        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xFFFFFFFF, .mask = 0xFFFFFFFF }, /* mask = 0b11111111111111111111111111111111 */
 	[RI_OPSR           ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0xE1CFFFFF, .mask = 0xE1CFFFFF }, /* mask = 0b11100001110011111111111111111111 */
 	[RI_OPTCR          ] = { .reset_val = 0x00000001, .not_reserved = true, .unimp_mask = 0x80000003, .mask = 0x80000003 }, /* mask = 0b10000000000000000000000000000011 */
 	[RI_SR             ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x009F000B, .mask = 0x009F000B }, /* mask = 0b00000000100111110000000000001011 */
@@ -368,14 +368,14 @@ static const stm32_reginfo_t stm32_h503_flash_reginfo[RI_END] =
 	[RI_CCR            ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x009F0000, .mask = 0x009F0000 }, /* mask = 0b00000000100111110000000000000000 */
 	[RI_PRIVCFGR       ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000002, .mask = 0x00000002 }, /* mask = 0b00000000000000000000000000000010 */
 	[RI_HDPEXTR        ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00070007, .mask = 0x00070007 }, /* mask = 0b00000000000001110000000000000111 */
-	//[RI_OPTSR_CUR      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x8033FFDF, .mask = 0x8033FFDF }, /* mask = 0b10000000001100111111111111011111 */
+	[RI_OPTSR          ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x8033FFDF, .mask = 0x8033FFDF }, /* mask = 0b10000000001100111111111111011111 */
 	[RI_OPTSR_PRG      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
-	//[RI_EPOCHR_CUR     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
-	//[RI_EPOCHR_PRG     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
-	//[RI_OPTSR2_CUR     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000658, .mask = 0x00000658 }, /* mask = 0b00000000000000000000011001011000 */
+	[RI_EPOCHR_CUR     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
+	[RI_EPOCHR_PRG     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
+	[RI_OPTSR2         ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000658, .mask = 0x00000658 }, /* mask = 0b00000000000000000000011001011000 */
 	[RI_OPTSR2_PRG     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
-	//[RI_BOOTR_CUR      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
-	//[RI_BOOTR_PRG      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
+	[RI_BOOTR_CUR      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
+	[RI_BOOTR_PRG      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
 	[RI_OTPBLR_CUR     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
 	[RI_OTPBLR_PRG     ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */
 	[RI_PRIVBB1R1      ] = { .reset_val = 0x00000000, .not_reserved = true, .unimp_mask = 0x00000000, .mask = 0x00000000 }, /* mask = 0b00000000000000000000000000000000 */

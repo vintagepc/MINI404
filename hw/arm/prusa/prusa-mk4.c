@@ -75,6 +75,12 @@ enum {
 };
 
 enum {
+    FAM_MK4,
+    FAM_IX,
+    FAM_C1,
+};
+
+enum {
     AXIS_X,
     AXIS_Y,
     AXIS_Z,
@@ -139,6 +145,7 @@ typedef struct mk4_cfg_t {
 	uint8_t m_uart;
 	bool is_400step;
 	bool has_door_sensor;
+    uint8_t printer_family;
 	uint8_t dm_ver;
 	const char* boot_fn;
 	const char* eeprom_fn;
@@ -209,6 +216,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
 	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
+    .printer_family = FAM_MK4,
 	.dm_ver = 27,
 	.boot_fn = BOOTLOADER_IMAGE(Mk4),
 	.eeprom_fn = EEPROM_FN(Mk4),
@@ -253,6 +261,7 @@ static const mk4_cfg_t mk4_034_cfg = {
 	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
+    .printer_family = FAM_MK4,
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk4),
 	.eeprom_fn = EEPROM_FN(Mk4),
@@ -297,6 +306,7 @@ static const mk4_cfg_t mk3v5_cfg = {
 	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = false,
+    .printer_family = FAM_MK4,
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk3v5),
 	.eeprom_fn = EEPROM_FN(Mk3v5),
@@ -341,6 +351,7 @@ static const mk4_cfg_t mk3v9_cfg = {
 	.m_inverted = {0, 1, 0,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = false,
+    .printer_family = FAM_MK4,
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk3v9),
 	.eeprom_fn = EEPROM_FN(Mk3v9),
@@ -386,6 +397,7 @@ static const mk4_cfg_t ix_027c_cfg = {
 	.m_inverted = {1, 0 ,0,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = false,
+    .printer_family = FAM_IX,
 	.dm_ver = 27,
 	.boot_fn = BOOTLOADER_IMAGE(iX),
 	.eeprom_fn = EEPROM_FN(iX),
@@ -407,8 +419,8 @@ static const mk4_cfg_t core1_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
-    .f_rpms = { 6600, 7000 },
-    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
+    .f_rpms = { 6600, 8000 },
+    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
     .f_inverted = true,
     .has_at21 = true,
 	.has_loadcell = true,
@@ -421,8 +433,8 @@ static const mk4_cfg_t core1_cfg = {
 	},
 	.e_t_mass = 45,
     .motor = TMC2130,
-    .m_label = {'X','Y','Z','E'},
-    .m_step = { STM_PIN(GPIOA,3), STM_PIN(GPIOA,0), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
+    .m_label = {'A','B','Z','E'},
+    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
     .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
     .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
@@ -430,6 +442,7 @@ static const mk4_cfg_t core1_cfg = {
 	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
 	.is_400step = true,
+    .printer_family = FAM_C1,
 	.has_door_sensor = true,
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(COREONE),
@@ -676,11 +689,20 @@ static void mk4_init(MachineState *machine)
         static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
 
-        if(mc->has_modbed)
+        if(cfg.printer_family == FAM_IX)
         {
             ends[0] = 0*100*16*295;
             ends[1] = 0*100*16*310;
             ends[2] = 800*16*195;
+            stepsize[2] <<= 1;
+            links[2] = "motor[4]";
+            links[3] = "motor[5]";
+        }
+        else if (cfg.printer_family == FAM_C1)
+        {
+            ends[0] = 0*100*16*250;
+            ends[1] = 0*100*16*220;
+            ends[2] = 800*16*270;
             stepsize[2] <<= 1;
             links[2] = "motor[4]";
             links[3] = "motor[5]";
@@ -739,12 +761,21 @@ static void mk4_init(MachineState *machine)
         }
 
     }
-    if (mc->has_modbed)
+    if (cfg.printer_family == FAM_IX || cfg.printer_family == FAM_C1)
     {
         dev = qdev_new("corexy-helper");
-        qdev_prop_set_uint32(dev, "x-max-um", 1000U*290U);
-        qdev_prop_set_uint32(dev, "y-max-um", 1000U*310U);
-        qdev_prop_set_bit(dev,"swap-calc",true);
+        if (cfg.printer_family == FAM_IX)
+        {
+            qdev_prop_set_uint32(dev, "x-max-um", 1000U*290U);
+            qdev_prop_set_uint32(dev, "y-max-um", 1000U*310U);
+            qdev_prop_set_bit(dev,"swap-calc",true);
+        }
+        else if (cfg.printer_family == FAM_C1)
+        {
+            qdev_prop_set_uint32(dev, "x-max-um", 1000U*255U);
+            qdev_prop_set_uint32(dev, "y-max-um", 1000U*242U);
+            qdev_prop_set_bit(dev,"swap-calc",true);
+        }
         // qdev_prop_set_bit(dev,"invert-y",true);
 
         sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -752,6 +783,9 @@ static void mk4_init(MachineState *machine)
         qdev_connect_gpio_out(dev, 1, qdev_get_gpio_in_named(motors[1],"ext-stall",0));
         qdev_connect_gpio_out_named(motors[1],"um-out",0,qdev_get_gpio_in(dev,0));
         qdev_connect_gpio_out_named(motors[0],"um-out",0,qdev_get_gpio_in(dev,1));
+
+        qemu_set_irq(qdev_get_gpio_in_named(motors[0], "um-in", 0), 75*1000.f);
+        qemu_set_irq(qdev_get_gpio_in_named(motors[1], "um-in", 0), 125*1000.f);
 
         // Cheat/hack, the helper will alternate between the status structures it returns when they are polled by the UI.
         object_property_set_link(OBJECT(db2), "motor[2]", OBJECT(dev), &error_fatal);
@@ -801,10 +835,11 @@ static void mk4_init(MachineState *machine)
 		}
 	}
 
-	// Fake a door sensor just to get a fw boot for now:
 	if (cfg.has_door_sensor)
 	{
-		qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3), "adc_data_in", 15), 20);
+        dev = qdev_new("door-switch");
+        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+        qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3), "adc_data_in", 15));
 	}
 
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
@@ -1028,7 +1063,6 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(encoder, "touch",     0, t_split);
 
     // Do not create the bridge element if no kernel is suppled. Corner case for qtest.
-    xBuddyMachineState *s = XBUDDY_MACHINE(machine);
 	if (kernel_len > 0 || s->force_mmu)
 	{
 		if (mc->has_extboard)

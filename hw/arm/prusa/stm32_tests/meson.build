@@ -5,6 +5,7 @@ qtests_buddy = [
     'prusa/stm32_tests/mini404_fan_test',
     'prusa/stm32_tests/mini404_irsensor_test',
     'prusa/stm32_tests/mini404_hx717_test',
+    'prusa/stm32_tests/mini404_ldc1612_test',
     'prusa/stm32_tests/mini404_hallsensor_test',
     'prusa/stm32_tests/mini404_heater_test',
     'prusa/stm32_tests/mini404_mmu_bridge_test',
@@ -16,6 +17,7 @@ qtests_buddy = [
     'prusa/stm32_tests/stm32_dbg-test',
     'prusa/stm32_tests/stm32_crc-test',
     'prusa/stm32_tests/stm32_dma-test',
+    'prusa/stm32_tests/stm32_fdcan-test',
     'prusa/stm32_tests/stm32_f4_dma-test',
     'prusa/stm32_tests/stm32_exti-test',
     'prusa/stm32_tests/stm32_flashint-test',
@@ -26,5 +28,6 @@ qtests_buddy = [
     'prusa/stm32_tests/stm32_rcc-test',
     'prusa/stm32_tests/stm32_rng-test',
     'prusa/stm32_tests/stm32_syscfg-test',
+    'prusa/stm32_tests/stm32_i2c-test',
     'prusa/stm32_tests/stm32_uart-test'
 ]

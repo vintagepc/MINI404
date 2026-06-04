@@ -191,7 +191,7 @@ int main(int argc, char **argv)
     g_test_set_nonfatal_assertions();
 
 	(void)stm32f030_gpio_reginfo;
-	(void)stm32g070_gpio_reginfo;
+	(void)stm32g070_c092_gpio_reginfo;
 	(void)stm32f2xx_gpio_reginfo;
 	(void)stm32f4xx_gpio_reginfo;
 	(void)stm32h503_gpio_reginfo;

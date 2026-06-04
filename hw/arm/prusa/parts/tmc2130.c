@@ -79,7 +79,14 @@ typedef union
             uint8_t uv_cp   :1;
             uint32_t :29; // unused
         }  QEMU_PACKED GSTAT;
-        uint32_t _unimplemented[106]; //0x02 - 0x6B
+        uint32_t _unimplemented[43]; //0x02 - 0x2C
+        struct {                     //0x2D
+            int32_t coil_A  :9;
+            uint32_t        :7;
+            int32_t coil_B  :9;
+            uint32_t        :7;
+        } QEMU_PACKED XDIRECT;
+        uint32_t _unimplemented_b[62]; //0x2E - 0x6B
         struct                        //0x6C
         {
             uint32_t toff		:4;
@@ -181,6 +188,8 @@ typedef struct tmc2130_state {
     QEMUTimer *standstill;
 
 	p404_motorif_status_t vis;
+
+    script_handle handle;
 
 } tmc2130_state;
 
@@ -291,7 +300,7 @@ static void tmc2130_standstill_timer(void *opaque)
 static void tmc2130_step(void *opaque, int n, int value) {
 
     tmc2130_state *s = opaque;
-    if (!s->enabled) return;
+    if (!s->enabled || s->regs.defs.GCONF.direct_mode) return;
 	if (!s->regs.defs.CHOPCONF.dedge)
 	{
 		// In normal mode only step on rising pulse
@@ -400,6 +409,32 @@ static void tmc2130_process_cmd(tmc2130_state *s) {
 				tmc2130_check_raise_diag(s, s->regs.defs.DRV_STATUS.stallGuard); // Adjust DIAG out, it mayhave  been reconfigured.
 				s->stealthmode = s->regs.defs.GCONF.en_pwm_mode;
 				break;
+			case 0x2D: // XDIRECT
+				if (s->regs.defs.GCONF.direct_mode) {
+					int32_t a = s->regs.defs.XDIRECT.coil_A;
+					int32_t b = s->regs.defs.XDIRECT.coil_B;
+					if (a == 0 && b == 0) break;
+					int32_t ustep = (int32_t)(atan2f((float)b, (float)a) / (2.f * (float)M_PI) * 1024.f);
+					if (ustep < 0) ustep += 1024;
+					int64_t cycle = s->current_step / 1024;
+					int64_t candidate = cycle * 1024 + ustep;
+					int64_t delta = candidate - s->current_step;
+					if (delta >  512) candidate -= 1024;
+					else if (delta < -512) candidate += 1024;
+					if (s->max_step != 0) {
+						if (candidate < 0) candidate = 0;
+						else if (candidate > (int64_t)s->max_step) candidate = s->max_step;
+					}
+					s->current_step = candidate;
+					s->current_position = tmc2130_step_to_pos(s->current_step, s->max_steps_per_mm);
+					s->vis.current_pos = s->current_position;
+					s->vis.status.changed = true;
+					qemu_set_irq(s->position_out, s->current_step);
+					qemu_set_irq(s->um_out, s->current_position * 1000.f);
+					s->regs.defs.DRV_STATUS.stst = false;
+					timer_mod(s->standstill, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 87);
+				}
+				break;
 			case 0x6C: // Chopconf
 				s->ms_increment = pow(2,s->regs.defs.CHOPCONF.mres);
 				break;
@@ -475,6 +510,7 @@ static void tmc2130_realize(SSIPeripheral *obj, Error **errp){
 	script_register_action(pScript, "SetStall", "Sets the stallguard value as specified.", ActSetStall);
 	script_add_arg_bool(pScript, ActSetStall);
     scripthost_register_scriptable(pScript);
+    s->handle = pScript;
 	s->vis.label = s->id;
     s->vis.max_pos = (float)s->max_step/(float)s->max_steps_per_mm;
     s->vis.status.changed = true;

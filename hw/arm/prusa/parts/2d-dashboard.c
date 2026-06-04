@@ -237,6 +237,7 @@ static void dashboard_2d_wled_in(void *opaque, int n, int level)
     s->leds[n].red = level<<8;
     s->leds[n].green = level<<8;
     s->leds[n].blue = level<<8;
+    s->redraw = true;
 }
 
 static void dashboard_2d_rgbled_in(void *opaque, int n, int level)
@@ -245,6 +246,7 @@ static void dashboard_2d_rgbled_in(void *opaque, int n, int level)
     s->leds[n].red = (level & 0xFF0000) >> 8;
     s->leds[n].green = (level & 0x00FF00);
     s->leds[n].blue = (level & 0x0000FF) << 8;
+    s->redraw = true;
 }
 
 static void dashboard_2d_rled_in(void *opaque, int n, int level)
@@ -255,6 +257,7 @@ static void dashboard_2d_rled_in(void *opaque, int n, int level)
 		level = 255U;
 	}
 	s->leds[n].red = level<<8;
+    s->redraw = true;
 }
 
 static void dashboard_2d_gled_in(void *opaque, int n, int level)
@@ -265,7 +268,7 @@ static void dashboard_2d_gled_in(void *opaque, int n, int level)
 		level = 255U;
 	}
 	s->leds[n].green = level<<8;
-
+    s->redraw = true;
 }
 
 static void dashboard_2d_bled_in(void *opaque, int n, int level)
@@ -276,7 +279,7 @@ static void dashboard_2d_bled_in(void *opaque, int n, int level)
 		level = 255U;
 	}
 	s->leds[n].blue = level<<8;
-
+    s->redraw = true;
 }
 
 static void dashboard_2d_digital_led_in(void *opaque, int n, int level)
@@ -284,12 +287,14 @@ static void dashboard_2d_digital_led_in(void *opaque, int n, int level)
     Dashboard2DState *s = DB2D_DISPLAY(opaque);
 	s->leds[n].red =   (level*255)<<8;
     s->leds[n].green = (level*255)<<8;
+    s->redraw = true;
 }
 
 static void dashboard_2d_fan_pwm_in(void *opaque, int n, int level)
 {
 	Dashboard2DState *s = DB2D_DISPLAY(opaque);
 	s->fan_pwms[n] = level>255U ? 255U : (level & 0xFF);
+    s->redraw = true;
 }
 
 static void dashboard_2d_fan_rpm_in(void *opaque, int n, int level)
@@ -297,12 +302,14 @@ static void dashboard_2d_fan_rpm_in(void *opaque, int n, int level)
 	Dashboard2DState *s = DB2D_DISPLAY(opaque);
 	s->fan_rpms[n] = level;
     snprintf(s->fan_printf[n], sizeof(s->fan_printf[n]), "%5d", level);
+    s->redraw = true;
 }
 
 static void dashboard_2d_therm_pwm_in(void *opaque, int n, int level)
 {
 	Dashboard2DState *s = DB2D_DISPLAY(opaque);
 	s->therm_pwms[n] = level>255U ? 255U : (level & 0xFF);
+    s->redraw = true;
 }
 
 static void dashboard_2d_therm_temp_in(void *opaque, int n, int level)
@@ -310,6 +317,7 @@ static void dashboard_2d_therm_temp_in(void *opaque, int n, int level)
 	Dashboard2DState *s = DB2D_DISPLAY(opaque);
 	float temp = ((float)level)/256.F;
 	snprintf(s->therm_printf[n],sizeof(s->therm_printf[n]), "%5.1f", temp);
+    s->redraw = true;
 }
 
 static const GraphicHwOps dashboard_2d_ops = {

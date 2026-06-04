@@ -41,7 +41,7 @@ struct OCLatchState {
     /*< public >*/
     bool state;
     qemu_irq irq;
-
+    script_handle handle;
 };
 
 enum {
@@ -95,12 +95,12 @@ static void oc_latch_init(Object *obj)
     qdev_init_gpio_out(DEVICE(obj), &s->irq, 1);
 	qdev_init_gpio_in(DEVICE(obj), oc_latch_reset_in,1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_OCLATCH);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_OCLATCH);
 
-    script_register_action(pScript, "Set", "Sets the overcurrent line to fault", ACT_SET);
-    script_register_action(pScript, "Toggle",  "Clears the overcurrent fault line", ACT_RESET);
+    script_register_action(s->handle, "Set", "Sets the overcurrent line to fault", ACT_SET);
+    script_register_action(s->handle, "Toggle",  "Clears the overcurrent fault line", ACT_RESET);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 }
 
 static const VMStateDescription vmstate_oc_latch = {

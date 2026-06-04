@@ -24,6 +24,7 @@
  * QEMU stm32f2xx TIM emulation
  */
 #include "stm32f2xx_tim.h"
+#include "hw/arm/prusa/stm32_common/stm32_shared.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
@@ -31,6 +32,8 @@
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_rcc_if.h"
 #include "trace.h"
+#include "trace/trace-hw_arm_prusa_stm32f407.h"
+#include <stdint.h>
 
 #define R_TIM_CR1    (0x00 / 4) //p
 #define R_TIM_CR2    (0x04 / 4)
@@ -90,8 +93,8 @@ static const char *f2xx_tim_reg_names[] = {
 enum CCxS_val
 {
 	CCxS_OUTPUT,
-	CCxS_INPUT_TI1,
-	CCxS_INPUT_TI2,
+	CCxS_INPUT_NORMAL, // Normal mapping, e.g. input 1 = channel 1, 2=2, etc
+	CCxS_INPUT_ALT, // Swapped mapping, e.g. CCxS2 = ch1, 1=2, 3=4, 4=3.
 	CCxS_INPUT_TRC
 };
 
@@ -126,6 +129,20 @@ enum INT_FLAG
     INT_CC_MSK = 0x1E,
 };
 
+enum ICC_EDGE_TYPE
+{
+    ICC_RISING = 1,
+    ICC_FALLING = 2,
+    ICC_BOTH = ICC_RISING | ICC_FALLING,
+};
+
+static const uint8_t CCxS_INPUT_MAP[4][2] = 
+{
+    {0,1},
+    {1,0},
+    {2,3},
+    {3,2}
+};
 
 
 static void f2xx_tim_update_irqs(f2xx_tim *s)
@@ -183,6 +200,43 @@ static inline int64_t f2xx_tim_ns_to_ticks(f2xx_tim *s, int64_t t)
 	    return muldiv64(t, clock_freq, NANOSECONDS_PER_SECOND) / (s->defs.PSC + 1);
 }
 
+static void f2xx_tim_input_capture(void *opaque, int n, int level)
+{
+    f2xx_tim* s = opaque;
+    // Lookup the channel that's associated with the input:
+    uint8_t edge_type = 0;
+    if (s->icc_cfg[n].last_state < level)
+    {
+        edge_type = ICC_RISING;
+    }
+    else if (s->icc_cfg[n].last_state > level)
+    {
+        edge_type = ICC_FALLING;
+    }
+    s->icc_cfg[n].last_state = level;
+    uint8_t notify = s->icc_to_channel[n];
+    uint8_t shift = 0;
+    while (notify > 0)
+    {
+        // If a channel is configured and the edge type matches:
+        if ((notify & 1) && (s->icc_cfg[shift].edge_type & edge_type))
+        {
+            uint32_t count = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase;
+            s->regs[R_TIM_CCR1 + shift] = count;
+            trace_stm32f2xx_tim_ccr_triggered(_PERIPHNAMES[s->parent.periph], shift + 1, count);
+            uint8_t flags = INT_CC1F << shift;
+            if (s->regs[R_TIM_SR] & flags)
+            {
+                flags |= (INT_CC1OF << shift); // Set overcapture flag
+                trace_stm32f2xx_tim_ccr_oc(_PERIPHNAMES[s->parent.periph], shift + 1);
+            }
+            s->regs[R_TIM_SR] |= flags;
+            f2xx_tim_update_irqs(s);
+        }
+        notify >>=1;
+        shift++;
+    }
+}
 
 static int64_t
 f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
@@ -280,6 +334,18 @@ f2xx_tim_read(void *arg, hwaddr addr, unsigned int size)
         r = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) - s->count_timebase;
         // printf("Attempted to read count on timer %u (val %u)\n", s->id,r);
         break;
+    case R_TIM_CCR1...R_TIM_CCR4:
+        {
+            uint8_t channel = addr - R_TIM_CCR1;
+            if (s->icc_cfg[channel].is_input)
+            {
+                // Clear flag for CCxF
+                s->regs[R_TIM_SR] &= ~(INT_CC1F << channel);
+                f2xx_tim_update_irqs(s);
+            }
+            trace_stm32f2xx_tim_ccr_read(_PERIPHNAMES[s->parent.periph], channel+1, r);
+        }
+        break;
     default:
         qemu_log_mask(LOG_UNIMP, "f2xx %s unimplemented read 0x%x+%u size %u val 0x%x\n", _PERIPHNAMES[s->parent.periph],
           (unsigned int)addr << 2, offset, size, (unsigned int)r);
@@ -296,17 +362,18 @@ static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, bool enabled, uint32_t CCR, uint
     uint32_t ratio = 0;
     if (!enabled)
     {
+        if (is_inverted^active_low) ratio = 255-ratio;
         return ratio;
     }
     switch (mode)
     {
-        case 0x00: // frozen
+        case OCxM_Frozen: // frozen
             return -1;
     //    case 0x4: // Force inactive/active:
     //    case 0x5:
             return 255*is_inverted;
-        case 0x6:
-        case 0x7:
+        case OCxM_PWM1:
+        case OCxM_PWM2:
             ratio = (CCR*255)/s->defs.ARR;
             if (is_inverted^active_low) ratio = 255-ratio;
             return ratio;
@@ -341,38 +408,110 @@ static int f2xx_tim_calc_pwm_ratio(f2xx_tim *s, bool enabled, uint32_t CCR, uint
 //     }
 // }
 
-// static int
-
-static void f2xx_tim_update_pwm(f2xx_tim *s, int n)
+static enum ICC_EDGE_TYPE f2xx_tim_get_icc_edge(bool CCxNP, bool CCxP)
+{
+    switch(CCxNP<<1U | CCxP)
+    {
+        case 0b00:
+            return ICC_RISING;
+        case 0b01:
+            return ICC_FALLING;
+        case 0b11:
+            return ICC_BOTH;
+        case 0b10:
+            qemu_log_mask(LOG_GUEST_ERROR, "Guest set invalid polarity for Input Capture Mode");
+    }
+    return 0;
+}
+// Handle input and output modes
+static void f2xx_tim_update_io(f2xx_tim *s, int n)
 {
 	if (!s->defs.CR1.CEN)
 		return;
 	int ratio = -1;
+    uint8_t channel_index = n-1;
 	switch (n)
 	{
 		case 1:
-			if (s->defs.CCMR1.CC1S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC1E, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P);
-			if (s->defs.CCMR1.OC1M == OCxM_Frozen && s->defs.DIER.CC1IE)
-				f2xx_tim_update_ccr_timer(s, 1, s->defs.CCR1);
+			switch (s->defs.CCMR1.CC1S)
+            {
+                case CCxS_OUTPUT:
+                    // Clear ICC config
+                    s->icc_to_channel[0] &= ~BIT(channel_index);
+                    s->icc_to_channel[1] &= ~BIT(channel_index);
+                    s->icc_cfg[channel_index].is_input = false;
+    				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC1E, s->defs.CCR1, s->defs.CCMR1.OC1M, s->defs.CCER.CC1P); 
+                    if (s->defs.CCMR1.OC1M == OCxM_Frozen && s->defs.DIER.CC1IE)
+                        f2xx_tim_update_ccr_timer(s, 1, s->defs.CCR1);
+                    break;
+                case CCxS_INPUT_NORMAL:
+                case CCxS_INPUT_ALT:
+                    s->icc_cfg[channel_index].is_input = true;
+                    s->icc_cfg[channel_index].edge_type = f2xx_tim_get_icc_edge(s->defs.CCER.CC1NP, s->defs.CCER.CC1P);
+                    s->icc_to_channel[CCxS_INPUT_MAP[channel_index][s->defs.CCMR1.CC1S - 1]] |= BIT(channel_index); // Set flag in array to indicate channel is notified.
+                    break;
+            }
 			break;
 		case 2:
-			if (s->defs.CCMR1.CC2S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC2E, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
+			switch (s->defs.CCMR1.CC2S)
+            {
+                case CCxS_OUTPUT:
+                    // Clear ICC config
+                    s->icc_to_channel[1] &= ~BIT(channel_index);
+                    s->icc_to_channel[0] &= ~BIT(channel_index);
+                    s->icc_cfg[channel_index].is_input = false;
+				    ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC2E, s->defs.CCR2, s->defs.CCMR1.OC2M, s->defs.CCER.CC2P);
+                    break;
+                case CCxS_INPUT_NORMAL:
+                case CCxS_INPUT_ALT:
+                    s->icc_cfg[channel_index].is_input = true;
+                    s->icc_cfg[channel_index].edge_type = f2xx_tim_get_icc_edge(s->defs.CCER.CC2NP, s->defs.CCER.CC2P);
+
+                    s->icc_to_channel[CCxS_INPUT_MAP[channel_index][s->defs.CCMR1.CC2S - 1]] |= BIT(channel_index); // Set flag in array to indicate channel is notified.
+                    break;
+            }
 			break;
 		case 3:
-			if (s->defs.CCMR2.CC3S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC3E, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+            switch (s->defs.CCMR2.CC3S)
+            {
+                case CCxS_OUTPUT:
+                    // Clear ICC config
+                    s->icc_to_channel[2] &= ~BIT(channel_index);
+                    s->icc_to_channel[3] &= ~BIT(channel_index);
+                    s->icc_cfg[channel_index].is_input = false;
+				    ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC3E, s->defs.CCR3, s->defs.CCMR2.OC3M, s->defs.CCER.CC3P);
+                    break;
+                case CCxS_INPUT_NORMAL:
+                case CCxS_INPUT_ALT:
+                    s->icc_cfg[channel_index].is_input = true;
+                    s->icc_cfg[channel_index].edge_type = f2xx_tim_get_icc_edge(s->defs.CCER.CC3NP, s->defs.CCER.CC3P);
+                    s->icc_to_channel[CCxS_INPUT_MAP[channel_index][s->defs.CCMR2.CC3S - 1]] |= BIT(channel_index); // Set flag in array to indicate channel is notified.
+                    break;
+            }
 			break;
 		case 4:
-			if (s->defs.CCMR2.CC4S == CCxS_OUTPUT)
-				ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC4E, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
-			break;
+            switch (s->defs.CCMR2.CC4S)
+            {
+                case CCxS_OUTPUT:
+                    // Clear ICC config
+                    s->icc_to_channel[2] &= ~BIT(channel_index);
+                    s->icc_to_channel[3] &= ~BIT(channel_index);
+                    s->icc_cfg[3].is_input = false;
+				    ratio = f2xx_tim_calc_pwm_ratio(s, s->defs.CCER.CC4E, s->defs.CCR4, s->defs.CCMR2.OC4M, s->defs.CCER.CC4P);
+                    break;
+                case CCxS_INPUT_NORMAL:
+                case CCxS_INPUT_ALT:
+                    s->icc_cfg[channel_index].is_input = true;
+                    s->icc_cfg[channel_index].edge_type = f2xx_tim_get_icc_edge(s->defs.CCER.CC4NP, s->defs.CCER.CC4P);
+                    s->icc_to_channel[CCxS_INPUT_MAP[channel_index][s->defs.CCMR2.CC4S - 1]] |= BIT(channel_index); // Set flag in array to indicate channel is notified.
+                    break;
+            }
+            break;
 	}
 	if (ratio>=0)
 	{
 		qemu_set_irq(s->pwm_ratio_changed[n-1], ratio);
-		trace_tim_update_ccr(_PERIPHNAMES[s->parent.periph], n, ratio);
+		//trace_tim_update_ccr(_PERIPHNAMES[s->parent.periph], n, ratio);
 	}
 }
 
@@ -415,17 +554,17 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             qemu_log_mask(LOG_UNIMP, "f2xx %s non-zero CR1 unimplemented\n", _PERIPHNAMES[s->parent.periph]);
         }
         if ((s->regs[addr] & 1) == 0 && data & 1) {
-            printf("f2xx tim started: %u\n", 1U + s->parent.periph - STM32_P_TIM1);
+            trace_stm32f2xx_tim_start(_PERIPHNAMES[s->parent.periph]);
             timer_mod(s->timer, f2xx_tim_next_transition(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
             qemu_set_irq(s->pwm_enable[0], 1);
 			s->defs.CR1.CEN = 1;
 			for (int i=1; i<5; i++)
-				f2xx_tim_update_pwm(s, i);
-            printf("pwm en\n");
+				f2xx_tim_update_io(s, i);
+            // printf("pwm en\n");
         } else if (s->regs[addr] & 1 && (data & 1) == 0) {
             timer_del(s->timer);
             qemu_set_irq(s->pwm_enable[0], 0);
-            printf("pwm dis\n");
+            // printf("pwm dis\n");
 
         }
         s->regs[addr] = data;
@@ -468,16 +607,16 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
         // Capture/Compare Enable register
         s->regs[addr] = data;
         if (changed & 0x01) {
-			f2xx_tim_update_pwm(s, 1);
+			f2xx_tim_update_io(s, 1);
         }
         if (changed & 0x10) {
-			f2xx_tim_update_pwm(s, 2);
+			f2xx_tim_update_io(s, 2);
         }
         if (changed & 0x100) {
-			f2xx_tim_update_pwm(s, 3);
+			f2xx_tim_update_io(s, 3);
         }
         if (changed & 0x1000){
-			f2xx_tim_update_pwm(s, 4);
+			f2xx_tim_update_io(s, 4);
         }
         break;
     // case R_TIM_CCMR1:
@@ -494,7 +633,7 @@ f2xx_tim_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
             data &= 0xFFFFU;
         }
         s->regs[addr] = data;
-		f2xx_tim_update_pwm(s, (addr - R_TIM_CCR1)+1 );
+		f2xx_tim_update_io(s, (addr - R_TIM_CCR1)+1 );
 	}
 	break;
     case R_TIM_ARR:
@@ -529,6 +668,9 @@ static void f2xx_tim_reset(DeviceState *dev)
     timer_del(s->timer);
     memset(&s->regs, 0, sizeof(s->regs));
     s->count_timebase = f2xx_tim_ns_to_ticks(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+    memset(s->icc_to_channel, 0, sizeof(s->icc_to_channel)); 
+    memset(s->icc_cfg, 0, sizeof(s->icc_cfg));
+    s->defs.ARR = UINT16_MAX;
 }
 
 static void f2xx_tim_realize(DeviceState* dev, Error **errp)
@@ -576,6 +718,8 @@ f2xx_tim_init(Object *obj)
 
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_ratio_changed, "pwm_ratio_changed", 4); // OCx1..4
     qdev_init_gpio_out_named(DEVICE(dev), s->pwm_enable, "pwm_enable", 4);
+
+    qdev_init_gpio_in_named(dev, f2xx_tim_input_capture, "input-capture", 4);
 }
 
 static const VMStateDescription vmstate_stm32f2xx_tim = {

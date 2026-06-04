@@ -3,6 +3,7 @@
 #include "qom/object.h"
 #include "qapi/error.h"
 #include "system/block-backend.h"
+#include "system/qtest.h"
 #include "hw/core/boards.h"
 #include "hw/core/loader.h"
 #include "hw/core/qdev.h"
@@ -22,9 +23,9 @@ static bool create_if_not_exist(const char* default_name, uint32_t file_size)
 	bool exists = true;
 	if (access(default_name, R_OK | W_OK) == -1)
 	{
-#ifndef CONFIG_GCOV
-		printf("%s not found - creating it.\n",default_name);
-#endif
+		if (!qtest_enabled()) {
+			printf("%s not found - creating it.\n",default_name);
+		}
 		// Create it.
 		int fd = creat(default_name, S_IRUSR | S_IWUSR);
 		exists = (ftruncate(fd, file_size) != -1);
@@ -45,11 +46,11 @@ extern BlockBackend* get_or_create_drive(BlockInterfaceType interface, int index
 	{
 		if (create_if_not_exist(default_name, file_size))
 		{
-#ifndef CONFIG_GCOV
-			printf("No -%s drive specified, using default %s\n",
-				interface==IF_MTD? "mtdblock" : "pflash",
-				default_name);
-#endif
+			if (!qtest_enabled()) {
+				printf("No -%s drive specified, using default %s\n",
+					interface==IF_MTD? "mtdblock" : "pflash",
+					default_name);
+			}
 			QemuOpts* drive_opts = drive_add(interface, index, default_name, "format=raw");
 			dinfo = drive_new(drive_opts, interface, errp);
 		}
@@ -111,9 +112,9 @@ extern void stm32_soc_setup_flash(DeviceState* dev, MemoryRegion* flash, Error**
 					break;
 				}
 			}
-#ifndef CONFIG_GCOV
-			printf("Using file-backed flash storage for %s: %s\n", class->cfg->name, soc->flash_filename);
-#endif
+			if (!qtest_enabled()) {
+				printf("Using file-backed flash storage for %s: %s\n", class->cfg->name, soc->flash_filename);
+			}
 			if (is_blank)
 			{
 				memset(mem, 0xFF, flash_size);

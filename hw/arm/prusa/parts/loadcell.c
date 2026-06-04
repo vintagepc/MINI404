@@ -33,6 +33,8 @@
 #include "qom/object.h"
 #include "hw/core/sysbus.h"
 #include "math.h"
+#include "trace.h"
+
 #define TYPE_LOADCELL "loadcell"
 
 OBJECT_DECLARE_SIMPLE_TYPE(LoadcellState, LOADCELL)
@@ -50,6 +52,7 @@ struct LoadcellState {
 
 	uint8_t tap;
 	p404_key_handle key;
+    script_handle handle;
 	QEMUTimer* timer;
 
 	/* Parameterized tap (loadcell::Tap script action). Independent state so the
@@ -113,7 +116,7 @@ static void handle_zpos_buildplate(LoadcellState *s, int level)
             s->is_zero = false;
             int val_out = START_HEIGHT-(level);
             qemu_set_irq(s->irq, val_out*-250);
-            // printf("LC out: %d\n",val_out);
+            trace_loadcell_value(val_out);
         }
     } else {
         if (level>START_HEIGHT+20 && !s->is_zero) {
@@ -123,7 +126,8 @@ static void handle_zpos_buildplate(LoadcellState *s, int level)
             s->is_zero = false;
             int val_out = START_HEIGHT-20-(level);
             qemu_set_irq(s->irq, val_out*-250);
-            // printf("LC out: %d\n",val_out);
+            trace_loadcell_value(val_out);
+
         }
     }
     s->last_pos = level;
@@ -293,13 +297,13 @@ static void loadcell_init(Object *obj)
     qdev_init_gpio_in(DEVICE(obj), loadcell_pos_in,3);
     qdev_init_gpio_in_named(DEVICE(obj), loadcell_cal_pin_in,"cal-pin-state", 1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_LOADCELL);
-    script_register_action(pScript, "Tap",
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_LOADCELL);
+    script_register_action(s->handle, "Tap",
         "Apply a force pulse of <peak_grams> over <duration_ms> (triangular ramp), synchronously.",
         ActTap);
-    script_add_arg_int(pScript, ActTap);
-    script_add_arg_int(pScript, ActTap);
-    scripthost_register_scriptable(pScript);
+    script_add_arg_int(s->handle, ActTap);
+    script_add_arg_int(s->handle, ActTap);
+    scripthost_register_scriptable(s->handle);
 
 	s->key = p404_new_keyhandler(P404_KEYCLIENT(obj));
     p404_register_keyhandler(s->key, 't',"Taps the loadcell");

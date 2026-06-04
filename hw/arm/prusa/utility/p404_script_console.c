@@ -23,6 +23,7 @@
 #include "qemu/option.h"
 #include "qapi/error.h"
 #include "qom/object.h"
+#include "system/qtest.h"
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "../utility/macros.h"
@@ -89,11 +90,11 @@ static void scriptcon_execute(void *opaque, const char *cmdline,
     {
         timer_mod(s->scripting, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+10);
     }
-#ifdef CONFIG_GCOV
-    //Help test cases know when the event timer has been scheduled for step_next()
-    const char* response = "ACK\r\n";
-    qemu_chr_fe_write_all(&s->be, (uint8_t*)response, strlen(response));
-#endif
+    if (qtest_enabled()) {
+        //Help test cases know when the event timer has been scheduled for step_next()
+        const char* response = "ACK\r\n";
+        qemu_chr_fe_write_all(&s->be, (uint8_t*)response, strlen(response));
+    }
 }
 
 static void scriptcon_auto_return(void *opaque, const char* cmd_completed)
@@ -208,11 +209,7 @@ static void scriptcon_read_command(ScriptConsoleState *s)
     if (!s->rl_state) {
         return;
     }
-    #ifdef CONFIG_GCOV
-        const char prompt[] = "";
-    #else
-        const char prompt[] = "p404> ";
-    #endif
+    const char* prompt = qtest_enabled() ? "" : "p404> ";
     readline_start(s->rl_state, prompt, 0, scriptcon_execute, NULL);
     readline_show_prompt(s->rl_state);
 }
@@ -248,6 +245,9 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 {
     //DeviceState *dev = DEVICE(d);
     ScriptConsoleState *s = P404_SCRIPT_CONSOLE(d);
+    if (qtest_enabled()) {
+        s->disable_echo = true;
+    }
 
     const char* script = arghelper_get_string("script");
     if (scripthost_setup(script, OBJECT(d))) // TODO- move scripthost out of this input handler?
@@ -295,12 +295,7 @@ static void scriptcon_realize(DeviceState *d, Error **errp)
 }
 
 static const Property scriptcon_properties[] = {
-#ifdef CONFIG_GCOV
-    // Suppress echo for unit testing, less headaches.
-    DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, true),
-#else
     DEFINE_PROP_BOOL("no_echo", ScriptConsoleState, disable_echo, false),
-#endif
     DEFINE_PROP_STRING("input_id", ScriptConsoleState, scriptcon_name),
 };
 

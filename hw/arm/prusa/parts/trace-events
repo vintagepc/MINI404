@@ -25,3 +25,20 @@ at21csxx_sio_high_icount(uint32_t icount) "SIO high: %u"
 at21csxx_start_condition(void)
 at21csxx_enter_discovery(void)
 at21csxx_discovery_ack(void)
+
+#door_switch.c
+door_switch_state(bool open) "is_open: %u"
+
+# fan.c
+fan_new_tach_interval(char label, int uS) "Fan %c tach interval: %d uS"
+fan_new_pwm_value(char label, uint8_t pwm) "Fan %c pwm: %u"
+
+# loadcell.c
+loadcell_value(int value) "Loadcell value: %d"
+
+# c1_bridge.c
+c1_msg_xb_broadcast(int size) "%d bytes"
+c1_msg_boot_xb_to_extboard(int size) "%d bytes"
+c1_msg_boot_extboard_to_xb(int size) "%d bytes"
+c1_msg_xb_to_extboard(int size) "%d bytes"
+c1_msg_extboard_to_xb(int size) "%d bytes"

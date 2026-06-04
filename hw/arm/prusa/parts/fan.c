@@ -32,6 +32,7 @@
 #include "../utility/ScriptHost_C.h"
 #include "qemu/module.h"
 #include "fan.h"
+#include "trace.h"
 
 struct  fan_state
 {
@@ -102,7 +103,7 @@ static void fan_pwm_change(void *opaque, int n, int level) {
 	{
 		level = 255 - level;
 	}
-
+    trace_fan_new_pwm_value(s->label, level);
     qemu_set_irq(s->pwm_out, level);
     s->current_rpm = (((uint32_t)s->max_rpm)*level)/255;
     if (s->is_nonlinear)
@@ -114,6 +115,7 @@ static void fan_pwm_change(void *opaque, int n, int level) {
     s->usec_per_pulse = fuSPerRev/4.f; // 4 pulses per rev.
     if (s->current_rpm>0) // Restart the timer if it has expired, otherwise leave it be.
     {
+        trace_fan_new_tach_interval(s->label, s->usec_per_pulse);
         timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
     }
     else
