@@ -1195,6 +1195,18 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			/* FW armed EP0 OUT for the data stage of SET_LINE_CODING. Push the 7
 			   bytes of line coding (dwDTERate, bCharFormat, bParityType, bDataBits)
 			   into the RX FIFO. dwDTERate comes from the cdc_baud property. */
+			/* ...but only once it actually has. TinyUSB derives the received
+			   length from DOEPTSIZ.XFRSIZ, so pushing the data stage before the
+			   guest has armed EP0 OUT (XFRSIZ still 0) delivers the bytes into a
+			   buffer it is not yet tracking: line_coding keeps TinyUSB's 115200
+			   default and the FW switches CDC to the Marlin console instead of
+			   the log. Whether the guest gets there first is pure boot timing --
+			   MK4 did, CORE One (busy bootstrapping puppies) did not -- so wait
+			   for it rather than race it. */
+			if (s->drego[0].DIEPTSIZ.XFRSIZ < 7) {
+				STM32F4xx_cdc_schedule(s);
+				break;
+			}
 			uint32_t pkt[3];
 			pkt[0] = DEV_SETCODING2_HEADER;
 			pkt[1] = s->cdc_baud;            /* dwDTERate (bytes 0-3) */
@@ -1207,11 +1219,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			   bit_rate stays at TinyUSB's 115200 default and line_coding_cb fires
 			   switch_to_marlin instead of switch_to_logging. Must happen before the
 			   OUT_DONE status word below, which is what completes the transfer. */
-			if (s->drego[0].DIEPTSIZ.XFRSIZ >= 7) {
-				s->drego[0].DIEPTSIZ.XFRSIZ -= 7;
-			} else {
-				s->drego[0].DIEPTSIZ.XFRSIZ = 0;
-			}
+			s->drego[0].DIEPTSIZ.XFRSIZ -= 7;   /* guaranteed >= 7 by the guard above */
 			f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_OUTCPLT, 0);
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_XFERCOMPLMSK);
             /* Don't auto-advance — wait for FW to arm EP0 IN for the status ZLP.
