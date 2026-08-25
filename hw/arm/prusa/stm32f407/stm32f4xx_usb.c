@@ -668,6 +668,11 @@ struct STM32F4xxUSBState {
 #endif
     bool debug;
 
+    /* Last level driven onto the IRQ line. Per instance: OTG_FS and OTG_HS are two
+       objects of this type and a shared static loses edges between them, which can
+       leave one controller's line stuck. */
+    int irq_level;
+
     bool disable_sofi;
 
 	bool is_device_mode;
@@ -793,14 +798,13 @@ static inline uint32_t f4xx_usb_get_daint(STM32F4xxUSBState *s)
 /* update irq line */
 static inline void STM32F4xx_update_irq(STM32F4xxUSBState *s)
 {
-    static int oldlevel;
     int level = 0;
 
     if ((s->GINTSTS.raw & s->gintmsk) && (s->gahbcfg & GAHBCFG_GLBL_INTR_EN)) {
         level = 1;
     }
-    if (level != oldlevel) {
-        oldlevel = level;
+    if (level != s->irq_level) {
+        s->irq_level = level;
         // trace_usb_stm_update_irq(level);
         qemu_set_irq(s->irq, level);
     }
@@ -3153,6 +3157,10 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
 	s->is_device_mode = false;
 
     s->device_state = 0;//DEV_ST_RESET;
+    /* Drive the line, don't just forget it: a cached level that disagrees with the
+       real line would suppress the next transition to that same level forever. */
+    qemu_set_irq(s->irq, 0);
+    s->irq_level = 0;
 
 
 }
@@ -3358,6 +3366,7 @@ const VMStateDescription vmstate_STM32F4xx_state = {
         VMSTATE_UINT32(rx_fifo_tail,STM32F4xxUSBState),
         VMSTATE_UINT32(rx_fifo_level,STM32F4xxUSBState),
         VMSTATE_UINT8(is_ping, STM32F4xxUSBState),
+        VMSTATE_INT32(irq_level, STM32F4xxUSBState),
         VMSTATE_END_OF_LIST()
     }
 };
