@@ -1068,6 +1068,43 @@ static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, co
 	STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
 }
 
+/* Append a single word to the RX FIFO. f4xx_usb_cdc_sendpkt() rewinds the ring on
+   every call, so it cannot be used to tack a trailing status word onto the packet
+   it just wrote. */
+static void f4xx_usb_cdc_append_word(STM32F4xxUSBState *s, uint32_t word)
+{
+	if (s->rx_fifo_level + 1 > STM32F4xx_RX_FIFO_SIZE) {
+		qemu_log_mask(LOG_GUEST_ERROR, "Receive FIFO full, data discarded!");
+		return;
+	}
+	s->fifo_ram[s->rx_fifo_tail++] = word;
+	s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
+	s->rx_fifo_level++;
+	STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
+}
+
+/* Real DWC2 follows the data words of a transfer with a status word: SETUP_DONE after
+   a SETUP packet, OUT_DONE after an OUT data packet. A FIFO-mode device driver takes
+   its setup-received and transfer-complete events from these words rather than from
+   DOEPINT, so they have to be on the wire. */
+static void f4xx_usb_cdc_push_status(STM32F4xxUSBState *s, uint8_t pktsts, uint8_t epnum)
+{
+	buffer_header_t hdr = {.raw = 0};
+	hdr.DEV.PKTSTS = pktsts;
+	hdr.DEV.EPNUM = epnum;
+	f4xx_usb_cdc_append_word(s, hdr.raw);
+}
+
+/* Push a SETUP packet the way the hardware does: data words, then SETUP_DONE. The
+   DOEPINT.STUP raise is redundant for a FIFO-mode driver, but drivers that take the
+   event from DOEPINT instead need it. */
+static void f4xx_usb_cdc_send_setup(STM32F4xxUSBState *s, const uint32_t* pBuff, const uint32_t len)
+{
+	f4xx_usb_cdc_sendpkt(s, pBuff, len);
+	f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_SETUPCPLT, 0);
+	STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+}
+
 // Responsible for the initial handshake once device mode is enabled.
 static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 {
@@ -1087,8 +1124,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         {
             s->device_state = DEV_ST_SETUP_WAIT;
             // Construct ctl set address packet:
-            f4xx_usb_cdc_sendpkt(s, DEV_SETADDR, sizeof(DEV_SETADDR)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+            f4xx_usb_cdc_send_setup(s, DEV_SETADDR, sizeof(DEV_SETADDR)/sizeof(uint32_t));
         }
 		break;
 		case DEV_ST_SETUP_WAIT:
@@ -1123,8 +1159,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 		case DEV_ST_GETDEV:
 		{
 			s->device_state = DEV_ST_GETDEV_WAIT;
-			f4xx_usb_cdc_sendpkt(s, DEV_GETDEV, sizeof(DEV_GETDEV)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+			f4xx_usb_cdc_send_setup(s, DEV_GETDEV, sizeof(DEV_GETDEV)/sizeof(uint32_t));
 		}
         break;
 		case DEV_ST_GETDESCR:
@@ -1132,30 +1167,27 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 		case DEV_ST_GETDESCR3:
             switch (s->device_state) {
                 case DEV_ST_GETDESCR:
-                    f4xx_usb_cdc_sendpkt(s, DEV_GETDESC, sizeof(DEV_GETDESC)/sizeof(uint32_t));
+                    f4xx_usb_cdc_send_setup(s, DEV_GETDESC, sizeof(DEV_GETDESC)/sizeof(uint32_t));
                     break;
                 case DEV_ST_GETDESCR2:
-                    f4xx_usb_cdc_sendpkt(s, DEV_GETDESC2, sizeof(DEV_GETDESC2)/sizeof(uint32_t));
+                    f4xx_usb_cdc_send_setup(s, DEV_GETDESC2, sizeof(DEV_GETDESC2)/sizeof(uint32_t));
                     break;
                 case DEV_ST_GETDESCR3:
-                    f4xx_usb_cdc_sendpkt(s, DEV_GETDESC3, sizeof(DEV_GETDESC3)/sizeof(uint32_t));
+                    f4xx_usb_cdc_send_setup(s, DEV_GETDESC3, sizeof(DEV_GETDESC3)/sizeof(uint32_t));
                     break;
             }
             s->device_state++;
             //STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
         break;
 		case DEV_ST_SETCFG:
-		   	f4xx_usb_cdc_sendpkt(s, DEV_SETCONF, sizeof(DEV_SETCONF)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+		   	f4xx_usb_cdc_send_setup(s, DEV_SETCONF, sizeof(DEV_SETCONF)/sizeof(uint32_t));
             s->device_state++;
 		break;
 		case DEV_ST_SETCFG_WAIT:
 			s->device_state = DEV_ST_LINECODING;
 		/* FALLTHRU */
 		case DEV_ST_LINECODING:
-			f4xx_usb_cdc_sendpkt(s, DEV_SETCODING, sizeof(DEV_SETCODING)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+			f4xx_usb_cdc_send_setup(s, DEV_SETCODING, sizeof(DEV_SETCODING)/sizeof(uint32_t));
 			s->device_state++;
 			break;
 		case DEV_ST_LINECODING_WAIT:
@@ -1173,12 +1205,14 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			   (dcd_dwc2.c handle_rxflvl_irq OUTRX path); if we don't update XFRSIZ,
 			   FW sees xferred=0, the memcpy into &p_cdc->line_coding copies nothing,
 			   bit_rate stays at TinyUSB's 115200 default and line_coding_cb fires
-			   switch_to_marlin instead of switch_to_logging. */
+			   switch_to_marlin instead of switch_to_logging. Must happen before the
+			   OUT_DONE status word below, which is what completes the transfer. */
 			if (s->drego[0].DIEPTSIZ.XFRSIZ >= 7) {
 				s->drego[0].DIEPTSIZ.XFRSIZ -= 7;
 			} else {
 				s->drego[0].DIEPTSIZ.XFRSIZ = 0;
 			}
+			f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_OUTCPLT, 0);
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_XFERCOMPLMSK);
             /* Don't auto-advance — wait for FW to arm EP0 IN for the status ZLP.
                That EPENA write triggers cdc_schedule via STM32F4xx_dregin_write. */
@@ -1200,8 +1234,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			STM32F4xx_cdc_schedule(s);
 			break;
 		case DEV_ST_SETCTLLINE:
-            f4xx_usb_cdc_sendpkt(s, DEV_SETCTLLINE, sizeof(DEV_SETCTLLINE)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+            f4xx_usb_cdc_send_setup(s, DEV_SETCTLLINE, sizeof(DEV_SETCTLLINE)/sizeof(uint32_t));
             //printf("DOEPINT: %08x (bit %u)\n", s->drego[0].raw[R_OFF_DEPINT], s->drego[0].DOEPINT.STUP);
             s->device_state++;
             break;
@@ -1237,6 +1270,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                     s->drego[2].DIEPTSIZ.XFRSIZ--;
                 }
                 s->cdc_in = 0;
+                f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_OUTCPLT, 2);
                 STM32F4xx_raise_device_ep_out_irq(s, 2, DOEPMSK_XFERCOMPLMSK);
             }
 			if (s->dregi[2].DIEPCTL.EPENA && s->dregi[2].DIEPTSIZ.PKTCNT == 1 && s->dregi[2].DIEPTSIZ.XFRSIZ == 0)
@@ -2638,6 +2672,16 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
     switch (addr){
         case R_DCTL:
             s->dreg0[index] = val;
+            /* Setting the global OUT NAK is acknowledged with GONAKEFF; TinyUSB's
+               edpt_disable() spins on it before it may disable an OUT endpoint. */
+            if (s->dreg_defs.DCTL.SGONAK) {
+                s->dreg_defs.DCTL.SGONAK = 0;
+                STM32F4xx_raise_global_irq(s, GINTSTS_GOUTNAKEFF);
+            }
+            if (s->dreg_defs.DCTL.CGONAK) {
+                s->dreg_defs.DCTL.CGONAK = 0;
+                STM32F4xx_lower_global_irq(s, GINTSTS_GOUTNAKEFF);
+            }
             if (changed&DCTL_SFTDISCON) {
                 //DC connected, start setup.
                 if (s->dreg_defs.DCTL.SDIS) {
@@ -2742,6 +2786,11 @@ static void STM32F4xx_dregout_write(void *ptr, hwaddr addr, int index,
     switch (offset) {
         case RO_DOEPCTL: // DIEPCTL
             s->drego[chan].raw[offset] = val;
+            if (s->drego[chan].DOEPCTL.EPDIS) {
+                s->drego[chan].DOEPCTL.EPDIS = 0;
+                s->drego[chan].DOEPCTL.EPENA = 0;
+                STM32F4xx_raise_device_ep_out_irq(s, chan, DOEPMSK_EPDISBLDMSK);
+            }
             s->drego[chan].DOEPCTL.SNAK = 0;
             s->drego[chan].DOEPCTL.CNAK = 0;
             if (s->drego[chan].DOEPCTL.EPENA && s->device_state == DEV_ST_LINECODING_WAIT){
@@ -2800,6 +2849,17 @@ static void STM32F4xx_dregin_write(void *ptr, hwaddr addr, int index,
     switch (offset) {
         case RO_DIEPCTL: // DIEPCTL
             s->dregi[chan].raw[offset] = val;
+            /* Disable handshake: SNAK is answered with INEPNE, EPDIS with EPDISD and
+               the endpoint going inactive. Drivers spin on both from inside an ISR, so
+               leaving either unanswered wedges the guest. */
+            if (s->dregi[chan].DIEPCTL.SNAK) {
+                STM32F4xx_raise_device_ep_in_irq(s, chan, DIEPMSK_INEPNAKEFFMSK);
+            }
+            if (s->dregi[chan].DIEPCTL.EPDIS) {
+                s->dregi[chan].DIEPCTL.EPDIS = 0;
+                s->dregi[chan].DIEPCTL.EPENA = 0;
+                STM32F4xx_raise_device_ep_in_irq(s, chan, DIEPMSK_EPDISBLDMSK);
+            }
             s->dregi[chan].DIEPCTL.SNAK = 0;
             s->dregi[chan].DIEPCTL.CNAK = 0;
             if (s->dregi[chan].DIEPCTL.EPENA)
@@ -3100,6 +3160,14 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
                  GHWCFG2_DYNAMIC_FIFO |
                  GHWCFG2_PERIO_EP_SUPPORTED |
                  ((STM32F4xx_NB_CHAN - 1) << GHWCFG2_NUM_HOST_CHAN_SHIFT) |
+                 /* Device drivers take their endpoint count from GHWCFG2_NUM_DEV_EP;
+                    leaving it zero caps the driver at EP0, so EP1/EP2 never get
+                    serviced. Report what this model implements (NB_DEVCHAN), not what
+                    the silicon has - OTG_HS really has six device endpoints, but the
+                    DIEPCTL/DOEPCTL address decode only covers four, so a guest told
+                    otherwise would have its accesses to endpoints 4 and 5 swallowed by
+                    the catch-all sink and read back as zero, silently. */
+                 ((STM32F4xx_NB_DEVCHAN - 1) << GHWCFG2_NUM_DEV_EP_SHIFT) |
                  (GHWCFG2_INT_DMA_ARCH << GHWCFG2_ARCHITECTURE_SHIFT) |
                  (GHWCFG2_OP_MODE_NO_SRP_CAPABLE_HOST << GHWCFG2_OP_MODE_SHIFT);
     s->ghwcfg3 = (4096 << GHWCFG3_DFIFO_DEPTH_SHIFT) |
