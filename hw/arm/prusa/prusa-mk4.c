@@ -1027,7 +1027,7 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 		mc->no_serial = 1;
 
         object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
-        object_class_property_add_bool(oc, "has_sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
+        object_class_property_add_bool(oc, "has-sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
