@@ -2649,8 +2649,7 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
     switch (addr){
         case R_DCTL:
             s->dreg0[index] = val;
-            /* Setting the global OUT NAK is acknowledged with GONAKEFF; TinyUSB's
-               edpt_disable() spins on it before it may disable an OUT endpoint. */
+            /* Setting the global OUT NAK is acknowledged with GONAKEFF */
             if (s->dreg_defs.DCTL.SGONAK) {
                 s->dreg_defs.DCTL.SGONAK = 0;
                 STM32F4xx_raise_global_irq(s, GINTSTS_GOUTNAKEFF);
