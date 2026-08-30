@@ -127,6 +127,8 @@ enum REGDEF {
 #define STM32F4xx_NB_CHAN        16       /* Number of host channels */
 // N.B - device has max 12, but the LL HAL code resets up to 16 (likely for other device compat)
 #define STM32F4xx_NB_DEVCHAN        4       /* Number of device-mode channels */
+// Technically the HW has 6 (0 + 1..5) but the model we took this from does not and
+// something actually needing that many isn't common. 
 #define STM32F4xx_MAX_XFER_SIZE  64*KiB   /* Max transfer size expected in HCTSIZ */
 
 #define STM32F4xx_EP_FIFO_SIZE 4*KiB / sizeof(uint32_t)
@@ -668,10 +670,7 @@ struct STM32F4xxUSBState {
 #endif
     bool debug;
 
-    /* Last level driven onto the IRQ line. Per instance: OTG_FS and OTG_HS are two
-       objects of this type and a shared static loses edges between them, which can
-       leave one controller's line stuck. */
-    int irq_level;
+    int irq_level; // Last IRQ level sent out
 
     bool disable_sofi;
 
@@ -1065,39 +1064,25 @@ static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, co
         s->rx_fifo_level = len;
         s->rx_fifo_head = 0;
     }
-	STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
 }
 
-/* Append a single word to the RX FIFO. f4xx_usb_cdc_sendpkt() rewinds the ring on
-   every call, so it cannot be used to tack a trailing status word onto the packet
-   it just wrote. */
-static void f4xx_usb_cdc_append_word(STM32F4xxUSBState *s, uint32_t word)
-{
-	if (s->rx_fifo_level + 1 > STM32F4xx_RX_FIFO_SIZE) {
-		qemu_log_mask(LOG_GUEST_ERROR, "Receive FIFO full, data discarded!");
-		return;
-	}
-	s->fifo_ram[s->rx_fifo_tail++] = word;
-	s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
-	s->rx_fifo_level++;
-	STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
-}
-
-/* Real DWC2 follows the data words of a transfer with a status word: SETUP_DONE after
-   a SETUP packet, OUT_DONE after an OUT data packet. A FIFO-mode device driver takes
-   its setup-received and transfer-complete events from these words rather than from
-   DOEPINT, so they have to be on the wire. */
+/* Follow a packet with the status word the DWC2 hardware appends. */
 static void f4xx_usb_cdc_push_status(STM32F4xxUSBState *s, uint8_t pktsts, uint8_t epnum)
 {
 	buffer_header_t hdr = {.raw = 0};
 	hdr.DEV.PKTSTS = pktsts;
 	hdr.DEV.EPNUM = epnum;
-	f4xx_usb_cdc_append_word(s, hdr.raw);
+	if (s->rx_fifo_level + 1 > STM32F4xx_RX_FIFO_SIZE) {
+		qemu_log_mask(LOG_GUEST_ERROR, "Receive FIFO full, data discarded!");
+		return;
+	}
+	s->fifo_ram[s->rx_fifo_tail++] = hdr.raw;
+	s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
+	s->rx_fifo_level++;
+	STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
 }
 
-/* Push a SETUP packet the way the hardware does: data words, then SETUP_DONE. The
-   DOEPINT.STUP raise is redundant for a FIFO-mode driver, but drivers that take the
-   event from DOEPINT instead need it. */
+/* Convenience wrapper for a complete setup packet + status word + IRQ */
 static void f4xx_usb_cdc_send_setup(STM32F4xxUSBState *s, const uint32_t* pBuff, const uint32_t len)
 {
 	f4xx_usb_cdc_sendpkt(s, pBuff, len);
@@ -1192,17 +1177,8 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			break;
 		case DEV_ST_LINECODING_WAIT:
 		{
-			/* FW armed EP0 OUT for the data stage of SET_LINE_CODING. Push the 7
-			   bytes of line coding (dwDTERate, bCharFormat, bParityType, bDataBits)
-			   into the RX FIFO. dwDTERate comes from the cdc_baud property. */
-			/* ...but only once it actually has. TinyUSB derives the received
-			   length from DOEPTSIZ.XFRSIZ, so pushing the data stage before the
-			   guest has armed EP0 OUT (XFRSIZ still 0) delivers the bytes into a
-			   buffer it is not yet tracking: line_coding keeps TinyUSB's 115200
-			   default and the FW switches CDC to the Marlin console instead of
-			   the log. Whether the guest gets there first is pure boot timing --
-			   MK4 did, CORE One (busy bootstrapping puppies) did not -- so wait
-			   for it rather than race it. */
+			// Wait for EPO to actually be ready for the incoming data
+            // (Would lose the baud rate packet otherwise...)
 			if (s->drego[0].DIEPTSIZ.XFRSIZ < 7) {
 				STM32F4xx_cdc_schedule(s);
 				break;
@@ -1212,14 +1188,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			pkt[1] = s->cdc_baud;            /* dwDTERate (bytes 0-3) */
 			pkt[2] = DEV_SETCODING2_TAIL;    /* byte 4=charfmt, 5=parity, 6=databits=8 */
 			f4xx_usb_cdc_sendpkt(s, pkt, ARRAY_SIZE(pkt));
-			/* Real OTG decrements DOEPTSIZ.XFRSIZ by the bytes received. TinyUSB
-			   computes xferred_bytes = total_len - DOEPTSIZ.XFRSIZ on a short packet
-			   (dcd_dwc2.c handle_rxflvl_irq OUTRX path); if we don't update XFRSIZ,
-			   FW sees xferred=0, the memcpy into &p_cdc->line_coding copies nothing,
-			   bit_rate stays at TinyUSB's 115200 default and line_coding_cb fires
-			   switch_to_marlin instead of switch_to_logging. Must happen before the
-			   OUT_DONE status word below, which is what completes the transfer. */
-			s->drego[0].DIEPTSIZ.XFRSIZ -= 7;   /* guaranteed >= 7 by the guard above */
+			s->drego[0].DIEPTSIZ.XFRSIZ -= 7;
 			f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_OUTCPLT, 0);
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_XFERCOMPLMSK);
             /* Don't auto-advance — wait for FW to arm EP0 IN for the status ZLP.
@@ -2858,8 +2827,7 @@ static void STM32F4xx_dregin_write(void *ptr, hwaddr addr, int index,
         case RO_DIEPCTL: // DIEPCTL
             s->dregi[chan].raw[offset] = val;
             /* Disable handshake: SNAK is answered with INEPNE, EPDIS with EPDISD and
-               the endpoint going inactive. Drivers spin on both from inside an ISR, so
-               leaving either unanswered wedges the guest. */
+               the endpoint going inactive. */
             if (s->dregi[chan].DIEPCTL.SNAK) {
                 STM32F4xx_raise_device_ep_in_irq(s, chan, DIEPMSK_INEPNAKEFFMSK);
             }
@@ -3168,13 +3136,6 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
                  GHWCFG2_DYNAMIC_FIFO |
                  GHWCFG2_PERIO_EP_SUPPORTED |
                  ((STM32F4xx_NB_CHAN - 1) << GHWCFG2_NUM_HOST_CHAN_SHIFT) |
-                 /* Device drivers take their endpoint count from GHWCFG2_NUM_DEV_EP;
-                    leaving it zero caps the driver at EP0, so EP1/EP2 never get
-                    serviced. Report what this model implements (NB_DEVCHAN), not what
-                    the silicon has - OTG_HS really has six device endpoints, but the
-                    DIEPCTL/DOEPCTL address decode only covers four, so a guest told
-                    otherwise would have its accesses to endpoints 4 and 5 swallowed by
-                    the catch-all sink and read back as zero, silently. */
                  ((STM32F4xx_NB_DEVCHAN - 1) << GHWCFG2_NUM_DEV_EP_SHIFT) |
                  (GHWCFG2_INT_DMA_ARCH << GHWCFG2_ARCHITECTURE_SHIFT) |
                  (GHWCFG2_OP_MODE_NO_SRP_CAPABLE_HOST << GHWCFG2_OP_MODE_SHIFT);
@@ -3233,8 +3194,7 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
 	s->is_device_mode = false;
 
     s->device_state = 0;//DEV_ST_RESET;
-    /* Drive the line, don't just forget it: a cached level that disagrees with the
-       real line would suppress the next transition to that same level forever. */
+
     qemu_set_irq(s->irq, 0);
     s->irq_level = 0;
 
