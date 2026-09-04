@@ -430,7 +430,11 @@ static void mk4_init(MachineState *machine)
     Object* periphs = machine_get_container("peripheral");
 	const mk4_cfg_t cfg = *mc->cfg;
 
-	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
+	// .bomID is the dedicated OTP byte read by otp_get_bom_id(), not the datamatrix
+	// revision digits. Unset it is 0, which the firmware's check_bom_compatible()
+	// rejects at boot with bsod("BOM ID not compatible") -- it needs >=37 (or the
+	// legacy 12/14). 38 is a shipped customer board.
+	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4), .bomID = 38,
 		.datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
 	};
 	if (cfg.dm_ver == 34)
