@@ -127,6 +127,8 @@ enum REGDEF {
 #define STM32F4xx_NB_CHAN        16       /* Number of host channels */
 // N.B - device has max 12, but the LL HAL code resets up to 16 (likely for other device compat)
 #define STM32F4xx_NB_DEVCHAN        4       /* Number of device-mode channels */
+// Technically the HW has 6 (0 + 1..5) but the model we took this from does not and
+// something actually needing that many isn't common. 
 #define STM32F4xx_MAX_XFER_SIZE  64*KiB   /* Max transfer size expected in HCTSIZ */
 
 #define STM32F4xx_EP_FIFO_SIZE 4*KiB / sizeof(uint32_t)
@@ -668,6 +670,8 @@ struct STM32F4xxUSBState {
 #endif
     bool debug;
 
+    int irq_level; // Last IRQ level sent out
+
     bool disable_sofi;
 
 	bool is_device_mode;
@@ -793,14 +797,13 @@ static inline uint32_t f4xx_usb_get_daint(STM32F4xxUSBState *s)
 /* update irq line */
 static inline void STM32F4xx_update_irq(STM32F4xxUSBState *s)
 {
-    static int oldlevel;
     int level = 0;
 
     if ((s->GINTSTS.raw & s->gintmsk) && (s->gahbcfg & GAHBCFG_GLBL_INTR_EN)) {
         level = 1;
     }
-    if (level != oldlevel) {
-        oldlevel = level;
+    if (level != s->irq_level) {
+        s->irq_level = level;
         // trace_usb_stm_update_irq(level);
         qemu_set_irq(s->irq, level);
     }
@@ -1061,7 +1064,30 @@ static void f4xx_usb_cdc_sendpkt(STM32F4xxUSBState *s, const uint32_t* pBuff, co
         s->rx_fifo_level = len;
         s->rx_fifo_head = 0;
     }
+}
+
+/* Follow a packet with the status word the DWC2 hardware appends. */
+static void f4xx_usb_cdc_push_status(STM32F4xxUSBState *s, uint8_t pktsts, uint8_t epnum)
+{
+	buffer_header_t hdr = {.raw = 0};
+	hdr.DEV.PKTSTS = pktsts;
+	hdr.DEV.EPNUM = epnum;
+	if (s->rx_fifo_level + 1 > STM32F4xx_RX_FIFO_SIZE) {
+		qemu_log_mask(LOG_GUEST_ERROR, "Receive FIFO full, data discarded!");
+		return;
+	}
+	s->fifo_ram[s->rx_fifo_tail++] = hdr.raw;
+	s->rx_fifo_tail %= STM32F4xx_RX_FIFO_SIZE;
+	s->rx_fifo_level++;
 	STM32F4xx_raise_global_irq(s, GINTSTS_RXFLVL);
+}
+
+/* Convenience wrapper for a complete setup packet + status word + IRQ */
+static void f4xx_usb_cdc_send_setup(STM32F4xxUSBState *s, const uint32_t* pBuff, const uint32_t len)
+{
+	f4xx_usb_cdc_sendpkt(s, pBuff, len);
+	f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_SETUPCPLT, 0);
+	STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
 }
 
 // Responsible for the initial handshake once device mode is enabled.
@@ -1083,8 +1109,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
         {
             s->device_state = DEV_ST_SETUP_WAIT;
             // Construct ctl set address packet:
-            f4xx_usb_cdc_sendpkt(s, DEV_SETADDR, sizeof(DEV_SETADDR)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+            f4xx_usb_cdc_send_setup(s, DEV_SETADDR, sizeof(DEV_SETADDR)/sizeof(uint32_t));
         }
 		break;
 		case DEV_ST_SETUP_WAIT:
@@ -1119,8 +1144,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 		case DEV_ST_GETDEV:
 		{
 			s->device_state = DEV_ST_GETDEV_WAIT;
-			f4xx_usb_cdc_sendpkt(s, DEV_GETDEV, sizeof(DEV_GETDEV)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+			f4xx_usb_cdc_send_setup(s, DEV_GETDEV, sizeof(DEV_GETDEV)/sizeof(uint32_t));
 		}
         break;
 		case DEV_ST_GETDESCR:
@@ -1128,53 +1152,44 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 		case DEV_ST_GETDESCR3:
             switch (s->device_state) {
                 case DEV_ST_GETDESCR:
-                    f4xx_usb_cdc_sendpkt(s, DEV_GETDESC, sizeof(DEV_GETDESC)/sizeof(uint32_t));
+                    f4xx_usb_cdc_send_setup(s, DEV_GETDESC, sizeof(DEV_GETDESC)/sizeof(uint32_t));
                     break;
                 case DEV_ST_GETDESCR2:
-                    f4xx_usb_cdc_sendpkt(s, DEV_GETDESC2, sizeof(DEV_GETDESC2)/sizeof(uint32_t));
+                    f4xx_usb_cdc_send_setup(s, DEV_GETDESC2, sizeof(DEV_GETDESC2)/sizeof(uint32_t));
                     break;
                 case DEV_ST_GETDESCR3:
-                    f4xx_usb_cdc_sendpkt(s, DEV_GETDESC3, sizeof(DEV_GETDESC3)/sizeof(uint32_t));
+                    f4xx_usb_cdc_send_setup(s, DEV_GETDESC3, sizeof(DEV_GETDESC3)/sizeof(uint32_t));
                     break;
             }
             s->device_state++;
             //STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
         break;
 		case DEV_ST_SETCFG:
-		   	f4xx_usb_cdc_sendpkt(s, DEV_SETCONF, sizeof(DEV_SETCONF)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+		   	f4xx_usb_cdc_send_setup(s, DEV_SETCONF, sizeof(DEV_SETCONF)/sizeof(uint32_t));
             s->device_state++;
 		break;
 		case DEV_ST_SETCFG_WAIT:
 			s->device_state = DEV_ST_LINECODING;
 		/* FALLTHRU */
 		case DEV_ST_LINECODING:
-			f4xx_usb_cdc_sendpkt(s, DEV_SETCODING, sizeof(DEV_SETCODING)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+			f4xx_usb_cdc_send_setup(s, DEV_SETCODING, sizeof(DEV_SETCODING)/sizeof(uint32_t));
 			s->device_state++;
 			break;
 		case DEV_ST_LINECODING_WAIT:
 		{
-			/* FW armed EP0 OUT for the data stage of SET_LINE_CODING. Push the 7
-			   bytes of line coding (dwDTERate, bCharFormat, bParityType, bDataBits)
-			   into the RX FIFO. dwDTERate comes from the cdc_baud property. */
+			// Wait for EPO to actually be ready for the incoming data
+            // (Would lose the baud rate packet otherwise...)
+			if (s->drego[0].DIEPTSIZ.XFRSIZ < 7) {
+				STM32F4xx_cdc_schedule(s);
+				break;
+			}
 			uint32_t pkt[3];
 			pkt[0] = DEV_SETCODING2_HEADER;
 			pkt[1] = s->cdc_baud;            /* dwDTERate (bytes 0-3) */
 			pkt[2] = DEV_SETCODING2_TAIL;    /* byte 4=charfmt, 5=parity, 6=databits=8 */
 			f4xx_usb_cdc_sendpkt(s, pkt, ARRAY_SIZE(pkt));
-			/* Real OTG decrements DOEPTSIZ.XFRSIZ by the bytes received. TinyUSB
-			   computes xferred_bytes = total_len - DOEPTSIZ.XFRSIZ on a short packet
-			   (dcd_dwc2.c handle_rxflvl_irq OUTRX path); if we don't update XFRSIZ,
-			   FW sees xferred=0, the memcpy into &p_cdc->line_coding copies nothing,
-			   bit_rate stays at TinyUSB's 115200 default and line_coding_cb fires
-			   switch_to_marlin instead of switch_to_logging. */
-			if (s->drego[0].DIEPTSIZ.XFRSIZ >= 7) {
-				s->drego[0].DIEPTSIZ.XFRSIZ -= 7;
-			} else {
-				s->drego[0].DIEPTSIZ.XFRSIZ = 0;
-			}
+			s->drego[0].DIEPTSIZ.XFRSIZ -= 7;
+			f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_OUTCPLT, 0);
             STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_XFERCOMPLMSK);
             /* Don't auto-advance — wait for FW to arm EP0 IN for the status ZLP.
                That EPENA write triggers cdc_schedule via STM32F4xx_dregin_write. */
@@ -1196,8 +1211,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			STM32F4xx_cdc_schedule(s);
 			break;
 		case DEV_ST_SETCTLLINE:
-            f4xx_usb_cdc_sendpkt(s, DEV_SETCTLLINE, sizeof(DEV_SETCTLLINE)/sizeof(uint32_t));
-            STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
+            f4xx_usb_cdc_send_setup(s, DEV_SETCTLLINE, sizeof(DEV_SETCTLLINE)/sizeof(uint32_t));
             //printf("DOEPINT: %08x (bit %u)\n", s->drego[0].raw[R_OFF_DEPINT], s->drego[0].DOEPINT.STUP);
             s->device_state++;
             break;
@@ -1233,6 +1247,7 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
                     s->drego[2].DIEPTSIZ.XFRSIZ--;
                 }
                 s->cdc_in = 0;
+                f4xx_usb_cdc_push_status(s, BUFFER_PKTSTS_OUTCPLT, 2);
                 STM32F4xx_raise_device_ep_out_irq(s, 2, DOEPMSK_XFERCOMPLMSK);
             }
 			if (s->dregi[2].DIEPCTL.EPENA && s->dregi[2].DIEPTSIZ.PKTCNT == 1 && s->dregi[2].DIEPTSIZ.XFRSIZ == 0)
@@ -2634,6 +2649,15 @@ static void STM32F4xx_dreg0_write(void *ptr, hwaddr addr, int index, uint64_t va
     switch (addr){
         case R_DCTL:
             s->dreg0[index] = val;
+            /* Setting the global OUT NAK is acknowledged with GONAKEFF */
+            if (s->dreg_defs.DCTL.SGONAK) {
+                s->dreg_defs.DCTL.SGONAK = 0;
+                STM32F4xx_raise_global_irq(s, GINTSTS_GOUTNAKEFF);
+            }
+            if (s->dreg_defs.DCTL.CGONAK) {
+                s->dreg_defs.DCTL.CGONAK = 0;
+                STM32F4xx_lower_global_irq(s, GINTSTS_GOUTNAKEFF);
+            }
             if (changed&DCTL_SFTDISCON) {
                 //DC connected, start setup.
                 if (s->dreg_defs.DCTL.SDIS) {
@@ -2738,6 +2762,11 @@ static void STM32F4xx_dregout_write(void *ptr, hwaddr addr, int index,
     switch (offset) {
         case RO_DOEPCTL: // DIEPCTL
             s->drego[chan].raw[offset] = val;
+            if (s->drego[chan].DOEPCTL.EPDIS) {
+                s->drego[chan].DOEPCTL.EPDIS = 0;
+                s->drego[chan].DOEPCTL.EPENA = 0;
+                STM32F4xx_raise_device_ep_out_irq(s, chan, DOEPMSK_EPDISBLDMSK);
+            }
             s->drego[chan].DOEPCTL.SNAK = 0;
             s->drego[chan].DOEPCTL.CNAK = 0;
             if (s->drego[chan].DOEPCTL.EPENA && s->device_state == DEV_ST_LINECODING_WAIT){
@@ -2796,6 +2825,16 @@ static void STM32F4xx_dregin_write(void *ptr, hwaddr addr, int index,
     switch (offset) {
         case RO_DIEPCTL: // DIEPCTL
             s->dregi[chan].raw[offset] = val;
+            /* Disable handshake: SNAK is answered with INEPNE, EPDIS with EPDISD and
+               the endpoint going inactive. */
+            if (s->dregi[chan].DIEPCTL.SNAK) {
+                STM32F4xx_raise_device_ep_in_irq(s, chan, DIEPMSK_INEPNAKEFFMSK);
+            }
+            if (s->dregi[chan].DIEPCTL.EPDIS) {
+                s->dregi[chan].DIEPCTL.EPDIS = 0;
+                s->dregi[chan].DIEPCTL.EPENA = 0;
+                STM32F4xx_raise_device_ep_in_irq(s, chan, DIEPMSK_EPDISBLDMSK);
+            }
             s->dregi[chan].DIEPCTL.SNAK = 0;
             s->dregi[chan].DIEPCTL.CNAK = 0;
             if (s->dregi[chan].DIEPCTL.EPENA)
@@ -3096,6 +3135,7 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
                  GHWCFG2_DYNAMIC_FIFO |
                  GHWCFG2_PERIO_EP_SUPPORTED |
                  ((STM32F4xx_NB_CHAN - 1) << GHWCFG2_NUM_HOST_CHAN_SHIFT) |
+                 ((STM32F4xx_NB_DEVCHAN - 1) << GHWCFG2_NUM_DEV_EP_SHIFT) |
                  (GHWCFG2_INT_DMA_ARCH << GHWCFG2_ARCHITECTURE_SHIFT) |
                  (GHWCFG2_OP_MODE_NO_SRP_CAPABLE_HOST << GHWCFG2_OP_MODE_SHIFT);
     s->ghwcfg3 = (4096 << GHWCFG3_DFIFO_DEPTH_SHIFT) |
@@ -3153,6 +3193,9 @@ static void STM32F4xx_reset_enter(Object *obj, ResetType type)
 	s->is_device_mode = false;
 
     s->device_state = 0;//DEV_ST_RESET;
+
+    qemu_set_irq(s->irq, 0);
+    s->irq_level = 0;
 
 
 }
@@ -3358,6 +3401,7 @@ const VMStateDescription vmstate_STM32F4xx_state = {
         VMSTATE_UINT32(rx_fifo_tail,STM32F4xxUSBState),
         VMSTATE_UINT32(rx_fifo_level,STM32F4xxUSBState),
         VMSTATE_UINT8(is_ping, STM32F4xxUSBState),
+        VMSTATE_INT32(irq_level, STM32F4xxUSBState),
         VMSTATE_END_OF_LIST()
     }
 };
