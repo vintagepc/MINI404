@@ -242,20 +242,20 @@ static const uint8_t AHB1RST_PERIPHS[32] = {
 static const uint8_t AHB1ENA_PERIPHS[32] = {
     STM32_P_DMA1, 0, 0/*sram*/, 0, STM32_P_FSMC, 0, STM32_P_CRC, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
-    0, STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, STM32_P_UART4, STM32_P_GPIOF, 0,
+    0, STM32_P_GPIOA, STM32_P_GPIOB, STM32_P_GPIOC, STM32_P_GPIOD, STM32_P_USART4, STM32_P_GPIOF, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
 static const uint8_t APB1_PERIPHS[32] = {
     0, STM32_P_TIM3, 0, 0, STM32_P_TIM6, STM32_P_TIM7, 0, 0,
     STM32_P_TIM14, 0, 0, STM32_P_WWDG, 0, 0, STM32_P_SPI2, 0,
-    0, STM32_P_UART2, STM32_P_UART3, STM32_P_UART4, STM32_P_UART5, STM32_P_I2C1, STM32_P_I2C2, STM32_P_USBHS,
+    0, STM32_P_USART2, STM32_P_USART3, STM32_P_USART4, STM32_P_USART5, STM32_P_I2C1, STM32_P_I2C2, STM32_P_USBHS,
     0, 0, 0, STM32_P_CRYP, STM32_P_PWR, 0, 0, 0
 };
 
 static const uint8_t APB2_PERIPHS[32] = {
-    STM32_P_SYSCFG, 0, 0, 0, 0, STM32_P_UART6, 0, 0,
-    0, STM32_P_ADC1, 0, STM32_P_TIM1, STM32_P_SPI1, 0, STM32_P_UART1, 0,
+    STM32_P_SYSCFG, 0, 0, 0, 0, STM32_P_USART6, 0, 0,
+    0, STM32_P_ADC1, 0, STM32_P_TIM1, STM32_P_SPI1, 0, STM32_P_USART1, 0,
     STM32_P_TIM15, STM32_P_TIM16, STM32_P_TIM17, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
@@ -496,7 +496,7 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
 				REGDEF_NAME(rcc, cfgr3) r = {.raw = value};
 				clktree_set_enabled(&s->parent.pclocks[STM32_P_USBHS], r.USBSW);
 				clktree_set_enabled(&s->parent.pclocks[STM32_P_I2C1], r.I2C1SW);
-				clktree_set_selected_input(&s->parent.pclocks[STM32_P_UART1], r.USART1SW);
+				clktree_set_selected_input(&s->parent.pclocks[STM32_P_USART1], r.USART1SW);
 			}
 			break;
         default:
@@ -578,7 +578,7 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
     INIT_PCLK(ADC1, 1, 1, false, 14000000, 0, &s->HSI14, &s->PCLK1, NULL);
 
-	INIT_PCLK_NSM(UART1, 0, &s->PCLK1, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
+	INIT_PCLK_NSM(USART1, 0, &s->PCLK1, &s->SYSCLK, &s->parent.HSICLK, &s->parent.LSECLK, NULL);
 
 	INIT_PCLK_NSM(RTC, 0, &s->parent.HSECLK, &s->parent.LSECLK, &s->parent.LSICLK, NULL);
 
@@ -599,11 +599,11 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
     INIT_PCLK_NSM(SPI2, 0, &s->PCLK1, NULL);
     INIT_PCLK_NSM(EXTI, 0, &s->PCLK1, NULL);
     INIT_PCLK_NSM(SYSCFG, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART2, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART3, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART4, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART5, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART6, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART2, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART3, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART4, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART5, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART6, 0, &s->PCLK1, NULL);
     INIT_PCLK_NSM(PWR, 0, &s->PCLK1, NULL);
     INIT_PCLK_NSM(USBHS, 0, &s->PCLK1, NULL);
     INIT_PCLK_NSM(I2C2, 0, &s->PCLK1, NULL);

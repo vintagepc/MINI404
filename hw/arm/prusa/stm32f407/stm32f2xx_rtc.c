@@ -26,6 +26,7 @@
 #include "stm32f2xx_rtc.h"
 #include <sys/time.h>
 #include "system/rtc.h"
+#include "system/qtest.h"
 #include "migration/vmstate.h"
 #include "hw/core/sysbus.h"
 #include "qemu/timer.h"
@@ -485,10 +486,10 @@ f2xx_update_current_date_and_time(void *arg)
     int delta = new_target_ticks - s->ticks;
     //DPRINTF("%s: advancing target by %d ticks\n", __func__, delta);
     if (delta < 0 || delta > 1000) {
-#ifndef CONFIG_GCOV
-        printf("DEBUG_STM32F2XX_RTC %s: detected %d mismatch between host and target ticks, "
-              "jamming new host time into RTC without checking for alarms\n", __func__, delta);
-#endif
+        if (!qtest_enabled()) {
+            printf("DEBUG_STM32F2XX_RTC %s: detected %d mismatch between host and target ticks, "
+                  "jamming new host time into RTC without checking for alarms\n", __func__, delta);
+        }
         s->ticks = new_target_ticks;
         f2xx_rtc_set_time_and_date_registers(s, &new_target_tm);
     } else {

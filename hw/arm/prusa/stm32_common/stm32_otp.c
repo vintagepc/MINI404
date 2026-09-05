@@ -44,6 +44,17 @@ enum REGINDEX
 	RI_END
 };
 
+static const stm32_reginfo_t stm32c092_otp_reginfo[RI_END] =
+{
+	// Temporary- second block is engineering data region.
+	[DATA_SIZE] = {.mask = 1U*KiB + 1U*KiB},
+};
+
+static const stm32_reginfo_t stm32h503_otp_reginfo[RI_END] =
+{
+	[DATA_SIZE] = {.mask = 2U*KiB},
+};
+
 static const stm32_reginfo_t stm32g070_otp_reginfo[RI_END] =
 {
 	// Temporary- second block is engineering data region.
@@ -56,8 +67,10 @@ static const stm32_reginfo_t stm32f4xx_otp_reginfo[RI_END] =
 };
 
 static const stm32_periph_variant_t stm32_common_otp_variants[] = {
+	{TYPE_STM32C092_OTP, stm32c092_otp_reginfo},
+	{TYPE_STM32F4xx_OTP, stm32f4xx_otp_reginfo},
 	{TYPE_STM32G070_OTP, stm32g070_otp_reginfo},
-	{TYPE_STM32F4xx_OTP, stm32f4xx_otp_reginfo}
+	{TYPE_STM32H503_OTP, stm32h503_otp_reginfo},
 };
 
 #define MAX_OTP_SIZE_BYTES 0x7FF
@@ -142,7 +155,7 @@ static void stm32_common_otp_realize(DeviceState *dev, Error **errp)
                        TYPE_STM32COM_OTP);
             return;
         }
-        
+
         if (blk_pread(s->blk, 0, MIN(sizeof(s->data), len), &s->data, 0) < 0) {
             error_setg(errp, "%s: failed to read backing file.",
                 TYPE_STM32COM_OTP);
@@ -180,7 +193,7 @@ stm32_common_otp_init(Object *obj)
 static const Property stm32_common_otp_props[] = {
     DEFINE_PROP_DRIVE("drive", COM_STRUCT_NAME(Otp), blk),
 	DEFINE_PROP_ARRAY("otp-data", COM_STRUCT_NAME(Otp),nr_init, init_data, qdev_prop_uint32, uint32_t),
-    
+
 };
 
 static const VMStateDescription vmstate_stm32_common_otp = {

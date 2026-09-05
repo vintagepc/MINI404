@@ -40,6 +40,8 @@ struct CS30BLState {
     uint32_t fullscale_mA;
 
     qemu_irq irq;
+
+    script_handle handle;
 };
 
 enum {
@@ -106,11 +108,10 @@ static void cs30bl_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj),cs30bl_read_request,"adc_read_request",1);
     qdev_init_gpio_in_named(DEVICE(obj),cs30bl_set_pwm,"pwm-in",1);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_CS30BL);
-    script_register_action(pScript, "SetA","Sets the voltage readout to a given value.",ActSetA);
-    script_add_arg_float(pScript, ActSetA);
-
-    scripthost_register_scriptable(pScript);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_CS30BL);
+    script_register_action(s->handle, "SetA","Sets the voltage readout to a given value.",ActSetA);
+    script_add_arg_float(s->handle, ActSetA);
+    scripthost_register_scriptable(s->handle);
 }
 
 static const Property cs30bl_properties[] = {

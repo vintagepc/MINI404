@@ -1,0 +1,5 @@
+#stm32h503_fint.c
+stm32h503_fint_erase(uint8_t sector, uint8_t bank, uint8_t erase_bits) "FLASH: Erase sector %u bank %u erase bits %u"
+stm32h503_fint_erase_range(uint32_t start, uint32_t end) "FLASH: Erase range 0x%08x - 0x%08x"
+stm32h503_fint_lock(void) "FLASH: Locked"
+stm32h503_fint_unlock(void) "FLASH: Unlocked"

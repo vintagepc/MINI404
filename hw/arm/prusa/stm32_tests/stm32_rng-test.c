@@ -18,7 +18,7 @@
 #include "libqtest-single.h"
 
 #include "../stm32_chips/stm32f407xx.h"
-#include "../stm32f407/stm32f4xx_rng_regdata.h"
+#include "../stm32_common/stm32_rng.h"
 #include "../stm32_common/stm32_shared.h"
 
 static void test_disabled(void)

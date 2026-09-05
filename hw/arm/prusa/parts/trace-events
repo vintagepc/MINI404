@@ -1,3 +1,13 @@
+# c1_bridge.c
+c1_bridge_msg_send(const char* src, uint8_t dest, uint8_t msglen) "%s tx to %u, len %u"
+c1_bridge_msg_recv(const char* src, uint8_t dest, uint8_t msglen) "%s rx from %u, len %u"
+c1_bridge_tx_assert(const char* src, int level) "%s TX assert: %d"
+c1_bridge_device_reset(const char* src) "%s reset"
+c1_bridge_create_socket(const char* name) "%s"
+c1_bridge_create_control_socket(const char* name) "%s-io"
+c1_bridge_open_socket(const char* name) "%s"
+c1_bridge_detected_boot(const char* src) "%s boot detected"
+c1_bridge_byte_input(const char* src, uint8_t byte) "%s tx byte 0x%02x"
 tmc2209_byte_in(uint8_t address, uint8_t byte) "A: %u D: %02x"
 tmc2209_byte_out(uint8_t address, uint8_t byte) "A: %u D: %02x"
 at21csxx_byte_in(uint8_t ct, uint8_t data) "D@%u: %02x"
@@ -15,3 +25,20 @@ at21csxx_sio_high_icount(uint32_t icount) "SIO high: %u"
 at21csxx_start_condition(void)
 at21csxx_enter_discovery(void)
 at21csxx_discovery_ack(void)
+
+#door_switch.c
+door_switch_state(bool open) "is_open: %u"
+
+# fan.c
+fan_new_tach_interval(char label, int uS) "Fan %c tach interval: %d uS"
+fan_new_pwm_value(char label, uint8_t pwm) "Fan %c pwm: %u"
+
+# loadcell.c
+loadcell_value(int value) "Loadcell value: %d"
+
+# c1_bridge.c
+c1_msg_xb_broadcast(int size) "%d bytes"
+c1_msg_boot_xb_to_extboard(int size) "%d bytes"
+c1_msg_boot_extboard_to_xb(int size) "%d bytes"
+c1_msg_xb_to_extboard(int size) "%d bytes"
+c1_msg_extboard_to_xb(int size) "%d bytes"

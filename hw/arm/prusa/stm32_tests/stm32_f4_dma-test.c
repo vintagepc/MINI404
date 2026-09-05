@@ -403,6 +403,118 @@ static void test_circ(void)
 }
 
 
+static void test_pending_m2p(void)
+{
+	uint32_t base = stm32f407xx_cfg.perhipherals[STM32_P_DMA1].base_addr;
+	uint32_t sram = stm32f407xx_cfg.sram_base;
+	QTestState *ts = qtest_init("-machine stm32f407xE");
+	mem_data(ts);
+
+	// Configure PAR/M0AR/NDTR but leave EN=0.
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxPAR),  sram + 0x200);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxM0AR), sram);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR), 1);
+
+	// Fire M2P request before the channel is enabled.
+	qtest_set_irq_in(ts, "/machine/soc/DMA1", "dmar-in", DMAR_M2P, sram + 0x200);
+
+	// No transfer should have occurred yet.
+	g_assert_cmphex(qtest_readb(ts, sram + 0x200), ==, 0x00);
+	g_assert_cmpint(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR)), ==, 1);
+
+	// Enabling the channel must replay the stashed request.
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxCR), DMAR_M2P << 6U | BIT(0));
+	qtest_clock_step(ts, 1); // advance virtual clock 1ns to fire the DMA timer
+
+	// Byte 0x01 from sram should have been written to the peripheral address.
+	g_assert_cmphex(qtest_readb(ts, sram + 0x200), ==, 0x01);
+	g_assert_cmpint(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR)), ==, 0);
+
+	qtest_quit(ts);
+}
+
+static void test_pending_p2m(void)
+{
+	uint32_t base = stm32f407xx_cfg.perhipherals[STM32_P_DMA1].base_addr;
+	uint32_t sram = stm32f407xx_cfg.sram_base;
+	QTestState *ts = qtest_init("-machine stm32f407xE");
+	mem_data(ts);
+
+	// sram+0x05 holds byte value 0x06 (written by mem_data).
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxPAR),  sram + 0x05);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxM0AR), sram + 0x200);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR), 1);
+
+	// Fire P2M request before the channel is enabled.
+	qtest_set_irq_in(ts, "/machine/soc/DMA1", "dmar-in", DMAR_P2M, sram + 0x05);
+
+	// No transfer should have occurred yet.
+	g_assert_cmphex(qtest_readb(ts, sram + 0x200), ==, 0x00);
+
+	// Enabling the channel must replay the stashed request.
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxCR), DMAR_P2M << 6U | BIT(0));
+	qtest_clock_step(ts, 1);
+
+	// Byte 0x06 from sram+0x05 should have been written to sram+0x200.
+	g_assert_cmphex(qtest_readb(ts, sram + 0x200), ==, 0x06);
+	g_assert_cmpint(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR)), ==, 0);
+
+	qtest_quit(ts);
+}
+
+static void test_pending_dedup(void)
+{
+	// Multiple DMARs to the same (par, dir) before enable must collapse to a single transfer.
+	uint32_t base = stm32f407xx_cfg.perhipherals[STM32_P_DMA1].base_addr;
+	uint32_t sram = stm32f407xx_cfg.sram_base;
+	QTestState *ts = qtest_init("-machine stm32f407xE");
+	mem_data(ts);
+
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxPAR),  sram + 0x200);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxM0AR), sram);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR), 3);
+
+	// Fire the same request three times before enabling.
+	qtest_set_irq_in(ts, "/machine/soc/DMA1", "dmar-in", DMAR_M2P, sram + 0x200);
+	qtest_set_irq_in(ts, "/machine/soc/DMA1", "dmar-in", DMAR_M2P, sram + 0x200);
+	qtest_set_irq_in(ts, "/machine/soc/DMA1", "dmar-in", DMAR_M2P, sram + 0x200);
+
+	// Enable - only the single stashed entry should replay.
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxCR), DMAR_M2P << 6U | BIT(0));
+	qtest_clock_step(ts, 1);
+
+	// Exactly one transfer: NDTR decrements from 3 to 2, not to 0.
+	g_assert_cmpint(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR)), ==, 2);
+	g_assert_cmphex(qtest_readb(ts, sram + 0x200), ==, 0x01);
+
+	qtest_quit(ts);
+}
+
+static void test_pending_wrong_dir(void)
+{
+	// A pending M2P request must not fire when a P2M channel is enabled on the same address.
+	uint32_t base = stm32f407xx_cfg.perhipherals[STM32_P_DMA1].base_addr;
+	uint32_t sram = stm32f407xx_cfg.sram_base;
+	QTestState *ts = qtest_init("-machine stm32f407xE");
+	mem_data(ts);
+
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxPAR),  sram + 0x200);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxM0AR), sram);
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR), 1);
+
+	// Fire an M2P request.
+	qtest_set_irq_in(ts, "/machine/soc/DMA1", "dmar-in", DMAR_M2P, sram + 0x200);
+
+	// Enable in the wrong direction (P2M instead of M2P).
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxCR), DMAR_P2M << 6U | BIT(0));
+
+	// No transfer should have occurred.
+	g_assert_cmpint(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_CHAN_BASE+CH_OFF_SxNDTR)), ==, 1);
+	g_assert_cmphex(qtest_readl(ts, sram + 0x200), ==, 0x00);
+
+	qtest_quit(ts);
+}
+
 int main(int argc, char **argv)
 {
     int ret;
@@ -423,6 +535,10 @@ int main(int argc, char **argv)
 	qtest_add_data_func("/stm32_dma/test_irq_ch6", (void *)(intptr_t)5, test_irqs);
 	qtest_add_data_func("/stm32_dma/test_irq_ch7", (void *)(intptr_t)6, test_irqs);
 	qtest_add_data_func("/stm32_dma/test_irq_ch8", (void *)(intptr_t)7, test_irqs);
+	qtest_add_func("/stm32_dma/test_pending_m2p", test_pending_m2p);
+	qtest_add_func("/stm32_dma/test_pending_p2m", test_pending_p2m);
+	qtest_add_func("/stm32_dma/test_pending_dedup", test_pending_dedup);
+	qtest_add_func("/stm32_dma/test_pending_wrong_dir", test_pending_wrong_dir);
 
     ret = g_test_run();
 

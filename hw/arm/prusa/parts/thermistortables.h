@@ -1349,6 +1349,42 @@ const short temptable_2004[][2] PROGMEM = {
 };
 
 
+
+// PT1000 with 1k0 pullup — HT (high-temperature) hotend on CORE One / CORE One L.
+// Mirrors lib/Marlin/Marlin/src/module/thermistor/thermistor_1010.h, reordered
+// descending-by-temperature like every other table here (the lookup in
+// thermistor.c walks until table[i+1] <= value, so ordering is by temperature,
+// not ADC). PT1000 is the reversed case: ADC rises with temperature.
+//
+// Named _ht because this file already carries an (inactive, PtLine-generated)
+// upstream Marlin temptable_1010 guarded by THERMISTORHEATER_*.
+//
+// The 425/450 rows are the firmware's own projected entries; the -30 row is
+// sim-only (IEC 60751) so a below-zero ambient still produces an output rather
+// than the lookup falling off the end and emitting nothing.
+const short temptable_1010_ht[][2] PROGMEM = {
+    { OVERSAMPLENR*(743), 450 },
+    { OVERSAMPLENR*(736), 425 },
+    { OVERSAMPLENR*(729), 400 },
+    { OVERSAMPLENR*(721), 375 },
+    { OVERSAMPLENR*(713), 350 },
+    { OVERSAMPLENR*(705), 325 },
+    { OVERSAMPLENR*(696), 300 },
+    { OVERSAMPLENR*(686), 275 },
+    { OVERSAMPLENR*(676), 250 },
+    { OVERSAMPLENR*(665), 225 },
+    { OVERSAMPLENR*(653), 200 },
+    { OVERSAMPLENR*(640), 175 },
+    { OVERSAMPLENR*(626), 150 },
+    { OVERSAMPLENR*(611), 125 },
+    { OVERSAMPLENR*(595), 100 },
+    { OVERSAMPLENR*(577), 75 },
+    { OVERSAMPLENR*(557), 50 },
+    { OVERSAMPLENR*(536), 25 },
+    { OVERSAMPLENR*(512), 0 },
+    { OVERSAMPLENR*(479), -30 },
+};
+
 const short temptable_2005[][2] PROGMEM = {
 { OVERSAMPLENR*(50), 350 }, // Synthetic value to test max temp error
 { OVERSAMPLENR*(78), 300 },
@@ -1735,6 +1771,23 @@ const short temptable_2008[][2] = {
 {OVERSAMPLENR*	746	,	8	},
 {OVERSAMPLENR*	729	,	3	},
 {OVERSAMPLENR*	720	,	0	},
+};
+
+// NTC on xBuddy extension:
+const short temptable_2009[][2] = {
+    { 4U*(347), 120 }, // Projected value just to trigger error on short circuit
+    { 4U*(591), 100 },
+    { 4U*(885), 85 },
+    { 4U*(1010), 80 },
+    { 4U*(1659), 60 },
+    { 4U*(2061), 50 },
+    { 4U*(2484), 40 },
+    { 4U*(3079), 25 },
+    { 4U*(3536), 10 },
+    { 4U*(3746), 0 },
+    { 4U*(3889), -10 },
+    { 4U*(4033), -30 },
+    { 4U*(4080), -50 },
 };
 
 #define _TT_NAME(_N) temptable_ ## _N

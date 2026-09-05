@@ -39,6 +39,7 @@ struct ACS711State {
 	uint8_t on_count;
 
     qemu_irq irq;
+    script_handle handle;
 };
 
 enum {
@@ -114,11 +115,11 @@ static void acs711_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(obj),acs711_read_request,"adc_read_request",1);
     qdev_init_gpio_in_named(DEVICE(obj),acs711_bed_in,"bed_on",NUM_ITEMS);
 
-    script_handle pScript = script_instance_new(P404_SCRIPTABLE(obj), TYPE_ACS711);
-    script_register_action(pScript, "SetA","Sets the current readout to a given value.",ActSetA);
-    script_add_arg_float(pScript, ActSetA);
+    s->handle = script_instance_new(P404_SCRIPTABLE(obj), TYPE_ACS711);
+    script_register_action(s->handle, "SetA","Sets the current readout to a given value.",ActSetA);
+    script_add_arg_float(s->handle, ActSetA);
 
-    scripthost_register_scriptable(pScript);
+    scripthost_register_scriptable(s->handle);
 }
 
 static const VMStateDescription vmstate_acs711 = {

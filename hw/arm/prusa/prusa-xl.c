@@ -152,7 +152,7 @@ static const xl_cfg_t xl_cfg = {
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOG,10), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
-	.m_uart = STM32_P_UART1,
+	.m_uart = STM32_P_USART1,
 	.is_400step = false,
     .bom_id = 4,
 };
@@ -183,7 +183,7 @@ static const xl_cfg_t xl_cfg_050 = {
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOG,10), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
-	.m_uart = STM32_P_UART1,
+	.m_uart = STM32_P_USART1,
 	.is_400step = false,
     .bom_id = 5,
 };
@@ -214,7 +214,7 @@ static const xl_cfg_t xl_cfg_090 = {
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOG,10), STM_PIN(GPIOF,12)},
     .m_spi = STM32_P_SPI3,
-	.m_uart = STM32_P_UART1,
+	.m_uart = STM32_P_USART1,
 	.is_400step = false,
     .bom_id = 9,
 };
@@ -256,7 +256,7 @@ static void xl_init(MachineState *machine)
 	qdev_prop_set_string(dev, "flash-file", "Prusa_XL_flash.bin");
     qdev_prop_set_string(dev, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_uint32(dev,"sram-size", machine->ram_size);
-	
+
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
     QList *otp_list = qlist_new();
     for (int i = 0; i < 9; i++) {
@@ -730,18 +730,18 @@ static void xl_init(MachineState *machine)
 	    qdev_init_gpio_in(extruder_soc, xl_soc_reset, 1);
 	    qdev_connect_gpio_out(expander, 1, qdev_get_gpio_in(extruder_soc,0)); // qdev_get_gpio_in_named(dev,"reset-in",XL_DEV_T0));
     }
-#endif 
+#endif
 	else if (kernel_len)
 	{
 		dev = qdev_new("xl-bridge");
 		qdev_prop_set_uint8(dev, "device", XL_DEV_XBUDDY);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in_named(dev,"tx-assert",0));
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_PUPPY));
-		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART3),"uart-byte-in", XLBRIDGE_UART_PUPPY));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_PUPPY));
+		qdev_connect_gpio_out_named(dev, "byte-receive", 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART3),"uart-byte-in", XLBRIDGE_UART_PUPPY));
 
-		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_UART8),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_ESP32));
-		qdev_connect_gpio_out_named(dev, "byte-receive", XLBRIDGE_UART_ESP32, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_UART8),"uart-byte-in", 0));
+		qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_USART8),"uart-byte-out", 0, qdev_get_gpio_in_named(dev, "byte-send", XLBRIDGE_UART_ESP32));
+		qdev_connect_gpio_out_named(dev, "byte-receive", XLBRIDGE_UART_ESP32, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_USART8),"uart-byte-in", 0));
 
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_step[AXIS_E])), PIN(cfg.m_step[AXIS_E]), qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_STEP));
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[AXIS_E])),  PIN(cfg.m_dir[AXIS_E]),  qdev_get_gpio_in_named(dev,"gpio-in",XLBRIDGE_PIN_E_DIR));
@@ -781,7 +781,7 @@ static void xlbuddy_class_init(ObjectClass *oc, const void *data)
 #ifdef UNIFIED_XL
         mc->default_cpus = 2;
         mc->max_cpus = 2;
-#endif 
+#endif
 		xlBuddyMachineClass* xmc = XLBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
 }

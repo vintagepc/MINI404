@@ -47,3 +47,9 @@ usb_stm_work_timer(void) ""
 usb_stm_reset_enter(void) "=== RESET enter ==="
 usb_stm_reset_hold(void) "=== RESET hold ==="
 usb_stm_reset_exit(void) "=== RESET exit ==="
+
+# stm32f2xx_tim.c
+stm32f2xx_tim_start(const char* id) "F2xx %s start"
+stm32f2xx_tim_ccr_read(const char* id, int index, uint32_t value) "%s CCR%d read: %08x"
+stm32f2xx_tim_ccr_oc(const char* id, int index) "%s CCR%d overcaptured"
+stm32f2xx_tim_ccr_triggered(const char* id, int index, uint32_t value) "%s CCR%d triggered on CNT %u)"

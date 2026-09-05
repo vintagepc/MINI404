@@ -18,7 +18,7 @@
 #include "libqtest-single.h"
 
 #include "../stm32_chips/stm32f030xx.h"
-#include "../stm32_common/stm32_crc_regdata.h"
+#include "../stm32_registers/generated/common/CRC_TYPE_A_registers.h"
 
 static void test_storage_idr(void)
 {
@@ -78,11 +78,6 @@ int main(int argc, char **argv)
 
     g_test_init(&argc, &argv, NULL);
     g_test_set_nonfatal_assertions();
-
-	(void)stm32f030_crc_reginfo;
-	(void)stm32g070_crc_reginfo;
-	(void)stm32f2xx_crc_reginfo;
-	(void)stm32f4xx_crc_reginfo;
 
     qtest_add_func("/stm32_crc/storage_idr", test_storage_idr);
     qtest_add_func("/stm32_crc/dr_reset", test_dr_reset);
