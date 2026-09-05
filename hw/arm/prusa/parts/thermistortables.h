@@ -1349,6 +1349,42 @@ const short temptable_2004[][2] PROGMEM = {
 };
 
 
+
+// PT1000 with 1k0 pullup — HT (high-temperature) hotend on CORE One / CORE One L.
+// Mirrors lib/Marlin/Marlin/src/module/thermistor/thermistor_1010.h, reordered
+// descending-by-temperature like every other table here (the lookup in
+// thermistor.c walks until table[i+1] <= value, so ordering is by temperature,
+// not ADC). PT1000 is the reversed case: ADC rises with temperature.
+//
+// Named _ht because this file already carries an (inactive, PtLine-generated)
+// upstream Marlin temptable_1010 guarded by THERMISTORHEATER_*.
+//
+// The 425/450 rows are the firmware's own projected entries; the -30 row is
+// sim-only (IEC 60751) so a below-zero ambient still produces an output rather
+// than the lookup falling off the end and emitting nothing.
+const short temptable_1010_ht[][2] PROGMEM = {
+    { OVERSAMPLENR*(743), 450 },
+    { OVERSAMPLENR*(736), 425 },
+    { OVERSAMPLENR*(729), 400 },
+    { OVERSAMPLENR*(721), 375 },
+    { OVERSAMPLENR*(713), 350 },
+    { OVERSAMPLENR*(705), 325 },
+    { OVERSAMPLENR*(696), 300 },
+    { OVERSAMPLENR*(686), 275 },
+    { OVERSAMPLENR*(676), 250 },
+    { OVERSAMPLENR*(665), 225 },
+    { OVERSAMPLENR*(653), 200 },
+    { OVERSAMPLENR*(640), 175 },
+    { OVERSAMPLENR*(626), 150 },
+    { OVERSAMPLENR*(611), 125 },
+    { OVERSAMPLENR*(595), 100 },
+    { OVERSAMPLENR*(577), 75 },
+    { OVERSAMPLENR*(557), 50 },
+    { OVERSAMPLENR*(536), 25 },
+    { OVERSAMPLENR*(512), 0 },
+    { OVERSAMPLENR*(479), -30 },
+};
+
 const short temptable_2005[][2] PROGMEM = {
 { OVERSAMPLENR*(50), 350 }, // Synthetic value to test max temp error
 { OVERSAMPLENR*(78), 300 },

@@ -26,6 +26,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qapi/visitor.h"
 #include "hw/core/boards.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
@@ -44,6 +45,8 @@
 #include "parts/spi_rgb.h"
 #include "otp.h"
 #include "parts/c1_bridge.h"
+#include "parts/thermistor.h"
+#include "parts/fan.h"
 #include "parts/xl_bridge.h"
 #include "qobject/qlist.h"
 
@@ -88,11 +91,6 @@ enum {
     AXIS_MAX,
 };
 
-enum {
-    FAN_PRINT,
-    FAN_HBR,
-    FAN_MAX
-};
 
 enum {
 	T_NOZ,
@@ -101,6 +99,15 @@ enum {
 	T_BRD,
 	T_CASE,
 	T_MAX,
+};
+
+// QOM child names for the thermistors.
+static const char* temp_names[T_MAX] = {
+	[T_NOZ] = "thermistor-noz",
+	[T_BED] = "thermistor-bed",
+	[T_BRK] = "thermistor-brk",
+	[T_BRD] = "thermistor-brd",
+	[T_CASE] = "thermistor-case",
 };
 
 typedef struct temp_cfg_t
@@ -125,14 +132,21 @@ typedef struct mk4_cfg_t {
     stm_pin enc_b;
     stm_pin enc_btn;
     stm_pin z_min;
-    uint16_t f_rpms[FAN_MAX];
-    stm_pin f_tach[FAN_MAX];
+    uint16_t f_rpms[FAN_COOLING_COUNT];
+    stm_pin f_tach[FAN_COOLING_COUNT];
     bool f_inverted;
     bool has_at21;
 	bool has_loadcell;
 	temp_cfg_t temps;
     uint8_t motor;
 	uint8_t e_t_mass;
+	// Measured hotend thermals; 0 = no measurement for this machine, so the
+	// corresponding effect is not modelled.
+	uint16_t e_cool_tau_s;        // cool-down constant, both fans off
+	uint16_t e_cool_tau_pfan_s;   // ditto at full print-fan duty
+	uint16_t e_cool_tau_hbr_s;    // ditto at full heatbreak-fan duty
+	uint16_t e_heat_lag_ms;       // block -> thermistor lag
+	uint16_t e_dead_time_ms;      // heater -> block transport delay
     bool e_loopback;
     char m_label[AXIS_MAX];
     stm_pin m_step[AXIS_MAX];
@@ -194,7 +208,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .z_min = STM_PIN(GPIOB, 8),
     .f_rpms = { 6600, 7500 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = true,
+    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -240,7 +254,7 @@ static const mk4_cfg_t mk4_034_cfg = {
     .z_min = STM_PIN(GPIOB, 8),
     .f_rpms = { 6600, 7500 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = true,
+    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -330,7 +344,7 @@ static const mk4_cfg_t mk3v9_cfg = {
     .z_min = STM_PIN(GPIOB, 8),
     .f_rpms = { 6600, 7000 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
-    .f_inverted = true,
+    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -375,7 +389,7 @@ static const mk4_cfg_t ix_027c_cfg = {
     .z_min = STM_PIN(GPIOB, 8),
     .f_rpms = { 6600, 8000 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = true,
+    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -421,7 +435,7 @@ static const mk4_cfg_t core1_cfg = {
     .z_min = STM_PIN(GPIOB, 8),
     .f_rpms = { 6600, 8000 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = true,
+    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
 	.temps =
@@ -432,6 +446,18 @@ static const mk4_cfg_t core1_cfg = {
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
 	.e_t_mass = 45,
+	// Measured on a CORE One with the stock hotend -- docs/HotendThermalMeasurement.md
+	// 4d/4e. The still-air figure is the one boot-time hotend detection sees, since
+	// the firmware does not start the heatbreak fan until 45 degC.
+	.e_cool_tau_s = 324,
+	.e_cool_tau_pfan_s = 123,
+	.e_cool_tau_hbr_s = 134,
+	// Fitted to the measured step response with the sock fitted, which is the
+	// shipping configuration and the one that was captured. thermal_mass_x10 is
+	// left alone: 45 * HEATER_SOCK_MASS_FACTOR = 3.83 degC/s against a measured
+	// 3.41, close enough that touching it would only risk the selftest window.
+	.e_heat_lag_ms = 3750,
+	.e_dead_time_ms = 1250,
     .motor = TMC2130,
     .m_label = {'A','B','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
@@ -455,6 +481,11 @@ typedef struct xBuddyMachineState {
     MachineState parent;
     bool force_mmu;
     bool has_sock;
+    bool ht_hotend;
+    int32_t ambient_temp_c;   // -1 = use the machine's own default
+    int32_t nozzle_start_adc10;
+    int32_t nozzle_raw_adc10;
+    uint8_t nozzle_noise_adc10;
 } xBuddyMachineState;
 
 OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
@@ -480,7 +511,121 @@ static bool xbuddy_get_has_sock(Object *obj, Error **errp)
 static void xbuddy_set_has_sock(Object *obj, bool value, Error **errp)
 {
     xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    if (value && s->ht_hotend)
+    {
+        error_setg(errp, "has-sock conflicts with ht-hotend: the HT hotend takes no sock");
+        return;
+    }
     s->has_sock = value;
+}
+
+static bool xbuddy_get_ht_hotend(Object *obj, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    return s->ht_hotend;
+}
+
+static void xbuddy_set_ht_hotend(Object *obj, bool value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    if (value && s->has_sock)
+    {
+        error_setg(errp, "ht-hotend conflicts with has-sock: the HT hotend takes no sock");
+        return;
+    }
+    s->ht_hotend = value;
+}
+
+static void xbuddy_get_ambient(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value = s->ambient_temp_c;
+    visit_type_int(v, name, &value, errp);
+}
+
+static void xbuddy_set_ambient(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value;
+    if (!visit_type_int(v, name, &value, errp)) {
+        return;
+    }
+    if (value < 0 || value > 100) {
+        error_setg(errp, "ambient-temp-c out of range (0..100)");
+        return;
+    }
+    s->ambient_temp_c = value;
+}
+
+static void xbuddy_get_start_adc(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value = s->nozzle_start_adc10;
+    visit_type_int(v, name, &value, errp);
+}
+
+static void xbuddy_set_start_adc(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value;
+    if (!visit_type_int(v, name, &value, errp)) {
+        return;
+    }
+    if (value < 0 || value > 1023) {
+        error_setg(errp, "nozzle-start-adc10 out of range (0..1023, 10-bit)");
+        return;
+    }
+    s->nozzle_start_adc10 = value;
+}
+
+static void xbuddy_get_raw_adc(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value = s->nozzle_raw_adc10;
+    visit_type_int(v, name, &value, errp);
+}
+
+static void xbuddy_set_raw_adc(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value;
+    if (!visit_type_int(v, name, &value, errp)) {
+        return;
+    }
+    if (value < 0 || value > 1023) {
+        error_setg(errp, "nozzle-raw-adc10 out of range (0..1023, 10-bit)");
+        return;
+    }
+    s->nozzle_raw_adc10 = value;
+}
+
+static void xbuddy_get_noise_adc(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value = s->nozzle_noise_adc10;
+    visit_type_int(v, name, &value, errp);
+}
+
+static void xbuddy_set_noise_adc(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    int64_t value;
+    if (!visit_type_int(v, name, &value, errp)) {
+        return;
+    }
+    if (value < 0 || value > 255) {
+        error_setg(errp, "nozzle-noise-adc10 out of range (0..255, 10-bit counts)");
+        return;
+    }
+    s->nozzle_noise_adc10 = value;
 }
 
 static void mk4_init(MachineState *machine)
@@ -490,9 +635,46 @@ static void mk4_init(MachineState *machine)
     xBuddyMachineState *s = XBUDDY_MACHINE(machine);
 
     Object* periphs = machine_get_container("peripheral");
-	const mk4_cfg_t cfg = *mc->cfg;
+	mk4_cfg_t cfg = *mc->cfg;
 
-	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4),
+	if (s->ht_hotend)
+	{
+		cfg.temps.table[T_NOZ] = 1010;
+		// Measured on a CORE One with the HT hotend (docs/HotendThermalMeasurement.md
+		// 4d/4e). It is slower to *show* that it is heating,
+		// which is why only the lag differs materially from stock.
+		cfg.e_cool_tau_s = 510;
+		cfg.e_cool_tau_pfan_s = 165;
+		cfg.e_cool_tau_hbr_s = 127;
+		cfg.e_heat_lag_ms = 4500;
+		cfg.e_dead_time_ms = 1500;
+		// 33 is what the measured step responsem gives; the whole set fits it to 0.14 degC rms over 1-15 s.
+		cfg.e_t_mass = 33;
+	}
+
+	const float ambient_c = (s->ambient_temp_c >= 0)
+		? (float)s->ambient_temp_c
+		: (float)cfg.temps.ambient[T_NOZ];
+	float nozzle_start_c = ambient_c;
+	if (s->nozzle_start_adc10 >= 0
+	    && !thermistor_temp_for_adc10(cfg.temps.table[T_NOZ], s->nozzle_start_adc10, &nozzle_start_c))
+	{
+		error_setg(&error_fatal,
+			"nozzle-start-adc10=%d is off the end of sensor table %d",
+			s->nozzle_start_adc10, cfg.temps.table[T_NOZ]);
+	}
+	if (s->ambient_temp_c >= 0 || s->nozzle_start_adc10 >= 0)
+	{
+		// The thermistor's own initial value only matters until the heater's
+		// first tick drives it; the heater carries the true (possibly sub-zero)
+		// start temperature, so clamping here is harmless.
+		cfg.temps.ambient[T_NOZ] = (uint16_t)(nozzle_start_c < 0.f ? 0.f : nozzle_start_c);
+	}
+
+	// bomID is a dedicated OTP byte, NOT the revision digits in the datamatrix.
+	// The FW rejects anything below 37 (buddy::hw::Configuration::check_bom_compatible),
+	// so leaving it at 0 gives a "BOM ID not compatible" BSOD before usb_device_init().
+	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4), .bomID = 38,
 		.datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
 	};
 	if (cfg.dm_ver == 34)
@@ -801,8 +983,17 @@ static void mk4_init(MachineState *machine)
 			continue;
 		}
         dev = qdev_new("thermistor");
+        object_property_add_child(OBJECT(periphs), temp_names[i], OBJECT(dev));
         qdev_prop_set_uint16(dev, "temp",cfg.temps.ambient[i]);
         qdev_prop_set_uint16(dev, "table_no", cfg.temps.table[i]);
+        if (i == T_NOZ && s->nozzle_raw_adc10 >= 0)
+        {
+            qdev_prop_set_int32(dev, "raw_adc10", s->nozzle_raw_adc10);
+        }
+        if (i == T_NOZ && s->nozzle_noise_adc10)
+        {
+            qdev_prop_set_uint8(dev, "noise_adc10", s->nozzle_noise_adc10);
+        }
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_data_in",cfg.temps.channel[i]));
@@ -844,19 +1035,23 @@ static void mk4_init(MachineState *machine)
 
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
     dev = qdev_new("heater");
+    object_property_add_child(OBJECT(periphs), "heater-E", OBJECT(dev));
     qdev_prop_set_uint8(dev, "thermal_mass_x10",cfg.e_t_mass);
     qdev_prop_set_uint8(dev,"label", 'E');
     qdev_prop_set_bit(dev, "has_sock", s->has_sock);
+    qdev_prop_set_uint16(dev, "ambient_temp_x10", (uint16_t)(ambient_c * 10.f));
+    qdev_prop_set_int32(dev, "start_temp_x10", (int32_t)(nozzle_start_c * 10.f));
+    if (cfg.e_cool_tau_s)
+    {
+        qdev_prop_set_uint16(dev, "cool_tau_s", cfg.e_cool_tau_s);
+    }
+    qdev_prop_set_uint16(dev, "cool_tau_pfan_s", cfg.e_cool_tau_pfan_s);
+    qdev_prop_set_uint16(dev, "cool_tau_hbr_s", cfg.e_cool_tau_hbr_s);
+    qdev_prop_set_uint16(dev, "heat_lag_ms", cfg.e_heat_lag_ms);
+    qdev_prop_set_uint16(dev, "dead_time_ms", cfg.e_dead_time_ms);
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-    if (mc->has_modbed)
-    {
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed", 3, qdev_get_gpio_in_named(dev, "raw-pwm-in",0));
-    }
-    else
-    {
-        qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed", 3, qdev_get_gpio_in_named(dev, "pwm_in",0));
-    }
+    qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed", 3, qdev_get_gpio_in_named(dev, "raw-pwm-in",0));
     qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(hotend, "thermistor_set_temperature",0));
 #ifdef BUDDY_HAS_GL
     qemu_irq split_htr = qemu_irq_split(qdev_get_gpio_in_named(db2,"therm-pwm",0),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_HTR),  qdev_get_gpio_in_named(e_heater, "pwm-in",0));
@@ -865,10 +1060,15 @@ static void mk4_init(MachineState *machine)
     qdev_connect_gpio_out_named(dev, "pwm-out", 0, qdev_get_gpio_in_named(db2,"therm-pwm",0));
 #endif
 
+    // Kept so the cooling fans can be wired to it once they exist, further down.
+    DeviceState *hotend_heater = dev;
+
     // Bed.
     dev = qdev_new("heater");
+    object_property_add_child(OBJECT(periphs), "heater-B", OBJECT(dev));
     qdev_prop_set_uint8(dev, "thermal_mass_x10",3);
     qdev_prop_set_uint8(dev,"label", 'B');
+    qdev_prop_set_uint16(dev, "ambient_temp_x10", (uint16_t)(ambient_c * 10.f));
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed",2,qdev_get_gpio_in_named(dev, "pwm_in",0));
 	qdev_connect_gpio_out_named(dev, "temp_out",0, qdev_get_gpio_in_named(bed, "thermistor_set_temperature",0));
@@ -984,12 +1184,12 @@ static void mk4_init(MachineState *machine)
     // print fan = fan0
     uint8_t  fan_pwm_pins[] = { 11, 9};
     uint8_t fan_labels[] = {'P','E'};
-    DeviceState* fans[FAN_MAX];
+    DeviceState* fans[FAN_COOLING_COUNT];
 	DeviceState* fanpwm = qdev_new("software-pwm");
     qdev_prop_set_bit(fanpwm, "is_inverted", cfg.f_inverted);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(fanpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM14), "timer", 0, qdev_get_gpio_in_named(fanpwm, "tick-in", 0));
-    for (int i=0; i<FAN_MAX; i++)
+    for (int i=0; i<FAN_COOLING_COUNT; i++)
     {
 		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), fan_pwm_pins[i],
 			qdev_get_gpio_in_named(fanpwm, "gpio-in",i)
@@ -1003,6 +1203,8 @@ static void mk4_init(MachineState *machine)
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.f_tach[i])), PIN(cfg.f_tach[i])));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
         qdev_connect_gpio_out_named(dev, "rpm-out", 0, qdev_get_gpio_in_named(db2,"fan-rpm",i));
+        qdev_connect_gpio_out_named(dev, "airflow-out", 0,
+            qdev_get_gpio_in_named(hotend_heater, "cooling-fan-in", i));
 		qdev_connect_gpio_out(fanpwm,i,split_fan);
 // #ifdef BUDDY_HAS_GL
 //         qemu_irq split_fan = qemu_irq_split(qdev_get_gpio_in_named(db2,"fan-pwm",i),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_PFAN+i));
@@ -1028,15 +1230,15 @@ static void mk4_init(MachineState *machine)
     {
         // Tach select is F13, H = print fan, L = HBR
         // the fan has an active-high tach-disable line, so for the print fan it must be inverted.
-        qemu_irq sel_inv = qemu_irq_invert(qdev_get_gpio_in_named(fans[FAN_PRINT], "tach-disable", 0));
+        qemu_irq sel_inv = qemu_irq_invert(qdev_get_gpio_in_named(fans[FAN_COOLING_PRINT], "tach-disable", 0));
         qemu_irq split_sel = NULL;
         if (cfg.has_at21)
         {
-           split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_HBR], "tach-disable", 0), sel_inv, qdev_get_gpio_in(dev, 0));
+           split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_COOLING_HBR], "tach-disable", 0), sel_inv, qdev_get_gpio_in(dev, 0));
         }
         else
         {
-           split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_HBR], "tach-disable", 0), sel_inv);
+           split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_COOLING_HBR], "tach-disable", 0), sel_inv);
         }
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF), 13, split_sel);
     }
@@ -1127,7 +1329,37 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 		mc->no_serial = 1;
 
         object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
-        object_class_property_add_bool(oc, "has_sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
+        object_class_property_add_bool(oc, "has-sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
+        if (d->cfg->printer_family == FAM_C1)
+        {
+            // Only the CORE One family has HAS_HT_HOTEND firmware support, so the
+            // property does not exist elsewhere rather than failing at init.
+            object_class_property_add_bool(oc, "ht-hotend", xbuddy_get_ht_hotend, xbuddy_set_ht_hotend);
+            object_class_property_set_description(oc, "ht-hotend",
+                "HT hotend: Nozzle uses PT1000 table.");
+        }
+        object_class_property_add(oc, "ambient-temp-c", "int",
+            xbuddy_get_ambient, xbuddy_set_ambient, NULL, NULL);
+        object_class_property_set_description(oc, "ambient-temp-c",
+            "Ambient/chamber temperature in C that the heaters cool towards. Unset = the machine's own default.");
+        object_class_property_add(oc, "nozzle-raw-adc10", "int",
+            xbuddy_get_raw_adc, xbuddy_set_raw_adc, NULL, NULL);
+        object_class_property_set_description(oc, "nozzle-raw-adc10",
+            "Pin the nozzle ADC to this 10-bit reading for the whole run, ignoring "
+            "the sensor curve and the thermal model. For readings a working probe "
+            "cannot produce: open circuit, short, or a DMA buffer not yet filled.");
+        object_class_property_add(oc, "nozzle-noise-adc10", "int",
+            xbuddy_get_noise_adc, xbuddy_set_noise_adc, NULL, NULL);
+        object_class_property_set_description(oc, "nozzle-noise-adc10",
+            "Peak ADC jitter on the nozzle thermistor, in 10-bit counts, seeded so a "
+            "run replays identically. 0 (default) is noiseless. This exercises how "
+            "much margin a detection threshold has; it cannot tell you what the real "
+            "noise floor is -- that has to be measured on hardware.");
+        object_class_property_add(oc, "nozzle-start-adc10", "int",
+            xbuddy_get_start_adc, xbuddy_set_start_adc, NULL, NULL);
+        object_class_property_set_description(oc, "nozzle-start-adc10",
+            "Nozzle ADC reading at power-on, 10-bit 0..1023. Unset = start at ambient. "
+            "Result depends on thermistor temperature table in use.");
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
@@ -1139,8 +1371,14 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 static void xbuddy_instance_init(Object *obj)
 {
     xBuddyMachineState *s = XBUDDY_MACHINE(obj);
-    s->force_mmu = false; // Set default
-    s->has_sock = false; // Set default 
+    // Set property defaults. 
+    s->force_mmu = false; 
+    s->has_sock = false; 
+    s->ht_hotend = false; 
+    s->ambient_temp_c = -1; 
+    s->nozzle_start_adc10 = -1; 
+    s->nozzle_raw_adc10 = -1; 
+    s->nozzle_noise_adc10 = 0; 
 }
 
 static const xBuddyData mk4_027c = {

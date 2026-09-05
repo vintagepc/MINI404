@@ -419,13 +419,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
 			data = bdcr.raw;
 			break;
 		}
-        case RI_CSR:
-		{
-			REGDEF_NAME(rcc, csr) csr;
-			csr.LSION = csr.LSIRDY = clktree_is_enabled(&s->parent.LSICLK);
-			data = csr.raw;
-			break;
-		}
+        case RI_CSR: // LSI state tracked/stored on set.
         case RI_CIR:
         case RI_PLLCFGR:
         case RI_PLLI2SCFGR:
@@ -481,7 +475,13 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
         case RI_CSR:
 		{
 			REGDEF_NAME(rcc, csr) r = {.raw = data};
-   			clktree_set_enabled(&s->parent.LSICLK, r.LSION);
+			clktree_set_enabled(&s->parent.LSICLK, r.LSION);
+            s->regs.CSR.LSION = s->regs.CSR.LSIRDY = r.LSION;
+
+			if (r.RMVF) // Clear the upper byte (reset flags)
+			{
+                s->regs.CSR.raw &= 0x00FFFFFF;
+			}
 		}
             break;
         case RI_PLLI2SCFGR:
