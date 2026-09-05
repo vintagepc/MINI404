@@ -124,13 +124,16 @@ jobs:
 
     - name: Install dependencies
       run: |
-        brew install libffi gettext glib pkg-config autoconf automake pixman ninja make python-setuptools
+        brew install libffi gettext glib pkg-config autoconf automake pixman ninja make python-setuptools libxkbcommon
 
     - name: Configure build
       run: cd ${{ runner.workspace }}/MINI404 && ./configure --target-list="buddy-softmmu"
 
     - name: Build qemu-system-buddy
-      run: cd ${{ runner.workspace }}/MINI404 && gmake -j3
+      run: |
+        cd ${{ runner.workspace }}/MINI404
+        gmake -j3
+        gmake -j3 qemu-system-buddy
 
     - name: Assemble artifacts
       if: ${{ !github.event.pull_request }}
