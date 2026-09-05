@@ -12,7 +12,6 @@ arm_ss.add(when: 'CONFIG_STM32F407_SOC',
     'stm32f2xx_rtc.c',
     'stm32f4xx_flashint.c',
     'stm32f2xx_pwr.c',
-    'stm32f4xx_rng.c',
     'stm32f4xx_adc.c',
     'stm32f4xx_adcc.c',
     'stm32f4xx_usb.c'

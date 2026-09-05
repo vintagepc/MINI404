@@ -74,19 +74,19 @@ static const uint8_t AHB3_PERIPHS[32] = {
 static const uint8_t APB1_PERIPHS[32] = {
     STM32_P_TIM2, STM32_P_TIM3, STM32_P_TIM4, STM32_P_TIM5, STM32_P_TIM6, STM32_P_TIM7, STM32_P_TIM12, STM32_P_TIM13,
     STM32_P_TIM14, 0, 0, STM32_P_WWDG, 0, 0, STM32_P_SPI2, STM32_P_SPI3,
-    0, STM32_P_UART2, STM32_P_UART3, STM32_P_UART4, STM32_P_UART5, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I2C3,
-    0, STM32_P_CAN1, STM32_P_CAN2, 0, STM32_P_PWR, STM32_P_DAC, STM32_P_UART7, STM32_P_UART8
+    0, STM32_P_USART2, STM32_P_USART3, STM32_P_USART4, STM32_P_USART5, STM32_P_I2C1, STM32_P_I2C2, STM32_P_I2C3,
+    0, STM32_P_CAN1, STM32_P_CAN2, 0, STM32_P_PWR, STM32_P_DAC, STM32_P_USART7, STM32_P_USART8
 };
 
 static const uint8_t APB2RST_PERIPHS[32] = {
-    STM32_P_TIM1, STM32_P_TIM8, 0, 0, STM32_P_UART1, STM32_P_UART6, 0, 0,
+    STM32_P_TIM1, STM32_P_TIM8, 0, 0, STM32_P_USART1, STM32_P_USART6, 0, 0,
     STM32_P_ADC_ALL, 0, 0, STM32_P_SDIO, STM32_P_SPI1, STM32_P_SPI4, STM32_P_SYSCFG, 0,
     STM32_P_TIM9, STM32_P_TIM10, STM32_P_TIM11, 0, STM32_P_SPI5, STM32_P_SPI6, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
 static const uint8_t APB2EN_PERIPHS[32] = {
-    STM32_P_TIM1, STM32_P_TIM8, 0, 0, STM32_P_UART1, STM32_P_UART6, 0, 0,
+    STM32_P_TIM1, STM32_P_TIM8, 0, 0, STM32_P_USART1, STM32_P_USART6, 0, 0,
     STM32_P_ADC1, STM32_P_ADC2, STM32_P_ADC3, STM32_P_SDIO, STM32_P_SPI1, STM32_P_SPI4, STM32_P_SYSCFG, 0,
     STM32_P_TIM9, STM32_P_TIM10, STM32_P_TIM11, 0, STM32_P_SPI5, STM32_P_SPI6, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
@@ -419,13 +419,7 @@ static uint64_t stm32_rcc_read(void *opaque, hwaddr offset,
 			data = bdcr.raw;
 			break;
 		}
-        case RI_CSR:
-		{
-			REGDEF_NAME(rcc, csr) csr;
-			csr.LSION = csr.LSIRDY = clktree_is_enabled(&s->parent.LSICLK);
-			data = csr.raw;
-			break;
-		}
+        case RI_CSR: // LSI state tracked/stored on set.
         case RI_CIR:
         case RI_PLLCFGR:
         case RI_PLLI2SCFGR:
@@ -481,7 +475,13 @@ static void stm32_rcc_write(void *opaque, hwaddr offset,
         case RI_CSR:
 		{
 			REGDEF_NAME(rcc, csr) r = {.raw = data};
-   			clktree_set_enabled(&s->parent.LSICLK, r.LSION);
+			clktree_set_enabled(&s->parent.LSICLK, r.LSION);
+            s->regs.CSR.LSION = s->regs.CSR.LSIRDY = r.LSION;
+
+			if (r.RMVF) // Clear the upper byte (reset flags)
+			{
+                s->regs.CSR.raw &= 0x00FFFFFF;
+			}
 		}
             break;
         case RI_PLLI2SCFGR:
@@ -594,14 +594,14 @@ static void stm32_rcc_realize(DeviceState *dev, Error **errp)
 
     INIT_PCLK_NSM(SYSCFG, 0, &s->PCLK2, NULL);
 
-    INIT_PCLK_NSM(UART1, 0, &s->PCLK2, NULL);
-    INIT_PCLK_NSM(UART2, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART3, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART4, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART5, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART6, 0, &s->PCLK2, NULL);
-    INIT_PCLK_NSM(UART7, 0, &s->PCLK1, NULL);
-    INIT_PCLK_NSM(UART8, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART1, 0, &s->PCLK2, NULL);
+    INIT_PCLK_NSM(USART2, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART3, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART4, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART5, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART6, 0, &s->PCLK2, NULL);
+    INIT_PCLK_NSM(USART7, 0, &s->PCLK1, NULL);
+    INIT_PCLK_NSM(USART8, 0, &s->PCLK1, NULL);
 
 
     INIT_PCLK_NSM(ADC1, 0, &s->PCLK2, NULL);

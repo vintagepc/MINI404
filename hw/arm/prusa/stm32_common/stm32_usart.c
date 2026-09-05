@@ -40,6 +40,7 @@
 #include "assert.h"
 #include "stm32_rcc_if.h"
 #include "stm32_usart_regdata.h"
+#include "trace.h"
 
 /* DEFINITIONS*/
 
@@ -238,6 +239,7 @@ typedef struct COM_STRUCT_NAME(Usart) {
     int curr_irq_level;
 
 	qemu_irq byte_out;
+	qemu_irq rts_de; // RTS or DE IRQ
 
 	bool do_rs485;
 	bool debug_rs485;
@@ -303,6 +305,7 @@ static const stm32_reginfo_t stm32g070_usart_reginfo[RI_END] =
 static const stm32_periph_variant_t stm32_usart_variants[] = {
 	{TYPE_STM32F030_USART, stm32f030_usart_reginfo},
 	{TYPE_STM32G070_USART, stm32g070_usart_reginfo},
+	{TYPE_STM32H503_USART, stm32g070_usart_reginfo},
 };
 
 static const uint8_t BITS_PER_CHAR = 10;
@@ -404,6 +407,11 @@ static void stm32_common_usart_tx_complete(COM_STRUCT_NAME(Usart) *s)
         s->regs.defs.ISR.TC = 1;
 		s->transmitting = false;
         stm32_common_usart_update_irq(s);
+		trace_stm32_usart_de_assert(_PERIPHNAMES[s->parent.periph], 0);
+		if (s->regs.defs.CR3.DEM)
+		{
+			qemu_irq_lower(s->rts_de);
+		}
     } else {
         /* Otherwise, mark the transmit buffer as empty and
          * start transmitting the value stored there.
@@ -419,6 +427,13 @@ static void stm32_common_usart_tx_complete(COM_STRUCT_NAME(Usart) *s)
 static void stm32_common_usart_start_tx(COM_STRUCT_NAME(Usart) *s, uint32_t value)
 {
     uint8_t ch = value; //This will truncate the ninth bit
+
+	// Fire the DE IRQ if we started transmitting.
+	if (!s->transmitting && s->regs.defs.CR3.DEM)
+	{
+		trace_stm32_usart_de_assert(_PERIPHNAMES[s->parent.periph], 1);
+		qemu_irq_raise(s->rts_de);
+	}
 
 	qemu_set_irq(s->byte_out, ch);
     /* Reset the Transmission Complete flag to indicate a transmit is in
@@ -491,10 +506,14 @@ static void stm32_common_usart_fill_receive_data_register(COM_STRUCT_NAME(Usart)
     uint8_t byte = s->rcv_char_buf[0];
     memmove(&s->rcv_char_buf[0], &s->rcv_char_buf[1], --(s->rcv_char_bytes));
 
-	if (s->regs.defs.CR2.RTOEN && s->rcv_char_bytes == 0) // If no more data, tickle the timeout timers.
+	if (s->rcv_char_bytes == 0 && enabled) // If no more data, tickle the timeout timers.
 	{
-    	timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
-		timer_mod(s->rto_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char * (s->regs.defs.RTOR.RTO)));
+		trace_stm32_usart_idle_arm(_PERIPHNAMES[s->parent.periph], s->rcv_char_bytes);
+		if (s->regs.defs.CR2.RTOEN)
+		{
+			timer_mod(s->rto_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char * (s->regs.defs.RTOR.RTO)));
+		}
+		timer_mod(s->idle_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->ns_per_char);
 	}
 
     /* Only handle the received character if the module is enabled, */
@@ -531,6 +550,7 @@ static void stm32_common_usart_fill_receive_data_register(COM_STRUCT_NAME(Usart)
 static void stm32_common_usart_rx_timer_expire(void *opaque) {
     COM_STRUCT_NAME(Usart) *s = STM32COM_USART(opaque);
 
+    trace_stm32_usart_rx_timer(_PERIPHNAMES[s->parent.periph], s->receiving, s->rcv_char_bytes);
     s->receiving = false;
 
     /* Put next byte into the receive data register, if we have one ready */
@@ -548,9 +568,12 @@ static void stm32_common_usart_tx_timer_expire(void *opaque) {
 static void stm32_common_usart_idle_timer_expire(void *opaque) {
     COM_STRUCT_NAME(Usart) *s = STM32COM_USART(opaque);
 
+    trace_stm32_usart_idle_fire(_PERIPHNAMES[s->parent.periph],
+                                s->idle_interrupt_blocked,
+                                s->regs.raw[RI_ISR]);
+
     if (s->idle_interrupt_blocked) return;
 
-    // if(!s->regs.defs.ISR.IDLE) printf("IDLE SET\n");
     s->regs.defs.ISR.IDLE = 1;
     stm32_common_usart_update_irq(s);
 }
@@ -693,8 +716,10 @@ static void stm32_common_usart_receive(void *opaque, const uint8_t *buf, int siz
 {
     COM_STRUCT_NAME(Usart) *s = STM32COM_USART(opaque);
 	timer_del(s->rto_timer); // Cancel pending RTO
+	trace_stm32_usart_idle_cancel(_PERIPHNAMES[s->parent.periph]);
 	timer_del(s->idle_timer);
     assert(size > 0);
+    trace_stm32_usart_rx_buf(_PERIPHNAMES[s->parent.periph], s->rcv_char_bytes);
     /* Copy the characters into our buffer first */
     assert (size <= USART_RCV_BUF_LEN - s->rcv_char_bytes);
 	if (s->debug_rs485) // LCOV_EXCL_START
@@ -750,9 +775,18 @@ static void stm32_common_usart_USART_DR_read(COM_STRUCT_NAME(Usart) *s, uint8_t 
         /* If the receive buffer is not empty, return the value. and mark the
          * buffer as empty.
          */
-        // if (s->parent.periph == STM32_P_UART1) printf("DR read: %02x\n", s->regs.defs.RDR);
+        // if (s->parent.periph == STM32_P_USART1) printf("DR read: %02x\n", s->regs.defs.RDR);
 
         s->regs.defs.ISR.RXNE = 0;
+        /* De-assert the IRQ immediately after clearing RXNE so the NVIC sees a
+         * proper 1→0 transition before fill_receive_data_register can reload the
+         * next byte.  On real hardware the interrupt line momentarily falls when
+         * RDR is read, even if another byte is immediately available; without this
+         * intermediate de-assert curr_irq_level stays 1 throughout the call and
+         * the NVIC keeps the interrupt permanently pending on every exception
+         * return — causing an interrupt storm when the handler is slow relative
+         * to the baud-delay timer (e.g. after a bootloader→app transition). */
+        stm32_common_usart_update_irq(s);
 
         *data_read = s->regs.defs.RDR;
         /* Put next character into the RDR if we have one */
@@ -903,10 +937,34 @@ static void stm32_common_usart_write(void *opaque, hwaddr addr,
             stm32_common_usart_baud_update(s);
             break;
         case RI_CR1:
+		{
+			REGDEF_NAME(usart, cr1) changed = { .raw = value^s->regs.raw[addr] };
             s->regs.raw[addr] = value;
 			s->regs.defs.ISR.TEACK = s->regs.defs.CR1.TE;
 			s->regs.defs.ISR.REACK = s->regs.defs.CR1.RE;
+			if (changed.TXEIE && s->regs.defs.CR1.UE)
+			{
+				// If transmit was just enabled, flag the TX DR as empty
+				s->regs.defs.ISR.TXE = 1;
+			}
+			/* When UE transitions 1→0 (USART disabled for reconfiguration), flush
+			 * the receive-side state.  On real hardware the receiver is disabled
+			 * and any data in transit is lost; here we mirror that by clearing the
+			 * software receive buffer and all receive-only ISR flags.
+			 * TX-side flags (TXE, TC) and the IRQ signal are intentionally left
+			 * untouched so the transmit pipeline is not disrupted. */
+			if (changed.UE && !s->regs.defs.CR1.UE) {
+				s->rcv_char_bytes = 0;
+				s->receiving = false;
+				timer_del(s->rx_timer);
+				timer_del(s->idle_timer);
+				timer_del(s->rto_timer);
+				s->regs.defs.ISR.RXNE = 0;
+				s->regs.defs.ISR.IDLE = 0;
+				s->regs.defs.ISR.ORE  = 0;
+			}
             stm32_common_usart_update_irq(s);
+		}
             break;
 		case RI_ICR:
 			s->regs.raw[RI_ISR] &= ~value;
@@ -991,7 +1049,7 @@ static void stm32_common_usart_init(Object *obj)
 
     qdev_init_gpio_in_named(DEVICE(obj),stm32_common_usart_byte_in,"byte-in",1);
 	qdev_init_gpio_out_named(DEVICE(obj),&s->byte_out,"byte-out",1);
-
+	qdev_init_gpio_out_named(DEVICE(obj),&s->rts_de,"rts-de",1);
     stm32_common_usart_reset(DEVICE(obj));
 
 	// Throw compile errors if alignment is off
@@ -1017,7 +1075,7 @@ static void stm32_common_usart_realize(DeviceState *dev, Error **errp)
         const char* pty_name = qemu_chr_get_pty_name(s->chr.chr);
         if (pty_name) {
             char link_path[] = "/tmp/stmf0-uart0";
-            link_path[15] += s->parent.periph - STM32_P_UART1;
+            link_path[15] += s->parent.periph - STM32_P_USART1;
             if (s->shift)
                 link_path[15] += 5;
             unlink(link_path);
@@ -1039,7 +1097,7 @@ static const Property stm32_common_usart_properties[] = {
 	DEFINE_PROP_STRING("prefix", COM_STRUCT_NAME(Usart), prefix),
 	DEFINE_PROP_BOOL("do_rs485", COM_STRUCT_NAME(Usart), do_rs485, false),
 	DEFINE_PROP_UINT8("rs485_dest", COM_STRUCT_NAME(Usart), rs485_dest, 0),
-    
+
 };
 
 static const VMStateField vmsf_stm32_common_usart[] = {

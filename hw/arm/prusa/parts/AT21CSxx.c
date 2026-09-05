@@ -24,6 +24,7 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qom/object.h"
+#include "system/qtest.h"
 #include "../utility/macros.h"
 #include "hw/core/irq.h"
 #include "hw/core/sysbus.h"
@@ -302,19 +303,14 @@ static void at21csxx_reset(DeviceState *dev)
 static void at21csxx_realize(DeviceState *dev, Error **errp)
 {
     AT21CSxxState *s = AT21CSXX(dev);
-#ifndef CONFIG_GCOV    
-	if (icount_enabled() == 0)
-	{
-		printf("WARNING: icount is disabled. AT21CSxx EEPROM will NOT WORK!\n");
-		printf("WARNING: use -icount [number] to enable it.\n");
-	}
-    else 
-    {
+    if (icount_enabled() == 0) {
+        if (!qtest_enabled()) {
+            printf("WARNING: icount is disabled. AT21CSxx EEPROM will NOT WORK!\n");
+            printf("WARNING: use -icount [number] to enable it.\n");
+        }
+    } else {
         s->icount_enabled = true;
     }
-#else
-    s->icount_enabled = icount_enabled();
-#endif    
     if (s->blk) {
 
         int64_t len = blk_getlength(s->blk);

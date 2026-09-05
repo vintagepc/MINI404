@@ -24,15 +24,6 @@
 #ifndef HW_ARM_STM32_IWDG_REGDEF_H
 #define HW_ARM_STM32_IWDG_REGDEF_H
 
-enum reg_index {
-	RI_KR,
-	RI_PR,
-	RI_RLR,
-	RI_SR,
-	RI_WINR,
-	RI_END
-};
-
 static const uint16_t IWDG_PRESCALES[8] = { 4, 8, 16, 32, 64, 128, 256, 256 };
 
 #endif

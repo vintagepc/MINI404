@@ -371,7 +371,6 @@ stm32_common_syscfg_info = {
     .parent        = TYPE_STM32_PERIPHERAL,
     .instance_size = sizeof(COM_STRUCT_NAME(Syscfg)),
 	.class_size	   = sizeof(COM_CLASS_NAME(Syscfg)),
-    .parent        = TYPE_STM32_PERIPHERAL,
 };
 
 static void

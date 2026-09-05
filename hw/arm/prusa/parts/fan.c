@@ -31,6 +31,8 @@
 #include "../utility/p404scriptable.h"
 #include "../utility/ScriptHost_C.h"
 #include "qemu/module.h"
+#include "fan.h"
+#include "trace.h"
 
 struct  fan_state
 {
@@ -38,9 +40,18 @@ struct  fan_state
 	bool pulse_state;
 	bool is_nonlinear;
 
+    /* Three independent fault types:
+         is_stalled    - seized rotor: no tach pulses AND no airflow
+         tach_failed   - broken tach wire: fan spins and cools, reports nothing
+         airflow_scale - obstructed duct or clogged shroud: cools less than
+                         commanded, and the firmware cannot see it at all
+       Stall/Resume keep their old both-at-once meaning as a convenience. */
     bool is_stalled;
+    bool tach_failed;
+    uint8_t airflow_scale;
 
 	uint8_t pwm;
+	int last_pwm_level;
 	uint32_t max_rpm;
 	uint32_t current_rpm;
 	uint32_t usec_per_pulse;
@@ -49,7 +60,7 @@ struct  fan_state
 
 	uint8_t label;
 
-    qemu_irq tach_pulse, pwm_out, rpm_out;
+    qemu_irq tach_pulse, pwm_out, rpm_out, airflow_out;
 
     bool tach_blocked;
 
@@ -65,6 +76,9 @@ enum {
     ActResume,
     ActStall,
     ActGetRPM,
+    ActTachFail,
+    ActTachOK,
+    ActSetAirflow,
 };
 
 // FIXME/HACK - E fan is nonlinear in the RPM vs PWM.
@@ -79,7 +93,7 @@ static void fan_tach_expire(void *opaque)
     fan_state *s = opaque;
     if (!s->tach_blocked)
     {
-        if (s->is_stalled) {
+        if (s->is_stalled || s->tach_failed) {
             qemu_set_irq(s->tach_pulse, 0);
         } else {
             qemu_set_irq(s->tach_pulse, s->pulse_state^=1);
@@ -94,9 +108,26 @@ static void fan_tach_block(void *opaque, int n, int level) {
 }
 
 
+/* Air actually moving, as a duty the heater can use. */
+static int fan_airflow(fan_state *s, int level)
+{
+    if (s->is_stalled) {
+        return 0;
+    }
+    return (level * (int)s->airflow_scale) / 255;
+}
+
 static void fan_pwm_change(void *opaque, int n, int level) {
     fan_state *s = opaque;
+
+	if (n == FAN_PWM_INPUT_INVERTED)
+	{
+		level = 255 - level;
+	}
+    trace_fan_new_pwm_value(s->label, level);
     qemu_set_irq(s->pwm_out, level);
+    s->last_pwm_level = level;
+    qemu_set_irq(s->airflow_out, fan_airflow(s, level));
     s->current_rpm = (((uint32_t)s->max_rpm)*level)/255;
     if (s->is_nonlinear)
     {
@@ -107,6 +138,7 @@ static void fan_pwm_change(void *opaque, int n, int level) {
     s->usec_per_pulse = fuSPerRev/4.f; // 4 pulses per rev.
     if (s->current_rpm>0) // Restart the timer if it has expired, otherwise leave it be.
     {
+        trace_fan_new_tach_interval(s->label, s->usec_per_pulse);
         timer_mod(s->tach, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL)+s->usec_per_pulse);
     }
     else
@@ -157,12 +189,27 @@ static int fan_process_action(P404ScriptIF *obj, unsigned int action, script_arg
     switch (action) {
         case ActStall:
             s->is_stalled = true;
+            s->tach_failed = true;
+            qemu_set_irq(s->airflow_out, 0);
             break;
         case ActResume:
             s->is_stalled = false;
+            s->tach_failed = false;
+            s->airflow_scale = 255;
+            qemu_set_irq(s->airflow_out, fan_airflow(s, s->last_pwm_level));
+            break;
+        case ActTachFail:
+            s->tach_failed = true;
+            break;
+        case ActTachOK:
+            s->tach_failed = false;
+            break;
+        case ActSetAirflow:
+            s->airflow_scale = scripthost_get_int(args, 0);
+            qemu_set_irq(s->airflow_out, fan_airflow(s, s->last_pwm_level));
             break;
         case ActGetRPM:
-            script_print_int( s->is_stalled? 0 : s->current_rpm);
+            script_print_int((s->is_stalled || s->tach_failed) ? 0 : s->current_rpm);
             break;
         default:
             return ScriptLS_Unhandled;
@@ -176,6 +223,9 @@ OBJECT_DEFINE_TYPE_SIMPLE_WITH_INTERFACES(fan_state, fan, FAN, SYS_BUS_DEVICE, {
 static void fan_reset(DeviceState *dev)
 {
     fan_state *s = FAN(dev);
+    s->is_stalled = false;
+    s->tach_failed = false;
+    s->airflow_scale = 255;
    qemu_set_irq(s->rpm_out, s->current_rpm);
 }
 
@@ -187,6 +237,7 @@ static void fan_init(Object *obj){
 
     fan_state *s = FAN(obj);
     s->current_rpm = 0;
+    s->airflow_scale = 255;
     s->usec_per_pulse = 0;
 
     s->tach =timer_new_us(QEMU_CLOCK_VIRTUAL,
@@ -199,13 +250,18 @@ static void fan_init(Object *obj){
     qdev_init_gpio_out_named(DEVICE(obj), &s->tach_pulse, "tach-out",1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->pwm_out, "pwm-out",1);
     qdev_init_gpio_out_named(DEVICE(obj), &s->rpm_out, "rpm-out",1);
+    qdev_init_gpio_out_named(DEVICE(obj), &s->airflow_out, "airflow-out",1);
     qdev_init_gpio_in_named(DEVICE(obj), fan_tach_block, "tach-disable",1);
-    qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",1);
+    qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change, "pwm-in",FAN_PWM_INPUT_COUNT);
     qdev_init_gpio_in_named(DEVICE(obj), fan_pwm_change_soft, "pwm-in-soft",1);
 
     s->handle = script_instance_new(P404_SCRIPTABLE(s), "fan");
-    script_register_action(s->handle, "Stall","Stalls the fan tachometer",ActStall);
-    script_register_action(s->handle, "Resume","Resumes a stalled fan.",ActResume);
+    script_register_action(s->handle, "Stall","Stalls the fan: no tach pulses and no airflow",ActStall);
+    script_register_action(s->handle, "Resume","Clears every fault: tach reporting on, full airflow.",ActResume);
+    script_register_action(s->handle, "TachFail","Breaks the tach wire only, fan still spins",ActTachFail);
+    script_register_action(s->handle, "TachOK","Restores tach reporting, (i.e. ~TachFail)",ActTachOK);
+    script_register_action(s->handle, "SetAirflow","Scales airflow 0-255 against commanded duty",ActSetAirflow);
+    script_add_arg_int(s->handle, ActSetAirflow);
     script_register_action(s->handle, "GetRPM","Reports the current RPM",ActGetRPM);
     scripthost_register_scriptable(s->handle);
 
@@ -221,12 +277,15 @@ static const Property fan_properties[] = {
 
 static const VMStateDescription vmstate_fan = {
     .name = TYPE_FAN,
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
     .fields      = (VMStateField []) {
         VMSTATE_BOOL(pulse_state,fan_state),
         VMSTATE_BOOL(is_nonlinear,fan_state),
         VMSTATE_BOOL(is_stalled,fan_state),
+        VMSTATE_INT32_V(last_pwm_level,fan_state,2),
+        VMSTATE_BOOL_V(tach_failed,fan_state,2),
+        VMSTATE_UINT8_V(airflow_scale,fan_state,2),
         VMSTATE_UINT8(pwm,fan_state),
         VMSTATE_UINT8(label,fan_state),
         VMSTATE_UINT32(max_rpm,fan_state),

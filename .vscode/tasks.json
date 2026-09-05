@@ -97,6 +97,20 @@
             }
         },
         {
+            "label": "Regenerate STM32 Register data",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/hw/arm/prusa/stm32_registers && python3 stm32_reggen.py",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
+        },
+        {
             "label": "Build QEMU ($nproc threads)",
             "type": "shell",
             "command": "make -j $(nproc)",

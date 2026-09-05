@@ -28,8 +28,27 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/buddy-softmmu/qemu-system-buddy",
-            "args": ["-machine", "prusa-xl-040", "-kernel", "minifw.bin"],
+            "program": "${workspaceFolder}/out/qemu-system-buddy",
+            "args": ["-machine", "prusa-xbuddy-extension-05", "-kernel", "xbuddy-ext", "-d", "int,guest_errors", "-icount", "2", "-append", "no-bridge"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/out/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch ToolSensor",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/out/qemu-system-buddy",
+            "args": ["-machine", "prusa-clo-xx", "-kernel", "toffs_fw", "-d", "guest_errors", "-icount", "2", "-append", "no-bridge"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/out/",
             "environment": [],

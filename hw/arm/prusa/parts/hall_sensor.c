@@ -48,6 +48,7 @@ struct HallState {
     qemu_irq irq;
     qemu_irq status;
 	uint8_t index;
+    script_handle handle;
 	p404_key_handle p_key;
 };
 
@@ -170,6 +171,7 @@ static void hall_sensor_init(Object *obj)
     script_register_action(pScript, "Toggle",  "Toggles hall filament sensor enum state", ACT_TOGGLE);
 
     scripthost_register_scriptable(pScript);
+    s->handle = pScript;
 	s->p_key = p404_new_keyhandler(P404_KEYCLIENT(obj));
 }
 

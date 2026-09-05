@@ -34,28 +34,32 @@
 #include "hw/core/qdev-properties.h"
 #include "stm32_rcc_if.h"
 #include "stm32_iwdg_regdata.h"
+#include "../stm32_registers/generated/common/IWDG_TYPE_A_registers.h"
 
 OBJECT_DECLARE_TYPE(COM_STRUCT_NAME(Iwdg), COM_CLASS_NAME(Iwdg), STM32COM_IWDG);
+
+// typedef union {
+// 	struct {
+// 		uint32_t PVU           : 1; // /*!< Watchdog prescaler value update */
+// 		uint32_t RVU           : 1; // /*!< Watchdog counter reload value update */
+// 		uint32_t WVU           : 1; // /*!< Watchdog counter window value update */
+// 		uint32_t EWU           : 1; // /*!< Watchdog interrupt comparator value update */
+// 		uint32_t _reserved4    : 4;
+// 		uint32_t ONF           : 1; // /*!< Watchdog Enable status bit */
+// 		uint32_t _reserved9    : 5;
+// 		uint32_t EWIF          : 1; // /*!< Watchdog early interrupt flag */
+// 		uint32_t _reserved15   :17;
+// 	} QEMU_PACKED bits;
+// 	uint32_t raw;
+// }  REGDEF_NAME(iwdg,sr);
+// CHECK_TYPEDEF_u32(REGDEF_NAME(iwdg,sr),bits);
+
 
 typedef struct COM_STRUCT_NAME(Iwdg) {
     STM32Peripheral  parent;
     MemoryRegion  iomem;
-
-    union {
-        struct {
-            REG_S32(KEY, 16) KR;
-			REG_S32(PR, 3) PR;
-			REG_S32(RL, 12) RLR;
-            struct {
-				REG_B32(PVU);
-                REG_B32(RVU);
-                REG_B32(WVU);
-                uint32_t :29;
-            } QEMU_PACKED SR;
-			REG_S32(WIN, 12);
-        } QEMU_PACKED defs;
-        uint32_t raw[RI_END];
-    } QEMU_PACKED regs;
+    
+    REGDEF_NAME(stm32com,iwdg_type_a) regs;
 
     QEMUTimer *timer;
 
@@ -70,37 +74,19 @@ typedef struct COM_CLASS_NAME(Iwdg) {
 } COM_CLASS_NAME(Iwdg);
 
 
-static const stm32_reginfo_t stm32f030_iwdg_reginfo[RI_END] =
-{
-	[RI_KR] = {.mask = UINT16_MAX },
-	[RI_PR] = {.mask = 0b111},
-	[RI_RLR] = {.mask = 0xFFFU, .reset_val = 0xFFFU },
-	[RI_SR] = {.mask = 0b111},
-	[RI_WINR] = { .mask = 0xFFFU, .reset_val = 0xFFFU, .unimp_mask = 0xFFFU},
-};
+#include "../stm32_registers/generated/stm32c092/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32f030/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32g070/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32f427/IWDG_reginfo.h"
+#include "../stm32_registers/generated/stm32h503/IWDG_reginfo.h"
 
-static const stm32_reginfo_t stm32g070_iwdg_reginfo[RI_END] =
-{
-	[RI_KR] = {.mask = UINT16_MAX },
-	[RI_PR] = {.mask = 0b111},
-	[RI_RLR] = {.mask = 0xFFFU, .reset_val = 0xFFFU },
-	[RI_SR] = {.mask = 0b111},
-	[RI_WINR] = { .mask = 0xFFFU, .reset_val = 0xFFFU, .unimp_mask = 0xFFFU},
-};
 
-static const stm32_reginfo_t stm32f4xx_iwdg_reginfo[RI_END] =
-{
-	[RI_KR] = {.mask = UINT16_MAX },
-	[RI_PR] = {.mask = 0b111},
-	[RI_RLR] = {.mask = 0xFFFU, .reset_val = 0xFFFU },
-	[RI_SR] = {.mask = 0b11},
-	[RI_WINR] = { .is_reserved = true},
-};
-
-static const stm32_periph_variant_t stm32_iwdg_variants[3] = {
-	{TYPE_STM32F030_IWDG, stm32f030_iwdg_reginfo},
-	{TYPE_STM32G070_IWDG, stm32g070_iwdg_reginfo},
-	{TYPE_STM32F4xx_IWDG, stm32f4xx_iwdg_reginfo}
+static const stm32_periph_variant_t stm32_iwdg_variants[] = {
+	{TYPE_STM32C092_IWDG, stm32_c092_iwdg_reginfo},
+	{TYPE_STM32F030_IWDG, stm32_f030_iwdg_reginfo},
+	{TYPE_STM32G070_IWDG, stm32_g070_iwdg_reginfo},
+	{TYPE_STM32F4xx_IWDG, stm32_f427_iwdg_reginfo},
+	{TYPE_STM32H503_IWDG, stm32_h503_iwdg_reginfo}
 };
 
 static uint64_t
@@ -110,7 +96,7 @@ stm32_common_iwdg_read(void *opaque, hwaddr addr, unsigned int size)
     int offset = addr & 0x3;
 
     addr >>= 2;
-	CHECK_BOUNDS_R(addr, RI_END, s->reginfo, "STM32 IWDG"); // LCOV_EXCL_LINE
+	CHECK_BOUNDS_R_V2(addr, RI_END, s->reginfo); // LCOV_EXCL_LINE
 
     uint32_t value = s->regs.raw[addr];
 
@@ -142,9 +128,9 @@ static void stm32_common_iwdg_update(COM_STRUCT_NAME(Iwdg) *s){
 		return;
 	}
 
-    uint32_t prescale = IWDG_PRESCALES[s->regs.defs.PR.PR];
+    uint32_t prescale = IWDG_PRESCALES[s->regs.PR.bits.PR];
     uint32_t tickrate = clkrate/prescale; // ticks per second.
-    uint64_t delay_us = (1000000U * s->regs.defs.RLR.RL)/tickrate;
+    uint64_t delay_us = (1000000U * s->regs.RLR.bits.RL)/tickrate;
     if (s->time_changed) {
 		uint64_t time = delay_us;
 		if (time > 1000)
@@ -165,15 +151,14 @@ stm32_common_iwdg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int s
     int offset = addr & 0x3;
 
     addr >>= 2;
-	CHECK_BOUNDS_W(addr, data, RI_END, s->reginfo, "STM32 IWDG"); // LCOV_EXCL_LINE
-
-	ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b110);
+    CHECK_BOUNDS_W_V2(addr, data, RI_END);
+    ADJUST_FOR_OFFSET_AND_SIZE_W(s->regs.raw[addr], data, size, offset, 0b110);
+    CHECK_UNIMP_RESVD_V2(data, s->regs.raw[addr], s->reginfo, addr);
 
     switch(addr) {
     case RI_KR:
-		ENFORCE_RESERVED(data, s->reginfo, RI_KR);
         s->regs.raw[addr] = data;
-        switch (s->regs.defs.KR.KEY){
+        switch (s->regs.KR.bits.KEY){
             case 0xCCCC:
                 s->started = true;
                 /* FALLTHRU */
@@ -186,8 +171,7 @@ stm32_common_iwdg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int s
         break;
     case RI_PR:
     case RI_RLR:
-		ENFORCE_RESERVED(data, s->reginfo, addr);
-        if (s->regs.defs.KR.KEY != 0x5555){
+        if (s->regs.KR.bits.KEY != 0x5555){
             qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write IWDG_PR or RLR while it is write protected!\n");
             return;
         }
@@ -199,8 +183,7 @@ stm32_common_iwdg_write(void *opaque, hwaddr addr, uint64_t data, unsigned int s
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write read-only IWDG_SR!\n");
         break;
 	case RI_WINR:
-		CHECK_UNIMP_RESVD(data, s->reginfo, RI_WINR);
-		if (s->regs.defs.KR.KEY != 0x5555){
+		if (s->regs.KR.bits.KEY != 0x5555){
         	qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write IWDG_WINR while it is write protected!\n");
             return;
         }
@@ -246,10 +229,10 @@ stm32_common_iwdg_init(Object *obj)
 
 
     assert(sizeof(s->regs)==sizeof(s->regs.raw)); // Make sure packing is correct.
-    CHECK_REG_u32(s->regs.defs.KR);
-    CHECK_REG_u32(s->regs.defs.SR);
-    CHECK_REG_u32(s->regs.defs.RLR);
-    CHECK_REG_u32(s->regs.defs.SR);
+    CHECK_REG_u32(s->regs.KR);
+    CHECK_REG_u32(s->regs.SR);
+    CHECK_REG_u32(s->regs.RLR);
+    CHECK_REG_u32(s->regs.SR);
 
     STM32_MR_IO_INIT(&s->iomem, obj, &stm32_common_iwdg_ops, s, 1U*KiB);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);

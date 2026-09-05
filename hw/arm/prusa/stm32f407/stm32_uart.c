@@ -180,7 +180,7 @@ static void stm32_uart_start_tx(Stm32Uart *s, uint32_t value)
     stm32_uart_tx_complete(s);
 #else
     /* Otherwise, start the transmit delay timer. */
-    if (s->parent.periph == STM32_P_UART8)
+    if (s->parent.periph == STM32_P_USART8)
     {
         timer_mod(s->tx_timer,  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ns_per_char)/10);
     }
@@ -297,7 +297,7 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
     assert(size > 0);
 	timer_del(s->idle_timer);
     /* Copy the characters into our buffer first */
-    // if (s->periph==STM32_P_UART2) {
+    // if (s->periph==STM32_P_USART2) {
     //     printf("UART RX: ");
     //     for (int i=0; i<size;i++)
     //         printf("%02x ",buf[i]);
@@ -342,7 +342,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
         /* If the receive buffer is not empty, return the value. and mark the
          * buffer as empty.
          */
-        // if (s->parent.periph == STM32_P_UART3) printf("DR read: %02x\n", s->defs.DR.DR);
+        // if (s->parent.periph == STM32_P_USART3) printf("DR read: %02x\n", s->defs.DR.DR);
 
         s->defs.SR.RXNE = 0;
 
@@ -365,7 +365,7 @@ static void stm32_uart_USART_DR_read(Stm32Uart *s, uint8_t *data_read)
 static void stm32_uart_USART_DR_write(Stm32Uart *s, uint32_t new_value)
 {
     uint32_t write_value = new_value & 0x000001ff;
-    // if (s->parent.periph == STM32_P_UART3) printf ("uart wr: %02x\n", write_value);
+    // if (s->parent.periph == STM32_P_USART3) printf ("uart wr: %02x\n", write_value);
 
     if(!s->defs.CR1.UE) {
         qemu_log_mask(LOG_GUEST_ERROR,"Attempted to write to USART_DR while UART was disabled.");
@@ -590,7 +590,7 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
 {
     Stm32Uart *s = STM32_UART(dev);
     if (qemu_chr_fe_backend_connected(&s->chr))
-    {  
+    {
         qemu_chr_fe_set_handlers(&s->chr, stm32_uart_can_receive, stm32_uart_receive, NULL,
                 NULL,s,NULL,true);
         qemu_chr_fe_set_echo(&s->chr, true);
@@ -599,7 +599,7 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
         const char* pty_name = qemu_chr_get_pty_name(s->chr.chr);
         if (pty_name) {
             char link_path[] = "/tmp/stm32-uart0";
-            link_path[15] += (1U + s->parent.periph - STM32_P_UART1);
+            link_path[15] += (1U + s->parent.periph - STM32_P_USART1);
             unlink(link_path);
             if (symlink(s->chr.chr->label+4, link_path) != 0)
             {
@@ -626,7 +626,7 @@ static void stm32_uart_realize(DeviceState *dev, Error **errp)
 
 static const Property stm32_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", Stm32Uart, chr),
-    
+
 };
 
 static const VMStateField vmsf_stm32_uart[] = {

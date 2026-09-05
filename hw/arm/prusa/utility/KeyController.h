@@ -255,6 +255,7 @@ class KeyController: private Scriptable
 			{ {Q_KEY_CODE_4         ,false, false}, '4'},
 			{ {Q_KEY_CODE_5         ,false, false}, '5'},
 			{ {Q_KEY_CODE_6         ,false, false}, '6'},
+			{ {Q_KEY_CODE_D         ,false, false} , 'd'},
 			{ {Q_KEY_CODE_P         ,false, false} , 'p'},
 			{ {Q_KEY_CODE_T	        ,false, false} , 't'},
 			{ {Q_KEY_CODE_L	        ,false, false} , 'l'},
