@@ -49,7 +49,6 @@
 
 #define XFLASH_FN  "Prusa_Mini_xflash.bin"
 #define EEPROM_FN  "Prusa_Mini_eeprom.bin"
-#define EEPROM_SYS_FN  "Prusa_Mini_eeprom_sys.bin"
 
 typedef struct mini_config_t {
     const char* flash_chip;
@@ -213,12 +212,10 @@ static void prusa_mini_init(MachineState *machine)
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
-        // with a second instance at the SYSTEM address.
-        dev = qdev_new("at24c-eeprom");
+        // with a second, distinct device modeling the ST25DV64K's system register page
+        // at the SYSTEM address.
+        dev = qdev_new("st25dv64k-syspage");
         qdev_prop_set_uint8(dev, "address", 0x57);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
-		blk = get_or_create_drive(IF_PFLASH, 1, EEPROM_SYS_FN, EEPROM_SYS_ID,  64*KiB / 8U,  &error_fatal);
-		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
     }
 
