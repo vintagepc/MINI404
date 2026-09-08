@@ -216,6 +216,7 @@ static void prusa_mini_init(MachineState *machine)
         // at the SYSTEM address.
         dev = qdev_new("st25dv64k-syspage");
         qdev_prop_set_uint8(dev, "address", 0x57);
+        object_property_add_child(OBJECT(periphs), "st25dv64k", OBJECT(dev));
         qdev_realize(dev, bus, &error_fatal);
     }
 

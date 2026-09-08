@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "libqtest-single.h"
+#include "stm32_i2c_test_helper.h"
 
 /* TODO: update when the board model exists */
 #define MACHINE_NAME        "prusa-clo-xx"
@@ -41,30 +42,6 @@
 
 /* LDC1612 7-bit I2C address with ADDR pin low */
 #define LDC1612_I2C_ADDR    0x2B
-
-/* STM32 common I2C register offsets (stm32_i2c_regdata.h) */
-#define I2C_CR1_OFF     0x00
-#define I2C_CR2_OFF     0x04
-#define I2C_ISR_OFF     0x18
-#define I2C_RXDR_OFF    0x24
-#define I2C_TXDR_OFF    0x28
-
-/* CR2 field helpers */
-#define CR2_SADD(a)     ((a) & 0x3FFU)
-#define CR2_RD_WRN      (1U << 10)
-#define CR2_START       (1U << 13)
-#define CR2_STOP        (1U << 14)
-#define CR2_NBYTES(n)   (((n) & 0xFFU) << 16)
-#define CR2_AUTOEND     (1U << 25)
-
-/* CR1 fields */
-#define CR1_PE          (1U << 0)
-
-/* ISR fields */
-#define ISR_TXIS        (1U << 1)
-#define ISR_RXNE        (1U << 2)
-#define ISR_NACKF       (1U << 4)
-#define ISR_TC          (1U << 6)
 
 /* SD GPIO pin levels (active-low shutdown) */
 #define SD_ASSERT       0   /* drive SD low  → shutdown */
@@ -102,71 +79,15 @@
 #define TEST_CH0_VAL  0x0ABC1234U
 #define TEST_CH1_VAL  0x00FEDCBAU
 
-/* --------------------------------------------------------------------------
- * STM32 common I2C helpers
+/*
+ * I2C helpers (i2c_common_*) come from stm32_i2c_test_helper.h.
  *
  * Write path is functional in the current QEMU model (CR2 START → TXDR bytes).
  * Read path depends on RXNE being set after a read-direction START, which the
- * STM32 common I2C model does not yet implement.  The i2c_read_reg16 helper is
+ * STM32 common I2C model does not yet implement.  i2c_common_read_reg16 is
  * provided for completeness; the underlying model will need to be fixed before
  * read-based assertions in the tests below become operational.
- * -------------------------------------------------------------------------- */
-
-/* Enable the peripheral before use */
-static void i2c_enable(QTestState *ts)
-{
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_CR1_OFF, CR1_PE);
-}
-
-/*
- * Write a 16-bit value to reg in one 3-byte I2C transaction:
- *   START + addr(W) + [reg, MSB, LSB] + STOP
  */
-static void i2c_write_reg16(QTestState *ts, uint8_t dev_addr,
-                             uint8_t reg, uint16_t value)
-{
-    uint32_t cr2 = CR2_SADD(dev_addr) | CR2_NBYTES(3) | CR2_AUTOEND | CR2_START;
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_CR2_OFF, cr2);
-    /* Model sets TXIS immediately after START; write all three bytes */
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_TXDR_OFF, reg);
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_TXDR_OFF, (value >> 8) & 0xFF);
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_TXDR_OFF, value & 0xFF);
-}
-
-/*
- * Read a 16-bit value from reg using a write-then-repeated-start read.
- *
- * TODO: The STM32 common I2C model does not set RXNE after a read-direction
- * START, so the RXDR reads below will return stale data until that is fixed.
- * The correct model behavior should be:
- *   1. Write reg pointer (1 byte, no STOP)
- *   2. Repeated START in read direction → slave receives I2C_START_RECV
- *   3. Model calls i2c_recv(), stores result, sets RXNE
- *   4. Host reads RXDR to get each byte
- */
-static uint16_t i2c_read_reg16(QTestState *ts, uint8_t dev_addr, uint8_t reg)
-{
-    /* Step 1: send register pointer (write, no STOP so TC is set not STOPF) */
-    uint32_t cr2_wr = CR2_SADD(dev_addr) | CR2_NBYTES(1) | CR2_START;
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_CR2_OFF, cr2_wr);
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_TXDR_OFF, reg);
-
-    /*
-     * Step 2: prime RD_WRN in a separate write (workaround for the model
-     * capturing is_read from the previous CR2 state, not the new write value).
-     */
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_CR2_OFF,
-                 CR2_SADD(dev_addr) | CR2_RD_WRN | CR2_NBYTES(2) | CR2_AUTOEND);
-
-    /* Step 3: repeated START in read direction */
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_CR2_OFF,
-                 CR2_SADD(dev_addr) | CR2_RD_WRN | CR2_NBYTES(2) | CR2_AUTOEND | CR2_START);
-
-    /* Step 4: read two bytes (MSB then LSB) */
-    uint32_t msb = qtest_readl(ts, LDC1612_I2C_BASE + I2C_RXDR_OFF) & 0xFF;
-    uint32_t lsb = qtest_readl(ts, LDC1612_I2C_BASE + I2C_RXDR_OFF) & 0xFF;
-    return (uint16_t)((msb << 8) | lsb);
-}
 
 /* --------------------------------------------------------------------------
  * Test helpers
@@ -197,11 +118,11 @@ static void inject_measurement(QTestState *ts, int ch, uint32_t val)
 static void test_ldc1612_id_registers(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
 
-    g_assert_cmphex(i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_MANUFACTURER_ID),
+    g_assert_cmphex(i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_MANUFACTURER_ID),
                     ==, LDC1612_MFR_ID);
-    g_assert_cmphex(i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DEVICE_ID),
+    g_assert_cmphex(i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DEVICE_ID),
                     ==, LDC1612_DEV_ID);
 
     qtest_quit(ts);
@@ -232,11 +153,11 @@ static void test_ldc1612_no_interrupt_by_default(void)
 static void test_ldc1612_interrupt_on_data_ready(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
     /* Enable DRDY → INTB routing */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
 
     /* Inject CH0 measurement */
     inject_measurement(ts, 0, TEST_CH0_VAL);
@@ -255,15 +176,15 @@ static void test_ldc1612_interrupt_on_data_ready(void)
 static void test_ldc1612_status_read_clears_drdy(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
     inject_measurement(ts, 0, TEST_CH0_VAL);
     g_assert_false(qtest_get_irq_level(ts, 0));  /* INTB asserted */
 
     /* Reading STATUS clears DRDY and de-asserts INTB */
-    uint16_t status = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_STATUS);
+    uint16_t status = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_STATUS);
     g_assert_cmphex(status & STATUS_DRDY, ==, STATUS_DRDY);  /* was set before read */
 
     /* TODO: verify INTB is de-asserted after STATUS read once I2C read path works:
@@ -280,12 +201,12 @@ static void test_ldc1612_status_read_clears_drdy(void)
 static void test_ldc1612_intb_disable(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
     /* Disable the INTB output pin; keep other CONFIG bits at reset default */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_CONFIG, 0x2801 | CONFIG_INTB_DIS);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_CONFIG, 0x2801 | CONFIG_INTB_DIS);
 
     inject_measurement(ts, 0, TEST_CH0_VAL);
 
@@ -304,17 +225,17 @@ static void test_ldc1612_intb_disable(void)
 static void test_ldc1612_data_injection(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
 
     inject_measurement(ts, 0, TEST_CH0_VAL);
-    uint16_t msw = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH0);
-    uint16_t lsw = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH0_LSB);
+    uint16_t msw = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH0);
+    uint16_t lsw = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH0_LSB);
     g_assert_cmphex(msw, ==, (TEST_CH0_VAL >> 16) & 0x0FFF);
     g_assert_cmphex(lsw, ==, TEST_CH0_VAL & 0xFFFF);
 
     inject_measurement(ts, 1, TEST_CH1_VAL);
-    msw = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH1);
-    lsw = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH1_LSB);
+    msw = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH1);
+    lsw = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH1_LSB);
     g_assert_cmphex(msw, ==, (TEST_CH1_VAL >> 16) & 0x0FFF);
     g_assert_cmphex(lsw, ==, TEST_CH1_VAL & 0xFFFF);
 
@@ -329,17 +250,17 @@ static void test_ldc1612_data_injection(void)
 static void test_ldc1612_readonly_data_register(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
 
     inject_measurement(ts, 0, TEST_CH0_VAL);
 
     /* Attempt to overwrite DATA_CH0 via I2C — should be silently ignored */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH0, 0xDEAD);
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH0_LSB, 0xBEEF);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH0, 0xDEAD);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH0_LSB, 0xBEEF);
 
     /* Value must be unchanged */
-    uint16_t msw = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH0);
-    uint16_t lsw = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DATA_CH0_LSB);
+    uint16_t msw = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH0);
+    uint16_t lsw = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DATA_CH0_LSB);
     g_assert_cmphex(msw, ==, (TEST_CH0_VAL >> 16) & 0x0FFF);
     g_assert_cmphex(lsw, ==, TEST_CH0_VAL & 0xFFFF);
 
@@ -354,22 +275,22 @@ static void test_ldc1612_readonly_data_register(void)
 static void test_ldc1612_software_reset(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
 
     /* Write a non-default value to ERROR_CONFIG so we can observe the reset */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
 
     /* Assert software reset */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_RESET_DEV, RESET_DEV_FLAG);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_RESET_DEV, RESET_DEV_FLAG);
 
     /* ERROR_CONFIG must be cleared back to 0 */
-    uint16_t ecfg = i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG);
+    uint16_t ecfg = i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG);
     g_assert_cmphex(ecfg, ==, 0x0000);
 
     /* ID registers must still report the correct fixed values */
-    g_assert_cmphex(i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_MANUFACTURER_ID),
+    g_assert_cmphex(i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_MANUFACTURER_ID),
                     ==, LDC1612_MFR_ID);
-    g_assert_cmphex(i2c_read_reg16(ts, LDC1612_I2C_ADDR, REG_DEVICE_ID),
+    g_assert_cmphex(i2c_common_read_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_DEVICE_ID),
                     ==, LDC1612_DEV_ID);
 
     qtest_quit(ts);
@@ -383,15 +304,15 @@ static void test_ldc1612_software_reset(void)
 static void test_ldc1612_reset_clears_interrupt(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
     inject_measurement(ts, 0, TEST_CH0_VAL);
     g_assert_false(qtest_get_irq_level(ts, 0));  /* INTB asserted */
 
     /* Software reset must de-assert INTB */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_RESET_DEV, RESET_DEV_FLAG);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_RESET_DEV, RESET_DEV_FLAG);
     g_assert_true(qtest_get_irq_level(ts, 0));   /* INTB de-asserted */
 
     qtest_quit(ts);
@@ -404,11 +325,11 @@ static void test_ldc1612_reset_clears_interrupt(void)
 static void test_ldc1612_shutdown_blocks_data_injection(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
     /* Enable DRDY→INTB routing so we can observe DRDY indirectly */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
 
     /* Assert SD (shutdown) */
     qtest_set_irq_in(ts, LDC1612_QOM_PATH, "sd", 0, SD_ASSERT);
@@ -430,16 +351,17 @@ static void test_ldc1612_shutdown_blocks_data_injection(void)
 static void test_ldc1612_shutdown_nacks_i2c(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
 
     /* Assert SD (shutdown) */
     qtest_set_irq_in(ts, LDC1612_QOM_PATH, "sd", 0, SD_ASSERT);
 
     /* Attempt a write — the START should be NACKed */
-    uint32_t cr2 = CR2_SADD(LDC1612_I2C_ADDR) | CR2_NBYTES(1) | CR2_AUTOEND | CR2_START;
-    qtest_writel(ts, LDC1612_I2C_BASE + I2C_CR2_OFF, cr2);
+    uint32_t cr2 = I2C_COM_CR2_SADD(LDC1612_I2C_ADDR) | I2C_COM_CR2_NBYTES(1) |
+                   I2C_COM_CR2_AUTOEND | I2C_COM_CR2_START;
+    qtest_writel(ts, LDC1612_I2C_BASE + I2C_COM_CR2_OFF, cr2);
 
-    g_assert_true(qtest_readl(ts, LDC1612_I2C_BASE + I2C_ISR_OFF) & ISR_NACKF);
+    g_assert_true(qtest_readl(ts, LDC1612_I2C_BASE + I2C_COM_ISR_OFF) & I2C_COM_ISR_NACKF);
 
     qtest_quit(ts);
 }
@@ -452,11 +374,11 @@ static void test_ldc1612_shutdown_nacks_i2c(void)
 static void test_ldc1612_resume_from_shutdown(void)
 {
     QTestState *ts = setup_machine();
-    i2c_enable(ts);
+    i2c_common_enable(ts, LDC1612_I2C_BASE);
     qtest_irq_intercept_out(ts, LDC1612_QOM_PATH);
 
     /* Configure DRDY→INTB, inject data, verify interrupt fires */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
     inject_measurement(ts, 0, TEST_CH0_VAL);
     g_assert_false(qtest_get_irq_level(ts, 0));  /* INTB asserted */
 
@@ -472,7 +394,7 @@ static void test_ldc1612_resume_from_shutdown(void)
     g_assert_true(qtest_get_irq_level(ts, 0));
 
     /* Re-enable DRDY→INTB and confirm new measurements are accepted */
-    i2c_write_reg16(ts, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
+    i2c_common_write_reg16(ts, LDC1612_I2C_BASE, LDC1612_I2C_ADDR, REG_ERROR_CONFIG, ERROR_CONFIG_DRDY_2INT);
     inject_measurement(ts, 1, TEST_CH1_VAL);
     g_assert_false(qtest_get_irq_level(ts, 0));  /* INTB asserted again */
 
