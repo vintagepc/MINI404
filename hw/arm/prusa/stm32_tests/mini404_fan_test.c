@@ -158,6 +158,105 @@ static void test_fan_scripting_stall(void)
     qtest_quit(ts);
 }
 
+/* tach-disable masks the pulses on a fan that has not opted out. */
+static void test_fan_tach_disable(void)
+{
+    QTestState *ts = qtest_init("-machine " MACHINE);
+    qtest_irq_intercept_out_named(ts, QOM_PATH, "tach-out");
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 255);
+
+    /* Confirm it is pulsing before asserting that it stops. */
+    int level = qtest_get_irq_level(ts, 0);
+    int steps = 0;
+    while (qtest_get_irq_level(ts, 0) == level && steps++ < 1000) {
+        qtest_clock_step_next(ts);
+    }
+    g_assert_cmpint(steps, <, 1000);
+
+    qtest_set_irq_in(ts, QOM_PATH, "tach-disable", 0, 1);
+    level = qtest_get_irq_level(ts, 0);
+    for (int i = 0; i < 1000; i++) {
+        qtest_clock_step_next(ts);
+        g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, level);
+    }
+
+    qtest_quit(ts);
+}
+
+/* always_emit_tach ignores tach-disable, for the boards that multiplex one
+   tach pin between two fans. */
+static void test_fan_always_emit_tach(void)
+{
+    QTestState *ts = qtest_init("-machine " MACHINE
+                                " -global fan.always_emit_tach=on");
+    qtest_irq_intercept_out_named(ts, QOM_PATH, "tach-out");
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 255);
+    qtest_set_irq_in(ts, QOM_PATH, "tach-disable", 0, 1);
+
+    int level = qtest_get_irq_level(ts, 0);
+    int steps = 0;
+    while (qtest_get_irq_level(ts, 0) == level && steps++ < 1000) {
+        qtest_clock_step_next(ts);
+    }
+    g_assert_cmpint(steps, <, 1000);
+
+    /* A stalled rotor still reports nothing, override or not. */
+    int fd = 0;
+    qtest_quit(ts);
+
+    ts = qtest_init_with_serial("-machine " MACHINE
+                                " -global fan.always_emit_tach=on"
+                                " -global p404-scriptcon.input_id=s0", &fd);
+    qtest_irq_intercept_out_named(ts, QOM_PATH, "tach-out");
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 255);
+    qtest_set_irq_in(ts, QOM_PATH, "tach-disable", 0, 1);
+    send_scriptcmd(CMD_STALL, fd, ts);
+    /* Round-trip a second command so the stall is known to have been applied
+       before the line is sampled -- stepping until it reads low would just
+       catch the next falling edge of a healthy tach. */
+    char buff[128] = {0};
+    send_scriptcmd(CMD_GET_RPM, fd, ts);
+    while (recv(fd, buff, sizeof(buff), MSG_DONTWAIT) == -1) {
+        qtest_clock_step_next(ts);
+    }
+    for (int i = 0; i < 1000; i++) {
+        qtest_clock_step_next(ts);
+        g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 0);
+    }
+
+    qtest_quit(ts);
+}
+
+/* The reported RPM coasts through a dip below half speed instead of following
+   it down, but only for a fan that asked for it. */
+static void test_fan_rpm_coast(void)
+{
+    QTestState *ts = qtest_init("-machine " MACHINE);
+    qtest_irq_intercept_out_named(ts, QOM_PATH, "rpm-out");
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 255);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, FAN_MAX_RPM);
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 64);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, (FAN_MAX_RPM * 64) / 255);
+    qtest_quit(ts);
+
+    ts = qtest_init("-machine " MACHINE " -global fan.always_emit_tach=on");
+    qtest_irq_intercept_out_named(ts, QOM_PATH, "rpm-out");
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 255);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, FAN_MAX_RPM);
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 64);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, FAN_MAX_RPM);
+    /* A dip that stays above half speed is reported as-is. */
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 192);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, (FAN_MAX_RPM * 192) / 255);
+
+    /* Once the coast window has elapsed the fan reports what it is given, so a
+       fan that is really off does not sit at max forever. */
+    qtest_clock_step(ts, 5000ULL * 1000 * 1000);
+    qtest_set_irq_in(ts, QOM_PATH, "pwm-in", 0, 0);
+    g_assert_cmpint(qtest_get_irq_level(ts, 0), ==, 0);
+    qtest_quit(ts);
+}
+
 /* Define the main function */
 int main(int argc, char **argv)
 {
@@ -171,6 +270,9 @@ int main(int argc, char **argv)
     qtest_add_func(TEST_PREFIX "tach-out", test_fan_tach);
     qtest_add_func(TEST_PREFIX "script", test_fan_scripting_getrpm);
     qtest_add_func(TEST_PREFIX "script-stall", test_fan_scripting_stall);
+    qtest_add_func(TEST_PREFIX "tach-disable", test_fan_tach_disable);
+    qtest_add_func(TEST_PREFIX "always-emit-tach", test_fan_always_emit_tach);
+    qtest_add_func(TEST_PREFIX "rpm-coast", test_fan_rpm_coast);
     /* Run the tests */
     ret = g_test_run();
 

@@ -1199,6 +1199,17 @@ static void mk4_init(MachineState *machine)
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",cfg.f_rpms[i]);
         //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
+        /* Only the boards that share one tach pin between the two fans, which
+           is the same condition the mux wiring below is guarded by. PF13
+           selects which fan drives that pin and the loveboard EEPROM bit-bangs
+           it too; with no HiZ state the pin keeps whatever was last driven, so
+           the heatbreak fan's tach ends up masked for much of normal running.
+           The selftest sweeps the mux and runs each fan alone, and the print
+           fan's phase leaves this fan at zero duty (no pulses either way), so
+           overriding the mask does not disturb either measurement. */
+        if (i == FAN_COOLING_HBR && cfg.f_tach[FAN_COOLING_HBR] == cfg.f_tach[FAN_COOLING_PRINT]) {
+            qdev_prop_set_bit(dev, "always_emit_tach", true);
+        }
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.f_tach[i])), PIN(cfg.f_tach[i])));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
