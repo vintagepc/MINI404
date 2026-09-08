@@ -33,6 +33,7 @@ arm_ss.add(when: 'CONFIG_BUDDYBOARD', if_true: files(
         'software_spi.c',
         'spi_display.c',
         'spi_rgb.c',
+        'ST25DV64K_syspage.c',
         'thermistor.c',
         'tmc2130.c',
         'tmc2209.c',

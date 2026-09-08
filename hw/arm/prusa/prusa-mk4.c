@@ -56,7 +56,6 @@
 #define BOOTLOADER_IMAGE(x) "Prusa_"#x"_Boot.bin"
 #define XFLASH_FN(x)  "Prusa_"#x"_xflash.bin"
 #define EEPROM_FN(x)  "Prusa_"#x"_eeprom.bin"
-#define EEPROM_SYS_FN(x)  "Prusa_"#x"_eeprom_sys.bin"
 
 
 // Upper 8 pins are GPIO
@@ -163,7 +162,6 @@ typedef struct mk4_cfg_t {
 	uint8_t dm_ver;
 	const char* boot_fn;
 	const char* eeprom_fn;
-	const char* eeprom_sys_fn;
 	const char* xflash_fn;
 
 } mk4_cfg_t;
@@ -234,7 +232,6 @@ static const mk4_cfg_t mk4_027c_cfg = {
 	.dm_ver = 27,
 	.boot_fn = BOOTLOADER_IMAGE(Mk4),
 	.eeprom_fn = EEPROM_FN(Mk4),
-	.eeprom_sys_fn = EEPROM_SYS_FN(Mk4),
 	.xflash_fn = XFLASH_FN(Mk4)
 };
 
@@ -279,7 +276,6 @@ static const mk4_cfg_t mk4_034_cfg = {
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk4),
 	.eeprom_fn = EEPROM_FN(Mk4),
-	.eeprom_sys_fn = EEPROM_SYS_FN(Mk4),
 	.xflash_fn = XFLASH_FN(Mk4)
 };
 
@@ -324,7 +320,6 @@ static const mk4_cfg_t mk3v5_cfg = {
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk3v5),
 	.eeprom_fn = EEPROM_FN(Mk3v5),
-	.eeprom_sys_fn = EEPROM_SYS_FN(Mk3v5),
 	.xflash_fn = XFLASH_FN(Mk3v5)
 };
 
@@ -369,7 +364,6 @@ static const mk4_cfg_t mk3v9_cfg = {
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk3v9),
 	.eeprom_fn = EEPROM_FN(Mk3v9),
-	.eeprom_sys_fn = EEPROM_SYS_FN(Mk3v9),
 	.xflash_fn = XFLASH_FN(Mk3v9)
 };
 
@@ -415,7 +409,6 @@ static const mk4_cfg_t ix_027c_cfg = {
 	.dm_ver = 27,
 	.boot_fn = BOOTLOADER_IMAGE(iX),
 	.eeprom_fn = EEPROM_FN(iX),
-	.eeprom_sys_fn = EEPROM_SYS_FN(iX),
 	.xflash_fn = XFLASH_FN(iX)
 };
 
@@ -473,7 +466,6 @@ static const mk4_cfg_t core1_cfg = {
 	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(COREONE),
 	.eeprom_fn = EEPROM_FN(COREONE),
-	.eeprom_sys_fn = EEPROM_SYS_FN(COREONE),
 	.xflash_fn = XFLASH_FN(COREONE)
 };
 
@@ -830,12 +822,10 @@ static void mk4_init(MachineState *machine)
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
-        // with a second instance at the SYSTEM address.
-        dev = qdev_new("at24c-eeprom");
+        // with a second, distinct device modeling the ST25DV64K's system register page
+        // at the SYSTEM address.
+        dev = qdev_new("st25dv64k-syspage");
         qdev_prop_set_uint8(dev, "address", 0x57);
-        qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
-		blk = get_or_create_drive(IF_PFLASH, 1, cfg.eeprom_sys_fn, EEPROM_SYS_ID,  64*KiB / 8U,  &error_fatal);
-		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
     }
 	{
@@ -1026,12 +1016,17 @@ static void mk4_init(MachineState *machine)
 		}
 	}
 
-	if (cfg.has_door_sensor)
+    if (cfg.has_door_sensor)
 	{
         dev = qdev_new("door-switch");
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3), "adc_data_in", 15));
 	}
+    else
+    {
+        //D/C door sensor:
+        qemu_set_irq(qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3), "adc_data_in", 15), UINT16_MAX);
+    }
 
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
     dev = qdev_new("heater");
