@@ -30,6 +30,7 @@
 #include "stm32_gpio.h"
 #include "stm32_gpio_regdata.h"
 #include "hw/core/irq.h"
+#include "qemu/bitops.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "hw/core/qdev-properties.h"
@@ -61,6 +62,11 @@ typedef struct COM_STRUCT_NAME(Gpio) {
     qemu_irq exti[STM32_GPIO_PIN_COUNT];
     qemu_irq alternate_function[STM32_GPIO_PIN_COUNT];
     qemu_irq cpu_wake[STM32_GPIO_PIN_COUNT];
+
+    /* Hi-Z bookkeeping, see stm32_common_gpio_resolve() */
+    uint16_t disconnected_pins;
+    uint16_t pins_connected_high;
+    uint16_t driving_pins;
 
     uint32_t regs[RI_END];
 
@@ -97,21 +103,83 @@ stm32_common_gpio_read(void *arg, hwaddr addr, unsigned int size)
     return r;
 }
 
-static void
-stm32_common_gpio_update_odr(COM_STRUCT_NAME(Gpio) *s, uint16_t val)
+static bool
+stm32_common_gpio_pin_driving(COM_STRUCT_NAME(Gpio) *s, unsigned i)
 {
-    int i;
-    uint16_t changed = s->regs[RI_ODR] ^ val;
-
-    for (i = 0; i < STM32_GPIO_PIN_COUNT; i++)
-    {
-        if ((changed & 1<<i) == 0)
-            continue;
-
-        //printf("gpio %u pin %u = %c\n", s->periph, i, val & 1<<i ? 'H' : 'l');
-        qemu_set_irq(s->pin[i], !!(val & 1<<i));
+    uint32_t mode = (s->regs[RI_MODER] >> (2*i)) & 0x3;
+    if (mode != R_MODE_OUTPUT) {
+        return false;
     }
-    s->regs[RI_ODR] = val;
+    bool od = (s->regs[RI_OTYPER] >> i) & 1;
+    bool odr_bit = (s->regs[RI_ODR] >> i) & 1;
+    return !od || !odr_bit; /* push-pull always drives; open-drain sinks on 0 only */
+}
+
+/* Recompute IDR from MODER/OTYPER/PUPDR/ODR/idr_mask/force_idr and the
+ * external-drive bookkeeping, then emit pin[]/EXTI/cpu_wake for whatever
+ * changed. pin[] gets -1 (Hi-Z) for any pin this bank isn't driving.
+ * emit=false updates state only (used at reset). */
+static void
+stm32_common_gpio_resolve_ex(COM_STRUCT_NAME(Gpio) *s, bool emit)
+{
+    uint32_t old_idr = s->regs[RI_IDR];
+    uint32_t new_idr = old_idr;
+    uint16_t new_driving = 0;
+
+    for (unsigned i = 0; i < STM32_GPIO_PIN_COUNT; i++) {
+        uint32_t bit = 1U << i;
+        bool level;
+
+        if (s->force_idr & bit) {
+            level = !(s->idr_mask & bit);
+        } else if (stm32_common_gpio_pin_driving(s, i)) {
+            level = (s->regs[RI_ODR] >> i) & 1;
+            new_driving |= bit;
+        } else if (!(s->disconnected_pins & bit)) {
+            level = !!(s->pins_connected_high & bit);
+        } else if (s->idr_mask & bit) {
+            level = false; /* board strap outranks the internal pull */
+        } else {
+            uint32_t pupd = (s->regs[RI_PUPDR] >> (2*i)) & 0x3;
+            level = (pupd != R_PUPD_PD); /* PU or NONE -> high, matches old reset default */
+        }
+        new_idr = deposit32(new_idr, i, 1, level);
+    }
+
+    uint32_t idr_changed = (old_idr ^ new_idr) & 0xFFFF;
+    uint16_t driving_changed = s->driving_pins ^ new_driving;
+    s->regs[RI_IDR] = new_idr & 0xFFFF;
+    s->driving_pins = new_driving;
+
+    if (!emit) {
+        return;
+    }
+
+    for (unsigned i = 0; i < STM32_GPIO_PIN_COUNT; i++) {
+        uint32_t bit = 1U << i;
+        if (new_driving & bit) {
+            if ((driving_changed | idr_changed) & bit) {
+                qemu_set_irq(s->pin[i], (new_idr >> i) & 1);
+            }
+        } else if (driving_changed & bit) {
+            qemu_set_irq(s->pin[i], -1);
+        }
+    }
+
+    for (unsigned i = 0; i < STM32_GPIO_PIN_COUNT; i++) {
+        uint32_t bit = 1U << i;
+        if ((idr_changed & bit) && !(new_driving & bit)) {
+            bool level = (new_idr >> i) & 1;
+            qemu_set_irq(s->exti[i], level ? EXTI_RISING : EXTI_FALLING);
+            qemu_set_irq(s->cpu_wake[i], level);
+        }
+    }
+}
+
+static void
+stm32_common_gpio_resolve(COM_STRUCT_NAME(Gpio) *s)
+{
+    stm32_common_gpio_resolve_ex(s, true);
 }
 
 static void
@@ -119,6 +187,7 @@ stm32_common_gpio_update_mode(COM_STRUCT_NAME(Gpio) *s, uint32_t val)
 {
     int i;
     uint32_t prev_value = s->regs[RI_MODER];
+    s->regs[RI_MODER] = val;
 
     for (i = 0; i < STM32_GPIO_PIN_COUNT; i++)
     {
@@ -127,23 +196,9 @@ stm32_common_gpio_update_mode(COM_STRUCT_NAME(Gpio) *s, uint32_t val)
         if (setting == prev_setting) {
             continue;
         }
-        // int pupd =  (s->regs[RI_PUPDR] >> 2*i) & 0x3;
-        //bool otype = (s->regs[RI_OTYPER]>>i) & 1;
-        bool current_pin_state = (s->regs[RI_ODR] >>i)&1;
-       // if(s->parent.periph==STM32_P_GPIOF) printf("Mode of pin %i changing to %u, with pupd %d and otype %u, current: %u\n", i, setting, pupd, otype, current_pin_state);
         qemu_set_irq(s->alternate_function[i], (setting == R_MODE_ALT) );
-
-        if  (setting == R_MODE_INPUT && !current_pin_state)
-        {
-            stm32_common_gpio_update_odr(s, s->regs[RI_ODR] | (1U << i));
-			// if (!(s->force_idr& (1U<<i)))
-            // 	s->regs[RI_IDR] |= 1U << i;
-        } else if (setting == R_MODE_OUTPUT && current_pin_state) {
-            stm32_common_gpio_update_odr(s, s->regs[RI_ODR] & ~(1U << i));
-        }
-        (void) current_pin_state;
     }
-    s->regs[RI_MODER] = val;
+    stm32_common_gpio_resolve(s);
 }
 
 static void
@@ -164,19 +219,18 @@ stm32_common_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size
         stm32_common_gpio_update_mode(s, data);
         break;
     case RI_ODR:
-        stm32_common_gpio_update_odr(s, data);
+        s->regs[RI_ODR] = data & 0xFFFF;
+        stm32_common_gpio_resolve(s);
         break;
     case RI_BSRR:
     {
-       // if (s->periph==5) printf("BSRR write %08x\n", (uint32_t)data);
         uint16_t new_val = s->regs[RI_ODR];
         uint16_t  br_bits = data>>16;
         uint16_t  bs_bits = data&0xFFFF;
         new_val &= ~br_bits; /* BRy */
         new_val |= bs_bits; /* BSy */
-        s->regs[RI_IDR] &=~br_bits;
-        s->regs[RI_IDR] |= bs_bits;
-        stm32_common_gpio_update_odr(s, new_val);
+        s->regs[RI_ODR] = new_val;
+        stm32_common_gpio_resolve(s);
         break;
     }
 	case RI_BRR:
@@ -184,10 +238,15 @@ stm32_common_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size
         uint16_t new_val = s->regs[RI_ODR];
         uint16_t  br_bits = data&0xFFFF;
         new_val &= ~br_bits; /* BRy */
-        s->regs[RI_IDR] &=~br_bits;
-        stm32_common_gpio_update_odr(s, new_val);
+        s->regs[RI_ODR] = new_val;
+        stm32_common_gpio_resolve(s);
         break;
     }
+	case RI_OTYPER:
+	case RI_PUPDR:
+		s->regs[addr] = data;
+		stm32_common_gpio_resolve(s);
+		break;
 	case RI_IDR:
 	{
         qemu_log_mask(LOG_GUEST_ERROR, "Attempted to write read-only IDR register in %s\n", _PERIPHNAMES[s->parent.periph]);
@@ -229,35 +288,30 @@ stm32_common_gpio_reset(DeviceState *dev)
     }
     /* Mask out the IDR bits as specified */
     s->regs[RI_IDR] = 0x0000ffff & ~(s->idr_mask);
+
+    s->disconnected_pins = 0xFFFF;
+    s->pins_connected_high = 0;
+    s->driving_pins = 0;
+    stm32_common_gpio_resolve_ex(s, false);
 }
 
 static void
 stm32_common_gpio_set(void *arg, int pin, int level)
 {
     COM_STRUCT_NAME(Gpio) *s = STM32COM_GPIO(arg);
-    uint32_t bit = 1<<pin;
-	uint32_t old_state = s->regs[RI_IDR] & bit;
+    uint32_t bit = 1U << pin;
 
-    if (level)
-        s->regs[RI_IDR] |= bit;
-    else
-        s->regs[RI_IDR] &= ~bit;
-
-    /* Inform EXTI module of pin state */
-	uint32_t transition = 0;
-	if (!old_state && level)
-	{
-		transition = EXTI_RISING;
-	}
-	else if (old_state && !level)
-	{
-		transition = EXTI_FALLING;
-	}
-    if (transition) qemu_set_irq(s->exti[pin], transition);
-
-    // For the stm32, only GPIOA, pin 0 will have a wakeup handler tied to it. It will be
-    // tied to a handler callback in the NVIC.
-    qemu_set_irq(s->cpu_wake[pin], level);
+    if (level < 0) {
+        s->disconnected_pins |= bit;
+    } else {
+        s->disconnected_pins &= ~bit;
+        if (level) {
+            s->pins_connected_high |= bit;
+        } else {
+            s->pins_connected_high &= ~bit;
+        }
+    }
+    stm32_common_gpio_resolve(s);
 
     DPRINTF("GPIO %u set pin %d level %d\n", s->periph, pin, level);
 }
@@ -301,6 +355,9 @@ static const VMStateDescription vmstate_stm32_common_gpio = {
     .fields = (const VMStateField[]) {
         VMSTATE_UINT32(idr_mask, COM_STRUCT_NAME(Gpio)),
         VMSTATE_UINT32_ARRAY(regs, COM_STRUCT_NAME(Gpio),RI_END),
+        VMSTATE_UINT16(disconnected_pins, COM_STRUCT_NAME(Gpio)),
+        VMSTATE_UINT16(pins_connected_high, COM_STRUCT_NAME(Gpio)),
+        VMSTATE_UINT16(driving_pins, COM_STRUCT_NAME(Gpio)),
         VMSTATE_END_OF_LIST()
     }
 };

@@ -580,6 +580,17 @@ static void f2xx_rtc_reset(DeviceState *dev)
 }
 
 static void
+f2xx_rtc_finalize(Object *obj)
+{
+    f2xx_rtc *s = STM32F2XX_RTC(obj);
+
+    timer_del(s->timer);
+    timer_free(s->timer);
+    timer_del(s->wu_timer);
+    timer_free(s->wu_timer);
+}
+
+static void
 f2xx_rtc_init(Object *obj)
 {
     f2xx_rtc *s = STM32F2XX_RTC(obj);
@@ -646,6 +657,7 @@ f2xx_rtc_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(f2xx_rtc),
     .instance_init = f2xx_rtc_init,
+    .instance_finalize = f2xx_rtc_finalize,
     .class_init    = f2xx_rtc_class_init,
 };
 

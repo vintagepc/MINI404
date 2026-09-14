@@ -24,6 +24,7 @@ static void test_output_odr(void)
 {
 	uint32_t base = stm32f030xx_cfg.perhipherals[STM32_P_GPIOA].base_addr;
 	qtest_irq_intercept_out(global_qtest, "/machine/soc/GPIOA");
+	writel(STM32_RI_ADDRESS(base, RI_MODER) , 0x55555555);
 	// Check output IRQs respond.
     writel(STM32_RI_ADDRESS(base, RI_ODR) , 0xffffffff);
 	for (int i=0; i<16; i++)
@@ -58,6 +59,7 @@ static void test_output_bsrr(void)
 {
 	uint32_t base = stm32f030xx_cfg.perhipherals[STM32_P_GPIOA].base_addr;
 	qtest_irq_intercept_out(global_qtest, "/machine/soc/GPIOA");
+	writel(STM32_RI_ADDRESS(base, RI_MODER) , 0x55555555);
 	 writel(STM32_RI_ADDRESS(base, RI_ODR) , 0x0);
 	// Test the BS behaviour
 	uint32_t state = 0;
@@ -115,6 +117,7 @@ static void test_output_brr(void)
 {
 	uint32_t base = stm32f030xx_cfg.perhipherals[STM32_P_GPIOA].base_addr;
 	qtest_irq_intercept_out(global_qtest, "/machine/soc/GPIOA");
+	writel(STM32_RI_ADDRESS(base, RI_MODER) , 0x55555555);
 	writel(STM32_RI_ADDRESS(base, RI_ODR) , 0xFFFF);
 	// Check BR behaviour.
 	uint32_t state = 0xFFFF;
@@ -144,18 +147,19 @@ static void test_output_brr(void)
 static void test_input_idr(void)
 {
 	uint32_t base = stm32f030xx_cfg.perhipherals[STM32_P_GPIOA].base_addr;
+	writel(STM32_RI_ADDRESS(base, RI_MODER) , 0x0);
+	writel(STM32_RI_ADDRESS(base, RI_PUPDR) , 0x0);
 	// Check read-only.
-    g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 0x0);
     writel(STM32_RI_ADDRESS(base, RI_IDR) , 0xffffffff);
-    g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 0x0);
+    g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 0xFFFF);
     writel(STM32_RI_ADDRESS(base, RI_IDR) , 0x0);
-    g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 0x0);
+    g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 0xFFFF);
 	for (int i=0; i<16; i++)
 	{
 		qtest_set_irq_in(global_qtest, "/machine/soc/GPIOA", NULL, i, 1);
-    	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 1U << i);
+    	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)) & (1U << i), ==, 1U << i);
 		qtest_set_irq_in(global_qtest, "/machine/soc/GPIOA", NULL, i, 0);
-    	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)), ==, 0);
+    	g_assert_cmphex(readl(STM32_RI_ADDRESS(base, RI_IDR)) & (1U << i), ==, 0);
 	}
 }
 
@@ -163,6 +167,7 @@ static void test_input_exti(void)
 {
 	QTestState *ts = qtest_init("-machine stm32f030x4");
 	uint32_t base = stm32f030xx_cfg.perhipherals[STM32_P_GPIOA].base_addr;
+	qtest_writel(ts, STM32_RI_ADDRESS(base, RI_PUPDR), 0x0);
 	qtest_irq_intercept_out_named(ts, "/machine/soc/GPIOA", "exti");
     g_assert_cmphex(qtest_readl(ts, STM32_RI_ADDRESS(base, RI_IDR)), ==, 0xFFFF);
 	// Evaluate EXTIs. They are single-shot IRQs that fire on transition.

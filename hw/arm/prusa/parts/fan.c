@@ -104,7 +104,11 @@ static void fan_tach_expire(void *opaque)
 
 static void fan_tach_block(void *opaque, int n, int level) {
     fan_state *s = opaque;
+    bool was_blocked = s->tach_blocked;
     s->tach_blocked = level;
+    if (!level && was_blocked) {
+        qemu_set_irq(s->tach_pulse, (s->is_stalled || s->tach_failed) ? 0 : s->pulse_state);
+    }
 }
 
 

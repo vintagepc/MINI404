@@ -1191,6 +1191,7 @@ static void mk4_init(MachineState *machine)
 		);
         dev = qdev_new("fan");
         fans[i] = dev;
+        object_property_add_child(OBJECT(periphs), g_strdup_printf("fan-%c", fan_labels[i]), OBJECT(dev));
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
         qdev_prop_set_uint32(dev, "max_rpm",cfg.f_rpms[i]);
         //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
