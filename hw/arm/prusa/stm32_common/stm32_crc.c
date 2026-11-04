@@ -212,7 +212,8 @@ stm32_common_crc_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 		case RI_CR:
 			s->regs.CR.raw = data;
 			if (s->regs.CR.bits.RESET) {
-				s->regs.DR.bits.DR = s->regs.INIT.bits.INIT;
+				// F2/F4 have no INIT register; CR.RESET loads a fixed 0xFFFFFFFF.
+				s->regs.DR.bits.DR = s->reginfo[RI_INIT].not_reserved ? s->regs.INIT.bits.INIT : 0xFFFFFFFFU;
 				s->regs.CR.bits.RESET = 0;
 			}
 			break;
