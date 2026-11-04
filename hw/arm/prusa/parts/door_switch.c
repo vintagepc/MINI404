@@ -29,6 +29,7 @@
 #include "qemu/module.h"
 #include "hw/core/irq.h"
 #include "qom/object.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
 #include "trace.h"
 
@@ -41,7 +42,7 @@ struct DoorInputState {
     /*< private >*/
     /*< public >*/
     qemu_irq irq;
-    bool is_open;
+    int state;
     script_handle handle;
 };
 
@@ -51,15 +52,64 @@ enum {
     ACT_DISCONNECT,
 };
 
+enum {
+    DOOR_CLOSED,
+    DOOR_OPEN,
+    DOOR_UNPLUGGED,
+    DOOR_STATE_COUNT,
+};
+
+static const char *const door_state_names[DOOR_STATE_COUNT] = {
+    [DOOR_CLOSED] = "closed",
+    [DOOR_OPEN] = "open",
+    [DOOR_UNPLUGGED] = "unplugged",
+};
+
+// ADC3 ch15 counts. The input has an internal pull-up, so an unplugged sensor
+// reads full scale; the firmware and bootloader treat >= 0xC00 as absent.
+static const int door_state_adc[DOOR_STATE_COUNT] = {
+    [DOOR_CLOSED] = 20,
+    [DOOR_OPEN] = 2000,
+    [DOOR_UNPLUGGED] = 4095,
+};
+
+static void door_input_apply(DoorInputState *s)
+{
+    trace_door_switch_state(s->state);
+    qemu_set_irq(s->irq, door_state_adc[s->state]);
+}
+
+static char *door_input_get_state(Object *obj, Error **errp)
+{
+    return g_strdup(door_state_names[DOOR_INPUT(obj)->state]);
+}
+
+static void door_input_set_state(Object *obj, const char *value, Error **errp)
+{
+    DoorInputState *s = DOOR_INPUT(obj);
+    for (int i = 0; i < DOOR_STATE_COUNT; i++)
+    {
+        if (strcmp(value, door_state_names[i]) == 0)
+        {
+            s->state = i;
+            if (DEVICE(obj)->realized)
+            {
+                door_input_apply(s);
+            }
+            return;
+        }
+    }
+    error_setg(errp, "door-switch: state must be closed, open or unplugged");
+}
+
 static void door_input_handle_key(P404KeyIF *opaque, Key keycode)
 {
 	DoorInputState *s = DOOR_INPUT(opaque);
     switch (keycode & ~ P404_KEYCLIENT_RELEASE_MASK)
     {
         case 'd': // down
-            s->is_open ^= 1;
-            trace_door_switch_state(s->is_open);
-			qemu_set_irq(s->irq, s->is_open ? 2000 : 20);
+            s->state = (s->state == DOOR_OPEN) ? DOOR_CLOSED : DOOR_OPEN;
+            door_input_apply(s);
             break;
     }
 }
@@ -73,8 +123,7 @@ static void door_input_finalize(Object *obj)
 static void door_input_reset(DeviceState *dev)
 {
     DoorInputState *s = DOOR_INPUT(dev);
-    qemu_set_irq(s->irq, 20); // Init to connected, closed
-    s->is_open = false;
+    door_input_apply(s); // "state" property, default closed
 }
 
 static int door_input_process_action(P404ScriptIF *obj, unsigned int action, script_args args)
@@ -106,4 +155,6 @@ static void door_input_class_init(ObjectClass *oc, const void *data)
 
     P404KeyIFClass *kc = P404_KEYCLIENT_CLASS(oc);
     kc->KeyHandler = door_input_handle_key;
+
+    object_class_property_add_str(oc, "state", door_input_get_state, door_input_set_state);
 }
