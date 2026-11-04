@@ -105,8 +105,16 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
     MemoryRegion *system_memory = get_system_memory();
 #endif
 
-    memory_region_init_rom(&s->flash, OBJECT(dev_soc), "STM32F407.flash",
-                           flash_size, &err);
+    if (s->parent.flash_filename != NULL)
+    {
+        // File-backed: 0xFF when blank, persists across QEMU runs.
+        stm32_soc_setup_flash(dev_soc, &s->flash, &err);
+    }
+    else
+    {
+        memory_region_init_rom(&s->flash, OBJECT(dev_soc), "STM32F407.flash",
+                               flash_size, &err);
+    }
     if (err != NULL) {
         error_propagate(errp, err);
         return;
@@ -118,7 +126,9 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
                              flash_size);
 
     // Kinda sketchy but needed to bypass the FW check on the Mini...
-	if(flash_size >= (MiB -1))
+    // Never on a file-backed flash: there the byte persists and lands inside
+    // an installed application, breaking its hash on the next start.
+	if(flash_size >= (MiB -1) && s->parent.flash_filename == NULL)
 	{
 	    s->flash.ram_block->host[MiB  -1] = 0xFF;
 	}
