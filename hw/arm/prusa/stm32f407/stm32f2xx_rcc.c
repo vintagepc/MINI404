@@ -31,6 +31,7 @@
 #include "hw/core/irq.h"
 #include "../utility/macros.h"
 #include "../stm32_common/stm32_rcc_if.h"
+#include "../stm32_common/stm32_common.h"
 #include "../stm32_common/stm32_rcc_regdefs.h"
 
 QEMU_BUILD_BUG_MSG(STM32_P_COUNT>255,"Err - peripheral reset arrays not meant to handle >255 peripherals!");
@@ -505,6 +506,32 @@ static void stm32_rcc_reset(DeviceState *dev)
 
 	for (int i=0; i<RI_END; i++)
 		stm32_rcc_write(s, i<<2U, s->reginfo[i].reset_val,4);
+
+	/* Reset-cause flags are sticky until RMVF. The first reset of a run is the
+	   power-on reset; every later one in the same run comes from inside the
+	   machine (SYSRESETREQ, the IWDG, or a monitor system_reset standing in for
+	   either), and on hardware all of those also pull NRST, setting PADRSTF.
+	   The bootloader trusts the RAM data exchange only when SFTRSTF is set. */
+	if (!s->power_on_done)
+	{
+		s->regs.raw[RI_CSR] = s->reginfo[RI_CSR].reset_val;
+		s->power_on_done = true;
+	}
+	else
+	{
+		REGDEF_NAME(rcc, csr) csr = {.raw = s->regs.raw[RI_CSR]};
+		csr.PADRSTF = 1;
+		if (stm32_reset_cause_iwdg)
+		{
+			csr.IWDGRSTF = 1;
+		}
+		else
+		{
+			csr.SFTRSTF = 1;
+		}
+		s->regs.raw[RI_CSR] = csr.raw;
+	}
+	stm32_reset_cause_iwdg = false;
 }
 
 /* IRQ handler to handle updates to the HCLK frequency.
