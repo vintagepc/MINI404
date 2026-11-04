@@ -175,7 +175,10 @@ stm32_common_gpio_write(void *arg, hwaddr addr, uint64_t data, unsigned int size
         new_val &= ~br_bits; /* BRy */
         new_val |= bs_bits; /* BSy */
         s->regs[RI_IDR] &=~br_bits;
-        s->regs[RI_IDR] |= bs_bits;
+        // idr-mask pins are held low from outside the chip; the MCU's own
+        // output latch cannot pull them up (e.g. the fast-boot PE0, which the
+        // bootloader sets before sampling it).
+        s->regs[RI_IDR] |= bs_bits & ~s->idr_mask;
         stm32_common_gpio_update_odr(s, new_val);
         break;
     }
