@@ -224,12 +224,6 @@ static uint32_t stm32f4xx_adc_get_value(STM32F4XXADCState *s)
 {
     uint8_t channel = s->adc_sequence[s->adc_sequence_position];
     s->defs.DR = s->adc_data[channel];
-    // I'm not sure why this is yet - some sort of built in oversampling
-    // that is enabled in non-DMA mode?
-    if (!s->defs.CR2.DMA) {
-        assert(s->adc_smprs[channel] < ARRAY_SIZE(adc_smpr_map));
-        s->defs.DR*=(adc_smpr_map[s->adc_smprs[channel]]+1);
-    }
 
     // Mask: RES 0..3 == 12..6 bit mask.
     s->defs.DR = (s->defs.DR & 0xFFF)>>(s->defs.CR1.RES<<1);
@@ -313,12 +307,15 @@ static uint64_t stm32f4xx_adc_read(void *opaque, hwaddr addr,
                       "included for compatibility\n", __func__);
         return s->regs[addr] - s->regs[addr+RI_JOFR1-RI_JDR1];
     case RI_DR:
-        if (s->defs.CR2.ADON && s->defs.SR.EOC) {
-            s->defs.SR.EOC ^= s->defs.SR.EOC;
-            return stm32f4xx_adc_get_value(s);
-        } else {
+        if (!s->defs.CR2.ADON)
+        {
             return 0;
         }
+        // Reading DR clears EOC. DR keeps the last result after EOC is cleared
+        // by software: HAL_ADC_PollForConversion does that before
+        // HAL_ADC_GetValue reads DR.
+        s->defs.SR.EOC = 0;
+        return stm32f4xx_adc_get_value(s);
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: Bad offset 0x%" HWADDR_PRIx "\n", __func__, addr);
