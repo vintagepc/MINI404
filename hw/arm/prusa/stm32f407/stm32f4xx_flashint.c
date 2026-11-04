@@ -197,8 +197,27 @@ static void stm32f4xx_flashif_sector_erase(STM32F4XX_STRUCT_NAME(FlashIF) *s)
         s->regs.defs.SR.WRPERR = 1;
         return;
     }
-    printf("# Erasing flash sector %u\n", s->regs.defs.CR.SNB);
-    uint32_t (*p)[2] = &sector_boundaries[s->regs.defs.CR.SNB];
+    // SNB 0-11 is bank 1. On the 2 MB parts bank 2 is SNB 16-27 (bit 4 set),
+    // which the HAL encodes by adding 4 above sector 11; 12-15 are invalid.
+    uint32_t snb = s->regs.defs.CR.SNB;
+    uint32_t index = snb;
+    if (snb >= 16U)
+    {
+        index = snb - 4U;
+    }
+    else if (snb >= 12U)
+    {
+        index = ARRAY_SIZE(sector_boundaries);
+    }
+    if (index >= ARRAY_SIZE(sector_boundaries) ||
+        sector_boundaries[index][1] >= memory_region_size(s->flash))
+    {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid sector number SNB=%u\n", __func__, snb);
+        s->regs.defs.SR.PGSERR = 1;
+        return;
+    }
+    printf("# Erasing flash sector %u\n", snb);
+    uint32_t (*p)[2] = &sector_boundaries[index];
     uint32_t buff = 0xFFFFFFFFU;
     for (int i=(*p)[0]; i<=(*p)[1]; i+=4)
     {
@@ -241,6 +260,10 @@ stm32f4xx_fint_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 			if (r.WRPERR)
 			{
 				s->regs.defs.SR.WRPERR = false;
+			}
+			if (r.PGSERR)
+			{
+				s->regs.defs.SR.PGSERR = false;
 			}
 
 		}
