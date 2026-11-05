@@ -393,6 +393,7 @@ struct STM32F4xxUSBState {
 
 	MemoryRegion* cpu_mr;
 	AddressSpace cpu_as;
+	MemoryRegion* ccm_mr; // CCM data RAM, out of reach of the DMA; NULL if the chip has none
 
     /*< public >*/
     USBBus bus;
@@ -1568,6 +1569,30 @@ static void STM32F4xx_usb_devmode_packet(STM32F4xxUSBState *s, int epnum)
 	}
 }
 
+/* The OTG_HS DMA is an AHB master with no path to the CCM data RAM, which only the
+ * core's D-bus reaches. A transfer there fails with an AHB error (RM0090 OTG_HS_HCINTx.AHBERR);
+ * dma_memory_* through the CPU address space would quietly succeed. */
+static bool STM32F4xx_dma_hits_ccm(STM32F4xxUSBState *s, uint32_t addr, uint32_t len)
+{
+    if (s->ccm_mr == NULL || len == 0) {
+        return false;
+    }
+    uint64_t base = s->ccm_mr->addr;
+    return addr < base + memory_region_size(s->ccm_mr) && (uint64_t)addr + len > base;
+}
+
+/* Report an AHB error on the channel. It stays enabled until the driver halts it,
+ * as on the real core, where HAL_HCD then sees CHH with the channel in HC_XACTERR. */
+static void STM32F4xx_raise_ahberr(STM32F4xxUSBState *s, uint32_t index, uint32_t len, bool to_memory)
+{
+    uint32_t chan = index >> 3;
+    qemu_log_mask(LOG_GUEST_ERROR, "%s: channel %u DMA %s 0x%08x (%u B) is in CCM: AHB error\n",
+                  __func__, chan, to_memory ? "write to" : "read from", s->hreg_chan[chan].HCDMA, len);
+    s->hreg_chan[chan].HCINT.raw |= HCINTMSK_AHBERR;
+    s->packet[chan].needs_service = false;
+    STM32F4xx_update_hc_irq(s, index);
+}
+
 static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDevice *dev,
                                USBEndpoint *ep, uint32_t index, bool send)
 {
@@ -1662,6 +1687,11 @@ static void STM32F4xx_handle_packet(STM32F4xxUSBState *s, uint32_t devadr, USBDe
 			if (s->gahbcfg & GAHBCFG_DMA_EN)
 			{
 				// Note - USB DMA doesn't use the normal peripheral DMA engine.
+				if (STM32F4xx_dma_hits_ccm(s, r_chan->HCDMA, tlen))
+				{
+					STM32F4xx_raise_ahberr(s, index, tlen, false);
+					return;
+				}
 				if (MEMTX_OK != dma_memory_read(&s->cpu_as, r_chan->HCDMA, s->usb_buf[chan], tlen, MEMTXATTRS_UNSPECIFIED))
 				{
 					qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory read failed - transfer aborted.", __func__);
@@ -1759,6 +1789,13 @@ babble:
                 }
 				if (s->gahbcfg & GAHBCFG_DMA_EN)
 				{
+					if (STM32F4xx_dma_hits_ccm(s, r_chan->HCDMA, actual))
+					{
+						// The device has sent the data; it is lost on the bus side.
+						usb_packet_cleanup(&p->packet);
+						STM32F4xx_raise_ahberr(s, index, actual, true);
+						return;
+					}
 					if (MEMTX_OK != dma_memory_write(&s->cpu_as, r_chan->HCDMA, s->usb_buf[chan], actual, MEMTXATTRS_UNSPECIFIED))
 					{
 						qemu_log_mask(LOG_GUEST_ERROR, "%s: DMA memory write failed - transfer aborted.", __func__);
@@ -3410,6 +3447,7 @@ static const Property STM32F4xx_usb_properties[] = {
     DEFINE_PROP_UINT32("usb_version", STM32F4xxUSBState, usb_version, 2),
     DEFINE_PROP_CHR("chardev", STM32F4xxUSBState, cdc),
 	DEFINE_PROP_LINK("system-memory", STM32F4xxUSBState, cpu_mr, TYPE_MEMORY_REGION, MemoryRegion*),
+	DEFINE_PROP_LINK("ccm-memory", STM32F4xxUSBState, ccm_mr, TYPE_MEMORY_REGION, MemoryRegion*),
     DEFINE_PROP_BOOL("disable_sof_interrupt", STM32F4xxUSBState, disable_sofi, false),
     DEFINE_PROP_UINT32("cdc_baud", STM32F4xxUSBState, cdc_baud, 57600),
 };
