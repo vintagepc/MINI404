@@ -152,4 +152,6 @@ typedef struct Stm32f2xxRcc {
 
 	stm32_reginfo_t* reginfo;
 
+	bool power_on_done; // the first reset of a QEMU run is the power-on reset
+
 } Stm32f2xxRcc;

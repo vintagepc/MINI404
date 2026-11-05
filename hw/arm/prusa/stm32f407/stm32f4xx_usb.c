@@ -1952,7 +1952,9 @@ static void STM32F4xx_detach(USBPort *port)
     s->HPRT.PENCHNG = 1;
     s->HPRT.PCDET = 0;
 
-    STM32F4xx_raise_global_irq(s, GINTSTS_PRTINT);
+    // Hardware also flags DISCINT on a disconnect; the ST HAL reports a removed
+    // device to the USB host stack only from that bit, not from the port change.
+    STM32F4xx_raise_global_irq(s, GINTSTS_PRTINT | GINTSTS_DISCONNINT);
 }
 
 static void STM32F4xx_child_detach(USBPort *port, USBDevice *child)

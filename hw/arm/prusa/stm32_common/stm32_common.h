@@ -106,6 +106,10 @@ typedef struct STM32SOC {
 OBJECT_DECLARE_TYPE(STM32SOC, STM32SOCClass, STM32_SOC);
 
 extern void stm32_soc_load_kernel(Object* obj, const char* filename);
+
+// Set by the IWDG just before it requests a reset, consumed by the RCC's reset
+// handler so the next boot reads IWDGRSTF instead of SFTRSTF.
+extern bool stm32_reset_cause_iwdg;
 extern ssize_t stm32_soc_load_targphys(Object* obj, const char* filename, hwaddr addr);
 
 extern void stm32_soc_machine_init(MachineState *machine);

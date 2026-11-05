@@ -18,6 +18,8 @@
 #include "stm32_shared.h"
 #include "hw/arm/boot.h"
 
+bool stm32_reset_cause_iwdg = false;
+
 static bool create_if_not_exist(const char* default_name, uint32_t file_size)
 {
 	bool exists = true;

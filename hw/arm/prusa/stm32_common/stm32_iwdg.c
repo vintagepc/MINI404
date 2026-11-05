@@ -112,6 +112,7 @@ stm32_common_iwdg_read(void *opaque, hwaddr addr, unsigned int size)
 static void stm32_common_iwdg_fire(void *opaque) {
     printf("# Watchdog fired without guest update, resetting!\n");
     qapi_event_send_watchdog(WATCHDOG_ACTION_RESET);
+    stm32_reset_cause_iwdg = true;
     qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
 
 }
