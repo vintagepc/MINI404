@@ -27,7 +27,7 @@ at21csxx_enter_discovery(void)
 at21csxx_discovery_ack(void)
 
 #door_switch.c
-door_switch_state(bool open) "is_open: %u"
+door_switch_state(int state) "state: %d (0 closed, 1 open, 2 unplugged)"
 
 # fan.c
 fan_new_tach_interval(char label, int uS) "Fan %c tach interval: %d uS"

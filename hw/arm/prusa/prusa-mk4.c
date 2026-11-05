@@ -478,6 +478,15 @@ typedef struct xBuddyMachineState {
     int32_t nozzle_start_adc10;
     int32_t nozzle_raw_adc10;
     uint8_t nozzle_noise_adc10;
+    // Detection inputs the bootloader and FW use to tell the xBuddy printers
+    // apart. -1 = not set on the command line (use the variant, then the
+    // machine's own wiring).
+    int variant;
+    int door;
+    int bed_thermistor;
+    int loveboard;
+    int mk35_cable;
+    bool fast_boot;
 } xBuddyMachineState;
 
 OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
@@ -620,6 +629,123 @@ static void xbuddy_set_noise_adc(Object *obj, Visitor *v, const char *name,
     s->nozzle_noise_adc10 = value;
 }
 
+typedef struct {
+    const char *name;
+    int door, bed_thermistor, loveboard, mk35_cable;
+} xbuddy_choice_t;
+
+enum { DOOR_CLOSED, DOOR_OPEN, DOOR_UNPLUGGED };
+static const char *const door_names[] = { "closed", "open", "unplugged", NULL };
+static const char *const bed_names[] = { "unplugged", "connected", NULL };
+static const char *const loveboard_names[] = { "absent", "present", NULL };
+static const char *const cable_names[] = { "absent", "connected", NULL };
+
+// The detection inputs of each printer the shared xBuddy board ships in
+// (bootloader src/configs/boot_configs.cpp). -1 leaves the input alone.
+static const xbuddy_choice_t xbuddy_variants[] = {
+    { "c1",       DOOR_CLOSED,    1, 1, 0 },
+    { "c1l",      DOOR_CLOSED,    0, 1, 0 },
+    { "c1-indx",  DOOR_CLOSED,    1, 0, 0 },
+    { "c1l-indx", DOOR_CLOSED,    0, 0, 0 },
+    { "mk4",      DOOR_UNPLUGGED, 1, 1, 0 },
+    { "mk3.5",    DOOR_UNPLUGGED, 1, 0, 1 },
+    { NULL },
+};
+
+static int xbuddy_lookup(const char *const *names, const char *value)
+{
+    for (int i = 0; names[i]; i++)
+    {
+        if (strcmp(names[i], value) == 0)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static char *xbuddy_join(const char *const *names)
+{
+    GString *str = g_string_new(NULL);
+    for (int i = 0; names[i]; i++)
+    {
+        g_string_append_printf(str, "%s%s", i ? ", " : "", names[i]);
+    }
+    return g_string_free(str, false);
+}
+
+#define XBUDDY_CHOICE_PROP(field, names, label)                                  \
+static char *xbuddy_get_##field(Object *obj, Error **errp)                      \
+{                                                                               \
+    int v = XBUDDY_MACHINE(obj)->field;                                         \
+    return g_strdup(v < 0 ? "default" : names[v]);                              \
+}                                                                               \
+static void xbuddy_set_##field(Object *obj, const char *value, Error **errp)    \
+{                                                                               \
+    int v = xbuddy_lookup(names, value);                                        \
+    if (v < 0) {                                                                \
+        g_autofree char *all = xbuddy_join(names);                              \
+        error_setg(errp, label " must be one of: %s", all);                     \
+        return;                                                                 \
+    }                                                                           \
+    XBUDDY_MACHINE(obj)->field = v;                                             \
+}
+
+XBUDDY_CHOICE_PROP(door, door_names, "door")
+XBUDDY_CHOICE_PROP(bed_thermistor, bed_names, "bed-thermistor")
+XBUDDY_CHOICE_PROP(loveboard, loveboard_names, "loveboard")
+XBUDDY_CHOICE_PROP(mk35_cable, cable_names, "mk35-cable")
+
+static char *xbuddy_get_variant(Object *obj, Error **errp)
+{
+    int v = XBUDDY_MACHINE(obj)->variant;
+    return g_strdup(v < 0 ? "default" : xbuddy_variants[v].name);
+}
+
+static void xbuddy_set_variant(Object *obj, const char *value, Error **errp)
+{
+    for (int i = 0; xbuddy_variants[i].name; i++)
+    {
+        if (strcmp(xbuddy_variants[i].name, value) == 0)
+        {
+            XBUDDY_MACHINE(obj)->variant = i;
+            return;
+        }
+    }
+    error_setg(errp, "variant must be one of: c1, c1l, c1-indx, c1l-indx, mk4, mk3.5");
+}
+
+static bool xbuddy_get_fast_boot(Object *obj, Error **errp)
+{
+    return XBUDDY_MACHINE(obj)->fast_boot;
+}
+
+static void xbuddy_set_fast_boot(Object *obj, bool value, Error **errp)
+{
+    XBUDDY_MACHINE(obj)->fast_boot = value;
+}
+
+static void xbuddy_get_guest_time(Object *obj, Visitor *v, const char *name,
+                                  void *opaque, Error **errp)
+{
+    int64_t ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    visit_type_int(v, name, &ns, errp);
+}
+
+// An explicit property wins over the variant, which wins over the wiring.
+static int xbuddy_resolve(int explicit_value, int variant_value, int wiring)
+{
+    if (explicit_value >= 0)
+    {
+        return explicit_value;
+    }
+    if (variant_value >= 0)
+    {
+        return variant_value;
+    }
+    return wiring;
+}
+
 static void mk4_init(MachineState *machine)
 {
 
@@ -628,6 +754,25 @@ static void mk4_init(MachineState *machine)
 
     Object* periphs = machine_get_container("peripheral");
 	mk4_cfg_t cfg = *mc->cfg;
+
+	const xbuddy_choice_t *variant = (s->variant >= 0) ? &xbuddy_variants[s->variant] : NULL;
+	const int door = xbuddy_resolve(s->door, variant ? variant->door : -1,
+		cfg.has_door_sensor ? DOOR_CLOSED : DOOR_UNPLUGGED);
+	const bool bed_connected = xbuddy_resolve(s->bed_thermistor, variant ? variant->bed_thermistor : -1, 1);
+	cfg.has_at21 = xbuddy_resolve(s->loveboard, variant ? variant->loveboard : -1, cfg.has_at21);
+	cfg.e_loopback = xbuddy_resolve(s->mk35_cable, variant ? variant->mk35_cable : -1, cfg.e_loopback);
+	if (cfg.e_loopback)
+	{
+		// The MK3.5 extruder cable sits where the Nextruder's loadcell would:
+		// its echo uses the HX717 SCK (PG1) and data (PE7) lines.
+		cfg.has_loadcell = false;
+	}
+	// A sensor that is not connected is the same, to the firmware, as a board
+	// without the switch: create it either way so the state can change at runtime.
+	if (door != DOOR_UNPLUGGED)
+	{
+		cfg.has_door_sensor = true;
+	}
 
 	if (s->ht_hotend)
 	{
@@ -700,14 +845,34 @@ static void mk4_init(MachineState *machine)
     for (int i = 0; i < 9; i++) {
         qlist_append_int(otp_list, otp_raw[i]);
     }
+    if (s->fast_boot)
+    {
+        // The bootloader's fast_boot() wants OTP lock block 0 (0x1FFF7A00) still
+        // unprogrammed. Every word up to it must be listed to reach it; the
+        // otp-data words that are not listed read 0, i.e. locked.
+        for (int i = 9; i < 0x200 / 4; i++)
+        {
+            qlist_append_int(otp_list, 0);
+        }
+        qlist_append_int(otp_list, 0xFFFFFFFF);
+    }
     qdev_prop_set_array(otp, "otp-data", otp_list);
 
 	DeviceState* dev_soc = dev;
     if (arghelper_is_arg("appendix")) {
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
+    uint32_t gpioe_low = 0;
     if (cfg.e_loopback) {
-		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),"idr-mask", 0x80);
+        gpioe_low |= 0x80;
+    }
+    if (s->fast_boot)
+    {
+        gpioe_low |= 0x01; // PE0: the station grounds the fast-boot detect pin
+    }
+    if (gpioe_low)
+    {
+		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE),"idr-mask", gpioe_low);
     }
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -984,9 +1149,21 @@ static void mk4_init(MachineState *machine)
         {
             qdev_prop_set_uint8(dev, "noise_adc10", s->nozzle_noise_adc10);
         }
+        if (i == T_BED && !bed_connected)
+        {
+            // Open circuit: the pull-up reads full scale.
+            qdev_prop_set_int32(dev, "raw_adc10", 1023);
+        }
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
-        qdev_connect_gpio_out_named(dev, "thermistor_value",0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_data_in",cfg.temps.channel[i]));
+        qemu_irq therm_in = qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_data_in",cfg.temps.channel[i]);
+        if (i == T_BED && cfg.temps.adc[i] == STM32_P_ADC1)
+        {
+            // PA4 is wired to ADC1 and ADC2 alike; the FW samples ADC1, the
+            // bootloader's printer detection samples ADC2.
+            therm_in = qemu_irq_split(therm_in, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_data_in",cfg.temps.channel[i]));
+        }
+        qdev_connect_gpio_out_named(dev, "thermistor_value",0, therm_in);
         if (i==T_NOZ)
 		{
             hotend = dev;
@@ -1019,6 +1196,8 @@ static void mk4_init(MachineState *machine)
     if (cfg.has_door_sensor)
 	{
         dev = qdev_new("door-switch");
+        object_property_add_child(OBJECT(periphs), "door-switch", OBJECT(dev));
+        object_property_set_str(OBJECT(dev), "state", door_names[door], &error_fatal);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
         qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC3), "adc_data_in", 15));
 	}
@@ -1356,6 +1535,33 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
             "Nozzle ADC reading at power-on, 10-bit 0..1023. Unset = start at ambient. "
             "Result depends on thermistor temperature table in use.");
 
+        object_class_property_add_str(oc, "variant", xbuddy_get_variant, xbuddy_set_variant);
+        object_class_property_set_description(oc, "variant",
+            "Which printer the xBuddy board is wired into: c1, c1l, c1-indx, c1l-indx, "
+            "mk4 or mk3.5. Sets door, bed-thermistor, loveboard and mk35-cable; any of "
+            "those given explicitly wins.");
+        object_class_property_add_str(oc, "door", xbuddy_get_door, xbuddy_set_door);
+        object_class_property_set_description(oc, "door",
+            "Door sensor: closed, open or unplugged. Changeable at runtime through "
+            "qom-set on /machine/peripheral/door-switch state.");
+        object_class_property_add_str(oc, "bed-thermistor", xbuddy_get_bed_thermistor, xbuddy_set_bed_thermistor);
+        object_class_property_set_description(oc, "bed-thermistor",
+            "Bed thermistor: connected or unplugged (reads full scale).");
+        object_class_property_add_str(oc, "loveboard", xbuddy_get_loveboard, xbuddy_set_loveboard);
+        object_class_property_set_description(oc, "loveboard",
+            "Loveboard 1-wire EEPROM: present or absent.");
+        object_class_property_add_str(oc, "mk35-cable", xbuddy_get_mk35_cable, xbuddy_set_mk35_cable);
+        object_class_property_set_description(oc, "mk35-cable",
+            "MK3.5 extruder cable echo (PG1 -> PE7): connected or absent.");
+        object_class_property_add(oc, "guest-time-ns", "int",
+            xbuddy_get_guest_time, NULL, NULL, NULL);
+        object_class_property_set_description(oc, "guest-time-ns",
+            "Read-only: the guest's virtual clock in ns, for timing guest events from a script.");
+        object_class_property_add_bool(oc, "fast-boot", xbuddy_get_fast_boot, xbuddy_set_fast_boot);
+        object_class_property_set_description(oc, "fast-boot",
+            "Production fast boot: OTP lock block 0 left at 0xFF and PE0 held low, "
+            "so the bootloader jumps straight into the application.");
+
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
         xmc->has_mmu = d->has_mmu;
@@ -1374,6 +1580,12 @@ static void xbuddy_instance_init(Object *obj)
     s->nozzle_start_adc10 = -1; 
     s->nozzle_raw_adc10 = -1; 
     s->nozzle_noise_adc10 = 0; 
+    s->variant = -1;
+    s->door = -1;
+    s->bed_thermistor = -1;
+    s->loveboard = -1;
+    s->mk35_cable = -1;
+    s->fast_boot = false;
 }
 
 static const xBuddyData mk4_027c = {
