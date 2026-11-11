@@ -245,6 +245,8 @@ static void stm32f4xx_soc_realize(DeviceState *dev_soc, Error **errp)
 
 	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_USBFS)), "system-memory", OBJECT(system_memory), &error_fatal);
 	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_USBHS)), "system-memory", OBJECT(system_memory), &error_fatal);
+	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_USBFS)), "ccm-memory", OBJECT(&s->ccmsram), &error_fatal);
+	object_property_set_link(OBJECT(stm32_soc_get_periph(dev_soc, STM32_P_USBHS)), "ccm-memory", OBJECT(&s->ccmsram), &error_fatal);
 
 	stm32_soc_realize_all_peripherals(dev_soc, errp);
 
