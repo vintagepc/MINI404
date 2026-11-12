@@ -114,10 +114,12 @@ typedef struct temp_cfg_t
 	stm32_periph_t adc[T_MAX];
     uint8_t channel[T_MAX];// = {10,4,3,5,6};
 	uint16_t ambient[T_MAX]; // = {18,20, 25, 22 /*512*/, 20};
-    int table[T_MAX];// = {cfg.e_table_index, 1, 2000,0,5};
+    int table[T_MAX];// = {printer.e_table_index, 1, 2000,0,5};
 } temp_cfg_t;
 
-typedef struct mk4_cfg_t {
+// The xBuddy mainboard: what is fixed on the PCB, the same in every printer it
+// ships in.
+typedef struct xbuddy_board_t {
     uint8_t lcd_spi;
     stm_pin lcd_cs;
     bool lcd_cs_invert;
@@ -131,51 +133,59 @@ typedef struct mk4_cfg_t {
     stm_pin enc_b;
     stm_pin enc_btn;
     stm_pin z_min;
-    uint16_t f_rpms[FAN_COOLING_COUNT];
-    stm_pin f_tach[FAN_COOLING_COUNT];
     bool f_inverted;
-    bool has_at21;
-	bool has_loadcell;
-	temp_cfg_t temps;
+    temp_cfg_t temps;
     uint8_t motor;
-	uint8_t e_t_mass;
-	// Measured hotend thermals; 0 = no measurement for this machine, so the
-	// corresponding effect is not modelled.
-	uint16_t e_cool_tau_s;        // cool-down constant, both fans off
-	uint16_t e_cool_tau_pfan_s;   // ditto at full print-fan duty
-	uint16_t e_cool_tau_hbr_s;    // ditto at full heatbreak-fan duty
-	uint16_t e_heat_lag_ms;       // block -> thermistor lag
-	uint16_t e_dead_time_ms;      // heater -> block transport delay
-    bool e_loopback;
-    char m_label[AXIS_MAX];
     stm_pin m_step[AXIS_MAX];
     stm_pin m_dir[AXIS_MAX];
     stm_pin m_en[AXIS_MAX];
     stm_pin m_diag[AXIS_MAX];
     stm_pin m_select[AXIS_MAX];
-	bool m_inverted[AXIS_MAX];
     uint8_t m_spi;
-	uint8_t m_uart;
-	bool is_400step;
-	bool has_door_sensor;
-    uint8_t printer_family;
-	uint8_t dm_ver;
-	const char* boot_fn;
-	const char* eeprom_fn;
-	const char* xflash_fn;
+} xbuddy_board_t;
 
-} mk4_cfg_t;
+// A printer built around the board: what is plugged into its headers, and the
+// mechanics and thermals behind them.
+typedef struct xbuddy_printer_t {
+    uint16_t f_rpms[FAN_COOLING_COUNT];
+    stm_pin f_tach[FAN_COOLING_COUNT];
+    bool has_at21;
+    bool has_loadcell;
+    // ADC3 channel 15 is one header: a case thermistor on some printers, the
+    // door sensor on others.
+    bool has_case_thermistor;
+    bool has_door_sensor;
+    uint8_t e_t_mass;
+    // Measured hotend thermals; 0 = no measurement for this printer, so the
+    // corresponding effect is not modelled.
+    uint16_t e_cool_tau_s;        // cool-down constant, both fans off
+    uint16_t e_cool_tau_pfan_s;   // ditto at full print-fan duty
+    uint16_t e_cool_tau_hbr_s;    // ditto at full heatbreak-fan duty
+    uint16_t e_heat_lag_ms;       // block -> thermistor lag
+    uint16_t e_dead_time_ms;      // heater -> block transport delay
+    bool e_loopback;
+    char m_label[AXIS_MAX];
+    bool m_inverted[AXIS_MAX];
+    bool is_400step;
+    uint8_t printer_family;
+    const char* boot_fn;
+    const char* eeprom_fn;
+    const char* xflash_fn;
+} xbuddy_printer_t;
 
 typedef struct xBuddyMachineClass {
     MachineClass        parent;
-    const mk4_cfg_t     *cfg;
+    const xbuddy_board_t   *board;
+    const xbuddy_printer_t *printer;
+    uint8_t             board_rev;
     bool                has_mmu;
 	bool				has_extboard;
     bool                has_modbed;
 } xBuddyMachineClass;
 
 typedef struct xBuddyData {
-	const mk4_cfg_t* cfg;
+	const xbuddy_printer_t* printer;
+	uint8_t board_rev;
 	const char* name;
 	const char* descr;
     const bool has_mmu;
@@ -190,7 +200,10 @@ typedef struct xBuddyData {
 
 #define STM32_P_GPIO_NC (STM32_P_GPIOK + 1)
 
-static const mk4_cfg_t mk4_027c_cfg = {
+// Revisions 0.2.7c and 0.3.4 are modelled by the revision in the OTP datamatrix
+// only. Pre-release 0.3.4 boards stepped X/Y on PA3/PA0; the firmware has used
+// PD7/PD5 on every revision since 5.0.0.
+static const xbuddy_board_t xbuddy_board = {
     .lcd_spi = STM32_P_SPI6,
     .lcd_cs = STM_PIN(GPIOD,11),
     .lcd_cs_invert = false,
@@ -204,11 +217,7 @@ static const mk4_cfg_t mk4_027c_cfg = {
     .enc_b = STM_PIN(GPIOD,12),
     .enc_btn = STM_PIN(GPIOG,3),
     .z_min = STM_PIN(GPIOB, 8),
-    .f_rpms = { 6600, 7500 },
-    .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
     .f_inverted = false,
-    .has_at21 = true,
-	.has_loadcell = true,
 	.temps =
 	{
 		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
@@ -216,228 +225,85 @@ static const mk4_cfg_t mk4_027c_cfg = {
 		.ambient = {18, 20, 21, 25, 19},
 		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
 	},
-
-	.e_t_mass = 35,
     .motor = TMC2130,
-    .m_label = {'X','Y','Z','E'},
     .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
     .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
     .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
     .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
     .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
-	.m_inverted = {1,0,1,1},
     .m_spi = STM32_P_SPI3,
-	.is_400step = true,
-    .printer_family = FAM_MK4,
-	.dm_ver = 27,
-	.boot_fn = BOOTLOADER_IMAGE(Mk4),
-	.eeprom_fn = EEPROM_FN(Mk4),
-	.xflash_fn = XFLASH_FN(Mk4)
 };
 
-static const mk4_cfg_t mk4_034_cfg = {
-    .lcd_spi = STM32_P_SPI6,
-    .lcd_cs = STM_PIN(GPIOD,11),
-    .lcd_cs_invert = false,
-    .lcd_cd = STM_PIN(GPIOD,15),
-    .w25_spi = STM32_P_SPI5,
-    .w25_cs = STM_PIN(GPIOF,2),
-    .at24_i2c = STM32_P_I2C2,
-    .hx717_data = STM_PIN(GPIOE,7),
-    .hx717_sck = STM_PIN(GPIOG,1),
-    .enc_a = STM_PIN(GPIOD,13),
-    .enc_b = STM_PIN(GPIOD,12),
-    .enc_btn = STM_PIN(GPIOG,3),
-    .z_min = STM_PIN(GPIOB, 8),
+static const xbuddy_printer_t mk4_printer = {
     .f_rpms = { 6600, 7500 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
-	.temps =
-	{
-		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
-		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
-		.ambient = {18, 20, 21, 25, 19},
-		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
-	},
-	.e_t_mass = 45,
-    .motor = TMC2130,
+	.has_case_thermistor = true,
+	.e_t_mass = 35,
     .m_label = {'X','Y','Z','E'},
-    .m_step = { STM_PIN(GPIOA,3), STM_PIN(GPIOA,0), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
-    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
-    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
-    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
-    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
 	.m_inverted = {1,0,1,1},
-    .m_spi = STM32_P_SPI3,
 	.is_400step = true,
     .printer_family = FAM_MK4,
-	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk4),
 	.eeprom_fn = EEPROM_FN(Mk4),
 	.xflash_fn = XFLASH_FN(Mk4)
 };
 
-static const mk4_cfg_t mk3v5_cfg = {
-    .lcd_spi = STM32_P_SPI6,
-    .lcd_cs = STM_PIN(GPIOD,11),
-    .lcd_cs_invert = false,
-    .lcd_cd = STM_PIN(GPIOD,15),
-    .w25_spi = STM32_P_SPI5,
-    .w25_cs = STM_PIN(GPIOF,2),
-    .at24_i2c = STM32_P_I2C2,
-    .hx717_data = STM_PIN(GPIOE,7),
-    .hx717_sck = STM_PIN(GPIOG,1),
-    .enc_a = STM_PIN(GPIOD,13),
-    .enc_b = STM_PIN(GPIOD,12),
-    .enc_btn = STM_PIN(GPIOG,3),
-    .z_min = STM_PIN(GPIOB, 8),
+static const xbuddy_printer_t mk3v5_printer = {
     .f_rpms = { 4500, 7500 },
     .f_tach = {STM_PIN(GPIOA,10), STM_PIN(GPIOE,10)},
-    .f_inverted = false,
     .has_at21 = false,
-	.temps =
-	{
-		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
-		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
-		.ambient = {18, 20, 21, 25, 19},
-		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
-	},
+	.has_case_thermistor = true,
 	.e_t_mass = 30,
     .e_loopback = true,
-    .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
-    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
-    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
-    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
-    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
-    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
 	.m_inverted = {1,0,1,1},
-    .m_spi = STM32_P_SPI3,
 	.is_400step = false,
     .printer_family = FAM_MK4,
-	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk3v5),
 	.eeprom_fn = EEPROM_FN(Mk3v5),
 	.xflash_fn = XFLASH_FN(Mk3v5)
 };
 
-static const mk4_cfg_t mk3v9_cfg = {
-    .lcd_spi = STM32_P_SPI6,
-    .lcd_cs = STM_PIN(GPIOD,11),
-    .lcd_cs_invert = false,
-    .lcd_cd = STM_PIN(GPIOD,15),
-    .w25_spi = STM32_P_SPI5,
-    .w25_cs = STM_PIN(GPIOF,2),
-    .at24_i2c = STM32_P_I2C2,
-    .hx717_data = STM_PIN(GPIOE,7),
-    .hx717_sck = STM_PIN(GPIOG,1),
-    .enc_a = STM_PIN(GPIOD,13),
-    .enc_b = STM_PIN(GPIOD,12),
-    .enc_btn = STM_PIN(GPIOG,3),
-    .z_min = STM_PIN(GPIOB, 8),
+static const xbuddy_printer_t mk3v9_printer = {
     .f_rpms = { 6600, 7000 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,14)},
-    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
-	.temps =
-	{
-		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
-		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
-		.ambient = {18, 20, 21, 25, 19},
-		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
-	},
+	.has_case_thermistor = true,
 	.e_t_mass = 35,
-    .motor = TMC2130,
     .m_label = {'X','Y','Z','E'},
-    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
-    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
-    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
-    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
-    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
 	.m_inverted = {0, 1, 0,1},
-    .m_spi = STM32_P_SPI3,
 	.is_400step = false,
     .printer_family = FAM_MK4,
-	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(Mk3v9),
 	.eeprom_fn = EEPROM_FN(Mk3v9),
 	.xflash_fn = XFLASH_FN(Mk3v9)
 };
 
-static const mk4_cfg_t ix_027c_cfg = {
-    .lcd_spi = STM32_P_SPI6,
-    .lcd_cs = STM_PIN(GPIOD,11),
-    .lcd_cs_invert = false,
-    .lcd_cd = STM_PIN(GPIOD,15),
-    .w25_spi = STM32_P_SPI5,
-    .w25_cs = STM_PIN(GPIOF,2),
-    .at24_i2c = STM32_P_I2C2,
-    .hx717_data = STM_PIN(GPIOE,7),
-    .hx717_sck = STM_PIN(GPIOG,1),
-    .enc_a = STM_PIN(GPIOD,13),
-    .enc_b = STM_PIN(GPIOD,12),
-    .enc_btn = STM_PIN(GPIOG,3),
-    .z_min = STM_PIN(GPIOB, 8),
+static const xbuddy_printer_t ix_printer = {
     .f_rpms = { 6600, 8000 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
-	.temps =
-	{
-		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_ADC3 },
-		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
-		.ambient = {18, 20, 21, 25, 19},
-		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
-	},
-
+	.has_case_thermistor = true,
 	.e_t_mass = 30,
-    .motor = TMC2130,
     .m_label = {'A','B','Z','E'},
-    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
-    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
-    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
-    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
-    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
 	.m_inverted = {1, 0 ,0,1},
-    .m_spi = STM32_P_SPI3,
 	.is_400step = false,
     .printer_family = FAM_IX,
-	.dm_ver = 27,
 	.boot_fn = BOOTLOADER_IMAGE(iX),
 	.eeprom_fn = EEPROM_FN(iX),
 	.xflash_fn = XFLASH_FN(iX)
 };
 
-static const mk4_cfg_t core1_cfg = {
-    .lcd_spi = STM32_P_SPI6,
-    .lcd_cs = STM_PIN(GPIOD,11),
-    .lcd_cs_invert = false,
-    .lcd_cd = STM_PIN(GPIOD,15),
-    .w25_spi = STM32_P_SPI5,
-    .w25_cs = STM_PIN(GPIOF,2),
-    .at24_i2c = STM32_P_I2C2,
-    .hx717_data = STM_PIN(GPIOE,7),
-    .hx717_sck = STM_PIN(GPIOG,1),
-    .enc_a = STM_PIN(GPIOD,13),
-    .enc_b = STM_PIN(GPIOD,12),
-    .enc_btn = STM_PIN(GPIOG,3),
-    .z_min = STM_PIN(GPIOB, 8),
+static const xbuddy_printer_t core1_printer = {
     .f_rpms = { 6600, 8000 },
     .f_tach = {STM_PIN(GPIOE,10), STM_PIN(GPIOE,10)},
-    .f_inverted = false,
     .has_at21 = true,
 	.has_loadcell = true,
-	.temps =
-	{
-		.adc = { [T_NOZ] = STM32_P_ADC1, [T_BED] = STM32_P_ADC1, [T_BRK] = STM32_P_ADC1, [T_BRD] = STM32_P_ADC3, [T_CASE] = STM32_P_UNDEFINED },
-		.channel = { [T_NOZ] = 10, [T_BED] = 4, [T_BRK] = 6, [T_BRD] = 8, [T_CASE] = 15 },
-		.ambient = {18, 20, 21, 25, 19},
-		.table = { [T_NOZ] = 2005, [T_BED] = 2004, [T_BRK] = 5, [T_BRD] = 2000, [T_CASE] = 2000 }
-	},
+	.has_door_sensor = true,
 	.e_t_mass = 45,
 	// Measured on a CORE One with the stock hotend -- docs/HotendThermalMeasurement.md
 	// 4d/4e. The still-air figure is the one boot-time hotend detection sees, since
@@ -451,19 +317,10 @@ static const mk4_cfg_t core1_cfg = {
 	// 3.41, close enough that touching it would only risk the selftest window.
 	.e_heat_lag_ms = 3750,
 	.e_dead_time_ms = 1250,
-    .motor = TMC2130,
     .m_label = {'A','B','Z','E'},
-    .m_step = { STM_PIN(GPIOD,7), STM_PIN(GPIOD,5), STM_PIN(GPIOD,3), STM_PIN(GPIOD,1)},
-    .m_dir = { STM_PIN(GPIOD,6), STM_PIN(GPIOD,4), STM_PIN(GPIOD,2), STM_PIN(GPIOD,0)},
-    .m_en = { STM_PIN(GPIOB,9), STM_PIN(GPIOB,9), STM_PIN(GPIOB,8), STM_PIN(GPIOD,10)},
-    .m_diag = { STM_PIN(GPIOG,9), STM_PIN(GPIOE,13), STM_PIN(GPIOB,4), STM_PIN(GPIOD,14)},
-    .m_select = {STM_PIN(GPIOG,15), STM_PIN(GPIOB,5), STM_PIN(GPIOF,15), STM_PIN(GPIOF,12)},
 	.m_inverted = {1,0,1,1},
-    .m_spi = STM32_P_SPI3,
 	.is_400step = true,
     .printer_family = FAM_C1,
-	.has_door_sensor = true,
-	.dm_ver = 34,
 	.boot_fn = BOOTLOADER_IMAGE(COREONE),
 	.eeprom_fn = EEPROM_FN(COREONE),
 	.xflash_fn = XFLASH_FN(COREONE)
@@ -753,59 +610,61 @@ static void mk4_init(MachineState *machine)
     xBuddyMachineState *s = XBUDDY_MACHINE(machine);
 
     Object* periphs = machine_get_container("peripheral");
-	mk4_cfg_t cfg = *mc->cfg;
+	const xbuddy_board_t board = *mc->board;
+	xbuddy_printer_t printer = *mc->printer;
+	temp_cfg_t temps = board.temps;
 
 	const xbuddy_choice_t *variant = (s->variant >= 0) ? &xbuddy_variants[s->variant] : NULL;
 	const int door = xbuddy_resolve(s->door, variant ? variant->door : -1,
-		cfg.has_door_sensor ? DOOR_CLOSED : DOOR_UNPLUGGED);
+		printer.has_door_sensor ? DOOR_CLOSED : DOOR_UNPLUGGED);
 	const bool bed_connected = xbuddy_resolve(s->bed_thermistor, variant ? variant->bed_thermistor : -1, 1);
-	cfg.has_at21 = xbuddy_resolve(s->loveboard, variant ? variant->loveboard : -1, cfg.has_at21);
-	cfg.e_loopback = xbuddy_resolve(s->mk35_cable, variant ? variant->mk35_cable : -1, cfg.e_loopback);
-	if (cfg.e_loopback)
+	printer.has_at21 = xbuddy_resolve(s->loveboard, variant ? variant->loveboard : -1, printer.has_at21);
+	printer.e_loopback = xbuddy_resolve(s->mk35_cable, variant ? variant->mk35_cable : -1, printer.e_loopback);
+	if (printer.e_loopback)
 	{
 		// The MK3.5 extruder cable sits where the Nextruder's loadcell would:
 		// its echo uses the HX717 SCK (PG1) and data (PE7) lines.
-		cfg.has_loadcell = false;
+		printer.has_loadcell = false;
 	}
 	// A sensor that is not connected is the same, to the firmware, as a board
 	// without the switch: create it either way so the state can change at runtime.
 	if (door != DOOR_UNPLUGGED)
 	{
-		cfg.has_door_sensor = true;
+		printer.has_door_sensor = true;
 	}
 
 	if (s->ht_hotend)
 	{
-		cfg.temps.table[T_NOZ] = 1010;
+		temps.table[T_NOZ] = 1010;
 		// Measured on a CORE One with the HT hotend (docs/HotendThermalMeasurement.md
 		// 4d/4e). It is slower to *show* that it is heating,
 		// which is why only the lag differs materially from stock.
-		cfg.e_cool_tau_s = 510;
-		cfg.e_cool_tau_pfan_s = 165;
-		cfg.e_cool_tau_hbr_s = 127;
-		cfg.e_heat_lag_ms = 4500;
-		cfg.e_dead_time_ms = 1500;
+		printer.e_cool_tau_s = 510;
+		printer.e_cool_tau_pfan_s = 165;
+		printer.e_cool_tau_hbr_s = 127;
+		printer.e_heat_lag_ms = 4500;
+		printer.e_dead_time_ms = 1500;
 		// 33 is what the measured step responsem gives; the whole set fits it to 0.14 degC rms over 1-15 s.
-		cfg.e_t_mass = 33;
+		printer.e_t_mass = 33;
 	}
 
 	const float ambient_c = (s->ambient_temp_c >= 0)
 		? (float)s->ambient_temp_c
-		: (float)cfg.temps.ambient[T_NOZ];
+		: (float)temps.ambient[T_NOZ];
 	float nozzle_start_c = ambient_c;
 	if (s->nozzle_start_adc10 >= 0
-	    && !thermistor_temp_for_adc10(cfg.temps.table[T_NOZ], s->nozzle_start_adc10, &nozzle_start_c))
+	    && !thermistor_temp_for_adc10(temps.table[T_NOZ], s->nozzle_start_adc10, &nozzle_start_c))
 	{
 		error_setg(&error_fatal,
 			"nozzle-start-adc10=%d is off the end of sensor table %d",
-			s->nozzle_start_adc10, cfg.temps.table[T_NOZ]);
+			s->nozzle_start_adc10, temps.table[T_NOZ]);
 	}
 	if (s->ambient_temp_c >= 0 || s->nozzle_start_adc10 >= 0)
 	{
 		// The thermistor's own initial value only matters until the heater's
 		// first tick drives it; the heater carries the true (possibly sub-zero)
 		// start temperature, so clamping here is harmless.
-		cfg.temps.ambient[T_NOZ] = (uint16_t)(nozzle_start_c < 0.f ? 0.f : nozzle_start_c);
+		temps.ambient[T_NOZ] = (uint16_t)(nozzle_start_c < 0.f ? 0.f : nozzle_start_c);
 	}
 
 	// bomID is a dedicated OTP byte, NOT the revision digits in the datamatrix.
@@ -814,7 +673,7 @@ static void mk4_init(MachineState *machine)
 	OTP_v4 otp_data = { .version = 4, .size = sizeof(OTP_v4), .bomID = 38,
 		.datamatrix = {'4', '5', '5', '8', '-', '2', '7', '0', '0', '0', '0', '1', '9', '0', '0', '5', '2', '5', '9', '9', '9', '9', 0, 0}
 	};
-	if (cfg.dm_ver == 34)
+	if (mc->board_rev == 34)
 	{
 		otp_data.datamatrix[5]='3';
 		otp_data.datamatrix[6]='4';
@@ -863,7 +722,7 @@ static void mk4_init(MachineState *machine)
 		qdev_prop_set_uint32(stm32_soc_get_periph(dev_soc, STM32_P_GPIOA),"idr-mask", 0x2000);
     }
     uint32_t gpioe_low = 0;
-    if (cfg.e_loopback) {
+    if (printer.e_loopback) {
         gpioe_low |= 0x80;
     }
     if (s->fast_boot)
@@ -877,7 +736,7 @@ static void mk4_init(MachineState *machine)
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 
-    if(cfg.e_loopback)
+    if(printer.e_loopback)
     {
         qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, STM32_P_GPIOG), 1, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOE), 7));
     }
@@ -889,15 +748,15 @@ static void mk4_init(MachineState *machine)
     {
         // TODO... use initrd_image as a bootloader alternative?
         struct stat bootloader;
-        if (stat(cfg.boot_fn,&bootloader))
+        if (stat(printer.boot_fn,&bootloader))
         {
-            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",cfg.boot_fn);
+            error_setg(&error_fatal, "No %s file found. It is required to use a .bbf file!",printer.boot_fn);
             return;
         }
         // BBF has an extra 64b header we need to prune. Rather than modify it or use a temp file, offset it
         // by -64 bytes and rely on the bootloader clobbering it.
         stm32_soc_load_targphys(OBJECT(dev_soc), machine->kernel_filename,0x20000-64);
-        stm32_soc_load_kernel(OBJECT(dev_soc), cfg.boot_fn);
+        stm32_soc_load_kernel(OBJECT(dev_soc), printer.boot_fn);
     }
     else // Raw bin or ELF file, load directly.
     {
@@ -912,7 +771,7 @@ static void mk4_init(MachineState *machine)
     void *bus;
     {
         bus = qdev_get_child_bus(
-				stm32_soc_get_periph(dev_soc, cfg.lcd_spi),
+				stm32_soc_get_periph(dev_soc, board.lcd_spi),
 			"ssi");
 
         lcd_dev = ssi_create_peripheral(bus, "ili9488");
@@ -937,7 +796,7 @@ static void mk4_init(MachineState *machine)
         }
 
         qemu_irq lcd_cs = qdev_get_gpio_in_named(lcd_dev, SSI_GPIO_CS, 0);
-        if (cfg.lcd_cs_invert) {
+        if (board.lcd_cs_invert) {
             lcd_cs = qemu_irq_invert(lcd_cs);
             qemu_irq_lower(lcd_cs);
         } else {
@@ -945,10 +804,10 @@ static void mk4_init(MachineState *machine)
             qemu_irq_raise(lcd_cs);
         }
         qemu_irq lcd_cd = qdev_get_gpio_in(lcd_dev,0);
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.lcd_cd)),PIN(cfg.lcd_cd), lcd_cd);
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.lcd_cd)),PIN(board.lcd_cd), lcd_cd);
 
 		qemu_irq led_cs = NULL;
-        if (BANK(cfg.lcd_cs) != (STM32_P_GPIO_NC - STM32_P_GPIOA)) {
+        if (BANK(board.lcd_cs) != (STM32_P_GPIO_NC - STM32_P_GPIOA)) {
 			// Replace the LED IRQ with a split if it needs to be shared. otherwise just LED is connected below.
 			led_cs = qemu_irq_split(lcd_cs, qdev_get_gpio_in_named(npixel[0], SSI_GPIO_CS, 0));
         }
@@ -956,34 +815,34 @@ static void mk4_init(MachineState *machine)
 		{
 			led_cs = qdev_get_gpio_in_named(npixel[0], SSI_GPIO_CS, 0);
 		}
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.lcd_cs)),PIN(cfg.lcd_cs),led_cs);
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.lcd_cs)),PIN(board.lcd_cs),led_cs);
     }
 
     BlockBackend *blk = NULL;
     {
         bus = qdev_get_child_bus(
-				stm32_soc_get_periph(dev_soc, cfg.w25_spi),
+				stm32_soc_get_periph(dev_soc, board.w25_spi),
 			 "ssi");
         dev = qdev_new("w25q64jv");
-        blk = get_or_create_drive(IF_MTD, 0, cfg.xflash_fn, XFLASH_ID,  8U*MiB, &error_fatal);
+        blk = get_or_create_drive(IF_MTD, 0, printer.xflash_fn, XFLASH_ID,  8U*MiB, &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize_and_unref(dev, bus, &error_fatal);
         //DeviceState *flash_dev = ssi_create_slave(bus, "w25q64jv");
         qemu_irq flash_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
         qemu_irq_raise(flash_cs);
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.w25_cs)), PIN(cfg.w25_cs), flash_cs);
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.w25_cs)), PIN(board.w25_cs), flash_cs);
 
 
 
     }
     {
         bus = qdev_get_child_bus(
-				stm32_soc_get_periph(dev_soc, cfg.at24_i2c),
+				stm32_soc_get_periph(dev_soc, board.at24_i2c),
 			"i2c");
         dev = qdev_new("at24c-eeprom");
         qdev_prop_set_uint8(dev, "address", 0x53);
         qdev_prop_set_uint32(dev, "rom-size", 64*KiB / 8U);
-		blk = get_or_create_drive(IF_PFLASH, 0, cfg.eeprom_fn, EEPROM_ID, 64*KiB / 8U, &error_fatal);
+		blk = get_or_create_drive(IF_PFLASH, 0, printer.eeprom_fn, EEPROM_ID, 64*KiB / 8U, &error_fatal);
 		qdev_prop_set_drive(dev, "drive", blk);
         qdev_realize(dev, bus, &error_fatal);
         // The QEMU I2CBus doesn't support devices with multiple addresses, so fake it
@@ -995,7 +854,7 @@ static void mk4_init(MachineState *machine)
     }
 	{
         bus = qdev_get_child_bus(
-				stm32_soc_get_periph(dev_soc, cfg.at24_i2c),
+				stm32_soc_get_periph(dev_soc, board.at24_i2c),
 			"i2c");
         dev = qdev_new("fusb302b");
         qdev_prop_set_uint8(dev, "address", 0x23);
@@ -1003,7 +862,7 @@ static void mk4_init(MachineState *machine)
 	}
 
 	{
-		bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, cfg.at24_i2c),"i2c");
+		bus = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, board.at24_i2c),"i2c");
         dev = qdev_new("fusb302b");
         qdev_prop_set_uint8(dev, "address", 0x23);
         qdev_realize(dev, bus, &error_fatal);
@@ -1022,11 +881,11 @@ static void mk4_init(MachineState *machine)
     qdev_prop_set_string(db2, "indicators", "ZF");
 
     {
-        int32_t ends[4] = { 100*16*255, 100*16*218, 400*16*(cfg.has_loadcell ? 221: 212),0 };
+        int32_t ends[4] = { 100*16*255, 100*16*218, 400*16*(printer.has_loadcell ? 221: 212),0 };
         static const char* links[4] = {"motor[0]","motor[1]","motor[2]","motor[3]"};
         static int32_t stepsize[4] = { 100*16, 100*16, 400*16, 320*16 };
 
-        if(cfg.printer_family == FAM_IX)
+        if(printer.printer_family == FAM_IX)
         {
             ends[0] = 0*100*16*295;
             ends[1] = 0*100*16*310;
@@ -1035,7 +894,7 @@ static void mk4_init(MachineState *machine)
             links[2] = "motor[4]";
             links[3] = "motor[5]";
         }
-        else if (cfg.printer_family == FAM_C1)
+        else if (printer.printer_family == FAM_C1)
         {
             ends[0] = 0*100*16*250;
             ends[1] = 0*100*16*220;
@@ -1045,7 +904,7 @@ static void mk4_init(MachineState *machine)
             links[3] = "motor[5]";
         }
 
-        if (cfg.is_400step) {
+        if (printer.is_400step) {
             stepsize[0] <<= 1;
             stepsize[1] <<= 1;
 			ends[0] <<= 1;
@@ -1056,58 +915,58 @@ static void mk4_init(MachineState *machine)
         DeviceState *split_en_out = qdev_new(TYPE_SPLIT_IRQ);
         qdev_prop_set_uint16(split_en_out, "num-lines", 2);
         qdev_realize_and_unref(DEVICE(split_en_out),NULL,  &error_fatal);
-        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_en[0])), PIN(cfg.m_en[0]),qdev_get_gpio_in(split_en_out,0));
+        qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.m_en[0])), PIN(board.m_en[0]),qdev_get_gpio_in(split_en_out,0));
         BusState *motor_spi = NULL;
-		motor_spi = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, cfg.m_spi),"ssi");
+		motor_spi = qdev_get_child_bus(stm32_soc_get_periph(dev_soc, board.m_spi),"ssi");
 
 
         for (int i=0; i<AXIS_MAX; i++){
-            if (cfg.m_label[i] == '\0' ) {
+            if (printer.m_label[i] == '\0' ) {
                 continue;
             }
 			dev = qdev_new("tmc2130");
             motors[i] = dev;
             qdev_prop_set_uint8(dev, "cs", i);
-            qdev_prop_set_uint8(dev, "axis",cfg.m_label[i]);
-            qdev_prop_set_uint8(dev, "inverted",cfg.m_inverted[i]);
+            qdev_prop_set_uint8(dev, "axis",printer.m_label[i]);
+            qdev_prop_set_uint8(dev, "inverted",printer.m_inverted[i]);
             qdev_prop_set_int32(dev, "max_step", ends[i]);
             qdev_prop_set_int32(dev, "fullstepspermm", stepsize[i]);
 
 			qdev_realize(dev, motor_spi, &error_fatal);
 			qemu_irq driver_cs = qdev_get_gpio_in_named(dev, SSI_GPIO_CS, 0);
-			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_select[i])),  PIN(cfg.m_select[i]), driver_cs);
-    		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_step[i])), PIN(cfg.m_step[i]), qdev_get_gpio_in_named(dev,"step",0));
-			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_dir[i])),  PIN(cfg.m_dir[i]),  qdev_get_gpio_in_named(dev,"dir",0));
+			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.m_select[i])),  PIN(board.m_select[i]), driver_cs);
+    		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.m_step[i])), PIN(board.m_step[i]), qdev_get_gpio_in_named(dev,"step",0));
+			qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.m_dir[i])),  PIN(board.m_dir[i]),  qdev_get_gpio_in_named(dev,"dir",0));
             object_property_set_link(OBJECT(db2), links[i], OBJECT(dev), &error_fatal);
-			qdev_connect_gpio_out_named(dev,"diag", 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.m_diag[i])),PIN(cfg.m_diag[i])));
+			qdev_connect_gpio_out_named(dev,"diag", 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.m_diag[i])),PIN(board.m_diag[i])));
             if (i<2) {
                 qdev_connect_gpio_out(split_en_out, i, qdev_get_gpio_in_named(dev,"enable",0));
             } else {
-                qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.m_en[i])),  PIN(cfg.m_en[i]), qdev_get_gpio_in_named(dev,"enable",0));
+                qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.m_en[i])),  PIN(board.m_en[i]), qdev_get_gpio_in_named(dev,"enable",0));
             }
 #ifdef BUDDY_HAS_GL
             if (i==2) {
-                qemu_irq split_zmin = qemu_irq_split( qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.z_min)),PIN(cfg.z_min)),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_ZPROBE));
+                qemu_irq split_zmin = qemu_irq_split( qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.z_min)),PIN(board.z_min)),qdev_get_gpio_in_named(gl_db,"indicator-analog",DB_IND_ZPROBE));
                 qdev_connect_gpio_out_named(dev,"hard", 0, split_zmin);
             }
             qdev_connect_gpio_out_named(dev,"step-out", 0, qdev_get_gpio_in_named(gl_db,"motor-step",DB_MOTOR_X+i));
 #else
 
-            if (i==2) qdev_connect_gpio_out_named(dev,"hard", 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.z_min)),PIN(cfg.z_min)));
+            if (i==2) qdev_connect_gpio_out_named(dev,"hard", 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.z_min)),PIN(board.z_min)));
 #endif
         }
 
     }
-    if (cfg.printer_family == FAM_IX || cfg.printer_family == FAM_C1)
+    if (printer.printer_family == FAM_IX || printer.printer_family == FAM_C1)
     {
         dev = qdev_new("corexy-helper");
-        if (cfg.printer_family == FAM_IX)
+        if (printer.printer_family == FAM_IX)
         {
             qdev_prop_set_uint32(dev, "x-max-um", 1000U*290U);
             qdev_prop_set_uint32(dev, "y-max-um", 1000U*310U);
             qdev_prop_set_bit(dev,"swap-calc",true);
         }
-        else if (cfg.printer_family == FAM_C1)
+        else if (printer.printer_family == FAM_C1)
         {
             qdev_prop_set_uint32(dev, "x-max-um", 1000U*255U);
             qdev_prop_set_uint32(dev, "y-max-um", 1000U*242U);
@@ -1133,14 +992,14 @@ static void mk4_init(MachineState *machine)
     DeviceState *bed = NULL, *hotend = NULL;
     for (int i=0; i<T_MAX; i++)
     {
-		if (cfg.temps.adc[i] == STM32_P_UNDEFINED)
+		if (i == T_CASE && !printer.has_case_thermistor)
 		{
 			continue;
 		}
         dev = qdev_new("thermistor");
         object_property_add_child(OBJECT(periphs), temp_names[i], OBJECT(dev));
-        qdev_prop_set_uint16(dev, "temp",cfg.temps.ambient[i]);
-        qdev_prop_set_uint16(dev, "table_no", cfg.temps.table[i]);
+        qdev_prop_set_uint16(dev, "temp",temps.ambient[i]);
+        qdev_prop_set_uint16(dev, "table_no", temps.table[i]);
         if (i == T_NOZ && s->nozzle_raw_adc10 >= 0)
         {
             qdev_prop_set_int32(dev, "raw_adc10", s->nozzle_raw_adc10);
@@ -1155,13 +1014,13 @@ static void mk4_init(MachineState *machine)
             qdev_prop_set_int32(dev, "raw_adc10", 1023);
         }
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_read", cfg.temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
-        qemu_irq therm_in = qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, cfg.temps.adc[i]),"adc_data_in",cfg.temps.channel[i]);
-        if (i == T_BED && cfg.temps.adc[i] == STM32_P_ADC1)
+        //qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, temps.adc[i]),"adc_read", temps.channel[i],  qdev_get_gpio_in_named(dev, "thermistor_read_request",0));
+        qemu_irq therm_in = qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, temps.adc[i]),"adc_data_in",temps.channel[i]);
+        if (i == T_BED && temps.adc[i] == STM32_P_ADC1)
         {
             // PA4 is wired to ADC1 and ADC2 alike; the FW samples ADC1, the
             // bootloader's printer detection samples ADC2.
-            therm_in = qemu_irq_split(therm_in, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_data_in",cfg.temps.channel[i]));
+            therm_in = qemu_irq_split(therm_in, qdev_get_gpio_in_named(stm32_soc_get_periph(dev_soc, STM32_P_ADC2),"adc_data_in",temps.channel[i]));
         }
         qdev_connect_gpio_out_named(dev, "thermistor_value",0, therm_in);
         if (i==T_NOZ)
@@ -1193,7 +1052,7 @@ static void mk4_init(MachineState *machine)
 		}
 	}
 
-    if (cfg.has_door_sensor)
+    if (printer.has_door_sensor)
 	{
         dev = qdev_new("door-switch");
         object_property_add_child(OBJECT(periphs), "door-switch", OBJECT(dev));
@@ -1210,19 +1069,19 @@ static void mk4_init(MachineState *machine)
     // Heaters - bed is B0/ TIM3C3, E is B1/ TIM3C4
     dev = qdev_new("heater");
     object_property_add_child(OBJECT(periphs), "heater-E", OBJECT(dev));
-    qdev_prop_set_uint8(dev, "thermal_mass_x10",cfg.e_t_mass);
+    qdev_prop_set_uint8(dev, "thermal_mass_x10",printer.e_t_mass);
     qdev_prop_set_uint8(dev,"label", 'E');
     qdev_prop_set_bit(dev, "has_sock", s->has_sock);
     qdev_prop_set_uint16(dev, "ambient_temp_x10", (uint16_t)(ambient_c * 10.f));
     qdev_prop_set_int32(dev, "start_temp_x10", (int32_t)(nozzle_start_c * 10.f));
-    if (cfg.e_cool_tau_s)
+    if (printer.e_cool_tau_s)
     {
-        qdev_prop_set_uint16(dev, "cool_tau_s", cfg.e_cool_tau_s);
+        qdev_prop_set_uint16(dev, "cool_tau_s", printer.e_cool_tau_s);
     }
-    qdev_prop_set_uint16(dev, "cool_tau_pfan_s", cfg.e_cool_tau_pfan_s);
-    qdev_prop_set_uint16(dev, "cool_tau_hbr_s", cfg.e_cool_tau_hbr_s);
-    qdev_prop_set_uint16(dev, "heat_lag_ms", cfg.e_heat_lag_ms);
-    qdev_prop_set_uint16(dev, "dead_time_ms", cfg.e_dead_time_ms);
+    qdev_prop_set_uint16(dev, "cool_tau_pfan_s", printer.e_cool_tau_pfan_s);
+    qdev_prop_set_uint16(dev, "cool_tau_hbr_s", printer.e_cool_tau_hbr_s);
+    qdev_prop_set_uint16(dev, "heat_lag_ms", printer.e_heat_lag_ms);
+    qdev_prop_set_uint16(dev, "dead_time_ms", printer.e_dead_time_ms);
 
     sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
     qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM3),"pwm_ratio_changed", 3, qdev_get_gpio_in_named(dev, "raw-pwm-in",0));
@@ -1255,7 +1114,7 @@ static void mk4_init(MachineState *machine)
 
     DeviceState *hs = NULL;
 
-	if (cfg.has_loadcell) {
+	if (printer.has_loadcell) {
 		DeviceState *lc = qdev_new("loadcell");
         object_property_add_child(OBJECT(periphs), "loadcell", OBJECT(lc));
 		sysbus_realize(SYS_BUS_DEVICE(lc), &error_fatal);
@@ -1270,11 +1129,11 @@ static void mk4_init(MachineState *machine)
 		dev = qdev_new("hx717");
         object_property_add_child(OBJECT(periphs), "hx717", OBJECT(dev));
 		sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-		qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_data)),PIN(cfg.hx717_data))); // EXTR_DATA
-		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(cfg.hx717_sck)),PIN(cfg.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
+		qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.hx717_data)),PIN(board.hx717_data))); // EXTR_DATA
+		qdev_connect_gpio_out(stm32_soc_get_periph(dev_soc, BANK(board.hx717_sck)),PIN(board.hx717_sck),qdev_get_gpio_in(dev, 0)); // EXTR_SCK
 		// PT100
 		qdev_connect_gpio_out(lc,0, qdev_get_gpio_in_named(dev,"input_x1000",0));
-		if (cfg.temps.table[T_BRK] == 22) // PT100
+		if (temps.table[T_BRK] == 22) // PT100
 		{
 			qdev_connect_gpio_out_named(hotend, "value_x1000",0, qdev_get_gpio_in_named(dev,"input_x1000",1));
 		}
@@ -1360,7 +1219,7 @@ static void mk4_init(MachineState *machine)
     uint8_t fan_labels[] = {'P','E'};
     DeviceState* fans[FAN_COOLING_COUNT];
 	DeviceState* fanpwm = qdev_new("software-pwm");
-    qdev_prop_set_bit(fanpwm, "is_inverted", cfg.f_inverted);
+    qdev_prop_set_bit(fanpwm, "is_inverted", board.f_inverted);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(fanpwm),&error_fatal);
 	qdev_connect_gpio_out_named(stm32_soc_get_periph(dev_soc, STM32_P_TIM14), "timer", 0, qdev_get_gpio_in_named(fanpwm, "tick-in", 0));
     for (int i=0; i<FAN_COOLING_COUNT; i++)
@@ -1371,10 +1230,10 @@ static void mk4_init(MachineState *machine)
         dev = qdev_new("fan");
         fans[i] = dev;
         qdev_prop_set_uint8(dev,"label",fan_labels[i]);
-        qdev_prop_set_uint32(dev, "max_rpm",cfg.f_rpms[i]);
+        qdev_prop_set_uint32(dev, "max_rpm",printer.f_rpms[i]);
         //qdev_prop_set_bit(dev, "is_nonlinear", i); // E is nonlinear.
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
-        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.f_tach[i])), PIN(cfg.f_tach[i])));
+        qdev_connect_gpio_out_named(dev, "tach-out",0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(printer.f_tach[i])), PIN(printer.f_tach[i])));
 		qemu_irq split_fan = qemu_irq_split( qdev_get_gpio_in_named(dev, "pwm-in",0), qdev_get_gpio_in_named(db2, "fan-pwm",i));
         qdev_connect_gpio_out_named(dev, "rpm-out", 0, qdev_get_gpio_in_named(db2,"fan-rpm",i));
         qdev_connect_gpio_out_named(dev, "airflow-out", 0,
@@ -1388,7 +1247,7 @@ static void mk4_init(MachineState *machine)
 // #endif
     }
 
-    if (cfg.has_at21) {
+    if (printer.has_at21) {
         dev = qdev_new("at21csxx");
 		qdev_prop_set_drive(dev, "drive", blk_by_name("loveboard-eeprom"));
         object_property_add_child(OBJECT(periphs), "at21csxx", OBJECT(dev));
@@ -1400,13 +1259,13 @@ static void mk4_init(MachineState *machine)
         qdev_connect_gpio_out(dev,0,qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, STM32_P_GPIOF), 13));
     }
     // <--- See WARNING above before inserting code here!! --->
-    if (cfg.f_tach[1] == cfg.f_tach[0]) // If it's a shared tach pin, setup the mux config.
+    if (printer.f_tach[1] == printer.f_tach[0]) // If it's a shared tach pin, setup the mux config.
     {
         // Tach select is F13, H = print fan, L = HBR
         // the fan has an active-high tach-disable line, so for the print fan it must be inverted.
         qemu_irq sel_inv = qemu_irq_invert(qdev_get_gpio_in_named(fans[FAN_COOLING_PRINT], "tach-disable", 0));
         qemu_irq split_sel = NULL;
-        if (cfg.has_at21)
+        if (printer.has_at21)
         {
            split_sel = qemu_irq_split( qdev_get_gpio_in_named(fans[FAN_COOLING_HBR], "tach-disable", 0), sel_inv, qdev_get_gpio_in(dev, 0));
         }
@@ -1419,9 +1278,9 @@ static void mk4_init(MachineState *machine)
 
     DeviceState* encoder = qdev_new("encoder-input");
     sysbus_realize(SYS_BUS_DEVICE(encoder), &error_fatal);
-    qdev_connect_gpio_out_named(encoder, "encoder-button",  0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_btn)), PIN(cfg.enc_btn)));
-    qdev_connect_gpio_out_named(encoder, "encoder-ab",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_a)),   PIN(cfg.enc_a)));
-    qdev_connect_gpio_out_named(encoder, "encoder-ab",       1,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(cfg.enc_b)),   PIN(cfg.enc_b)));
+    qdev_connect_gpio_out_named(encoder, "encoder-button",  0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.enc_btn)), PIN(board.enc_btn)));
+    qdev_connect_gpio_out_named(encoder, "encoder-ab",       0,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.enc_a)),   PIN(board.enc_a)));
+    qdev_connect_gpio_out_named(encoder, "encoder-ab",       1,  qdev_get_gpio_in(stm32_soc_get_periph(dev_soc, BANK(board.enc_b)),   PIN(board.enc_b)));
 
 	bus = qdev_get_child_bus(
 		stm32_soc_get_periph(dev_soc, STM32_P_I2C3),
@@ -1504,7 +1363,7 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
 
         object_class_property_add_bool(oc, "qtest-force-mmu", xbuddy_get_force_mmu, xbuddy_set_force_mmu);
         object_class_property_add_bool(oc, "has-sock", xbuddy_get_has_sock, xbuddy_set_has_sock);
-        if (d->cfg->printer_family == FAM_C1)
+        if (d->printer->printer_family == FAM_C1)
         {
             // Only the CORE One family has HAS_HT_HOTEND firmware support, so the
             // property does not exist elsewhere rather than failing at init.
@@ -1563,7 +1422,9 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
             "so the bootloader jumps straight into the application.");
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
-		xmc->cfg = d->cfg;
+		xmc->board = &xbuddy_board;
+		xmc->printer = d->printer;
+		xmc->board_rev = d->board_rev;
         xmc->has_mmu = d->has_mmu;
 		xmc->has_extboard = d->has_extboard;
         xmc->has_modbed = d->has_modbed;
@@ -1589,46 +1450,54 @@ static void xbuddy_instance_init(Object *obj)
 }
 
 static const xBuddyData mk4_027c = {
-	.cfg = &mk4_027c_cfg,
+	.printer = &mk4_printer,
+	.board_rev = 27,
 	.descr = "Prusa Mk4 0.2.7c",
 };
 
 static const xBuddyData mk4_027c_mmu = {
-	.cfg = &mk4_027c_cfg,
+	.printer = &mk4_printer,
+	.board_rev = 27,
 	.descr = "Prusa Mk4 0.2.7c with MMU3",
     .has_mmu = true,
 };
 
 static const xBuddyData mk4_034 = {
-	.cfg = &mk4_034_cfg,
+	.printer = &mk4_printer,
+	.board_rev = 34,
 	.descr = "Prusa Mk4 0.3.4",
 };
 
 static const xBuddyData mk4_034_mmu = {
-	.cfg = &mk4_034_cfg,
+	.printer = &mk4_printer,
+	.board_rev = 34,
 	.descr = "Prusa Mk4 0.3.4 with MMU3",
     .has_mmu = true,
 };
 
 
 static const xBuddyData mk3v5 = {
-	.cfg = &mk3v5_cfg,
+	.printer = &mk3v5_printer,
+	.board_rev = 34,
 	.descr = "Prusa Mk3.5",
 };
 
 static const xBuddyData mk3v9 = {
-	.cfg = &mk3v9_cfg,
+	.printer = &mk3v9_printer,
+	.board_rev = 34,
 	.descr = "Prusa Mk3.9",
 };
 
 static const xBuddyData core = {
-	.cfg = &core1_cfg,
+	.printer = &core1_printer,
+	.board_rev = 34,
 	.descr = "Prusa CORE ONE",
 	.has_extboard = true,
 };
 
 static const xBuddyData core_mmu = {
-	.cfg = &core1_cfg,
+	.printer = &core1_printer,
+	.board_rev = 34,
 	.descr = "Prusa CORE ONE with MMU3",
     .has_mmu = true,
 	// extboard not yet supported.
@@ -1636,7 +1505,8 @@ static const xBuddyData core_mmu = {
 
 
 static const xBuddyData iX_027c = {
-	.cfg = &ix_027c_cfg,
+	.printer = &ix_printer,
+	.board_rev = 27,
 	.descr = "Prusa iX 0.2.7c",
     .has_modbed = true,
 };
