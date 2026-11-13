@@ -487,6 +487,12 @@ typedef struct xBuddyMachineState {
     int loveboard;
     int mk35_cable;
     bool fast_boot;
+    // OTP identity. Prusa Connect keys a printer on its serial number and on a
+    // fingerprint hashed from UID, MAC and serial, so instances that register
+    // with the same Connect server need distinct values.
+    char serial_suffix[5]; // "" = keep the built-in datamatrix digits
+    bool mac_set;
+    uint8_t mac[6];
 } xBuddyMachineState;
 
 OBJECT_DECLARE_SIMPLE_TYPE(xBuddyMachineState, XBUDDY_MACHINE);
@@ -725,6 +731,50 @@ static void xbuddy_set_fast_boot(Object *obj, bool value, Error **errp)
     XBUDDY_MACHINE(obj)->fast_boot = value;
 }
 
+static char *xbuddy_get_serial_suffix(Object *obj, Error **errp)
+{
+    return g_strdup(XBUDDY_MACHINE(obj)->serial_suffix);
+}
+
+static void xbuddy_set_serial_suffix(Object *obj, const char *value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    size_t len = strlen(value);
+    if (len == 0 || len > 4 || strspn(value, "0123456789") != len) {
+        error_setg(errp, "serial-suffix must be 1 to 4 decimal digits");
+        return;
+    }
+    snprintf(s->serial_suffix, sizeof(s->serial_suffix), "%04d", atoi(value));
+}
+
+static char *xbuddy_get_mac(Object *obj, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    if (!s->mac_set) {
+        return g_strdup("");
+    }
+    return g_strdup_printf("%02x:%02x:%02x:%02x:%02x:%02x",
+        s->mac[0], s->mac[1], s->mac[2], s->mac[3], s->mac[4], s->mac[5]);
+}
+
+static void xbuddy_set_mac(Object *obj, const char *value, Error **errp)
+{
+    xBuddyMachineState *s = XBUDDY_MACHINE(obj);
+    uint8_t mac[6];
+    char tail;
+    if (sscanf(value, "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx%c",
+            &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5], &tail) != 6) {
+        error_setg(errp, "mac must be six hex bytes, e.g. 02:00:00:00:00:01");
+        return;
+    }
+    if (mac[0] & 0x01) {
+        error_setg(errp, "mac must be unicast (bit 0 of the first byte clear)");
+        return;
+    }
+    memcpy(s->mac, mac, sizeof(mac));
+    s->mac_set = true;
+}
+
 static void xbuddy_get_guest_time(Object *obj, Visitor *v, const char *name,
                                   void *opaque, Error **errp)
 {
@@ -819,6 +869,20 @@ static void mk4_init(MachineState *machine)
 		otp_data.datamatrix[5]='3';
 		otp_data.datamatrix[6]='4';
 	}
+	// The last four datamatrix digits are the daily serial number.
+	const size_t sn_digits_at = strlen((const char *)otp_data.datamatrix) - 4;
+	if (s->serial_suffix[0]) {
+		memcpy(&otp_data.datamatrix[sn_digits_at], s->serial_suffix, 4);
+	}
+	if (s->mac_set) {
+		memcpy(otp_data.mac_address.mac, s->mac, sizeof(s->mac));
+	} else {
+		// Locally administered unicast, unique per serial-suffix. An all-zero MAC
+		// would go out as the Ethernet source address.
+		const int daily_sn = atoi((const char *)&otp_data.datamatrix[sn_digits_at]);
+		const uint8_t mac[6] = { 0x02, 0x00, 0x00, 0x00, daily_sn >> 8, daily_sn & 0xFF };
+		memcpy(otp_data.mac_address.mac, mac, sizeof(mac));
+	}
 
 	uint32_t* otp_raw = (uint32_t*) &otp_data;
 
@@ -842,7 +906,8 @@ static void mk4_init(MachineState *machine)
 
 	DeviceState* otp = stm32_soc_get_periph(dev, STM32_P_OTP);
     QList *otp_list = qlist_new();
-    for (int i = 0; i < 9; i++) {
+    const int otp_words = sizeof(otp_data) / sizeof(uint32_t);
+    for (int i = 0; i < otp_words; i++) {
         qlist_append_int(otp_list, otp_raw[i]);
     }
     if (s->fast_boot)
@@ -850,7 +915,7 @@ static void mk4_init(MachineState *machine)
         // The bootloader's fast_boot() wants OTP lock block 0 (0x1FFF7A00) still
         // unprogrammed. Every word up to it must be listed to reach it; the
         // otp-data words that are not listed read 0, i.e. locked.
-        for (int i = 9; i < 0x200 / 4; i++)
+        for (int i = otp_words; i < 0x200 / 4; i++)
         {
             qlist_append_int(otp_list, 0);
         }
@@ -1561,6 +1626,14 @@ static void xbuddy_class_init(ObjectClass *oc, const void *data)
         object_class_property_set_description(oc, "fast-boot",
             "Production fast boot: OTP lock block 0 left at 0xFF and PE0 held low, "
             "so the bootloader jumps straight into the application.");
+        object_class_property_add_str(oc, "serial-suffix", xbuddy_get_serial_suffix, xbuddy_set_serial_suffix);
+        object_class_property_set_description(oc, "serial-suffix",
+            "Last four digits of the OTP serial number (the daily serial). Give each "
+            "instance its own when they register with the same Prusa Connect server.");
+        object_class_property_add_str(oc, "mac", xbuddy_get_mac, xbuddy_set_mac);
+        object_class_property_set_description(oc, "mac",
+            "OTP Ethernet MAC address. Default: 02:00:00:00 followed by the daily "
+            "serial number as two bytes.");
 
 		xBuddyMachineClass* xmc = XBUDDY_MACHINE_CLASS(oc);
 		xmc->cfg = d->cfg;
