@@ -111,14 +111,20 @@ f2xx_rtc_set_time_and_date_registers(f2xx_rtc *s, struct tm *tm)
 {
     uint8_t wday;
 
-    wday = tm->tm_wday == 0 ? tm->tm_wday : 7;
+    // RTC weekday: Monday = 1 .. Sunday = 7.
+    wday = tm->tm_wday == 0 ? 7 : tm->tm_wday;
+    // The year tens digit (YT) is a 4-bit field (0-159)
+    int year = tm->tm_year - 100;
+    if (year < 0 || year > 159) {
+        year = tm->tm_year % 100;
+    }
     s->regs[R_RTC_TR] = to_bcd(tm->tm_sec) |
                         to_bcd(tm->tm_min) << 8 |
                         to_bcd(tm->tm_hour) << 16;
     s->regs[R_RTC_DR] = to_bcd(tm->tm_mday) |
                         to_bcd(tm->tm_mon + 1) << 8 |
                         wday << 13 |
-                        to_bcd(tm->tm_year % 100) << 16;
+                        to_bcd(year) << 16;
 }
 
 
