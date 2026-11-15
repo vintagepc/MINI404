@@ -113,10 +113,7 @@ f2xx_rtc_set_time_and_date_registers(f2xx_rtc *s, struct tm *tm)
 
     // RTC weekday: Monday = 1 .. Sunday = 7.
     wday = tm->tm_wday == 0 ? 7 : tm->tm_wday;
-    // The year tens digit (YT) is a 4-bit field, so the register holds years
-    // 0..159 from 2000, not just 0..99. Buddy FW relies on that: it stores
-    // tm_year (126 for 2026) and reads it back as 0xC6. Wrapping to % 100 sent
-    // its clock back to 1926 and failed every TLS certificate date check.
+    // The year tens digit (YT) is a 4-bit field (0-159)
     int year = tm->tm_year - 100;
     if (year < 0 || year > 159) {
         year = tm->tm_year % 100;
