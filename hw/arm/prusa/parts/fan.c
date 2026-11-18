@@ -50,6 +50,15 @@ struct  fan_state
     bool tach_failed;
     uint8_t airflow_scale;
 
+    /* Ignore tach-disable and keep emitting tach pulses. For a tach line the
+       firmware multiplexes between two fans: QEMU GPIOs have no high-impedance
+       state, so the mux-select pin keeps whatever was last driven onto it and
+       this fan's tach ends up masked for as long as the select sits on the
+       other fan. Off by default; a fan wired to a dedicated tach line does not
+       need it, and a TachFail fault still silences the fan either way. */
+    bool always_emit_tach;
+    int64_t coast_until_ms;
+
 	uint8_t pwm;
 	int last_pwm_level;
 	uint32_t max_rpm;
@@ -85,13 +94,18 @@ enum {
 static uint16_t fan_corrections[] = {1450,2100, 1700, 1050, 0};
 
 #define TYPE_FAN "fan"
+/* How long the tach keeps reporting full speed after the fan was last driven
+   above half, for fans with always_emit_tach. Long enough to cover a soft-PWM
+   duty transition, short enough that a fan switched off reports zero promptly. */
+#define FAN_COAST_MS 1500
+
 OBJECT_DECLARE_SIMPLE_TYPE(fan_state, FAN)
 
 
 static void fan_tach_expire(void *opaque)
 {
     fan_state *s = opaque;
-    if (!s->tach_blocked)
+    if (!s->tach_blocked || s->always_emit_tach)
     {
         if (s->is_stalled || s->tach_failed) {
             qemu_set_irq(s->tach_pulse, 0);
@@ -128,11 +142,33 @@ static void fan_pwm_change(void *opaque, int n, int level) {
     qemu_set_irq(s->pwm_out, level);
     s->last_pwm_level = level;
     qemu_set_irq(s->airflow_out, fan_airflow(s, level));
-    s->current_rpm = (((uint32_t)s->max_rpm)*level)/255;
+    uint32_t new_rpm = (((uint32_t)s->max_rpm)*level)/255;
     if (s->is_nonlinear)
     {
-        s->current_rpm += fan_corrections[level/64];
+        new_rpm += fan_corrections[level/64];
     }
+    /* Rotor inertia, to the extent the tach needs it. software_pwm averages the
+       GPIO over 256-tick windows, so a step change in duty is reported as a run
+       of intermediate values rather than a single edge; a real rotor coasts
+       through that, and the model otherwise follows every sample down. That
+       matters because firmware tends to read zero RPM as "not commanded yet"
+       but a small non-zero RPM under load as a fault. So for FAN_COAST_MS after
+       the fan was last driven above half speed, a duty that would put it below
+       half is reported as full speed instead. The window is what keeps this
+       honest: a fan that is genuinely switched off reports zero once it
+       elapses, rather than sitting at max forever. Only the tach is affected --
+       airflow-out above still follows the commanded duty, so the thermal model
+       sees the truth either way. */
+    int64_t now_ms = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+    if (new_rpm >= s->max_rpm / 2)
+    {
+        s->coast_until_ms = now_ms + FAN_COAST_MS;
+    }
+    else if (s->always_emit_tach && now_ms < s->coast_until_ms)
+    {
+        new_rpm = s->max_rpm;
+    }
+    s->current_rpm = new_rpm;
     float fSecPerRev = 60.0f/(float)s->current_rpm;
     float fuSPerRev = 1000000.f*fSecPerRev;
     s->usec_per_pulse = fuSPerRev/4.f; // 4 pulses per rev.
@@ -272,7 +308,7 @@ static const Property fan_properties[] = {
     DEFINE_PROP_UINT8("label", fan_state, label,(uint8_t)' '),
     DEFINE_PROP_UINT32("max_rpm", fan_state, max_rpm,8800),
     DEFINE_PROP_BOOL("is_nonlinear", fan_state, is_nonlinear, 0),
-    
+    DEFINE_PROP_BOOL("always_emit_tach", fan_state, always_emit_tach, 0),
 };
 
 static const VMStateDescription vmstate_fan = {
@@ -286,6 +322,8 @@ static const VMStateDescription vmstate_fan = {
         VMSTATE_INT32_V(last_pwm_level,fan_state,2),
         VMSTATE_BOOL_V(tach_failed,fan_state,2),
         VMSTATE_UINT8_V(airflow_scale,fan_state,2),
+        VMSTATE_BOOL_V(always_emit_tach,fan_state,2),
+        VMSTATE_INT64_V(coast_until_ms,fan_state,2),
         VMSTATE_UINT8(pwm,fan_state),
         VMSTATE_UINT8(label,fan_state),
         VMSTATE_UINT32(max_rpm,fan_state),
