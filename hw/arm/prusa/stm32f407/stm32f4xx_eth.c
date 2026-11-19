@@ -372,6 +372,11 @@ static void enet_write(void *opaque, hwaddr addr,
         case DMA_XMT_POLL_DEMAND:
             stm32f4xx_eth_send(s);
             break;
+        case DMA_RCV_POLL_DEMAND:
+            /* Guest refilled the RX ring and resumed the DMA; re-offer any frame
+               eth_rx held (returned 0) because the ring was full. */
+            qemu_flush_queued_packets(qemu_get_queue(s->nic));
+            break;
         case DMA_STATUS:
             s->regs[DMA_STATUS] = s->regs[DMA_STATUS] & ~value;
             break;
@@ -429,7 +434,39 @@ static ssize_t eth_rx(NetClientState *nc, const uint8_t *buf, size_t size)
 
     stm32f4xx_eth_read_desc(s, &bd, 1);
     if ((bd.ctl_stat & 0x80000000) == 0) {
+        /*
+         * The guest owns no RX descriptor (the ring is full). Signal RX-buffer-
+         * unavailable, as the hardware does, and HOLD the frame by returning 0:
+         * the net layer re-offers it once the guest frees a descriptor and pokes
+         * the RX poll-demand (the firmware does that after seeing RBUS/RU). The
+         * previous code returned the frame length here, which told the net layer
+         * the frame had been received and so dropped it - and with only 4 RX
+         * descriptors a short burst (e.g. a fragmented datagram) was lost
+         * silently, which can make a vulnerable firmware build look like it
+         * survived. This path is also reached on the flush, where a still-full
+         * ring must re-queue the frame rather than drop it.
+         */
         s->regs[DMA_STATUS] |= DMA_STATUS_RU | DMA_STATUS_AIS;
+        ret = 0;
+        goto out;
+    }
+
+    /*
+     * Never write past the descriptor's receive buffer (RDES1 RBS1, 13 bits).
+     * A frame larger than the buffer would corrupt guest RAM. The legacy HAL
+     * the firmware uses (GetReceivedFrame_IT) does not check the descriptor
+     * error-summary bit, so flagging the frame errored would not stop it being
+     * processed with a bogus length; drop it instead, leaving the descriptor
+     * owned by the DMA for the next frame. Normal frames are <= ETH_RX_BUF_SIZE,
+     * so this only guards against a malformed over-size injection.
+     */
+    if (size > (bd.buffer1_size & 0x1fff)) {
+        /* Discard without touching guest RAM or the descriptor. Not counted in
+           stats.rx (so an injected-vs-received check stays meaningful); logged
+           as a guest error since a well-formed sender never does this. */
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "stm32f4xx_eth: RX frame of %zu bytes exceeds the "
+                      "descriptor buffer; dropped\n", size);
         ret = size;
         goto out;
     }
