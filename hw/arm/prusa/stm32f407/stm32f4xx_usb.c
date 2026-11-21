@@ -1091,6 +1091,24 @@ static void f4xx_usb_cdc_send_setup(STM32F4xxUSBState *s, const uint32_t* pBuff,
 	STM32F4xx_raise_device_ep_out_irq(s, 0, DOEPMSK_SETUPMSK);
 }
 
+/* Status stage of a control transfer without a data-IN stage: once the FW has armed
+   EP0 IN for the zero-length packet (EPENA, XFRSIZ=0), take it and report XFRC.
+   False while it is not armed yet; other endpoints' EPENA writes also run the host. */
+static bool f4xx_usb_cdc_ack_status_in(STM32F4xxUSBState *s)
+{
+	if (!s->dregi[0].DIEPCTL.EPENA || s->dregi[0].DIEPTSIZ.XFRSIZ != 0) {
+		return false;
+	}
+	s->fifo_head[0] = s->fifo_tail[0] = s->fifo_level[0] = 0;
+	if (s->dregi[0].DIEPTSIZ.PKTCNT > 0) {
+		s->dregi[0].DIEPTSIZ.PKTCNT--;
+	}
+	s->dregi[0].DIEPCTL.EPENA = 0;
+	STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_XFERCOMPLMSK);
+	STM32F4xx_update_device_common_irq(s);
+	return true;
+}
+
 // Responsible for the initial handshake once device mode is enabled.
 static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 {
@@ -1166,12 +1184,25 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             //STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_TXFIFOEMPTY);
         break;
 		case DEV_ST_SETCFG:
+			/* The host never completes the IN data stage of the descriptor reads, so IN EP0
+			   is still enabled from GET_DESCRIPTOR. A real host's next SETUP ends that
+			   transfer; clear it so that the status-stage check below only sees an EP0 IN
+			   that the FW armed after this SETUP. */
+			s->dregi[0].DIEPCTL.EPENA = 0;
 		   	f4xx_usb_cdc_send_setup(s, DEV_SETCONF, sizeof(DEV_SETCONF)/sizeof(uint32_t));
             s->device_state++;
 		break;
 		case DEV_ST_SETCFG_WAIT:
+			/* Send no new SETUP before the status stage of this one: TinyUSB keeps only the
+			   newest of the SETUPs queued for its task, so a SET_LINE_CODING that arrives
+			   before the task has run would make it skip SET_CONFIGURATION. The device then
+			   stays unconfigured, stalls SET_LINE_CODING and the enumeration stops. */
+			if (!f4xx_usb_cdc_ack_status_in(s)) {
+				break;
+			}
 			s->device_state = DEV_ST_LINECODING;
-		/* FALLTHRU */
+			STM32F4xx_cdc_schedule(s);
+			break;
 		case DEV_ST_LINECODING:
 			f4xx_usb_cdc_send_setup(s, DEV_SETCODING, sizeof(DEV_SETCODING)/sizeof(uint32_t));
 			s->device_state++;
@@ -1198,16 +1229,10 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
 			break;
 		}
 		case DEV_ST_LINECODING_STATUS_WAIT:
-			/* FW armed DIEP0 EPENA with PKTCNT=1, XFRSIZ=0 to send the status-IN
-			   ZLP that ACKs SET_LINE_CODING. Consume it and advance. */
-			s->fifo_head[0] = s->fifo_tail[0] = s->fifo_level[0] = 0;
-			s->dregi[0].DIEPTSIZ.XFRSIZ = 0;
-			if (s->dregi[0].DIEPTSIZ.PKTCNT > 0) {
-				s->dregi[0].DIEPTSIZ.PKTCNT--;
+			/* Status-IN ZLP that ACKs SET_LINE_CODING. */
+			if (!f4xx_usb_cdc_ack_status_in(s)) {
+				break;
 			}
-			s->dregi[0].DIEPCTL.EPENA = 0;
-			STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_XFERCOMPLMSK);
-			STM32F4xx_update_device_common_irq(s);
 			s->device_state = DEV_ST_SETCTLLINE;
 			STM32F4xx_cdc_schedule(s);
 			break;
@@ -1217,17 +1242,12 @@ static void f4xx_usb_cdc_setup(STM32F4xxUSBState *s)
             s->device_state++;
             break;
 		case DEV_ST_SETCTLLINE_WAIT:
-			/* FW armed DIEP0 EPENA for the status-IN ZLP of SET_CONTROL_LINE_STATE.
-			   Raise XFRC on EP0 IN so TinyUSB reaches CONTROL_STAGE_ACK and stores
-			   p_cdc->line_state (which is what tud_cdc_connected() checks for DTR). */
-			s->fifo_head[0] = s->fifo_tail[0] = s->fifo_level[0] = 0;
-			s->dregi[0].DIEPTSIZ.XFRSIZ = 0;
-			if (s->dregi[0].DIEPTSIZ.PKTCNT > 0) {
-				s->dregi[0].DIEPTSIZ.PKTCNT--;
+			/* Status-IN ZLP of SET_CONTROL_LINE_STATE. Its XFRC takes TinyUSB to
+			   CONTROL_STAGE_ACK, which stores p_cdc->line_state (what tud_cdc_connected()
+			   checks for DTR). */
+			if (!f4xx_usb_cdc_ack_status_in(s)) {
+				break;
 			}
-			s->dregi[0].DIEPCTL.EPENA = 0;
-			STM32F4xx_raise_device_ep_in_irq(s, 0, DIEPMSK_XFERCOMPLMSK);
-			STM32F4xx_update_device_common_irq(s);
 			printf("Control line set\n");
 			s->device_state = DEV_ST_IO_READY;
 			break;
